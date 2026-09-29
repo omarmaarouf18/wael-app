@@ -13,8 +13,17 @@ compose+certs, hooks+Makefile, CI (publish disabled). No domain logic beyond
 auth/notifications/academy mocks.
 
 ## Open
-Docs beyond AI_CONTEXT/CLAUDE (ADRs, RUNBOOK, DEPLOYMENT, changelog).
 Core academy service (providers rebind to AcademyRepository). Deploy repo.
+RUNBOOK, DEPLOYMENT, changelog (ADRs now exist).
+
+## Decisions
+Product decisions recorded in `docs/adr/`:
+- [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)
+- [ADR-0002: Single-Role Student App With a Separate Web Admin Panel](docs/adr/0002-single-role-student-app.md)
+- [ADR-0003: Payment Per Subject (Materia)](docs/adr/0003-per-subject-payment.md)
+- [ADR-0004: No Limits on Video Access](docs/adr/0004-unlimited-video-access.md)
+- [ADR-0005: Study Notes (Mozakkerat) Delivered Inside the App](docs/adr/0005-in-app-study-notes.md)
+- [ADR-0006: Support Only Through a WhatsApp Number](docs/adr/0006-whatsapp-only-support.md)
 
 ## Next task
 None queued — confirm direction.
