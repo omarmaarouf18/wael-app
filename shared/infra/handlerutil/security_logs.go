@@ -53,14 +53,13 @@ type SecurityEvent struct {
 	EventType string `json:"event_type"`
 	Service   string `json:"service"`
 	ActorID   string `json:"actor_id,omitempty"`
-	TenantID  string `json:"tenant_id,omitempty"`
 	Detail    string `json:"detail,omitempty"`
 	ClientIP  string `json:"client_ip,omitempty"`
 }
 
 // ShipSecurityEvent ships a structured JSON log to CloudWatch.
 // It runs asynchronously in a goroutine and does not block.
-func ShipSecurityEvent(ctx context.Context, eventType, service, actorID, tenantID, detail, clientIP string) {
+func ShipSecurityEvent(ctx context.Context, eventType, service, actorID, detail, clientIP string) {
 	InitCloudWatch("")
 	if !CwEnabled || CwClient == nil {
 		return
@@ -79,7 +78,6 @@ func ShipSecurityEvent(ctx context.Context, eventType, service, actorID, tenantI
 			EventType: eventType,
 			Service:   service,
 			ActorID:   actorID,
-			TenantID:  tenantID,
 			Detail:    detail,
 			ClientIP:  clientIP,
 		}

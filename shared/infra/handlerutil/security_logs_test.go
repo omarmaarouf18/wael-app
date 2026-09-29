@@ -20,7 +20,7 @@ func TestShipSecurityEventNonBlocking(t *testing.T) {
 
 	start := time.Now()
 	// Call ShipSecurityEvent which runs in a goroutine
-	ShipSecurityEvent(ctx, "TEST_EVENT", "test-service", "actor", "tenant", "detail", "127.0.0.1")
+	ShipSecurityEvent(ctx, "TEST_EVENT", "test-service", "actor", "detail", "127.0.0.1")
 	duration := time.Since(start)
 
 	// Verify that it runs asynchronously and does not block
@@ -50,7 +50,7 @@ func TestShipSecurityEvent_AgnosticFailureModes(t *testing.T) {
 
 		start := time.Now()
 		// Should return immediately, not block, and not panic
-		ShipSecurityEvent(ctx, "TEST_EVENT", "test-service", "actor", "tenant", "detail", "127.0.0.1")
+		ShipSecurityEvent(ctx, "TEST_EVENT", "test-service", "actor", "detail", "127.0.0.1")
 		duration := time.Since(start)
 
 		if duration > 100*time.Millisecond {
@@ -68,7 +68,7 @@ func TestShipSecurityEvent_AgnosticFailureModes(t *testing.T) {
 
 		start := time.Now()
 		// Should return immediately, not block, and not panic
-		ShipSecurityEvent(ctx, "TEST_EVENT", "test-service", "actor", "tenant", "detail", "127.0.0.1")
+		ShipSecurityEvent(ctx, "TEST_EVENT", "test-service", "actor", "detail", "127.0.0.1")
 		duration := time.Since(start)
 
 		if duration > 100*time.Millisecond {
@@ -87,7 +87,7 @@ func TestShipSecurityEvent_AgnosticFailureModes(t *testing.T) {
 
 		start := time.Now()
 		// Runs in a goroutine, should not block the caller even if log sink fails
-		ShipSecurityEvent(ctx, "TEST_EVENT", "test-service", "actor", "tenant", "detail", "127.0.0.1")
+		ShipSecurityEvent(ctx, "TEST_EVENT", "test-service", "actor", "detail", "127.0.0.1")
 		duration := time.Since(start)
 
 		if duration > 100*time.Millisecond {

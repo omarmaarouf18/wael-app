@@ -22,11 +22,10 @@ var (
 )
 
 type Claims struct {
-	UserID   string   `json:"user_id"`
-	Role     string   `json:"role"`
-	TenantID string   `json:"tenant_id"`
-	Email    string   `json:"email"`
-	AMR      []string `json:"amr,omitempty"`
+	UserID string   `json:"user_id"`
+	Role   string   `json:"role"`
+	Email  string   `json:"email"`
+	AMR    []string `json:"amr,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -123,7 +122,7 @@ func GenerateUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]), nil
 }
 
-func GenerateToken(userID string, role string, tenantID string, email string, amr ...[]string) (string, error) {
+func GenerateToken(userID string, role string, email string, amr ...[]string) (string, error) {
 	uuidStr, err := GenerateUUID()
 	if err != nil {
 		return "", fmt.Errorf("jwtutil: failed to generate token uuid: %w", err)
@@ -135,11 +134,10 @@ func GenerateToken(userID string, role string, tenantID string, email string, am
 	}
 
 	claims := Claims{
-		UserID:   userID,
-		Role:     role,
-		TenantID: tenantID,
-		Email:    email,
-		AMR:      amrVal,
+		UserID: userID,
+		Role:   role,
+		Email:  email,
+		AMR:    amrVal,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -152,8 +150,8 @@ func GenerateToken(userID string, role string, tenantID string, email string, am
 }
 
 // GenerateTokenWithAMR generates a token with the specified authentication method references.
-func GenerateTokenWithAMR(userID string, role string, tenantID string, email string, amr []string) (string, error) {
-	return GenerateToken(userID, role, tenantID, email, amr)
+func GenerateTokenWithAMR(userID string, role string, email string, amr []string) (string, error) {
+	return GenerateToken(userID, role, email, amr)
 }
 
 func ValidateToken(tokenStr string) (*Claims, error) {

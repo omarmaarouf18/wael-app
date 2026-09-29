@@ -78,7 +78,7 @@ func (s *Server) devOTPField() bool {
 }
 
 func issuePair(userID string, role models.Role, email string) (access, refresh string, err error) {
-	access, err = jwtutil.GenerateToken(userID, string(role), "", email)
+	access, err = jwtutil.GenerateToken(userID, string(role), email)
 	if err != nil {
 		return "", "", err
 	}

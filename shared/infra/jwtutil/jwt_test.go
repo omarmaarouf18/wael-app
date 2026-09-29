@@ -19,7 +19,7 @@ func TestValidateToken_Expired(t *testing.T) {
 	Init("super-secret-key-that-is-at-least-thirty-two-bytes-long")
 
 	// 1. Test valid token
-	tokenStr, err := GenerateToken("user123", "owner", "tenant456", "user@example.com")
+	tokenStr, err := GenerateToken("user123", "owner", "user@example.com")
 	if err != nil {
 		t.Fatalf("failed to generate token: %v", err)
 	}
@@ -34,10 +34,9 @@ func TestValidateToken_Expired(t *testing.T) {
 
 	// 2. Test expired token (1 hour ago)
 	expiredClaims := Claims{
-		UserID:   "expiredUser",
-		Role:     "customer",
-		TenantID: "tenantXYZ",
-		Email:    "expired@example.com",
+		UserID: "expiredUser",
+		Role:   "customer",
+		Email:  "expired@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
@@ -66,10 +65,9 @@ func TestValidateToken_ExpiredAndInvalidSignature(t *testing.T) {
 
 	// Create an expired token signed with a DIFFERENT key
 	expiredClaims := Claims{
-		UserID:   "attacker",
-		Role:     "owner",
-		TenantID: "tenantXYZ",
-		Email:    "attacker@example.com",
+		UserID: "attacker",
+		Role:   "owner",
+		Email:  "attacker@example.com",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-1 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
@@ -98,10 +96,9 @@ func TestJWT_ExtraCoverage(t *testing.T) {
 	// 1. None algorithm token is rejected
 	t.Run("NoneAlgorithmRejected", func(t *testing.T) {
 		claims := Claims{
-			UserID:   "user123",
-			Role:     "owner",
-			TenantID: "tenant456",
-			Email:    "user@example.com",
+			UserID: "user123",
+			Role:   "owner",
+			Email:  "user@example.com",
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 				IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -122,10 +119,9 @@ func TestJWT_ExtraCoverage(t *testing.T) {
 	// 2. Mismatched signing method (RSA key signed, expecting HMAC) is rejected
 	t.Run("MismatchedSigningMethod", func(t *testing.T) {
 		claims := Claims{
-			UserID:   "user123",
-			Role:     "owner",
-			TenantID: "tenant456",
-			Email:    "user@example.com",
+			UserID: "user123",
+			Role:   "owner",
+			Email:  "user@example.com",
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 				IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -171,10 +167,9 @@ func TestJWT_ExtraCoverage(t *testing.T) {
 
 		expiresAt := time.Now().Add(-1 * time.Hour)
 		expiredClaims := Claims{
-			UserID:   "expiredUser",
-			Role:     "customer",
-			TenantID: "tenantXYZ",
-			Email:    "expired@example.com",
+			UserID: "expiredUser",
+			Role:   "customer",
+			Email:  "expired@example.com",
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(expiresAt),
 				IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
@@ -245,10 +240,9 @@ func TestJWT_ExtraCoverage(t *testing.T) {
 
 		expiresAt := time.Now().Add(-8 * 24 * time.Hour)
 		oldClaims := Claims{
-			UserID:   "oldUser",
-			Role:     "customer",
-			TenantID: "tenantXYZ",
-			Email:    "old@example.com",
+			UserID: "oldUser",
+			Role:   "customer",
+			Email:  "old@example.com",
 			RegisteredClaims: jwt.RegisteredClaims{
 				ExpiresAt: jwt.NewNumericDate(expiresAt),
 				IssuedAt:  jwt.NewNumericDate(time.Now().Add(-9 * 24 * time.Hour)),
@@ -276,7 +270,7 @@ func TestJWT_ExtraCoverage(t *testing.T) {
 	// 6. Redis denylist fail-closed behavior when Redis is unreachable
 	t.Run("RedisFailClosed", func(t *testing.T) {
 		// Generate valid token
-		tokenStr, err := GenerateToken("user123", "owner", "tenant456", "user@example.com")
+		tokenStr, err := GenerateToken("user123", "owner", "user@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token: %v", err)
 		}
@@ -345,13 +339,13 @@ func TestRevokeAllUserTokens(t *testing.T) {
 		userID2 := "user-revoke-2"
 
 		// Generate token1 for user1 BEFORE revocation
-		token1, err := GenerateToken(userID1, "customer", "tenant-1", "user1@example.com")
+		token1, err := GenerateToken(userID1, "customer", "user1@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token1: %v", err)
 		}
 
 		// Generate token3 for user2 BEFORE revocation
-		token3, err := GenerateToken(userID2, "customer", "tenant-1", "user2@example.com")
+		token3, err := GenerateToken(userID2, "customer", "user2@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token3: %v", err)
 		}
@@ -371,7 +365,7 @@ func TestRevokeAllUserTokens(t *testing.T) {
 		}
 
 		// Generate token2 for user1 AFTER revocation
-		token2, err := GenerateToken(userID1, "customer", "tenant-1", "user1@example.com")
+		token2, err := GenerateToken(userID1, "customer", "user1@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token2: %v", err)
 		}
@@ -403,7 +397,7 @@ func TestRevokeAllUserTokens(t *testing.T) {
 
 	// 3. Fail-closed behavior on Redis lookup failure
 	t.Run("RedisFailClosedOnUserCheck", func(t *testing.T) {
-		tokenStr, err := GenerateToken("user-fail-closed", "customer", "tenant-1", "fail@example.com")
+		tokenStr, err := GenerateToken("user-fail-closed", "customer", "fail@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token: %v", err)
 		}
@@ -506,7 +500,7 @@ func TestValidateToken_GracefulDegradation(t *testing.T) {
 		defer SetRedisClient(nil)
 		ResetHealthTracker()
 
-		tokenStr, err := GenerateToken("user-blip-1", "customer", "tenant-1", "blip@example.com")
+		tokenStr, err := GenerateToken("user-blip-1", "customer", "blip@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token: %v", err)
 		}
@@ -551,7 +545,7 @@ func TestValidateToken_GracefulDegradation(t *testing.T) {
 		defer SetRedisClient(nil)
 		ResetHealthTracker()
 
-		tokenStr, err := GenerateToken("user-outage-1", "customer", "tenant-1", "outage@example.com")
+		tokenStr, err := GenerateToken("user-outage-1", "customer", "outage@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token: %v", err)
 		}
@@ -611,7 +605,7 @@ func TestValidateToken_GracefulDegradation(t *testing.T) {
 		defer SetRedisClient(nil)
 		ResetHealthTracker()
 
-		tokenStr, err := GenerateToken("user-blip-usercheck", "customer", "tenant-1", "usercheck@example.com")
+		tokenStr, err := GenerateToken("user-blip-usercheck", "customer", "usercheck@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token: %v", err)
 		}
@@ -656,7 +650,7 @@ func TestAMRClaimRoundTrip(t *testing.T) {
 	Init("super-secret-key-that-is-at-least-thirty-two-bytes-long")
 
 	// 1. Password-only token
-	tokPwd, err := GenerateToken("user-pwd", "owner", "tenant1", "pwd@test.com", []string{"pwd"})
+	tokPwd, err := GenerateToken("user-pwd", "owner", "pwd@test.com", []string{"pwd"})
 	if err != nil {
 		t.Fatalf("failed to generate pwd token: %v", err)
 	}
@@ -669,7 +663,7 @@ func TestAMRClaimRoundTrip(t *testing.T) {
 	}
 
 	// 2. Password + OTP token
-	tokMfa, err := GenerateToken("user-mfa", "owner", "tenant1", "mfa@test.com", []string{"pwd", "otp"})
+	tokMfa, err := GenerateToken("user-mfa", "owner", "mfa@test.com", []string{"pwd", "otp"})
 	if err != nil {
 		t.Fatalf("failed to generate mfa token: %v", err)
 	}
@@ -682,7 +676,7 @@ func TestAMRClaimRoundTrip(t *testing.T) {
 	}
 
 	// 3. GenerateTokenWithAMR helper
-	tokWithAMR, err := GenerateTokenWithAMR("user-helper", "user", "tenant2", "helper@test.com", []string{"pwd", "otp"})
+	tokWithAMR, err := GenerateTokenWithAMR("user-helper", "user", "helper@test.com", []string{"pwd", "otp"})
 	if err != nil {
 		t.Fatalf("failed to generate token with AMR helper: %v", err)
 	}
@@ -695,7 +689,7 @@ func TestAMRClaimRoundTrip(t *testing.T) {
 	}
 
 	// 4. Backward compatibility (no amr parameter passed)
-	tokLegacy, err := GenerateToken("user-legacy", "owner", "tenant1", "legacy@test.com")
+	tokLegacy, err := GenerateToken("user-legacy", "owner", "legacy@test.com")
 	if err != nil {
 		t.Fatalf("failed to generate legacy token: %v", err)
 	}
