@@ -17,7 +17,7 @@ amended (2026-09-29) per ADR-0007. No domain logic beyond
 auth/notifications/academy mocks.
 
 ## Open
-Core academy service (providers rebind to AcademyRepository). Deploy repo.
+Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
 RUNBOOK, DEPLOYMENT, changelog (ADRs now exist).
 
 ## Decisions
@@ -31,4 +31,4 @@ Product decisions recorded in `docs/adr/`:
 - [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md) (Status Proposed; revised: catalog tree, PDFs, admin tokens)
 
 ## Next task
-None queued — confirm direction.
+Start core academy work from `docs/core-service/SPEC.md`, beginning with Phase 0. Resolve the listed ADR-0007 corrections and prerequisites before Phase 1.
