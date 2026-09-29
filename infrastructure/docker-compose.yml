@@ -21,7 +21,7 @@ services:
         soft: 64000
         hard: 64000
     ports:
-      - "127.0.0.1:27017:27017"
+      - "127.0.0.1:${MONGO_HOST_PORT:-27017}:27017"
     volumes:
       - mongo_data:/data/db
     environment:
@@ -42,7 +42,7 @@ services:
     container_name: wael-redis
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6380:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - redis_data:/data
     environment:
@@ -65,7 +65,7 @@ services:
     container_name: wael-api-gateway
     restart: unless-stopped
     ports:
-      - "${API_GATEWAY_PORT}:${API_GATEWAY_PORT}"
+      - "${GATEWAY_HOST_PORT:-8080}:${API_GATEWAY_PORT}"
     volumes:
       - ../services/api-gateway:/app
       - ./certs/ca.crt:/app/certs/ca.crt:ro
