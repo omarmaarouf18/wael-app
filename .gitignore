@@ -29,6 +29,7 @@ coverage.html
 
 # IDE and editor files
 .idea/
+*.iml
 .vscode/
 *.swp
 *.swo
