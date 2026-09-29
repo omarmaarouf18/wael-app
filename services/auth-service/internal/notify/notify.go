@@ -32,7 +32,7 @@ func InitClient(certFile, keyFile, caFile string) error {
 	if err != nil {
 		return fmt.Errorf("notify: load key pair: %w", err)
 	}
-	caPEM, err := os.ReadFile(caFile)
+	caPEM, err := os.ReadFile(caFile) // #nosec G304 //nolint:gosec -- path comes from bootstrap env config, not user input
 	if err != nil {
 		return fmt.Errorf("notify: read CA: %w", err)
 	}
