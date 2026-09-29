@@ -7,11 +7,53 @@ package notify
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 )
+
+var (
+	mu     sync.RWMutex
+	client = http.DefaultClient
+)
+
+// InitClient configures the push client with mTLS certs for notification-service.
+// Skip it in localhost HTTP dev (empty paths keep http.DefaultClient).
+func InitClient(certFile, keyFile, caFile string) error {
+	if certFile == "" || keyFile == "" || caFile == "" {
+		return nil
+	}
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return fmt.Errorf("notify: load key pair: %w", err)
+	}
+	caPEM, err := os.ReadFile(caFile)
+	if err != nil {
+		return fmt.Errorf("notify: read CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return fmt.Errorf("notify: bad CA PEM")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	client = &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{cert}, RootCAs: pool, MinVersion: tls.VersionTLS12}},
+	}
+	return nil
+}
+
+func httpClient() *http.Client {
+	mu.RLock()
+	defer mu.RUnlock()
+	return client
+}
 
 // Push posts one notification; empty baseURL is a no-op success.
 func Push(ctx context.Context, baseURL, internalToken, userID, title, titleAr, body, bodyAr, ntype, route string) error {
@@ -30,7 +72,7 @@ func Push(ctx context.Context, baseURL, internalToken, userID, title, titleAr, b
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Internal-Token", internalToken)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("notify: push: %w", err)
 	}

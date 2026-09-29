@@ -13,6 +13,7 @@ import (
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/config"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/handlers"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/mailer"
+	"github.com/omarmaarouf18/wael-app/auth-service/internal/notify"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/otp"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
@@ -28,6 +29,9 @@ func main() {
 		log.Fatalf("[AUTH] %v", err)
 	}
 	jwtutil.Init(cfg.JWTSecret)
+	if err := notify.InitClient(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath); err != nil {
+		log.Fatalf("[AUTH] notify mTLS client: %v", err)
+	}
 
 	ctx := context.Background()
 	var st store.Store = store.NewMemoryStore()
