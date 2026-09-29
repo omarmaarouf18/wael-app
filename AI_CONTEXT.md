@@ -24,7 +24,7 @@ Product decisions recorded in `docs/adr/`:
 - [ADR-0004: No Limits on Video Access](docs/adr/0004-unlimited-video-access.md)
 - [ADR-0005: Study Notes (Mozakkerat) Delivered Inside the App](docs/adr/0005-in-app-study-notes.md)
 - [ADR-0006: Support Only Through a WhatsApp Number](docs/adr/0006-whatsapp-only-support.md)
-- [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md)
+- [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md) (revised: manual payment, suspension, broadcast design)
 
 ## Next task
 None queued — confirm direction.
