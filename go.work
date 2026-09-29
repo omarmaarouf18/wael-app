@@ -1,0 +1,13 @@
+go 1.26
+
+toolchain go1.26.6
+
+use (
+	./services/api-gateway
+	./services/auth-service
+	./services/notification-service
+	./shared/infra
+	./tests/contracts
+	./tests/e2e
+	./tools/docgen
+)

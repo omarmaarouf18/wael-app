@@ -1,0 +1,33 @@
+# .air.toml — Live-reload configuration for air
+# https://github.com/air-verse/air
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  bin = "./tmp/main"
+  cmd = "go build -o ./tmp/main ./cmd/main.go"
+  delay = 1000
+  exclude_dir = ["tmp", "vendor", ".git"]
+  exclude_file = []
+  exclude_regex = ["_test.go"]
+  exclude_unchanged = false
+  follow_symlink = false
+  include_ext = ["go", "toml", "yaml", "yml"]
+  include_dir = []
+  kill_delay = "0s"
+  send_interrupt = false
+  stop_on_error = true
+
+[color]
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true

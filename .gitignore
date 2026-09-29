@@ -1,0 +1,35 @@
+.build/
+*.exe
+*.bin
+/cmd
+.env
+.env.local
+.env.staging
+.env.prod
+**/tmp/
+docs/local/
+
+# Generated certificates (never commit real certs)
+infrastructure/certs/*.key
+infrastructure/certs/*.crt
+infrastructure/certs/*.srl
+
+# Flutter Client Ignores
+/frontend/.dart_tool/
+/frontend/.flutter-plugins-dependencies
+/frontend/.pub-cache/
+/frontend/.pub/
+/frontend/build/
+/frontend/android/app/debug/
+/frontend/android/app/profile/
+/frontend/android/app/release/
+
+# Service certificates and keys
+services/*/certs/
+
+# Temp/debug files
+.last_push_verified
+scratch/
+tools/docgen/docgen
+__pycache__/
+*.py[cod]
