@@ -200,7 +200,7 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
-	go notify.Welcome(context.Background(), s.NotifyURL, s.NotifyToken, u.ID)
+	go notify.Welcome(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": refresh})
 }
 
@@ -394,7 +394,7 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
-	go notify.PasswordChanged(context.Background(), s.NotifyURL, s.NotifyToken, u.ID)
+	go notify.PasswordChanged(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "password updated"})
 }
 
