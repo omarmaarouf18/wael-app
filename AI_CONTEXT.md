@@ -9,7 +9,8 @@ auth, local compose (mongo:7, redis:7, mTLS), pre-push hook, CI. Branch:
 
 ## Done
 Skeleton, shared/infra, gateway+auth, notifications, Flutter wiring+rename,
-compose+certs, hooks+Makefile, CI (publish disabled). No domain logic beyond
+compose+certs, hooks+Makefile, CI (publish disabled). Refresh tokens consume
+atomically (single redemption). No domain logic beyond
 auth/notifications/academy mocks.
 
 ## Open

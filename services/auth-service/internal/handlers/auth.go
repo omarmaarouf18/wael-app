@@ -273,12 +273,12 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	key := "refresh:" + otp.HashToken(req.RefreshToken)
-	userID, err := s.Codes.Get(ctx, key)
+	// Atomic take: exactly one concurrent redeemer wins; the rest get "".
+	userID, err := s.Codes.Take(ctx, key)
 	if err != nil || userID == "" {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
 		return
 	}
-	_ = s.Codes.Delete(ctx, key)
 	u, err := s.Store.FindByID(ctx, userID)
 	if err != nil || u == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)

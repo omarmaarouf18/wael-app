@@ -22,6 +22,9 @@ type Store interface {
 	Consume(ctx context.Context, key, hash string) (bool, error)
 	Get(ctx context.Context, key string) (string, error)
 	Delete(ctx context.Context, key string) error
+	// Take atomically returns the stored value and deletes the key,
+	// so concurrent takers race for exactly one winner. Empty when absent.
+	Take(ctx context.Context, key string) (string, error)
 }
 
 // HashToken returns the hex SHA-256 of s for at-rest comparison.
@@ -123,6 +126,19 @@ func (s *MemoryStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// Take atomically returns the value and deletes the key under one lock.
+func (s *MemoryStore) Take(_ context.Context, key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.data[key]
+	if !ok || time.Now().After(e.expiresAt) {
+		delete(s.data, key)
+		return "", nil
+	}
+	delete(s.data, key)
+	return e.hash, nil
+}
+
 const consumeScript = `
 local v = redis.call('GET', KEYS[1])
 if not v then return 0 end
@@ -173,4 +189,14 @@ func (s *RedisStore) Get(ctx context.Context, key string) (string, error) {
 // Delete removes key.
 func (s *RedisStore) Delete(ctx context.Context, key string) error {
 	return s.client.Del(ctx, s.fullKey(key)).Err()
+}
+
+// Take atomically returns the value and deletes the key via GETDEL
+// (server-side atomic; supported since Redis 6.2, image is redis:7).
+func (s *RedisStore) Take(ctx context.Context, key string) (string, error) {
+	v, err := s.client.GetDel(ctx, s.fullKey(key)).Result()
+	if err == redis.Nil {
+		return "", nil
+	}
+	return v, err
 }
