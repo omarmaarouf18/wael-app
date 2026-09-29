@@ -1,0 +1,170 @@
+#!/bin/bash
+# wael-app pre-push gate: gofmt, Go version drift, build/vet/test per
+# module, gosec, govulncheck, contract tests, Flutter gates.
+set -e
+echo "== pre-push gate: running checks =="
+
+unset GIT_DIR GIT_WORK_TREE
+
+# 1. Go formatting
+UNFORMATTED=$(gofmt -l services shared tests tools 2>&1)
+if [ -n "$UNFORMATTED" ]; then
+  echo "BLOCKED: gofmt found unformatted files:"
+  echo "$UNFORMATTED"
+  exit 1
+fi
+
+# 2. Dart formatting (only when real Dart code exists)
+if [ -d "frontend/lib" ]; then
+  echo "-- checking frontend Dart formatting --"
+  UNFORMATTED_DART=$(cd frontend && dart format --output=none --set-exit-if-changed lib/ test/ 2>&1) || {
+    echo "BLOCKED: dart format found unformatted files:"
+    echo "$UNFORMATTED_DART"
+    exit 1
+  }
+fi
+
+# 3. Markdown commit SHAs must resolve to reachable commits
+FAILED_SHA=0
+for file in $(find . -type f -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*"); do
+  for sha in $(grep -oE "[0-9a-f]{40}" "$file" || true); do
+    if ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
+      echo "BLOCKED: fabricated/non-existent SHA $sha in $file"
+      FAILED_SHA=1
+    elif ! git merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+      echo "BLOCKED: SHA $sha in $file is not reachable from current branch history"
+      FAILED_SHA=1
+    fi
+  done
+done
+if [ "$FAILED_SHA" -eq 1 ]; then
+  exit 1
+fi
+
+# 4. Go version drift guard (single pinned version everywhere)
+echo "-- checking Go version consistency --"
+CANONICAL_GO_VERSION="1.26"
+CANONICAL_GO_PATCH_VERSION="1.26.6"
+CANONICAL_GO_TOOLCHAIN="go1.26.6"
+DRIFT_FAILED=0
+
+for f in go.work services/*/go.mod shared/infra/go.mod tools/*/go.mod tests/*/go.mod; do
+  if [ -f "$f" ]; then
+    v=$(grep -E '^go [0-9]+\.[0-9]+' "$f" | head -n 1 | awk '{print $2}')
+    if [ "$v" != "$CANONICAL_GO_VERSION" ]; then
+      echo "BLOCKED: Go language version drift in $f: expected $CANONICAL_GO_VERSION, found '${v:-NONE}'"
+      DRIFT_FAILED=1
+    fi
+    tc=$(grep -E '^toolchain go[0-9]+\.[0-9]+\.[0-9]+' "$f" | head -n 1 | awk '{print $2}')
+    if [ "$tc" != "$CANONICAL_GO_TOOLCHAIN" ]; then
+      echo "BLOCKED: Go toolchain version drift in $f: expected $CANONICAL_GO_TOOLCHAIN, found '${tc:-NONE}'"
+      DRIFT_FAILED=1
+    fi
+  fi
+done
+
+if [ -f ".github/workflows/ci.yml" ]; then
+  for v in $(grep -oE "go-version: '[0-9]+\.[0-9]+\.[0-9]+'" .github/workflows/ci.yml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+"); do
+    if [ "$v" != "$CANONICAL_GO_PATCH_VERSION" ]; then
+      echo "BLOCKED: Go version drift in .github/workflows/ci.yml: expected $CANONICAL_GO_PATCH_VERSION, found '$v'"
+      DRIFT_FAILED=1
+    fi
+  done
+fi
+
+for d in services/*/Dockerfile; do
+  if [ -f "$d" ]; then
+    for v in $(grep -oE "FROM golang:[0-9]+\.[0-9]+\.[0-9]+" "$d" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+"); do
+      if [ "$v" != "$CANONICAL_GO_PATCH_VERSION" ]; then
+        echo "BLOCKED: Go version drift in $d: expected $CANONICAL_GO_PATCH_VERSION, found '$v'"
+        DRIFT_FAILED=1
+      fi
+    done
+  fi
+done
+
+if [ "$DRIFT_FAILED" -eq 1 ]; then
+  exit 1
+fi
+
+# 5. Build/vet/test per module + security scans on real-code modules
+GOSEC_BIN=$(which gosec 2>/dev/null || ls ~/go/bin/gosec 2>/dev/null || echo "")
+if [ -z "$GOSEC_BIN" ] && [ -d "$HOME/go/bin" ]; then
+  GOSEC_BIN="$HOME/go/bin/gosec"
+fi
+
+GOVULNCHECK_BIN=$(which govulncheck 2>/dev/null || ls ~/go/bin/govulncheck 2>/dev/null || echo "")
+if [ -z "$GOVULNCHECK_BIN" ] && [ -d "$HOME/go/bin" ]; then
+  GOVULNCHECK_BIN="$HOME/go/bin/govulncheck"
+fi
+
+for mod in services/api-gateway services/auth-service services/notification-service shared/infra tools/docgen tests/contracts tests/e2e; do
+  echo "-- checking $mod --"
+  (cd "$mod" && go build ./... && go vet ./... && go test ./... -count=1) || {
+    echo "BLOCKED: $mod failed build/vet/test"
+    exit 1
+  }
+done
+
+for mod in services/api-gateway services/auth-service services/notification-service shared/infra; do
+  if [ -z "$GOVULNCHECK_BIN" ] || [ ! -x "$GOVULNCHECK_BIN" ]; then
+    echo "govulncheck not found, installing..."
+    go install golang.org/x/vuln/cmd/govulncheck@latest 2>/dev/null || true
+    GOVULNCHECK_BIN="$HOME/go/bin/govulncheck"
+  fi
+  if [ -x "$GOVULNCHECK_BIN" ]; then
+    echo "-- running govulncheck on $mod --"
+    VULN_OUT=$( (cd "$mod" && "$GOVULNCHECK_BIN" -format json ./...) || true)
+
+    STDLIB_VULNS=$(echo "$VULN_OUT" | jq -r 'select(.finding != null and (.finding.trace | any(.package != null and (.package | startswith("github.com/omarmaarouf18/wael-app/")))) and .finding.trace[0].module == "stdlib") | .finding.osv' | sort -u)
+    if [ -n "$STDLIB_VULNS" ]; then
+      for id in $STDLIB_VULNS; do
+        echo "WARNING: SKIPPED ($id) (stdlib vulnerability) — verify local Go patch version"
+      done
+    fi
+
+    NON_STDLIB_VULNS=$(echo "$VULN_OUT" | jq -c 'select(.finding != null and (.finding.trace | any(.package != null and (.package | startswith("github.com/omarmaarouf18/wael-app/")))) and .finding.trace[0].module != "stdlib")')
+    if [ -n "$NON_STDLIB_VULNS" ]; then
+      echo "BLOCKED: $mod failed govulncheck security scan with third-party vulnerabilities:"
+      echo "$NON_STDLIB_VULNS" | jq .
+      exit 1
+    fi
+  else
+    echo "BLOCKED: govulncheck is required but could not be installed/found. Install via: go install golang.org/x/vuln/cmd/govulncheck@latest"
+    exit 1
+  fi
+
+  if [ -z "$GOSEC_BIN" ] || [ ! -x "$GOSEC_BIN" ]; then
+    echo "gosec not found, installing..."
+    go install github.com/securego/gosec/v2/cmd/gosec@latest 2>/dev/null || true
+    GOSEC_BIN="$HOME/go/bin/gosec"
+  fi
+  if [ -x "$GOSEC_BIN" ]; then
+    echo "-- running gosec on $mod --"
+    (cd "$mod" && "$GOSEC_BIN" ./...) || {
+      echo "BLOCKED: $mod failed gosec security scan"
+      exit 1
+    }
+  else
+    echo "BLOCKED: gosec is required but could not be installed/found. Install via: go install github.com/securego/gosec/v2/cmd/gosec@latest"
+    exit 1
+  fi
+done
+
+# 6. Contract tests
+echo "-- running contract tests (tests/contracts) --"
+(cd tests/contracts && go test -v -count=1 ./...) || {
+  echo "BLOCKED: tests/contracts failed"
+  exit 1
+}
+
+# 7. Flutter analyze & test
+if [ -d "frontend/lib" ]; then
+  echo "-- checking frontend Flutter analyze/test --"
+  (cd frontend && flutter analyze && flutter test) || {
+    echo "BLOCKED: frontend failed analyze or test checks"
+    exit 1
+  }
+fi
+
+echo "== pre-push gate: all checks passed =="

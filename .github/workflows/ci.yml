@@ -1,0 +1,175 @@
+name: CI Gate
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-formatting:
+    name: Lint & Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache: false
+
+      - name: Verify Go Formatting
+        run: |
+          if [ -n "$(gofmt -l services shared tests tools)" ]; then
+            echo "Unformatted files:"
+            gofmt -l services shared tests tools
+            exit 1
+          fi
+
+      - name: Verify Go Version Consistency (Drift Guard)
+        run: |
+          CANONICAL_GO_VERSION="1.26"
+          CANONICAL_GO_PATCH_VERSION="1.26.6"
+          CANONICAL_GO_TOOLCHAIN="go1.26.6"
+          DRIFT_FAILED=0
+          for f in go.work services/*/go.mod shared/infra/go.mod tools/*/go.mod tests/*/go.mod; do
+            if [ -f "$f" ]; then
+              v=$(grep -E '^go [0-9]+\.[0-9]+' "$f" | head -n 1 | awk '{print $2}')
+              if [ "$v" != "$CANONICAL_GO_VERSION" ]; then
+                echo "BLOCKED: drift in $f: expected $CANONICAL_GO_VERSION, found '${v:-NONE}'"
+                DRIFT_FAILED=1
+              fi
+              tc=$(grep -E '^toolchain go[0-9]+\.[0-9]+\.[0-9]+' "$f" | head -n 1 | awk '{print $2}')
+              if [ "$tc" != "$CANONICAL_GO_TOOLCHAIN" ]; then
+                echo "BLOCKED: toolchain drift in $f: expected $CANONICAL_GO_TOOLCHAIN, found '${tc:-NONE}'"
+                DRIFT_FAILED=1
+              fi
+            fi
+          done
+          for v in $(grep -oE "go-version: '[0-9]+\.[0-9]+\.[0-9]+'" .github/workflows/ci.yml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+"); do
+            if [ "$v" != "$CANONICAL_GO_PATCH_VERSION" ]; then
+              echo "BLOCKED: drift in ci.yml: expected $CANONICAL_GO_PATCH_VERSION, found '$v'"
+              DRIFT_FAILED=1
+            fi
+          done
+          for d in services/*/Dockerfile; do
+            if [ -f "$d" ]; then
+              for v in $(grep -oE "FROM golang:[0-9]+\.[0-9]+\.[0-9]+" "$d" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+"); do
+                if [ "$v" != "$CANONICAL_GO_PATCH_VERSION" ]; then
+                  echo "BLOCKED: drift in $d: expected $CANONICAL_GO_PATCH_VERSION, found '$v'"
+                  DRIFT_FAILED=1
+                fi
+              done
+            fi
+          done
+          if [ "$DRIFT_FAILED" -eq 1 ]; then
+            exit 1
+          fi
+
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - { path: services/api-gateway, name: api-gateway }
+          - { path: services/auth-service, name: auth-service }
+          - { path: services/notification-service, name: notification-service }
+          - { path: shared/infra, name: shared-infra }
+          - { path: tools/docgen, name: docgen }
+          - { path: tests/contracts, name: contracts }
+          - { path: tests/e2e, name: e2e }
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache: false
+
+      - name: Build
+        working-directory: ${{ matrix.service.path }}
+        run: go build ./...
+
+      - name: Vet
+        working-directory: ${{ matrix.service.path }}
+        run: go vet ./...
+
+      - name: Test
+        working-directory: ${{ matrix.service.path }}
+        run: go test ./... -count=1
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - { path: services/api-gateway, name: api-gateway }
+          - { path: services/auth-service, name: auth-service }
+          - { path: services/notification-service, name: notification-service }
+          - { path: shared/infra, name: shared-infra }
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache: false
+
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          work-dir: ${{ matrix.service.path }}
+          cache: false
+
+      - name: Run gosec
+        working-directory: ${{ matrix.service.path }}
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec ./...
+
+  flutter-test:
+    name: Flutter Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.44.6'
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: flutter pub get
+
+      - name: Verify Formatting
+        working-directory: frontend
+        run: dart format --output=none --set-exit-if-changed lib/ test/
+
+      - name: Flutter Analyze
+        working-directory: frontend
+        run: flutter analyze
+
+      - name: Flutter Test
+        working-directory: frontend
+        run: flutter test
