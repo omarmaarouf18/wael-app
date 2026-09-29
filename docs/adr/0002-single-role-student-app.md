@@ -1,6 +1,7 @@
 # ADR-0002: Single-Role Student App With a Separate Web Admin Panel
 
 - **Status**: Accepted
+- **Amended**: 2026-09-29
 - **Date**: 2026-09-29
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
@@ -56,3 +57,10 @@ needs an administrative surface, and the question is where it lives.
   yet (no CLI, no panel); confirm what creates the first admin identity
   before the web panel ships.
 - As of this ADR, no code exists for the web admin panel.
+
+## Amendment (2026-09-29)
+
+The first-admin question is answered in ADR-0007 (Proposed): the admin
+identity is a named token issued only by a server-side CLI tool, not an
+account, and the panel never mints it. Token mechanics are deferred to a
+future ADR. No code exists for the panel yet.

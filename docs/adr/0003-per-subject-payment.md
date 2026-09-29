@@ -1,6 +1,7 @@
 # ADR-0003: Payment Per Subject (Materia)
 
 - **Status**: Accepted
+- **Amended**: 2026-09-29
 - **Date**: 2026-09-29
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
@@ -49,3 +50,11 @@ ADR, no code exists for entitlements, pricing, or payment in the repo.
 
 - App store rules for selling digital content, if the app is distributed
   through stores (in-app purchase requirements and their cut).
+
+## Amendment (2026-09-29)
+
+Answered in ADR-0007 (Proposed): a subject contains videos (title,
+description) and PDFs, and its price is set by the admin. The payment
+provider question is deferred: the payment flow will be specified
+separately and ADR-0007 defines only the boundary (an admin-accepted
+request grants ownership). Refund policy remains open.

@@ -1,6 +1,7 @@
 # ADR-0005: Study Notes (Mozakkerat) Delivered Inside the App
 
 - **Status**: Accepted
+- **Amended**: 2026-09-29
 - **Date**: 2026-09-29
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
@@ -48,3 +49,13 @@ exists for notes storage, delivery, or rendering.
 - `shared/infra/storage` was dropped from this repo; confirm it is restored
   (or an equivalent built) before the content service ships, since note
   content needs server-side storage.
+
+## Amendment (2026-09-29)
+
+Study notes are PDF files attached to a subject. Owning the subject makes
+them available in the app automatically, and every download requires
+ownership. This amends decision 1: the app is the only delivery channel,
+and a copy saved to the student's device from inside the app is
+permitted; distribution outside the app by the platform (email, public
+links) remains excluded. Traceability of leaked copies is an open
+question in ADR-0007 (Proposed).

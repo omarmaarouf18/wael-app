@@ -1,6 +1,7 @@
 # ADR-0004: No Limits on Video Access
 
 - **Status**: Accepted
+- **Amended**: 2026-09-29
 - **Date**: 2026-09-29
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
@@ -43,3 +44,13 @@ ADR, no code exists for entitlements or playback gating.
 - **View-count caps**: rejected; punishes rewatching, which is core to study.
 - **Expiry windows**: rejected; converts a purchase into a rental.
 - **Device caps**: rejected; penalizes students with shared or replaced devices.
+
+## Amendment (2026-09-29)
+
+Administrative suspension or deletion of an account, decided by an admin
+for abuse, content leakage, or suspicious behavior, is the sole exception
+to decisions 1-3 and to the sentence 'Anything that caps, expires, or
+locks access would reverse it.' It is never automatic and suspension is
+reversible. Abuse detection stays observational: the platform may surface
+signals to an admin but does not lock access itself. No view-count,
+expiry, or device cap is introduced.
