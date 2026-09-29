@@ -6,13 +6,37 @@
 .env.local
 .env.staging
 .env.prod
+.env.*
+!.env.example
 **/tmp/
 docs/local/
 
-# Generated certificates (never commit real certs)
+# Generated certificates and keys (never commit real secrets)
 infrastructure/certs/*.key
 infrastructure/certs/*.crt
 infrastructure/certs/*.srl
+*.pem
+
+# Go build/test output
+build/
+dist/
+*.o
+*.a
+*.so
+*.test
+coverage.out
+coverage.html
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Flutter Client Ignores
 /frontend/.dart_tool/
