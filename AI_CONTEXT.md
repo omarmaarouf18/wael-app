@@ -12,7 +12,7 @@ Skeleton, shared/infra, gateway+auth, notifications, Flutter wiring+rename,
 compose+certs, hooks+Makefile, CI (publish disabled). Refresh tokens consume
 atomically (single redemption); signup takes no client role (always user).
 Gateway chain covered by env-gated tests/e2e. gosec pinned v2.29.0 in
-hook and CI with drift check. No domain logic beyond
+hook and CI with drift check. README matches the repo. No domain logic beyond
 auth/notifications/academy mocks.
 
 ## Open
