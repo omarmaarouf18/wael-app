@@ -181,11 +181,12 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://localhost:${NOTIFICATION_SERVICE_PORT}/health || wget -q -O /dev/null http://localhost:${NOTIFICATION_SERVICE_PORT}/health"]
+      # notification-service enforces mTLS (client cert required), so the probe presents one.
+      test: ["CMD-SHELL", "curl -sf --cert /app/certs/notification-service.crt --key /app/certs/notification-service.key --cacert /app/certs/ca.crt https://localhost:${NOTIFICATION_SERVICE_PORT}/health"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 60s
+      start_period: 90s
     networks:
       - wael-net
 
