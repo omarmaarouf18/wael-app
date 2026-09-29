@@ -5,7 +5,7 @@
 # ---- Development Stage ---------------------------------------------------
 FROM golang:1.26.6-alpine AS dev
 
-RUN apk add --no-cache git \
+RUN apk add --no-cache git curl \
     && go install github.com/air-verse/air@v1.52.2
 
 WORKDIR /app

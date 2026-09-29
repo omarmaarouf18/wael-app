@@ -140,11 +140,12 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://localhost:${AUTH_SERVICE_PORT}/health || wget -q -O /dev/null http://localhost:${AUTH_SERVICE_PORT}/health"]
+      # auth-service enforces mTLS (client cert required), so the probe presents one.
+      test: ["CMD-SHELL", "curl -sf --cert /app/certs/auth-service.crt --key /app/certs/auth-service.key --cacert /app/certs/ca.crt https://localhost:${AUTH_SERVICE_PORT}/health"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 60s
+      start_period: 90s
     networks:
       - wael-net
 
