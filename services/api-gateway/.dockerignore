@@ -1,0 +1,11 @@
+# Build context excludes: git metadata, local env, certs, reload workspace, docs/tests.
+.git/
+.gitignore
+.env
+.env.*
+!.env.example
+**/certs/
+tmp/
+*.md
+docs/
+*_test.go

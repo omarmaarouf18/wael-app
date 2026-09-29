@@ -1,0 +1,198 @@
+# =============================================================================
+# wael-app — Local Docker Compose stack
+# =============================================================================
+# No public domain yet: localhost-only, no reverse proxy. The gateway is the
+# only published port; backends are reachable only inside wael-net.
+#
+# First time:
+#   ./infrastructure/certs/generate-certs.sh   # local mTLS certs (untracked)
+#   cp infrastructure/.env.example infrastructure/.env.local  # then fill secrets
+# Run:
+#   docker compose --env-file infrastructure/.env.local -f infrastructure/docker-compose.yml up --build -d
+# =============================================================================
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: wael-mongo
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh -u \"$$MONGO_INITDB_ROOT_USERNAME\" -p \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval \"db.adminCommand('ping')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - wael-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: wael-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis_data:/data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - wael-net
+
+  api-gateway:
+    build:
+      context: ../services/api-gateway
+      dockerfile: Dockerfile
+      target: dev
+    container_name: wael-api-gateway
+    restart: unless-stopped
+    ports:
+      - "${API_GATEWAY_PORT}:${API_GATEWAY_PORT}"
+    volumes:
+      - ../services/api-gateway:/app
+      - ./certs/ca.crt:/app/certs/ca.crt:ro
+      - ./certs/api-gateway.crt:/app/certs/api-gateway.crt:ro
+      - ./certs/api-gateway.key:/app/certs/api-gateway.key:ro
+      - ./certs/api-gateway-external.crt:/app/certs/api-gateway-external.crt:ro
+      - ./certs/api-gateway-external.key:/app/certs/api-gateway-external.key:ro
+      - ../shared/infra:/shared/infra:ro
+    environment:
+      PORT: ${API_GATEWAY_PORT}
+      REDIS_URI: ${REDIS_URI}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
+      APP_ENV: ${APP_ENV}
+      APP_DOMAIN: ${APP_DOMAIN}
+      GATEWAY_SECRET: ${GATEWAY_SECRET}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      TLS_CERT_PATH: /app/certs/api-gateway.crt
+      TLS_KEY_PATH: /app/certs/api-gateway.key
+      TLS_CA_PATH: /app/certs/ca.crt
+      EXTERNAL_TLS_CERT_PATH: /app/certs/api-gateway-external.crt
+      EXTERNAL_TLS_KEY_PATH: /app/certs/api-gateway-external.key
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://localhost:${API_GATEWAY_PORT}/health || wget -q -O /dev/null http://localhost:${API_GATEWAY_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks:
+      - wael-net
+
+  auth-service:
+    build:
+      context: ../services/auth-service
+      dockerfile: Dockerfile
+      target: dev
+    container_name: wael-auth-service
+    restart: unless-stopped
+    expose:
+      - "${AUTH_SERVICE_PORT}"
+    volumes:
+      - ../services/auth-service:/app
+      - ./certs/ca.crt:/app/certs/ca.crt:ro
+      - ./certs/auth-service.crt:/app/certs/auth-service.crt:ro
+      - ./certs/auth-service.key:/app/certs/auth-service.key:ro
+      - ../shared/infra:/shared/infra:ro
+    environment:
+      PORT: ${AUTH_SERVICE_PORT}
+      MONGO_URI: ${MONGO_URI}
+      AUTH_MONGO_DATABASE: ${AUTH_MONGO_DATABASE}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+      REDIS_URI: ${REDIS_URI}
+      APP_ENV: ${APP_ENV}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_SECRET: ${GATEWAY_SECRET}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      TLS_CERT_PATH: /app/certs/auth-service.crt
+      TLS_KEY_PATH: /app/certs/auth-service.key
+      TLS_CA_PATH: /app/certs/ca.crt
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://localhost:${AUTH_SERVICE_PORT}/health || wget -q -O /dev/null http://localhost:${AUTH_SERVICE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks:
+      - wael-net
+
+  notification-service:
+    build:
+      context: ../services/notification-service
+      dockerfile: Dockerfile
+      target: dev
+    container_name: wael-notification-service
+    restart: unless-stopped
+    expose:
+      - "${NOTIFICATION_SERVICE_PORT}"
+    volumes:
+      - ../services/notification-service:/app
+      - ./certs/ca.crt:/app/certs/ca.crt:ro
+      - ./certs/notification-service.crt:/app/certs/notification-service.crt:ro
+      - ./certs/notification-service.key:/app/certs/notification-service.key:ro
+      - ../shared/infra:/shared/infra:ro
+    environment:
+      PORT: ${NOTIFICATION_SERVICE_PORT}
+      MONGO_URI: ${MONGO_URI}
+      REDIS_URI: ${REDIS_URI}
+      APP_ENV: ${APP_ENV}
+      JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      TLS_CERT_PATH: /app/certs/notification-service.crt
+      TLS_KEY_PATH: /app/certs/notification-service.key
+      TLS_CA_PATH: /app/certs/ca.crt
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://localhost:${NOTIFICATION_SERVICE_PORT}/health || wget -q -O /dev/null http://localhost:${NOTIFICATION_SERVICE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks:
+      - wael-net
+
+volumes:
+  mongo_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  wael-net:
+    driver: bridge
