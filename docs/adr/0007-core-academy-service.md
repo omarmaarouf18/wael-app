@@ -66,30 +66,32 @@ only (`channelFor`, per-user `user_id` push).
     - `levels` (seed): `key`, `study_type`, `title_ar`, `title_en`,
       `position`; unique index on `key`. Seeded at deploy, never
       admin-edited.
-    - `subjects`: `_id`, `level_key`, `title_ar`, `title_en`,
+    - `subjects`: `_id`, `level_key`, `term` (`first`/`second`/empty),
+      `title_ar`, `title_en`,
       `description_ar`, `description_en`, `price`, `status`
       (`draft`/`published`), `created_at`, `updated_at`; index on
       (`level_key`, `status`).
     - `videos`: `_id`, `subject_id`, `position`, `title_ar`, `title_en`,
-      `description_ar`, `description_en`, `youtubeVideoId`,
-      `duration_sec`; unique compound index on (`subject_id`,
-      `position`). References only; no bytes stored.
-    - `subject_files`: `_id`, `subject_id`, `title_ar`, `title_en`,
-      `format`, `storage_key`, `created_at`; index on `subject_id`.
+      `description_ar`, `description_en`, `youtube_video_id`; non-unique
+      index on (`subject_id`, `position`). References only; no bytes stored.
+    - `subject_files`: `_id`, `subject_id`, `kind` (`book`/`note`),
+      `title_ar`, `title_en`, `format`, `storage_key`, `created_at`;
+      index on `subject_id`.
       Content bytes live in the future object store (ADR-0009).
     - `entitlements`: `user_id`, `subject_id`, `granted_at`, `source`;
       unique compound index on (`user_id`, `subject_id`) plus an index
       on `user_id`.
     - `purchase_requests` (boundary only): `_id`, `user_id`,
       `subject_id`, `status` (`pending`/`accepted`/`rejected`),
-      `created_at`, `decided_at`; index on (`user_id`, `subject_id`)
-      and on `status`.
+      `created_at`, `decided_at`; partial unique index on
+      (`user_id`, `subject_id`) where `status = pending`, and an index
+      on `status`.
     - `admin_audit_log`: `_id`, `actor`, `action`, `target`, `detail`,
       `created_at`; index on (`actor`, `created_at`) and on `target`.
       Every admin mutation writes one entry.
 13. The user record gains a `status` field. It is enforced on every
-    token-issuing path — `Login`, `Refresh`, `VerifyOTP`, and
-    `ConfirmReset` all refuse non-active accounts before minting anything.
+    token-issuing path — `Login`, `Refresh`, and `VerifyOTP` all refuse
+    non-active accounts before minting anything.
 14. Student endpoints are served through the gateway under
     `/api/v1/academy/`, following the existing prefix/strip convention
     (a new route entry alongside `/api/v1/auth/` and
@@ -100,16 +102,24 @@ only (`channelFor`, per-user `user_id` push).
     review/accept, account suspend/reactivate/delete, broadcast, UI
     text/images) live on a separate listener unreachable through the
     student gateway routes, authenticated by the admin named token — never
-    the student JWT. A separate web admin panel calls these endpoints
-    directly; the student mobile app contains no admin functionality.
+    the student JWT. A separate web admin panel, served as a subdomain,
+    is provided by `admin-console` and calls `/internal/admin/*` endpoints.
+    Admin identity details belong to future ADR-0008. The student mobile
+    app contains no admin functionality.
 16. Entitlement rule: a student owns a subject if and only if an
     `entitlements` record exists for (`user_id`, `subject_id`).
-17. Gating rule: `youtubeVideoId` and PDF download are NEVER served unless
+17. Gating rule: `youtube_video_id` and PDF download are NEVER served unless
     the caller owns the subject, with the entitlement checked on every
     download, not just on listing.
-18. Suspension takes effect on issued access tokens by invalidating them
-    (status gate plus revocation below); the account's refresh entries are
-    deleted at the same time so no new access tokens can be minted.
+18. Suspension takes effect immediately on issued access tokens. Refresh
+    checks account status and refuses non-active accounts before minting a
+    new access token.
+
+19. Broadcasts support audience `all` or `subject:<id>`. Fan-out pages
+    through target user IDs and pushes per user in bounded batches. Delivery
+    is idempotent per (`broadcast`, `user`); failures are logged and
+    retryable. Per-user rows are retained because the existing list, read,
+    and SSE paths serve per-user rows.
 
 ### Proposed mechanism (not decided)
 
@@ -117,9 +127,11 @@ The revocation approach found in `shared/infra/jwtutil` is the candidate:
 suspending an account calls `RevokeAllUserTokens`, which sets the Redis
 marker `jwt:invalidated_before:<userID>`, and `ValidateToken` rejects any
 token whose `iat` predates the marker (per-jti denylist
-`jwt:denylist:<jti>` covers single tokens). When Redis is unreachable,
-both lookups fail closed — the token is rejected — after a single retry
-on transient blips. None of this is wired to any account status today;
+`jwt:denylist:<jti>` covers single tokens). Refresh independently checks
+account status and refuses to mint for non-active accounts; refresh-entry
+deletion is not part of this mechanism. When Redis is unreachable, both
+lookups fail closed — the token is rejected — after a single retry on
+transient blips. None of this is wired to any account status today;
 adopting it for suspension is proposed, not decided.
 
 ## Consequences
