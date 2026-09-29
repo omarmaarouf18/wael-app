@@ -10,7 +10,7 @@
 Student support needs a channel, and every channel has an operating cost.
 An in-app system (tickets, chat, complaints) means building queues,
 assignment, notifications, and staffing them inside the platform. A single
-external number keeps the cost at oneanswered phone. As of this ADR, no
+external number keeps the cost at one answered phone. As of this ADR, no
 code exists for support in the app or backend.
 
 ## Decision
