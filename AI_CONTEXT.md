@@ -17,7 +17,8 @@ amended (2026-09-29) per ADR-0007. No domain logic beyond
 auth/notifications/academy mocks. Core Phase 0.1: gateway strips client
 `X-Internal-Token` and injects none; it no longer requires or receives
 `INTERNAL_SERVICE_TOKEN`. Core Phase 0.2: corrected ADR-0007 per
-`docs/core-service/SPEC.md` Section 14.
+`docs/core-service/SPEC.md` Section 14. Core Phase 0.3: ADR-0008 (admin
+identity and console boundaries) written and accepted.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
@@ -32,8 +33,9 @@ Product decisions recorded in `docs/adr/`:
 - [ADR-0005: Study Notes (Mozakkerat) Delivered Inside the App](docs/adr/0005-in-app-study-notes.md)
 - [ADR-0006: Support Only Through a WhatsApp Number](docs/adr/0006-whatsapp-only-support.md)
 - [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md) (Status Proposed; revised: catalog tree, PDFs, admin tokens)
+- [ADR-0008: Admin Identity and Console Boundaries](docs/adr/0008-admin-identity.md) (Status Accepted; admin subdomain, thin proxy, admins collection, CLI lifecycle, verification without caching)
 
 ## Next task
-Continue core academy work from `docs/core-service/SPEC.md`: Phase 0.3,
-write ADR-0008 (admin identity). Complete the remaining Phase 0
-prerequisites before Phase 1.
+Continue core academy work from `docs/core-service/SPEC.md`: Phase 0.4,
+write ADR-0009 and restore `shared/infra/storage` with its tests. Complete
+the remaining Phase 0 prerequisites before Phase 1.
