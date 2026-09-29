@@ -15,7 +15,7 @@ import (
 
 // New creates an http.Handler that reverse-proxies requests matching
 // the given ServiceRoute to its target backend.
-func New(route config.ServiceRoute, gatewaySecret, internalToken string, trustedProxies []string, transport http.RoundTripper) (http.Handler, error) {
+func New(route config.ServiceRoute, gatewaySecret string, trustedProxies []string, transport http.RoundTripper) (http.Handler, error) {
 	target, err := url.Parse(route.Target)
 	if err != nil {
 		return nil, fmt.Errorf("proxy: invalid target URL %q for %s: %w", route.Target, route.Prefix, err)
@@ -43,9 +43,6 @@ func New(route config.ServiceRoute, gatewaySecret, internalToken string, trusted
 				req.Header.Set("X-Forwarded-For", req.RemoteAddr)
 			}
 			req.Header.Set("X-Gateway-Secret", gatewaySecret)
-			if internalToken != "" {
-				req.Header.Set("X-Internal-Token", internalToken)
-			}
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			// #nosec G706 -- sanitised path/method; log injection not possible

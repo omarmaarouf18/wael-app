@@ -14,7 +14,9 @@ atomically (single redemption); signup takes no client role (always user).
 Gateway chain covered by env-gated tests/e2e. gosec pinned v2.29.0 in
 hook and CI with drift check. README matches the repo. ADR-0002/0003/0004/0005
 amended (2026-09-29) per ADR-0007. No domain logic beyond
-auth/notifications/academy mocks.
+auth/notifications/academy mocks. Core Phase 0.1: gateway strips client
+`X-Internal-Token` and injects none; it no longer requires or receives
+`INTERNAL_SERVICE_TOKEN`.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
@@ -31,4 +33,4 @@ Product decisions recorded in `docs/adr/`:
 - [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md) (Status Proposed; revised: catalog tree, PDFs, admin tokens)
 
 ## Next task
-Start core academy work from `docs/core-service/SPEC.md`, beginning with Phase 0. Resolve the listed ADR-0007 corrections and prerequisites before Phase 1.
+Continue core academy work from `docs/core-service/SPEC.md`: Phase 0.2, correct ADR-0007 per Section 14. Complete the remaining Phase 0 prerequisites before Phase 1.

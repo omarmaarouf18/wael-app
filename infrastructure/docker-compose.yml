@@ -83,7 +83,6 @@ services:
       APP_ENV: ${APP_ENV}
       APP_DOMAIN: ${APP_DOMAIN}
       GATEWAY_SECRET: ${GATEWAY_SECRET}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       TLS_CERT_PATH: /app/certs/api-gateway.crt
       TLS_KEY_PATH: /app/certs/api-gateway.key
       TLS_CA_PATH: /app/certs/ca.crt

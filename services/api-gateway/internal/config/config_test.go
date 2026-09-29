@@ -16,7 +16,6 @@ func setEnv(t *testing.T, k, v string) {
 func baseEnv(t *testing.T) {
 	t.Helper()
 	setEnv(t, "GATEWAY_SECRET", "test-gateway-secret-1234567890")
-	setEnv(t, "INTERNAL_SERVICE_TOKEN", "test-internal-token-1234567890")
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
 	setEnv(t, "AUTH_SERVICE_URL", "http://auth-service:3002")
 	setEnv(t, "NOTIFICATION_SERVICE_URL", "http://notification-service:3004")

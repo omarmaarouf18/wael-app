@@ -48,7 +48,7 @@ func main() {
 		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	for _, route := range cfg.Routes {
-		h, err := proxy.New(route, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.TrustedProxyIPs, transport)
+		h, err := proxy.New(route, cfg.GatewaySecret, cfg.TrustedProxyIPs, transport)
 		if err != nil {
 			log.Fatalf("[GATEWAY] route %s: %v", route.Prefix, err)
 		}

@@ -20,19 +20,18 @@ type ServiceRoute struct {
 
 // Config holds all runtime configuration for the API Gateway.
 type Config struct {
-	Port                 string
-	Routes               []ServiceRoute
-	GatewaySecret        string
-	AllowedOrigin        string
-	TLSCertPath          string
-	TLSKeyPath           string
-	TLSCAPath            string
-	ExternalTLSCertPath  string
-	ExternalTLSKeyPath   string
-	InternalServiceToken string
-	RedisURI             string
-	TrustedProxyIPs      []string
-	AppDomain            string
+	Port                string
+	Routes              []ServiceRoute
+	GatewaySecret       string
+	AllowedOrigin       string
+	TLSCertPath         string
+	TLSKeyPath          string
+	TLSCAPath           string
+	ExternalTLSCertPath string
+	ExternalTLSKeyPath  string
+	RedisURI            string
+	TrustedProxyIPs     []string
+	AppDomain           string
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -51,10 +50,6 @@ func Load() (*Config, error) {
 	if gatewaySecret == "" {
 		return nil, fmt.Errorf("config: required env var GATEWAY_SECRET is required and must not be empty")
 	}
-	internalServiceToken := os.Getenv("INTERNAL_SERVICE_TOKEN")
-	if internalServiceToken == "" {
-		return nil, fmt.Errorf("config: required env var INTERNAL_SERVICE_TOKEN is required and must not be empty")
-	}
 	redisURI := os.Getenv("REDIS_URI")
 	if redisURI == "" {
 		return nil, fmt.Errorf("config: required env var REDIS_URI is empty")
@@ -70,18 +65,17 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:                 envOrDefault("PORT", "8080"),
-		GatewaySecret:        gatewaySecret,
-		AllowedOrigin:        envOrDefault("ALLOWED_ORIGIN", "http://localhost:3000"),
-		TLSCertPath:          os.Getenv("TLS_CERT_PATH"),
-		TLSKeyPath:           os.Getenv("TLS_KEY_PATH"),
-		TLSCAPath:            os.Getenv("TLS_CA_PATH"),
-		ExternalTLSCertPath:  os.Getenv("EXTERNAL_TLS_CERT_PATH"),
-		ExternalTLSKeyPath:   os.Getenv("EXTERNAL_TLS_KEY_PATH"),
-		InternalServiceToken: internalServiceToken,
-		RedisURI:             redisURI,
-		TrustedProxyIPs:      trustedProxyIPs,
-		AppDomain:            envOrDefault("APP_DOMAIN", "localhost"),
+		Port:                envOrDefault("PORT", "8080"),
+		GatewaySecret:       gatewaySecret,
+		AllowedOrigin:       envOrDefault("ALLOWED_ORIGIN", "http://localhost:3000"),
+		TLSCertPath:         os.Getenv("TLS_CERT_PATH"),
+		TLSKeyPath:          os.Getenv("TLS_KEY_PATH"),
+		TLSCAPath:           os.Getenv("TLS_CA_PATH"),
+		ExternalTLSCertPath: os.Getenv("EXTERNAL_TLS_CERT_PATH"),
+		ExternalTLSKeyPath:  os.Getenv("EXTERNAL_TLS_KEY_PATH"),
+		RedisURI:            redisURI,
+		TrustedProxyIPs:     trustedProxyIPs,
+		AppDomain:           envOrDefault("APP_DOMAIN", "localhost"),
 	}
 
 	routeDefs := []struct {
