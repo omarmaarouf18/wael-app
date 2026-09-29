@@ -1,4 +1,4 @@
-.PHONY: setup ci ensure-hooks commit push since-last-report report-hash contract-test
+.PHONY: setup ci ensure-hooks commit push since-last-report report-hash contract-test e2e
 
 ensure-hooks:
 	@if [ "$$(git config --get core.hooksPath 2>/dev/null)" != ".githooks" ]; then \
@@ -15,6 +15,9 @@ ci: ensure-hooks
 
 contract-test: ensure-hooks
 	cd tests/contracts && go test -v -count=1 ./...
+
+e2e: ensure-hooks
+	cd tests/e2e && go test -v -count=1 ./...
 
 commit: ensure-hooks
 	git add -A && git commit -m "$(MSG)"

@@ -11,7 +11,8 @@ auth, local compose (mongo:7, redis:7, mTLS), pre-push hook, CI. Branch:
 Skeleton, shared/infra, gateway+auth, notifications, Flutter wiring+rename,
 compose+certs, hooks+Makefile, CI (publish disabled). Refresh tokens consume
 atomically (single redemption); signup takes no client role (always user).
-No domain logic beyond auth/notifications/academy mocks.
+Gateway chain covered by env-gated tests/e2e. No domain logic beyond
+auth/notifications/academy mocks.
 
 ## Open
 Core academy service (providers rebind to AcademyRepository). Deploy repo.
