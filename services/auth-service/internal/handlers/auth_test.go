@@ -179,11 +179,13 @@ func TestGatewaySecretRequired(t *testing.T) {
 	}
 }
 
-func TestInvalidRoleRejected(t *testing.T) {
+func TestSignupRejectsClientRole(t *testing.T) {
 	s := testServer()
-	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{"email": "r@example.com", "password": "password123", "role": "owner"}, "")
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("unknown role = %d, want 400", rec.Code)
+	for _, role := range []string{"user", "admin"} {
+		rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{"email": "r-" + role + "@example.com", "password": "password123", "role": role}, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("role %q: status = %d, want 400", role, rec.Code)
+		}
 	}
 }
 

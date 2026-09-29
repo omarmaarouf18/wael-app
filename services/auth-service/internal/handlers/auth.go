@@ -96,10 +96,12 @@ func issuePair(userID string, role models.Role, email string) (access, refresh s
 type signupRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	Role     string `json:"role"`
 }
 
 // Signup registers a new unverified account and sends an email OTP.
+// Single role (ADR-0002): the request carries no role and new accounts are
+// always models.RoleUser. decodeJSON rejects unknown fields, so any body
+// containing `role` fails with 400.
 func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 	var req signupRequest
 	if !decodeJSON(w, r, &req) {
@@ -115,13 +117,6 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := models.RoleUser
-	if req.Role != "" {
-		role = models.Role(strings.ToLower(strings.TrimSpace(req.Role)))
-		if !models.ValidRole(role) {
-			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid role", nil)
-			return
-		}
-	}
 	ctx := r.Context()
 	if existing, _ := s.Store.FindByEmail(ctx, email); existing != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "email already registered", nil)
