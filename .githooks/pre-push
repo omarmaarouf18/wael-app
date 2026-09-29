@@ -46,6 +46,7 @@ echo "-- checking Go version consistency --"
 CANONICAL_GO_VERSION="1.26"
 CANONICAL_GO_PATCH_VERSION="1.26.6"
 CANONICAL_GO_TOOLCHAIN="go1.26.6"
+CANONICAL_GOSEC_VERSION="v2.29.0"
 DRIFT_FAILED=0
 
 for f in go.work services/*/go.mod shared/infra/go.mod tools/*/go.mod tests/*/go.mod; do
@@ -84,6 +85,18 @@ for d in services/*/Dockerfile; do
 done
 
 if [ "$DRIFT_FAILED" -eq 1 ]; then
+  exit 1
+fi
+
+# 4b. gosec pin must be identical in the hook and ci.yml. The hook's pin is
+# CANONICAL_GOSEC_VERSION above; ci.yml carries the literal install ref.
+HOOK_GOSEC="gosec/v2/cmd/gosec@$CANONICAL_GOSEC_VERSION"
+CI_GOSEC=""
+if [ -f ".github/workflows/ci.yml" ]; then
+  CI_GOSEC=$(grep -oE "gosec/v2/cmd/gosec@v[0-9]+\.[0-9]+\.[0-9]+" .github/workflows/ci.yml | head -n 1)
+fi
+if [ -z "$CI_GOSEC" ] || [ "$HOOK_GOSEC" != "$CI_GOSEC" ]; then
+  echo "BLOCKED: gosec pin mismatch: hook pins '$HOOK_GOSEC', ci.yml has '${CI_GOSEC:-NONE}'"
   exit 1
 fi
 
@@ -135,8 +148,8 @@ for mod in services/api-gateway services/auth-service services/notification-serv
   fi
 
   if [ -z "$GOSEC_BIN" ] || [ ! -x "$GOSEC_BIN" ]; then
-    echo "gosec not found, installing..."
-    go install github.com/securego/gosec/v2/cmd/gosec@latest 2>/dev/null || true
+    echo "gosec not found, installing $CANONICAL_GOSEC_VERSION..."
+    go install "github.com/securego/gosec/v2/cmd/gosec@$CANONICAL_GOSEC_VERSION" 2>/dev/null || true
     GOSEC_BIN="$HOME/go/bin/gosec"
   fi
   if [ -x "$GOSEC_BIN" ]; then
@@ -146,7 +159,7 @@ for mod in services/api-gateway services/auth-service services/notification-serv
       exit 1
     }
   else
-    echo "BLOCKED: gosec is required but could not be installed/found. Install via: go install github.com/securego/gosec/v2/cmd/gosec@latest"
+    echo "BLOCKED: gosec is required but could not be installed/found. Install via: go install github.com/securego/gosec/v2/cmd/gosec@$CANONICAL_GOSEC_VERSION"
     exit 1
   fi
 done

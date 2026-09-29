@@ -11,7 +11,8 @@ auth, local compose (mongo:7, redis:7, mTLS), pre-push hook, CI. Branch:
 Skeleton, shared/infra, gateway+auth, notifications, Flutter wiring+rename,
 compose+certs, hooks+Makefile, CI (publish disabled). Refresh tokens consume
 atomically (single redemption); signup takes no client role (always user).
-Gateway chain covered by env-gated tests/e2e. No domain logic beyond
+Gateway chain covered by env-gated tests/e2e. gosec pinned v2.29.0 in
+hook and CI with drift check. No domain logic beyond
 auth/notifications/academy mocks.
 
 ## Open

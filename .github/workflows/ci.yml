@@ -35,6 +35,7 @@ jobs:
           CANONICAL_GO_VERSION="1.26"
           CANONICAL_GO_PATCH_VERSION="1.26.6"
           CANONICAL_GO_TOOLCHAIN="go1.26.6"
+          CANONICAL_GOSEC_VERSION="v2.29.0"
           DRIFT_FAILED=0
           for f in go.work services/*/go.mod shared/infra/go.mod tools/*/go.mod tests/*/go.mod; do
             if [ -f "$f" ]; then
@@ -67,6 +68,12 @@ jobs:
             fi
           done
           if [ "$DRIFT_FAILED" -eq 1 ]; then
+            exit 1
+          fi
+          HOOK_GOSEC=$(grep -oE 'CANONICAL_GOSEC_VERSION="[v0-9.]+"' .githooks/pre-push | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+          CI_GOSEC=$(grep -oE "gosec/v2/cmd/gosec@v[0-9]+\.[0-9]+\.[0-9]+" .github/workflows/ci.yml | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+" | head -n 1)
+          if [ -z "$HOOK_GOSEC" ] || [ -z "$CI_GOSEC" ] || [ "$HOOK_GOSEC" != "$CI_GOSEC" ] || [ "$CI_GOSEC" != "$CANONICAL_GOSEC_VERSION" ]; then
+            echo "BLOCKED: gosec pin mismatch: hook has '${HOOK_GOSEC:-NONE}', ci.yml has '${CI_GOSEC:-NONE}', canonical is '$CANONICAL_GOSEC_VERSION'"
             exit 1
           fi
 
@@ -140,7 +147,7 @@ jobs:
       - name: Run gosec
         working-directory: ${{ matrix.service.path }}
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
           gosec ./...
 
   flutter-test:
