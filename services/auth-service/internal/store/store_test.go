@@ -21,12 +21,12 @@ func TestMemoryStore_CRUD(t *testing.T) {
 	if err != nil || got == nil || got.ID != "u-1" {
 		t.Fatalf("FindByEmail = %+v, %v", got, err)
 	}
-	got.Role = models.RoleAdmin
+	got.Role = models.RoleUser
 	if err := s.Update(ctx, got); err != nil {
 		t.Fatal(err)
 	}
 	byID, err := s.FindByID(ctx, "u-1")
-	if err != nil || byID.Role != models.RoleAdmin {
+	if err != nil || byID.Role != models.RoleUser {
 		t.Fatalf("FindByID = %+v, %v", byID, err)
 	}
 	n, err := s.Count(ctx)

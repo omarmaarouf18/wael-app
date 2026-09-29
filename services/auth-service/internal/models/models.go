@@ -1,6 +1,6 @@
 // Package models defines the auth-service domain types.
-// Roles are configurable constants: extend AllowedRoles to add new roles;
-// the default set is admin and user.
+// Single role: user. There are no admin/role screens; authorization is
+// identity only.
 package models
 
 import "time"
@@ -9,14 +9,12 @@ import "time"
 type Role string
 
 const (
-	RoleAdmin Role = "admin"
-	RoleUser  Role = "user"
+	RoleUser Role = "user"
 )
 
 // AllowedRoles is the configurable set of valid roles.
 var AllowedRoles = map[Role]bool{
-	RoleAdmin: true,
-	RoleUser:  true,
+	RoleUser: true,
 }
 
 // ValidRole reports whether r is in the configured role set.
