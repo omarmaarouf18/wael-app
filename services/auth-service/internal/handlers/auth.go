@@ -4,6 +4,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/mailer"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/models"
+	"github.com/omarmaarouf18/wael-app/auth-service/internal/notify"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/otp"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
@@ -28,6 +30,8 @@ type Server struct {
 	Sender        mailer.Sender
 	AppEnv        string
 	GatewaySecret string
+	NotifyURL     string
+	NotifyToken   string
 }
 
 // New creates a Server.
@@ -196,6 +200,7 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
+	go notify.Welcome(context.Background(), s.NotifyURL, s.NotifyToken, u.ID)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": refresh})
 }
 
@@ -389,6 +394,7 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
+	go notify.PasswordChanged(context.Background(), s.NotifyURL, s.NotifyToken, u.ID)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "password updated"})
 }
 

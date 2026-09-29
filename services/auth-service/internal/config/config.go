@@ -18,6 +18,7 @@ type Config struct {
 	JWTSecret            string
 	GatewaySecret        string
 	InternalServiceToken string
+	NotificationURL      string
 	TLSCertPath          string
 	TLSKeyPath           string
 	TLSCAPath            string
@@ -48,6 +49,10 @@ func Load() (*Config, error) {
 	if resendAPIKey != "" && resendFrom == "" {
 		return nil, errors.New("config: RESEND_FROM_EMAIL is required when RESEND_API_KEY is set")
 	}
+	notificationURL := os.Getenv("NOTIFICATION_SERVICE_URL")
+	if notificationURL == "" {
+		notificationURL = "https://notification-service:3004"
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3002"
@@ -72,6 +77,7 @@ func Load() (*Config, error) {
 		JWTSecret:            jwtSecret,
 		GatewaySecret:        gatewaySecret,
 		InternalServiceToken: internalToken,
+		NotificationURL:      notificationURL,
 		TLSCertPath:          os.Getenv("TLS_CERT_PATH"),
 		TLSKeyPath:           os.Getenv("TLS_KEY_PATH"),
 		TLSCAPath:            os.Getenv("TLS_CA_PATH"),

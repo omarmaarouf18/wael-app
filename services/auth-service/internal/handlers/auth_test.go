@@ -18,6 +18,11 @@ func testServer() *Server {
 	return New(store.NewMemoryStore(), otp.NewMemoryStore(), NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
 }
 
+func testServerProd() *Server {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	return New(store.NewMemoryStore(), otp.NewMemoryStore(), NewMemoryLockout(), mailer.LogSender{}, "production", "gw-secret")
+}
+
 func doRequest(t *testing.T, s *Server, method, path string, body any, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
@@ -179,5 +184,31 @@ func TestInvalidRoleRejected(t *testing.T) {
 	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{"email": "r@example.com", "password": "password123", "role": "owner"}, "")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown role = %d, want 400", rec.Code)
+	}
+}
+
+func TestProductionNeverReturnsDevOTP(t *testing.T) {
+	s := testServerProd()
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{"email": "prod@example.com", "password": "password123"}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var signup map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&signup); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := signup["dev_otp"]; present {
+		t.Fatal("production signup must never return dev_otp")
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": "prod@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request = %d", rec.Code)
+	}
+	var reset map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&reset); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := reset["dev_otp"]; present {
+		t.Fatal("production reset request must never return dev_otp")
 	}
 }

@@ -63,6 +63,8 @@ func main() {
 	}
 
 	srv := handlers.New(st, codes, lockout, sender, cfg.AppEnv, cfg.GatewaySecret)
+	srv.NotifyURL = cfg.NotificationURL
+	srv.NotifyToken = cfg.InternalServiceToken
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handlers.Health)
 	mux.HandleFunc("/auth/signup", srv.Signup)
