@@ -1,6 +1,6 @@
 # ADR-0007: Core Academy Service Design
 
-- **Status**: Accepted
+- **Status**: Proposed
 - **Date**: 2026-09-29
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
@@ -9,101 +9,140 @@
 
 The catalog, purchase, and entitlement decisions are recorded (ADR-0003,
 ADR-0004, ADR-0005) but no service implements them: as of this ADR, no code
-exists for subjects, lessons, entitlements, purchase requests, admin
-management, or broadcasts anywhere in the repo. Student auth is
-single-role (`user`) with no tenants, and the account record carries no
-suspension state. The conventions to follow already exist:
-`services/auth-service` and `services/notification-service` are each a
-`cmd/main.go` plus `internal/{config,handlers,models,store}`, with a
-`Store` interface backed by `MemoryStore` and `MongoStore`; user routes sit
-behind `GatewayAuth` (`X-Gateway-Secret` on every non-health route, see
-`Server.GatewayAuth`); the gateway maps `routeDefs` prefixes such as
-`/api/v1/auth/` and `/api/v1/notifications/` to service URLs and strips
-`/api/v1` before forwarding. Token revocation exists: `ValidateToken`
-rejects tokens whose `iat` predates the Redis marker
-`jwt:invalidated_before:<userID>` (fail-closed), set by
-`RevokeAllUserTokens`. Notification push is per-user only: `Push` requires
-`user_id` and `RedisBus.Publish` fans out on `notif:user:<userID>` (see
-`channelFor`).
+exists for study types, levels, subjects, lessons, files, entitlements,
+purchase requests, admin management, or broadcasts anywhere in the repo.
+Student auth is single-role (`user`) with no tenants; signup takes only
+email, password, and role (see `signupRequest`), and the account record
+carries no phone number, no full name, and no status. The conventions to
+follow already exist: `services/auth-service` and
+`services/notification-service` are each a `cmd/main.go` plus
+`internal/{config,handlers,models,store}`, with a `Store` interface backed
+by `MemoryStore` and `MongoStore`; user routes sit behind `GatewayAuth`
+(`X-Gateway-Secret` on every non-health route); the gateway maps
+`routeDefs` prefixes to service URLs and strips `/api/v1` before
+forwarding (today only `/api/v1/auth/` and `/api/v1/notifications/`
+exist). Token revocation exists in `shared/infra/jwtutil`
+(`RevokeAllUserTokens`, `ValidateToken`). Notification push is per-user
+only (`channelFor`, per-user `user_id` push).
 
 ## Decision
 
-1. A new `academy-service` serves subjects (materia), following the
-   existing service layout and the `Store` interface with
-   `MemoryStore`/`MongoStore` pattern. Each subject has a price set by the
-   admin, a description, and an ordered list of videos, each with a title
-   and a description.
-2. Videos are references to unlisted YouTube videos (ADR-0001); the
-   service stores identifiers, never bytes.
-3. Mongo collections, fields, and indexes:
-   - `subjects`: `_id`, `title`, `title_ar`, `description`, `price`,
-     `status` (`draft`/`published`), `created_at`, `updated_at`; index on
-     `status`.
-   - `lessons`: `_id`, `subject_id`, `position`, `title`, `description`,
-     `youtubeVideoId`, `duration_sec`; unique compound index on
-     (`subject_id`, `position`).
-   - `entitlements`: `user_id`, `subject_id`, `granted_at`, `source`
-     (activating purchase or manual grant); unique compound index on
-     (`user_id`, `subject_id`) plus an index on `user_id`.
-   - `purchase_requests`: `_id`, `user_id`, `subject_id`, `status`
-     (`pending`/`accepted`/`rejected`), `created_at`, `decided_at`;
-     index on (`user_id`, `subject_id`) and on `status`.
-   - `admin_audit_log`: `_id`, `actor`, `action`, `target`, `detail`,
-     `created_at`; index on (`actor`, `created_at`) and on `target`.
-     Every admin mutation writes one entry.
-4. Student endpoints are served through the gateway under
-   `/api/v1/academy/`, following the existing prefix/strip convention:
-   subject catalog and metadata, lesson reads, the student's own
-   entitlements, and payment-request submission. No caps apply to owned
-   content (ADR-0004).
-5. Admin endpoints (subject/price CRUD, video add/edit, purchase-request
-   review/accept, account suspend/reactivate/delete, app-wide broadcast)
-   live on a separate listener that is not reachable through the student
-   gateway routes. That listener authenticates the out-of-band admin
-   identity (ADR-0002), never the student JWT. A separate web admin panel
-   calls these endpoints directly, and the student mobile app contains no
-   admin functionality.
-6. Payment is manual: the student submits a payment request, the admin
-   accepts it, and acceptance creates the `entitlements` record that
-   grants ownership of that subject.
-7. Entitlement rule: a student owns a subject if and only if an
-   `entitlements` record exists for (`user_id`, `subject_id`).
-8. Gating rule: `youtubeVideoId` is NEVER serialized in any student
-   response unless the caller owns the subject. Unentitled reads return
-   metadata (titles, descriptions, positions, durations) with the
-   reference field omitted, so nothing playable leaks before purchase.
-9. Suspension takes effect on already-issued access tokens through the
-   existing revocation mechanism: suspending an account sets its status
-   and calls `RevokeAllUserTokens`, so `ValidateToken` rejects every
-   token issued before the marker; the account's refresh entries are
-   deleted at the same time so no new access tokens can be minted.
-   (This locks access; see the reported conflict with ADR-0004 below —
-   recorded here as stated, not resolved.)
-10. App-wide broadcast is stored and delivered per recipient: the admin
-    call fans out into one notification-service internal push per user
-    (each carrying that user's `user_id`), because push is per-user only.
-    Each recipient row then flows through the normal list/read/SSE path.
+1. Catalog tree: study type -> level/programme -> subject. Study types and
+   levels are FIXED (seeded, not admin-editable): bachelor (four years),
+   diplomas, vocational training; each type has different subjects. The
+   admin creates subjects inside a level, and adds videos and PDFs inside
+   a subject.
+2. A subject has an admin-set price, a description, ordered videos
+   (unlisted YouTube references, each with title and description), and PDF
+   files. Catalog entities carry bilingual fields (Arabic and English),
+   with Arabic preferred (default).
+3. Owning a subject grants its videos and PDFs automatically; PDFs are not
+   sold separately. PDFs can be downloaded to the student's device.
+4. Removed from scope: live events, progress tracking, ratings, student
+   and view counts, free previews. Students upload nothing; the app only
+   receives.
+5. The payment flow is OUT OF SCOPE (the owner will specify it later).
+   This ADR defines only the boundary: an admin-accepted payment request
+   creates the entitlement. A rejected request can be resubmitted as a
+   new request.
+6. The admin can suspend, reactivate, and delete student accounts.
+   Suspension and deletion are for abuse, content leakage, or suspicious
+   behavior.
+7. Admin identity is NOT an account: it is a named token issued only by a
+   server-side tool (CLI), separate from student auth, never issued
+   through any student-facing or panel endpoint. Token internals belong to
+   future ADR-0008.
+8. Registration requires full name and phone number. The OTP is sent to
+   email only for now; the phone is collected but not verified until
+   decided otherwise.
+9. The admin can send an app-wide notification.
+10. The admin can edit app UI text and images. Details belong to future
+    ADR-0009 (media storage) and ADR-0010 (app content).
+11. Out of scope here by explicit pointer: admin token internals (future
+    ADR-0008); file storage (future ADR-0009); app content model (future
+    ADR-0010).
+12. Mongo collections, fields, and indexes (new `academy-service`,
+    existing service layout and Store pattern):
+    - `levels` (seed): `key`, `study_type`, `title_ar`, `title_en`,
+      `position`; unique index on `key`. Seeded at deploy, never
+      admin-edited.
+    - `subjects`: `_id`, `level_key`, `title_ar`, `title_en`,
+      `description_ar`, `description_en`, `price`, `status`
+      (`draft`/`published`), `created_at`, `updated_at`; index on
+      (`level_key`, `status`).
+    - `videos`: `_id`, `subject_id`, `position`, `title_ar`, `title_en`,
+      `description_ar`, `description_en`, `youtubeVideoId`,
+      `duration_sec`; unique compound index on (`subject_id`,
+      `position`). References only; no bytes stored.
+    - `subject_files`: `_id`, `subject_id`, `title_ar`, `title_en`,
+      `format`, `storage_key`, `created_at`; index on `subject_id`.
+      Content bytes live in the future object store (ADR-0009).
+    - `entitlements`: `user_id`, `subject_id`, `granted_at`, `source`;
+      unique compound index on (`user_id`, `subject_id`) plus an index
+      on `user_id`.
+    - `purchase_requests` (boundary only): `_id`, `user_id`,
+      `subject_id`, `status` (`pending`/`accepted`/`rejected`),
+      `created_at`, `decided_at`; index on (`user_id`, `subject_id`)
+      and on `status`.
+    - `admin_audit_log`: `_id`, `actor`, `action`, `target`, `detail`,
+      `created_at`; index on (`actor`, `created_at`) and on `target`.
+      Every admin mutation writes one entry.
+13. The user record gains a `status` field. It is enforced on every
+    token-issuing path — `Login`, `Refresh`, `VerifyOTP`, and
+    `ConfirmReset` all refuse non-active accounts before minting anything.
+14. Student endpoints are served through the gateway under
+    `/api/v1/academy/`, following the existing prefix/strip convention
+    (a new route entry alongside `/api/v1/auth/` and
+    `/api/v1/notifications/` at implementation time): catalog tree,
+    subject metadata, lesson and file reads, the student's own
+    entitlements, and payment-request submission.
+15. Admin endpoints (catalog and price CRUD, video/file add, request
+    review/accept, account suspend/reactivate/delete, broadcast, UI
+    text/images) live on a separate listener unreachable through the
+    student gateway routes, authenticated by the admin named token — never
+    the student JWT. A separate web admin panel calls these endpoints
+    directly; the student mobile app contains no admin functionality.
+16. Entitlement rule: a student owns a subject if and only if an
+    `entitlements` record exists for (`user_id`, `subject_id`).
+17. Gating rule: `youtubeVideoId` and PDF download are NEVER served unless
+    the caller owns the subject, with the entitlement checked on every
+    download, not just on listing.
+18. Suspension takes effect on issued access tokens by invalidating them
+    (status gate plus revocation below); the account's refresh entries are
+    deleted at the same time so no new access tokens can be minted.
+
+### Proposed mechanism (not decided)
+
+The revocation approach found in `shared/infra/jwtutil` is the candidate:
+suspending an account calls `RevokeAllUserTokens`, which sets the Redis
+marker `jwt:invalidated_before:<userID>`, and `ValidateToken` rejects any
+token whose `iat` predates the marker (per-jti denylist
+`jwt:denylist:<jti>` covers single tokens). When Redis is unreachable,
+both lookups fail closed — the token is rejected — after a single retry
+on transient blips. None of this is wired to any account status today;
+adopting it for suspension is proposed, not decided.
 
 ## Consequences
 
 ### Positive
 
-- One entitlement collection plus the `youtubeVideoId` gating rule cover
-  purchase (ADR-0003), no-caps reads (ADR-0004), and reference-only video
-  (ADR-0001).
-- Suspension reuses the read-and-verified revocation path instead of
-  inventing a second session system.
-- Broadcast needs no new transport: per-user push plus existing SSE
-  delivery already reach every client.
-- Every admin mutation is auditable via `admin_audit_log`.
+- The fixed catalog tree bounds the admin surface: only subjects, videos,
+  and PDFs inside them are editable, and levels cannot drift.
+- One entitlement collection plus per-download gating covers purchase,
+  videos, and PDFs with a single rule.
+- Suspension and broadcast reuse verified mechanisms (revocation markers,
+  per-user push) instead of new session or transport systems.
+- Removed-scope items (events, tracking, ratings, counts, previews,
+  uploads) cannot accrete implicitly: each would contradict this record.
 
 ### Negative and Tradeoffs
 
-- Broadcast cost scales with the user base (one stored row and one push
-  per recipient).
 - Suspension visibly locks a student out of content they could previously
   open — the ADR-0004 conflict reported below.
-- Manual payment keeps a human in the fulfillment loop for every purchase.
+- PDF download puts files on student devices, in tension with ADR-0005's
+  in-app-only notes rule — reported below.
+- Manual steps (payment acceptance, UI text edits) keep a human in the
+  loop for operations that could later be automated.
 
 ## Alternatives Considered
 
@@ -116,14 +155,15 @@ rejects tokens whose `iat` predates the Redis marker
 
 ## Open Questions
 
-- What the student submits with a payment request, and whether receipt
-  images need storage.
-- Whether rejected requests can be resubmitted.
-- Hard versus soft account delete, and what happens to entitlements in
-  each case.
-- Whether study notes (ADR-0005) belong to a subject.
-- How the first admin identity is created.
-- Refund and revocation of entitlement.
+1. The exact fixed list of levels for diplomas and vocational training.
+2. Per-user watermark on downloaded PDFs (leak traceability).
+3. Where PDFs are stored (future ADR-0009).
+4. Whether English content is required or optional with Arabic fallback.
+5. Phone number uniqueness and normalization.
+6. Soft vs hard delete, and a blocklist of email/phone hashes after abuse
+   deletion.
+7. Revocation of an entitlement.
+8. When or whether OTP is added on the phone (needs a provider).
 
 ## To verify
 
@@ -133,5 +173,3 @@ rejects tokens whose `iat` predates the Redis marker
   admin paths.
 - Confirm the Mongo database name for the new collections at
   implementation time.
-- If receipt images are required, confirm object storage is restored
-  first (see ADR-0005 storage note).
