@@ -220,6 +220,7 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 5. **Caddy → gateway** must verify the local CA. Do not copy `tls_insecure_skip_verify` from saas-core.
 6. **Uploads**: PDF only, check the `%PDF-` magic bytes, enforce `MAX_PDF_BYTES`, ignore client content-type, sanitize the download filename.
 7. **Storage**: AES-256-GCM at rest; `DOCUMENT_ENCRYPTION_KEY` is required when `APP_ENV=production` (fail fast).
+   - *Amended 2026-09-30 (owner decision)*: Storage: AES-256-GCM at rest. DOCUMENT_ENCRYPTION_KEY must be exactly 32 bytes (64 hex chars) in every environment. Only APP_ENV=local or test may omit it, in which case an ephemeral key is generated with a logged warning. Any other APP_ENV value, including empty, is treated as production. An invalid key fails startup and is never padded or truncated.
 8. **Logging**: never log query strings, tokens, phone numbers, or emails (use `shared/infra/redact`); strip CR/LF from anything user-controlled.
 9. **Errors**: use `handlerutil.WriteSafeError`; no internal detail in responses.
 10. **`--check-env`** flag on every new service (saas-core ADR-0015): loads config and exits 0 or 1 without starting anything, so a deploy can validate before it replaces running containers.
