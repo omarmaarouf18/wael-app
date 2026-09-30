@@ -10,3 +10,23 @@ b722d4a8eaefad05ed2fc91b57bfa310d8dd7966:services/auth-service/internal/config/c
 #    (historical commit; the file no longer exists at HEAD).
 f8e19c9606a487afe9cd91ec1b542661a8a0d65a:shared/infra/storage/storage_test.go:generic-api-key:21
 f8e19c9606a487afe9cd91ec1b542661a8a0d65a:shared/infra/storage/storage_test.go:generic-api-key:149
+
+# Added 2026-09-30 (owner-approved): the restored shared/infra/storage
+# tests embed dummy fixtures only — example UUIDs ("a1eebc99-...",
+# "b2eebc99-...", RFC-4122-style test keys) and test hex keys for the
+# AES-256-GCM unit/property tests. No real credentials. One fingerprint
+# per affected commit version of storage_test.go.
+1ea35390ac868164eb50bbf4a4e1f6be1e9981c6:shared/infra/storage/storage_test.go:generic-api-key:437
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:168
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:222
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:223
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:224
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:225
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:226
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:260
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:31
+2adaab09f89d1ada6c7725521ba51c3c6d299863:shared/infra/storage/storage_test.go:generic-api-key:86
+8d2cae869c6fcda8b2bdfecfee660c9e626dd3cf:shared/infra/storage/storage_test.go:generic-api-key:630
+8d2cae869c6fcda8b2bdfecfee660c9e626dd3cf:shared/infra/storage/storage_test.go:generic-api-key:664
+ba07e5003915db2616b817edefb81450dfa4f83d:shared/infra/storage/storage_test.go:generic-api-key:353
+ba07e5003915db2616b817edefb81450dfa4f83d:shared/infra/storage/storage_test.go:generic-api-key:387
