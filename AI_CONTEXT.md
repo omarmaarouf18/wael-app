@@ -30,7 +30,10 @@ notification deduplication added. User-facing messages routed through
 ErrorMessages with complete sanitization (no raw exception text). Debug
 diagnostics screen added under frontend/lib/debug/ (base URL, masked session,
 SSE state, last 50 calls without bodies or query strings, absent in release
-mode).
+mode). End-to-end behavior matrix executed against real compose stack with 24
+verified scenarios; docs/frontend/BEHAVIOR.md recorded with raw captured
+outputs (masked), backend findings, and fail-closed audit evidence.
+Lowest-friction Linux desktop target documented in frontend/README.md.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
