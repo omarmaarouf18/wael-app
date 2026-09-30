@@ -1,1 +1,1 @@
-Follow `CLAUDE.md` verbatim.
+Follow CLAUDE.md verbatim
