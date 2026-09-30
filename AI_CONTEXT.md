@@ -19,6 +19,12 @@ auth/notifications/academy mocks. Core Phase 0.1: gateway strips client
 `INTERNAL_SERVICE_TOKEN`. Core Phase 0.2: corrected ADR-0007 per
 `docs/core-service/SPEC.md` Section 14. Core Phase 0.3: ADR-0008 (admin
 identity and console boundaries) written and accepted.
+Owner review recorded (2026-09-30, docs only, nothing implemented): SPEC
+Section 2 D15-D19, Section 3 questions 12-16, Phase 0.0 public-repo
+hygiene, Section 15 review notes (ADR numbering after 0010; leak response:
+replace the video, change `youtube_video_id`, RUNBOOK to carry it when
+written). ADR-0001 leak-response note added; ADR-0003 amended (manual
+payment via InstaPay or e-wallets, admin activation).
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.

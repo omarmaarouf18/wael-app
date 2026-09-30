@@ -2,6 +2,7 @@
 
 - **Status**: Accepted
 - **Date**: 2026-09-29
+- **Amended**: 2026-09-30
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
 
@@ -50,3 +51,10 @@ exists for video upload, storage, or playback anywhere in the repo.
 - Check exactly what the backend exposes to a student before they have
   access (identifiers, metadata, thumbnails), so unentitled references leak
   nothing playable.
+
+## Amendment (2026-09-30): leak response
+
+When a lesson video leaks, the response is to **replace the video and change
+`youtube_video_id`**. The same leak-response note goes into `RUNBOOK.md`
+when it is written (`docs/core-service/SPEC.md`, Phase 8); no RUNBOOK exists
+yet as of this date.

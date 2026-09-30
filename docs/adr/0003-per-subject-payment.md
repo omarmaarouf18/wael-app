@@ -1,7 +1,7 @@
 # ADR-0003: Payment Per Subject (Materia)
 
 - **Status**: Accepted
-- **Amended**: 2026-09-29
+- **Amended**: 2026-09-29, 2026-09-30
 - **Date**: 2026-09-29
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
@@ -58,3 +58,12 @@ description) and PDFs, and its price is set by the admin. The payment
 provider question is deferred: the payment flow will be specified
 separately and ADR-0007 defines only the boundary (an admin-accepted
 request grants ownership). Refund policy remains open.
+
+## Amendment (2026-09-30)
+
+The owner specified the payment channel: payment is **manual, via InstaPay
+or e-wallets, outside the app**, and **activation is by the admin** (the
+admin-accepted request creates the entitlement, per the ADR-0007 boundary).
+This answers the "Payment provider versus manual activation" open question.
+The payment flow itself remains out of scope, and the refund policy remains
+open.

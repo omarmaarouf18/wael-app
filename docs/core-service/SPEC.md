@@ -58,6 +58,13 @@ This is the build contract for the core of the application. It is written for im
 | D12 | Levels seed | Bachelor years 1-4 only until the diploma/vocational lists are provided. |
 | D13 | Rate-limit tiers (ADR-0016 in saas-core) | Read 30/min, download 10/min, access-request and admin writes 5/min, per user (or per admin). Configurable. |
 | D14 | Max PDF size | 50 MB (`MAX_PDF_BYTES`). |
+| D15 | Blocklist hashing | **Supersedes the hashing in D8.** Blocklist hashes use HMAC-SHA256 with a secret key from env (required in production), not plain SHA-256. |
+| D16 | Admin verify lockout IP | The lockout keys on a client IP derived from a trusted proxy header that only Caddy and admin-console can set; the trust chain is documented. |
+| D17 | Admin-console delivery | Served with a strict `Content-Security-Policy` and no third-party scripts. |
+| D18 | Suspension and SSE | Suspension also closes the account's open SSE streams. |
+| D19 | SSE auth migration | Once Q9 is settled, notification-service stops accepting `?token=` (the Flutter client already sends the `Authorization` header). |
+
+*D15-D19 added 2026-09-30 (owner review); not yet implemented.*
 
 ## 3. Open questions (do not implement)
 
@@ -72,6 +79,13 @@ This is the build contract for the core of the application. It is written for im
 9. SSE authentication (the stream currently takes the JWT in `?token=`); a short-lived one-time ticket is the leading option.
 10. Refresh-token reuse detection (revoking a session when an old refresh token is replayed).
 11. Whether "new lesson" notifications go to the subject's owners (needs the targeted-audience broadcast of Phase 7).
+12. A financial record per entitlement (amount paid, payment method, optional reference, `price_at_grant`), required for the client's per-subject financial reports. Payment flow stays out of scope; this is only the accounting record.
+13. Do subject subscriptions expire (per term or year)? `entitlements` currently have no `expires_at`.
+14. Student self-service account deletion (store requirement, to verify against current Apple and Google rules) and how it differs from an admin ban (no blocklist for self-deletion).
+15. Student community group, external link or in-app.
+16. Should decision 9 keep creating an access request automatically when a student opens a locked subject (queue noise)?
+
+*Questions 12-16 added 2026-09-30 (owner review).*
 
 ## 4. Architecture
 
@@ -229,6 +243,7 @@ Follow the naming already used in `services/auth-service/internal/config`. Requi
 Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.md` update. Do not start a phase before the previous one is merged.
 
 **Phase 0 - prerequisites**
+- 0.0 Public-repo hygiene: gitleaks job, `permissions: contents: read` in `ci.yml`, extended `.gitignore`. *(Added 2026-09-30, owner review; not yet implemented.)*
 - 0.1 Gateway: stop injecting `X-Internal-Token`; add the two tests from Section 8.
 - 0.2 Correct ADR-0007 (Section 14).
 - 0.3 Write ADR-0008 (admin: console pattern, `admins`, CLIs, `/internal/admin/verify`, subdomain).
@@ -310,3 +325,20 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 4. Decision 12: use `youtube_video_id` (snake_case), remove `duration_sec`, make the `purchase_requests` pending index a partial unique index, and replace the unique (`subject_id`, `position`) index with a plain one (D11).
 5. Add `term` to `subjects` and `kind` to `subject_files`.
 6. Record the admin-panel decision (subdomain, admin-console, `/internal/admin/*`) or point to ADR-0008.
+
+## 15. Owner review notes (2026-09-30)
+
+Dated notes from the owner's review. Nothing from this review has been
+implemented yet; D15-D19 (Section 2), questions 12-16 (Section 3), and
+task 0.0 (Section 11) were added with it.
+
+1. **Leak response**: when a lesson video leaks, replace the video and change
+   `youtube_video_id`. Recorded as a dated note in ADR-0001. No RUNBOOK
+   exists yet; when Phase 8 writes `RUNBOOK.md`, it must carry the same
+   leak-response note.
+2. **ADR numbering**: ADR-0007 reserves ADR-0009 (file storage) and
+   ADR-0010 (app content). The new ADRs for WhatsApp OTP and for client
+   ownership use numbers after 0010.
+3. **ADR-0003 amendment applied** (docs only): payment is manual via
+   InstaPay or e-wallets, with admin activation. The payment flow itself
+   stays out of scope (decision 8); the refund policy stays open.
