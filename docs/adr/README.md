@@ -54,3 +54,5 @@ say explicitly where nothing is built yet.
 *   [ADR-0005: Study Notes (Mozakkerat) Delivered Inside the App](0005-in-app-study-notes.md)
 *   [ADR-0006: Support Only Through a WhatsApp Number](0006-whatsapp-only-support.md)
 *   [ADR-0007: Core Academy Service Design](0007-core-academy-service.md)
+*   [ADR-0008: Admin Identity and Console Boundaries](0008-admin-identity.md)
+*   [ADR-0009: File Storage (Local Encrypted Storage at Rest)](0009-file-storage.md)

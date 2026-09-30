@@ -26,7 +26,11 @@ keys/keystores, credential JSONs, logs/databases, Flutter coverage), and
 `docs/asset-provenance.md` (all rows UNCONFIRMED until the owner records
 sources; `placeholder_course.png` is referenced but not committed). Core
 Phase 0.6: added AGENTS.md pointer ("Follow CLAUDE.md verbatim") and updated
-CLAUDE.md (no-illustrative-output, proactive commit disclosure).
+CLAUDE.md (no-illustrative-output, proactive commit disclosure). Core
+Phase 0.4: ADR-0009 (file storage: local encrypted storage at rest with
+AES-256-GCM, server-generated keys, path traversal containment, streaming via
+OpenFile, and fail-fast DOCUMENT_ENCRYPTION_KEY in production) written and
+accepted; `shared/infra/storage` restored with unit and encryption tests.
 Owner review recorded (2026-09-30, docs only, nothing implemented): SPEC
 Section 2 D15-D19, Section 3 questions 12-16, Phase 0.0 public-repo
 hygiene, Section 15 review notes (ADR numbering after 0010; leak response:
@@ -66,8 +70,9 @@ rows in `docs/asset-provenance.md`.
 - [ADR-0006: Support Only Through a WhatsApp Number](docs/adr/0006-whatsapp-only-support.md)
 - [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md) (Status Proposed; revised: catalog tree, PDFs, admin tokens; amended 2026-09-30: admin diplomas, vocational training)
 - [ADR-0008: Admin Identity and Console Boundaries](docs/adr/0008-admin-identity.md) (Status Accepted; admin subdomain, thin proxy, admins collection, CLI lifecycle, verification without caching)
+- [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Accepted; local disk, AES-256-GCM at rest, fail-fast production key, streaming via academy-service OpenFile)
 
 ## Next task
-Continue core academy work from `docs/core-service/SPEC.md`: Phase 0.4,
-write ADR-0009 and restore `shared/infra/storage` with its tests. Complete
-the remaining Phase 0 prerequisites before Phase 1.
+Continue core academy work from `docs/core-service/SPEC.md`: Phase 0.5,
+fix the e2e test to use `t.Run` per stage. Complete the remaining Phase 0
+prerequisites before Phase 1.
