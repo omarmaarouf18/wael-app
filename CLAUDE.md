@@ -5,8 +5,9 @@
 Before starting, read `AI_CONTEXT.md` for the current state and next task. Keep
 it accurate and update it in the same commit when your change alters that
 state. Read `docs/core-service/SPEC.md`, especially Section 12, and
-`docs/adr/README.md` plus the ADRs relevant to the task. For frontend work,
-read `frontend/README.md` first.
+`docs/adr/README.md` plus the ADRs relevant to the task. Before touching
+academy-service code, read ADR-0001 through ADR-0009 as required by SPEC
+Section 12. For frontend work, read `frontend/README.md` first.
 
 ## Scope and decisions
 
@@ -19,8 +20,9 @@ read `frontend/README.md` first.
 - Changes to suspension, gating, or admin authorization stay off `main` until
   the owner confirms.
 - Merge to `main` by fast-forward only, after the full test suite and CI pass.
-- Never rewrite history or force-push. Never push without explicit owner
-  confirmation in the current session; after confirmation, use `make push`.
+- Never push, rewrite history, or force-push. SPEC Section 12 currently
+  prohibits pushes; change that policy in the governing documentation before
+  considering any push workflow.
 
 ## Verification
 
