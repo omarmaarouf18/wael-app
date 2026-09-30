@@ -24,14 +24,15 @@ Section 2 D15-D19, Section 3 questions 12-16, Phase 0.0 public-repo
 hygiene, Section 15 review notes (ADR numbering after 0010; leak response:
 replace the video, change `youtube_video_id`, RUNBOOK to carry it when
 written). ADR-0001 leak-response note added; ADR-0003 amended (manual
-payment via InstaPay or e-wallets, admin activation).
+payment via InstaPay or e-wallets, admin activation). Notification bundled
+fallback restricted to debug mode with empty state in release; live
+notification deduplication added.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
 RUNBOOK, DEPLOYMENT, changelog (ADRs now exist).
 
 ## Decisions
-Product decisions recorded in `docs/adr/`:
 - [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)
 - [ADR-0002: Single-Role Student App With a Separate Web Admin Panel](docs/adr/0002-single-role-student-app.md)
 - [ADR-0003: Payment Per Subject (Materia)](docs/adr/0003-per-subject-payment.md)
