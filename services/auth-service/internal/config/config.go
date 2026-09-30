@@ -6,6 +6,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 )
 
@@ -60,6 +61,8 @@ func Load() (*Config, error) {
 	appEnv := os.Getenv("APP_ENV")
 	if appEnv == "" {
 		appEnv = "production"
+	} else if appEnv != "local" && appEnv != "test" && appEnv != "production" {
+		return nil, fmt.Errorf("config: invalid APP_ENV %q: must be one of local, test, production", appEnv)
 	}
 	dbName := os.Getenv("AUTH_MONGO_DATABASE")
 	if dbName == "" {

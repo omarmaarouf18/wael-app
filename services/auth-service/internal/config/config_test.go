@@ -54,3 +54,44 @@ func TestLoad_ResendKeyRequiresFrom(t *testing.T) {
 		t.Fatal("expected error for RESEND_API_KEY without RESEND_FROM_EMAIL")
 	}
 }
+
+func TestLoad_AppEnvValidation(t *testing.T) {
+	cases := []struct {
+		envVal      string
+		expectEnv   string
+		expectError bool
+	}{
+		{"", "production", false},
+		{"production", "production", false},
+		{"local", "local", false},
+		{"test", "test", false},
+		{"staging", "", true},
+		{"development", "", true},
+		{"unknown", "", true},
+	}
+
+	for _, tc := range cases {
+		t.Run("APP_ENV="+tc.envVal, func(t *testing.T) {
+			baseEnv(t)
+			if tc.envVal == "" {
+				_ = os.Unsetenv("APP_ENV")
+			} else {
+				setEnv(t, "APP_ENV", tc.envVal)
+			}
+
+			cfg, err := Load()
+			if tc.expectError {
+				if err == nil {
+					t.Fatalf("expected error for APP_ENV=%q, got nil", tc.envVal)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error for APP_ENV=%q: %v", tc.envVal, err)
+				}
+				if cfg.AppEnv != tc.expectEnv {
+					t.Errorf("AppEnv mismatch: got %q, want %q", cfg.AppEnv, tc.expectEnv)
+				}
+			}
+		})
+	}
+}
