@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -153,15 +154,63 @@ func TestMarkRead_OwnerScope(t *testing.T) {
 	}
 }
 
-func waitForBody(t *testing.T, rec *httptest.ResponseRecorder, substr string) {
+type syncRecorder struct {
+	mu     sync.Mutex
+	header http.Header
+	buf    bytes.Buffer
+	code   int
+}
+
+func newSyncRecorder() *syncRecorder {
+	return &syncRecorder{header: make(http.Header)}
+}
+
+func (r *syncRecorder) Header() http.Header {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.header
+}
+
+func (r *syncRecorder) WriteHeader(code int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.code == 0 {
+		r.code = code
+	}
+}
+
+func (r *syncRecorder) Write(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.code == 0 {
+		r.code = http.StatusOK
+	}
+	return r.buf.Write(p)
+}
+
+func (r *syncRecorder) Flush() {}
+
+func (r *syncRecorder) Code() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.code
+}
+
+func (r *syncRecorder) String() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.buf.String()
+}
+
+func waitForBody(t *testing.T, rec *syncRecorder, substr string) {
 	t.Helper()
 	for i := 0; i < 40; i++ {
-		if strings.Contains(rec.Body.String(), substr) {
+		if strings.Contains(rec.String(), substr) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for %q (body %q)", substr, rec.Body.String())
+	t.Fatalf("timed out waiting for %q (body %q)", substr, rec.String())
 }
 
 func TestStream_BearerAndQueryToken(t *testing.T) {
@@ -178,7 +227,7 @@ func TestStream_BearerAndQueryToken(t *testing.T) {
 		if !useQuery {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
-		rec := httptest.NewRecorder()
+		rec := newSyncRecorder()
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -202,9 +251,9 @@ func TestStream_Unauthenticated(t *testing.T) {
 	s := testServer()
 	req := httptest.NewRequest(http.MethodGet, "/notifications/stream", nil)
 	req.Header.Set("X-Gateway-Secret", "gw-secret")
-	rec := httptest.NewRecorder()
+	rec := newSyncRecorder()
 	s.GatewayAuth(http.HandlerFunc(s.Stream)).ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("no token = %d, want 401", rec.Code)
+	if rec.Code() != http.StatusUnauthorized {
+		t.Fatalf("no token = %d, want 401", rec.Code())
 	}
 }
