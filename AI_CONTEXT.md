@@ -26,6 +26,14 @@ replace the video, change `youtube_video_id`, RUNBOOK to carry it when
 written). ADR-0001 leak-response note added; ADR-0003 amended (manual
 payment via InstaPay or e-wallets, admin activation). Section 15 corrected
 same day: ADR-0007 reserves ADR-0008-0010.
+Owner decisions recorded (2026-09-30, docs only, nothing implemented):
+diplomas are admin-created under fixed diploma study type (server-generated
+key, delete blocked while subjects exist, levels without published subjects
+hidden from student listing); vocational training is one fixed level with
+empty-term subjects (frontend hides term filter); open question 1 resolved
+(Phase 2.2 seed contains bachelor years 1-4 and vocational level only);
+Phase 4 gains diploma CRUD admin endpoints task before subject CRUD;
+SPEC.md Sections 1, 3, 5, 11 and ADR-0007 amended.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
@@ -39,7 +47,7 @@ Product decisions recorded in `docs/adr/`:
 - [ADR-0004: No Limits on Video Access](docs/adr/0004-unlimited-video-access.md)
 - [ADR-0005: Study Notes (Mozakkerat) Delivered Inside the App](docs/adr/0005-in-app-study-notes.md)
 - [ADR-0006: Support Only Through a WhatsApp Number](docs/adr/0006-whatsapp-only-support.md)
-- [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md) (Status Proposed; revised: catalog tree, PDFs, admin tokens)
+- [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md) (Status Proposed; revised: catalog tree, PDFs, admin tokens; amended 2026-09-30: admin diplomas, vocational training)
 - [ADR-0008: Admin Identity and Console Boundaries](docs/adr/0008-admin-identity.md) (Status Accepted; admin subdomain, thin proxy, admins collection, CLI lifecycle, verification without caching)
 
 ## Next task

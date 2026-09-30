@@ -185,3 +185,23 @@ adopting it for suspension is proposed, not decided.
   admin paths.
 - Confirm the Mongo database name for the new collections at
   implementation time.
+
+## Amendment (2026-09-30): diplomas and vocational training
+
+The owner decided the catalog hierarchy for diplomas and vocational training:
+
+1. **Diplomas are admin-created**: Study types stay fixed (`bachelor`, `diploma`,
+   `vocational`). The bachelor levels (years 1-4) and the vocational level stay
+   seeded. Under the diploma study type, the admin creates, edits, and deletes
+   individual diplomas (example: a criminal-law diploma). Each diploma is a
+   row in `levels` with `study_type = diploma` and a server-generated `key`.
+   Inside a diploma the admin creates subjects (each with term `first` or
+   `second`), then videos and files, exactly as for bachelor subjects.
+   Deleting a diploma is blocked while it has subjects. Levels with no
+   published subjects are hidden from `GET /academy/levels`.
+2. **Vocational training**: Vocational training is one fixed level with subjects
+   that have an empty `term`. The frontend hides the term filter for this
+   study type.
+3. **Open question 1 closed**: The seed in Phase 2.2 contains bachelor years
+   1-4 and the vocational level only; individual diplomas are created by the
+   admin. `levels` is no longer purely seeded.

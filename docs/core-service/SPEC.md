@@ -20,6 +20,7 @@ This is the build contract for the core of the application. It is written for im
 **Product**
 1. A single-teacher learning platform. Students only receive content; they upload nothing.
 2. Catalog tree: **study type -> level/programme -> subject**. Study types and levels are **fixed** (seeded, never admin-edited): bachelor (four years), diplomas, vocational training. Each type has different subjects.
+   - *Amended 2026-09-30 (owner decision)*: Study types stay fixed. The bachelor levels (years 1-4) and the vocational level stay seeded. Under the diploma study type, the admin creates, edits, and deletes individual diplomas (example: a criminal-law diploma). Each diploma is a row in `levels` with `study_type = diploma` and a server-generated `key`. Inside a diploma the admin creates subjects (each with term first or second), then videos and files, exactly as for bachelor subjects. Deleting a diploma is blocked while it has subjects. Levels with no published subjects are hidden from `GET /academy/levels`. Vocational training is one fixed level with subjects that have an empty `term`; the frontend hides the term filter for this study type.
 3. The admin creates **subjects** inside a level. A subject has an admin-set price, a description, and a term (first or second) where applicable.
 4. A subject contains **videos** (unlisted YouTube references, each with a title and a description) and **PDF files** (books and study notes).
 5. **Owning a subject grants all its videos and PDFs automatically.** PDFs are not sold separately. PDFs can be downloaded to the student's device from inside the app.
@@ -68,7 +69,7 @@ This is the build contract for the core of the application. It is written for im
 
 ## 3. Open questions (do not implement)
 
-1. The exact fixed lists of diplomas and vocational programmes (blocks the seed only).
+1. **[Resolved 2026-09-30]** The exact fixed lists of diplomas and vocational programmes (blocks the seed only). Closed by owner decisions: diplomas are admin-created under the fixed diploma study type; vocational training is one fixed seeded level; Phase 2.2 seed contains bachelor years 1-4 and the vocational level only. See Section 1 decision 2 amendment and ADR-0007 (2026-09-30 amendment).
 2. Per-user watermark on downloaded PDFs (leak traceability). Design downloads so this stays possible (Section 7, R6).
 3. Where PDFs live long term (ADR-0009 decides the first answer: local encrypted storage).
 4. Whether English content becomes mandatory.
@@ -121,7 +122,7 @@ Field names are snake_case everywhere, including `youtube_video_id`.
 
 | Collection | Fields | Indexes |
 |---|---|---|
-| `levels` (seed) | `key`, `study_type` (`bachelor`/`diploma`/`vocational`), `title_ar`, `title_en`, `position` | unique `key` |
+| `levels` | `key`, `study_type` (`bachelor`/`diploma`/`vocational`), `title_ar`, `title_en`, `position` | unique `key` |
 | `subjects` | `_id`, `level_key`, `term` (`first`/`second`/empty), `title_ar`, `title_en`, `description_ar`, `description_en`, `price`, `status` (`draft`/`published`), `created_at`, `updated_at` | (`level_key`, `status`) |
 | `videos` | `_id`, `subject_id`, `position`, `title_ar`, `title_en`, `description_ar`, `description_en`, `youtube_video_id` | (`subject_id`, `position`) non-unique |
 | `subject_files` | `_id`, `subject_id`, `kind` (`book`/`note`), `title_ar`, `title_en`, `size_bytes`, `storage_key`, `created_at` | `subject_id` |
@@ -130,6 +131,7 @@ Field names are snake_case everywhere, including `youtube_video_id`.
 | `admin_audit_log` | `_id`, `actor_id`, `actor_name`, `action`, `target_type`, `target_id`, `detail`, `created_at` | (`actor_id`, `created_at`); (`target_type`, `target_id`) |
 
 Notes:
+- `levels` is no longer purely seeded (amended 2026-09-30): bachelor years 1-4 and the vocational level are seeded, while diplomas are created, edited, and deleted by the admin (`study_type = diploma`, server-generated `key`). Deleting a diploma is blocked while it has subjects.
 - `storage_key` is a server-generated UUID. Never derive it from a user-supplied filename.
 - The audit log **does not store IP addresses** (saas-core removed IP persistence for privacy). Reasons must be length-capped (1-1000) and stripped of CR/LF before any log line.
 - Student API responses are **DTOs**, never raw models. `storage_key`, `granted_by`, `decided_by`, and audit data never reach students.
@@ -261,7 +263,7 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 
 **Phase 2 - academy-service read path**
 - 2.1 Skeleton: config, `--check-env`, health, `Store` interface with Memory and Mongo, both listeners.
-- 2.2 `levels` seed and `GET /academy/levels`.
+- 2.2 `levels` seed (bachelor years 1-4 and the vocational level only) and `GET /academy/levels` (levels with no published subjects are hidden).
 - 2.3 Subjects and videos models with student read endpoints (metadata only, no video IDs yet).
 - 2.4 Gateway route `/api/v1/academy/` with a route test.
 
@@ -273,10 +275,11 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 
 **Phase 4 - academy admin surface**
 - 4.1 Admin listener, verify client (fail closed), audit log.
-- 4.2 Subject CRUD and publish.
-- 4.3 Video CRUD, reorder, YouTube ID extraction.
-- 4.4 Request review (R4 order), reject with reason, student notification.
-- 4.5 Manual grant and revoke.
+- 4.2 Diploma create/edit/delete admin endpoints with an audit log entry per mutation (server-generated `key`; delete blocked while diploma has subjects).
+- 4.3 Subject CRUD and publish.
+- 4.4 Video CRUD, reorder, YouTube ID extraction.
+- 4.5 Request review (R4 order), reject with reason, student notification.
+- 4.6 Manual grant and revoke.
 
 **Phase 5 - files**
 - 5.1 Upload (Section 8 item 6).
