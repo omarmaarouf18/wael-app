@@ -416,8 +416,8 @@ a captured-mail sink. Decide this in an ADR before building staging.
 
 | # | Finding | Sev | Blocks |
 |---|---|---|---|
-| W-01 | Fail-open production config | P1 | Any deploy |
-| W-02 | OTP codes in logs without real sender | P1 | Any deploy |
+| W-01 (done) | Fail-open production config | P1 | Any deploy |
+| W-02 (done) | OTP codes in logs without real sender | P1 | Any deploy |
 | W-03 (done) | No SHA citation check in CI | P1 | Trust in docs |
 | W-04 | No `--check-env` | P1 | CD pre-flight |
 | W-05 | No real-DB tests | P1 | Academy Phase 1 |
@@ -480,7 +480,7 @@ result; the last column is the target.
 | No secrets in image or build context | Yes | Yes (`.dockerignore`) | Yes |
 | **Runtime** | | | |
 | mTLS between services | Yes | Partial (optional) | Yes, required outside local |
-| Fail-fast config, refuse mocks in production | Yes | **No** | Yes |
+| Fail-fast config, refuse mocks in production | Yes | Yes | Yes |
 | `--check-env` | Yes | **No** | Yes |
 | Gateway header hygiene and trusted proxies | Yes | Yes | Yes |
 | Rate limiting fails closed | Yes | Yes (wrong status code) | Yes |
@@ -511,10 +511,10 @@ done, because the academy service will copy whatever the existing services do.
 
 1. **W-03** (done) Add the Markdown SHA step to `ci.yml`. *Done when:* a deliberately bad hash on a
    throwaway branch fails the job.
-2. **W-01** Strict `Load()` for gateway, auth, notification with a shared helper for the
+2. **W-01** (done) Strict `Load()` for gateway, auth, notification with a shared helper for the
    `APP_ENV` allow-list. *Done when:* table tests cover every missing variable per
    non-local environment.
-3. **W-02** Production refusal for the log-only sender and the local-with-telemetry guard.
+3. **W-02** (done) Production refusal for the log-only sender and the local-with-telemetry guard.
    *Done when:* both refusals have tests.
 4. **W-04** `--check-env` in all three services (and in every new service by template).
    *Done when:* each exits 1 on a missing required variable and 0 on a valid environment.
@@ -790,8 +790,8 @@ Examined commit: `46c7997...`
 
 | ID | Status | Evidence | Correction |
 |---|---|---|---|
-| W-01 | Partial | `services/auth-service/internal/config/config.go:64-66`, `services/auth-service/cmd/main.go:37-62` | APP_ENV is now allowlisted to local, test, or production (services/auth-service/internal/config/config.go:64-66), but Load() does not require Mongo, Redis, or TLS in production, and cmd/main.go (lines 37-62) still falls back to in-memory stores and plain HTTP with a log line. |
-| W-02 | Confirmed | `services/auth-service/cmd/main.go:64-67`, `services/auth-service/internal/mailer/mailer.go:26-30` | none |
+| W-01 | Fixed in 0f6c02b + e1e8479 | `services/*/internal/config/config.go`, `services/*/cmd/main.go` | Outside local/test, Load() requires Mongo, Redis and the TLS triple (auth also Resend); main.go refuses memory stores, LogSender, plain HTTP and TLS without a client CA. e1e8479 restores REDIS_URI as required in every APP_ENV for the gateway (0f6c02b had made it optional in local/test). |
+| W-02 | Fixed in 0f6c02b | `services/auth-service/internal/config/config.go`, `services/auth-service/cmd/main.go` | RESEND_API_KEY and RESEND_FROM_EMAIL are required outside local/test; LogSender only in local/test. The local-with-telemetry guard is not applicable: the repo has no telemetry variable. |
 | W-03 | Fixed in 36033d7 | .github/workflows/ci.yml:37-54 | none |
 | W-04 | Confirmed | `grep -rn "check-env" services/` (0 matches) | none |
 | W-05 | Confirmed | `grep -rn "MONGO_URI" services/*/*_test.go shared/*/*_test.go` (0 matches), `.github/workflows/ci.yml:84-120` (no service containers) | none |
