@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -25,6 +26,31 @@ type Storage interface {
 type LocalStorage struct {
 	baseDir string
 	aead    cipher.AEAD
+}
+
+var canonicalUUIDRegex = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func validateUUIDKey(key string) error {
+	if !canonicalUUIDRegex.MatchString(key) {
+		return fmt.Errorf("storage: invalid key %q: must be a canonical lowercase UUID", key)
+	}
+	return nil
+}
+
+func checkPathContainment(baseDir, destPath string) error {
+	absBase, err := filepath.Abs(baseDir)
+	if err != nil {
+		return fmt.Errorf("storage: invalid base directory: %w", err)
+	}
+	absDest, err := filepath.Abs(destPath)
+	if err != nil {
+		return fmt.Errorf("storage: invalid destination path: %w", err)
+	}
+	rel, err := filepath.Rel(absBase, absDest)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("storage: directory traversal detected")
+	}
+	return nil
 }
 
 func createDocAEAD(hexKey, appEnv string) (cipher.AEAD, error) {
@@ -98,17 +124,13 @@ func NewLocalStorage(baseDir, encKey, appEnv string) (*LocalStorage, error) {
 
 // Upload writes an encrypted document file to the local disk.
 func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader, contentType string) error {
+	if err := validateUUIDKey(key); err != nil {
+		return err
+	}
+
 	destPath := filepath.Join(l.baseDir, filepath.Clean(key))
-	absBase, err := filepath.Abs(l.baseDir)
-	if err != nil {
-		return fmt.Errorf("storage: invalid base directory: %w", err)
-	}
-	absDest, err := filepath.Abs(destPath)
-	if err != nil {
-		return fmt.Errorf("storage: invalid destination path: %w", err)
-	}
-	if !strings.HasPrefix(absDest, absBase) {
-		return fmt.Errorf("storage: directory traversal detected")
+	if err := checkPathContainment(l.baseDir, destPath); err != nil {
+		return err
 	}
 
 	plaintext, err := io.ReadAll(reader)
@@ -127,7 +149,7 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 		return fmt.Errorf("storage: failed to create subdirectories: %w", err)
 	}
 
-	// #nosec G304 //nolint:gosec -- path prefix validation ensures file is scoped to storage directory, preventing directory traversal
+	// #nosec G304 //nolint:gosec -- canonical UUID key validation and filepath.Rel containment check ensure file path stays within base directory
 	file, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("storage: failed to open destination file: %w", err)
@@ -143,20 +165,16 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 
 // OpenFile opens and decrypts the local file for reading.
 func (l *LocalStorage) OpenFile(key string) (io.ReadCloser, error) {
-	destPath := filepath.Join(l.baseDir, filepath.Clean(key))
-	absBase, err := filepath.Abs(l.baseDir)
-	if err != nil {
-		return nil, fmt.Errorf("storage: invalid base directory: %w", err)
-	}
-	absDest, err := filepath.Abs(destPath)
-	if err != nil {
-		return nil, fmt.Errorf("storage: invalid destination path: %w", err)
-	}
-	if !strings.HasPrefix(absDest, absBase) {
-		return nil, fmt.Errorf("storage: directory traversal detected")
+	if err := validateUUIDKey(key); err != nil {
+		return nil, err
 	}
 
-	// #nosec G304 //nolint:gosec -- path prefix validation ensures file is scoped to storage directory, preventing directory traversal
+	destPath := filepath.Join(l.baseDir, filepath.Clean(key))
+	if err := checkPathContainment(l.baseDir, destPath); err != nil {
+		return nil, err
+	}
+
+	// #nosec G304 //nolint:gosec -- canonical UUID key validation and filepath.Rel containment check ensure file path stays within base directory
 	data, err := os.ReadFile(destPath)
 	if err != nil {
 		return nil, fmt.Errorf("storage: failed to open file %s: %w", key, err)

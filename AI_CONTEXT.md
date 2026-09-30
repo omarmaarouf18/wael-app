@@ -31,7 +31,7 @@ Phase 0.4: ADR-0009 (file storage: local encrypted storage at rest with
 AES-256-GCM, server-generated keys, path traversal containment, streaming via
 OpenFile with per-call entitlement checks, no signed URLs, and fail-fast
 DOCUMENT_ENCRYPTION_KEY in production) written (Status Proposed);
-`shared/infra/storage` restored with unit and encryption tests (signed view-URL helpers removed).
+`shared/infra/storage` restored with unit and encryption tests (signed view-URL helpers removed; hardened with canonical lowercase UUID key validation and filepath.Rel containment check immune to sibling-prefix escapes).
 Owner review recorded (2026-09-30, docs only, nothing implemented): SPEC
 Section 2 D15-D19, Section 3 questions 12-16, Phase 0.0 public-repo
 hygiene, Section 15 review notes (ADR numbering after 0010; leak response:
