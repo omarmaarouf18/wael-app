@@ -26,7 +26,7 @@ fi
 
 # 3. Markdown commit SHAs must resolve to reachable commits
 FAILED_SHA=0
-for file in $(find . -type f -name "*.md" -not -path "*/node_modules/*" -not -path "*/.git/*"); do
+for file in $(git ls-files '*.md'); do
   for sha in $(grep -oE "[0-9a-f]{40}" "$file" || true); do
     if ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
       echo "BLOCKED: fabricated/non-existent SHA $sha in $file"

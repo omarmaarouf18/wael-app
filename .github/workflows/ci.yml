@@ -34,6 +34,24 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Markdown Commit SHAs
+        run: |
+          FAILED_SHA=0
+          for file in $(git ls-files '*.md'); do
+            for sha in $(grep -oE "[0-9a-f]{40}" "$file" || true); do
+              if ! git cat-file -e "$sha^{commit}" 2>/dev/null; then
+                echo "BLOCKED: fabricated/non-existent SHA $sha in $file"
+                FAILED_SHA=1
+              elif ! git merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+                echo "BLOCKED: SHA $sha in $file is not reachable from current branch history"
+                FAILED_SHA=1
+              fi
+            done
+          done
+          if [ "$FAILED_SHA" -eq 1 ]; then
+            exit 1
+          fi
+
       - name: Verify Go Version Consistency (Drift Guard)
         run: |
           CANONICAL_GO_VERSION="1.26"
