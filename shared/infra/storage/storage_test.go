@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestLocalStorage(t *testing.T) {
@@ -18,9 +17,8 @@ func TestLocalStorage(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	secret := "super-secret-jwt-key-32-bytes-long!!"
 	encKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32)) // 64 hex chars (32 bytes)
-	store, err := NewLocalStorage(tempDir, "http://localhost:8080", secret, encKey, "test")
+	store, err := NewLocalStorage(tempDir, encKey, "test")
 	if err != nil {
 		t.Fatalf("failed to create LocalStorage: %v", err)
 	}
@@ -67,76 +65,6 @@ func TestLocalStorage(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected error for directory traversal open, got nil")
 	}
-
-	// 6. Test Signed URL Generation & Validation
-	signedURL, err := store.GetSignedURL(ctx, key, 5*time.Minute)
-	if err != nil {
-		t.Fatalf("GetSignedURL failed: %v", err)
-	}
-	if !strings.Contains(signedURL, "http://localhost:8080/auth/documents/view?token=") {
-		t.Errorf("Unexpected signed URL format: %s", signedURL)
-	}
-
-	tokenStr := strings.TrimPrefix(signedURL, "http://localhost:8080/auth/documents/view?token=")
-	valKey, err := store.ValidateSignedURLToken(tokenStr)
-	if err != nil {
-		t.Fatalf("ValidateSignedURLToken failed: %v", err)
-	}
-	if valKey != key {
-		t.Errorf("Expected key %q, got %q", key, valKey)
-	}
-
-	// 7. Test Expired Signed URL Token
-	expiredSignedURL, err := store.GetSignedURL(ctx, key, -1*time.Minute)
-	if err != nil {
-		t.Fatalf("GetSignedURL failed for expired token test: %v", err)
-	}
-	expiredTokenStr := strings.TrimPrefix(expiredSignedURL, "http://localhost:8080/auth/documents/view?token=")
-	_, err = store.ValidateSignedURLToken(expiredTokenStr)
-	if err == nil {
-		t.Errorf("Expected error validating expired token, got nil")
-	}
-
-	// 8. Test Invalid Signature Token
-	otherStore, err := NewLocalStorage(tempDir, "http://localhost:8080", "completely-different-secret-key-32b!", encKey, "test")
-	if err != nil {
-		t.Fatalf("failed to create otherStore: %v", err)
-	}
-	otherSignedURL, err := otherStore.GetSignedURL(ctx, key, 5*time.Minute)
-	if err != nil {
-		t.Fatalf("otherStore.GetSignedURL failed: %v", err)
-	}
-	otherTokenStr := strings.TrimPrefix(otherSignedURL, "http://localhost:8080/auth/documents/view?token=")
-	_, err = store.ValidateSignedURLToken(otherTokenStr)
-	if err == nil {
-		t.Errorf("Expected validation failure for token signed by different secret, got nil")
-	}
-
-	// 9. Test Custom View Path & Claims (e.g. Chat Attachments)
-	chatStore, err := NewLocalStorageWithPath(tempDir, "http://localhost:8080", "/chat/attachments/view", secret, encKey, "test")
-	if err != nil {
-		t.Fatalf("failed to create chatStore: %v", err)
-	}
-	claims := DocClaims{
-		Key:      "tickets/t-1/att.pdf",
-		TicketID: "t-1",
-		UserID:   "user-123",
-	}
-	chatURL, err := chatStore.GetSignedURLWithClaims(ctx, "/chat/attachments/view", claims, 10*time.Minute)
-	if err != nil {
-		t.Fatalf("GetSignedURLWithClaims failed: %v", err)
-	}
-	if !strings.Contains(chatURL, "http://localhost:8080/chat/attachments/view?token=") {
-		t.Errorf("Unexpected chat signed URL format: %s", chatURL)
-	}
-	chatTokenStr := strings.TrimPrefix(chatURL, "http://localhost:8080/chat/attachments/view?token=")
-	valClaims, err := chatStore.ValidateSignedURLTokenWithClaims(chatTokenStr)
-	if err != nil {
-		t.Fatalf("ValidateSignedURLTokenWithClaims failed: %v", err)
-	}
-	if valClaims.Key != "tickets/t-1/att.pdf" || valClaims.TicketID != "t-1" || valClaims.UserID != "user-123" {
-		t.Errorf("Unexpected claims: %+v", valClaims)
-	}
 }
 
 func TestLocalStorage_EncryptionAtRest(t *testing.T) {
@@ -146,9 +74,8 @@ func TestLocalStorage_EncryptionAtRest(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	secret := "secret-jwt-key"
 	encKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
-	store, err := NewLocalStorage(tempDir, "http://localhost:8080", secret, encKey, "test")
+	store, err := NewLocalStorage(tempDir, encKey, "test")
 	if err != nil {
 		t.Fatalf("failed to create LocalStorage: %v", err)
 	}
@@ -193,30 +120,28 @@ func TestLocalStorage_ProductionKeyValidation(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	secret := "jwt-secret-key"
-
 	// 1. Missing key in production fails fast
-	_, err = NewLocalStorage(tempDir, "http://localhost:8080", secret, "", "production")
+	_, err = NewLocalStorage(tempDir, "", "production")
 	if err == nil || !strings.Contains(err.Error(), "DOCUMENT_ENCRYPTION_KEY is required") {
 		t.Fatalf("expected error for empty DOCUMENT_ENCRYPTION_KEY in production, got %v", err)
 	}
 
 	// 2. Non-hex key in production fails fast
-	_, err = NewLocalStorage(tempDir, "http://localhost:8080", secret, "not-a-valid-hex-string!!", "production")
+	_, err = NewLocalStorage(tempDir, "not-a-valid-hex-string!!", "production")
 	if err == nil || !strings.Contains(err.Error(), "must be a valid hex string") {
 		t.Fatalf("expected error for invalid hex key in production, got %v", err)
 	}
 
 	// 3. Short hex key in production fails fast
 	shortKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 8)) // 16 hex chars (8 bytes)
-	_, err = NewLocalStorage(tempDir, "http://localhost:8080", secret, shortKey, "production")
+	_, err = NewLocalStorage(tempDir, shortKey, "production")
 	if err == nil || !strings.Contains(err.Error(), "must be exactly 32 bytes") {
 		t.Fatalf("expected error for short key in production, got %v", err)
 	}
 
 	// 4. Valid 64-hex char key in production succeeds
 	validKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
-	prodStore, err := NewLocalStorage(tempDir, "http://localhost:8080", secret, validKey, "production")
+	prodStore, err := NewLocalStorage(tempDir, validKey, "production")
 	if err != nil {
 		t.Fatalf("expected success with valid 64-hex key in production, got %v", err)
 	}
@@ -232,9 +157,8 @@ func TestLocalStorage_CorruptFile(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	secret := "jwt-secret-key"
 	encKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
-	store, err := NewLocalStorage(tempDir, "http://localhost:8080", secret, encKey, "test")
+	store, err := NewLocalStorage(tempDir, encKey, "test")
 	if err != nil {
 		t.Fatalf("failed to create LocalStorage: %v", err)
 	}

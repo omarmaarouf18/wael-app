@@ -1,6 +1,6 @@
 # ADR-0009: File Storage (Local Encrypted Storage at Rest)
 
-- **Status**: Accepted
+- **Status**: Proposed
 - **Date**: 2026-09-30
 - **Related Commit SHA**: none (decision only, initial implementation in shared/infra/storage)
 - **Related Audit Finding**: n/a
@@ -19,9 +19,8 @@ SPEC.md Section 3 Open Question 3 notes: "Where PDFs live long term (ADR-0009 de
 2. **Server-generated storage keys**: Files are addressed by server-generated random keys (UUIDs / CSPRNG-generated keys), never user-supplied file names or paths.
 3. **Path containment enforcement**: Storage operations verify absolute path resolution to ensure all read, write, and open operations remain strictly scoped within the configured base directory (`!strings.HasPrefix(absDest, absBase)`), rejecting path traversal attempts.
 4. **Encryption key management**: `DOCUMENT_ENCRYPTION_KEY` (32 bytes / 64 hex characters) is mandatory in `APP_ENV=production`. If missing, non-hex, or of incorrect length in production, storage initialization fails fast. In non-production environments (`local`, `test`), an ephemeral random key or padded test key is permitted to facilitate development and automated testing.
-5. **Streaming delivery via academy-service**: Student file downloads stream directly through `academy-service` via `OpenFile` (`Content-Disposition: attachment`, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`), as specified in SPEC.md Section 7 R6. Direct static public URLs and unauthenticated CDN links are prohibited, ensuring entitlement is re-verified on every download (R3) and keeping the delivery architecture compatible with future per-user watermarking (Open Question 2).
-6. **HMAC-SHA256 signed URL tokens**: Signed URLs (`GetSignedURL`, `GetSignedURLWithPath`, `GetSignedURLWithClaims`) are supported using short-lived HMAC-SHA256 JWT tokens with custom claims (`DocClaims`, e.g. scoping to key, ticket, and user).
-7. **Storage abstraction interface**: The `Storage` interface defines backend-agnostic operations (`Upload`, `OpenFile`, `GetSignedURL`, `ValidateSignedURLToken`, etc.), allowing future migration to S3-compatible cloud object storage (e.g. AWS S3, Cloudflare R2, MinIO) without changing application handlers.
+5. **Streaming delivery via academy-service**: Student file downloads stream directly through `academy-service` via `OpenFile` (`Content-Disposition: attachment`, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`), as specified in SPEC.md Section 7 R6. Downloads stream through academy-service with an entitlement check per call (R3); no signed URL mechanism exists. Direct static public URLs, signed tokens, and unauthenticated CDN links are prohibited, ensuring entitlement is re-verified on every download and keeping the delivery architecture compatible with future per-user watermarking (Open Question 2).
+6. **Storage abstraction interface**: The `Storage` interface defines backend-agnostic operations (`Upload` and `OpenFile`), allowing future migration to S3-compatible cloud object storage (e.g. AWS S3, Cloudflare R2, MinIO) without changing application handlers.
 
 ## Consequences
 
@@ -43,7 +42,7 @@ SPEC.md Section 3 Open Question 3 notes: "Where PDFs live long term (ADR-0009 de
 
 - **Immediate S3 / Cloud Object Storage**: Rejected for initial phase to keep local Docker compose and single-host deployment free of external service dependencies.
 - **Unencrypted Local Disk Storage**: Rejected; course notes and books are proprietary teacher intellectual property and require encryption at rest (SPEC.md Section 8 Item 7).
-- **Public static file serving or long-lived links**: Rejected; violates entitlement gating (R1, R3) and prevents per-user download tracing.
+- **Signed URLs or static download links**: Rejected per SPEC.md Section 7 R3 and R6; signed URLs would bypass per-call entitlement checks and prevent dynamic streaming watermarking.
 
 ## Open Questions
 
