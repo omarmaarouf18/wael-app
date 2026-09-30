@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,42 +55,29 @@ func checkPathContainment(baseDir, destPath string) error {
 }
 
 func createDocAEAD(hexKey, appEnv string) (cipher.AEAD, error) {
+	relaxed := appEnv == "local" || appEnv == "test"
+
 	var keyBytes []byte
 	var err error
 
-	isLocalOrTest := appEnv == "local" || appEnv == "test" || appEnv == ""
-
 	if hexKey == "" {
-		if appEnv == "production" {
-			return nil, fmt.Errorf("storage: DOCUMENT_ENCRYPTION_KEY is required in environment: %s", appEnv)
+		if !relaxed {
+			return nil, fmt.Errorf("storage: DOCUMENT_ENCRYPTION_KEY is required in environment: %q", appEnv)
 		}
-		// Generate a random 32-byte key for local/test ephemeral storage if empty
+		// Ephemeral key allowed only in relaxed environments
 		keyBytes = make([]byte, 32)
 		if _, err := rand.Read(keyBytes); err != nil {
-			return nil, fmt.Errorf("storage: failed to generate random key: %w", err)
+			return nil, fmt.Errorf("storage: failed to generate ephemeral random key: %w", err)
 		}
+		log.Printf("WARNING: storage: DOCUMENT_ENCRYPTION_KEY not set; using ephemeral random key for %s", appEnv)
 	} else {
 		keyBytes, err = hex.DecodeString(hexKey)
 		if err != nil {
-			if !isLocalOrTest && appEnv == "production" {
-				return nil, fmt.Errorf("storage: DOCUMENT_ENCRYPTION_KEY must be a valid hex string: %w", err)
-			}
-			// If not valid hex in local/test, use raw bytes padded/truncated to 32
-			keyBytes = make([]byte, 32)
-			copy(keyBytes, []byte(hexKey))
-		} else if len(keyBytes) != 32 {
-			if !isLocalOrTest && appEnv == "production" {
-				return nil, fmt.Errorf("storage: DOCUMENT_ENCRYPTION_KEY must be exactly 32 bytes (64 hex characters), got %d bytes", len(keyBytes))
-			}
+			return nil, fmt.Errorf("storage: DOCUMENT_ENCRYPTION_KEY must be a valid hex string: %w", err)
 		}
-	}
-
-	if len(keyBytes) < 32 {
-		padded := make([]byte, 32)
-		copy(padded, keyBytes)
-		keyBytes = padded
-	} else if len(keyBytes) > 32 {
-		keyBytes = keyBytes[:32]
+		if len(keyBytes) != 32 {
+			return nil, fmt.Errorf("storage: DOCUMENT_ENCRYPTION_KEY must be exactly 32 bytes (64 hex characters), got %d bytes", len(keyBytes))
+		}
 	}
 
 	block, err := aes.NewCipher(keyBytes)
@@ -107,13 +95,13 @@ func createDocAEAD(hexKey, appEnv string) (cipher.AEAD, error) {
 
 // NewLocalStorage initializes a new LocalStorage with AES-256-GCM encryption at rest.
 func NewLocalStorage(baseDir, encKey, appEnv string) (*LocalStorage, error) {
-	if err := os.MkdirAll(baseDir, 0700); err != nil {
-		return nil, fmt.Errorf("storage: failed to create base directory: %w", err)
-	}
-
 	aead, err := createDocAEAD(encKey, appEnv)
 	if err != nil {
 		return nil, fmt.Errorf("storage: failed to create encryption cipher: %w", err)
+	}
+
+	if err := os.MkdirAll(baseDir, 0700); err != nil {
+		return nil, fmt.Errorf("storage: failed to create base directory: %w", err)
 	}
 
 	return &LocalStorage{

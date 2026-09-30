@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -114,40 +115,75 @@ func TestLocalStorage_EncryptionAtRest(t *testing.T) {
 	}
 }
 
-func TestLocalStorage_ProductionKeyValidation(t *testing.T) {
-	tempDir, err := os.MkdirTemp("", "storage-test-prod-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+func TestLocalStorage_KeyAndEnvironmentMatrix(t *testing.T) {
+	envs := []string{"", "staging", "production", "local", "test"}
 
-	// 1. Missing key in production fails fast
-	_, err = NewLocalStorage(tempDir, "", "production")
-	if err == nil || !strings.Contains(err.Error(), "DOCUMENT_ENCRYPTION_KEY is required") {
-		t.Fatalf("expected error for empty DOCUMENT_ENCRYPTION_KEY in production, got %v", err)
-	}
+	key16B := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 16))      // 32 hex chars
+	key31B := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 31))      // 62 hex chars
+	key33B := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 33))      // 66 hex chars
+	keyValid32B := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32)) // 64 hex chars
+	keyNonHex := "not-a-valid-hex-string-of-any-kind!!"
 
-	// 2. Non-hex key in production fails fast
-	_, err = NewLocalStorage(tempDir, "not-a-valid-hex-string!!", "production")
-	if err == nil || !strings.Contains(err.Error(), "must be a valid hex string") {
-		t.Fatalf("expected error for invalid hex key in production, got %v", err)
-	}
-
-	// 3. Short hex key in production fails fast
-	shortKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 8)) // 16 hex chars (8 bytes)
-	_, err = NewLocalStorage(tempDir, shortKey, "production")
-	if err == nil || !strings.Contains(err.Error(), "must be exactly 32 bytes") {
-		t.Fatalf("expected error for short key in production, got %v", err)
+	keyCases := []struct {
+		name   string
+		hexKey string
+	}{
+		{"missing", ""},
+		{"16B", key16B},
+		{"31B", key31B},
+		{"33B", key33B},
+		{"non-hex", keyNonHex},
+		{"valid 32B", keyValid32B},
 	}
 
-	// 4. Valid 64-hex char key in production succeeds
-	validKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
-	prodStore, err := NewLocalStorage(tempDir, validKey, "production")
-	if err != nil {
-		t.Fatalf("expected success with valid 64-hex key in production, got %v", err)
-	}
-	if prodStore == nil {
-		t.Fatalf("expected non-nil prodStore")
+	for _, env := range envs {
+		isRelaxed := env == "local" || env == "test"
+		for _, kc := range keyCases {
+			t.Run(fmt.Sprintf("env=%q/key=%s", env, kc.name), func(t *testing.T) {
+				tempDir, err := os.MkdirTemp("", "storage-matrix-*")
+				if err != nil {
+					t.Fatalf("failed to create temp dir: %v", err)
+				}
+				defer os.RemoveAll(tempDir)
+
+				targetBase := filepath.Join(tempDir, "storage")
+
+				expectAllow := false
+				if kc.name == "valid 32B" {
+					expectAllow = true
+				} else if kc.name == "missing" && isRelaxed {
+					expectAllow = true
+				}
+
+				store, err := NewLocalStorage(targetBase, kc.hexKey, env)
+				if expectAllow {
+					if err != nil {
+						t.Fatalf("expected allow for env=%q, key=%s, but got error: %v", env, kc.name, err)
+					}
+					if store == nil {
+						t.Fatalf("expected non-nil store for allowed combination")
+					}
+				} else {
+					if err == nil {
+						t.Fatalf("expected deny (error) for env=%q, key=%s, but got nil", env, kc.name)
+					}
+					// Assert that no file is created on any error
+					entries, readErr := os.ReadDir(tempDir)
+					if readErr == nil {
+						for _, e := range entries {
+							if e.Name() == "storage" {
+								subEntries, _ := os.ReadDir(targetBase)
+								if len(subEntries) > 0 {
+									t.Errorf("expected 0 files in storage on error, found %d", len(subEntries))
+								}
+							} else {
+								t.Errorf("unexpected file/dir created on error: %s", e.Name())
+							}
+						}
+					}
+				}
+			})
+		}
 	}
 }
 
