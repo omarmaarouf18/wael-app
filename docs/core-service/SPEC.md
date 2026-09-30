@@ -304,7 +304,7 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 2. One task per session. Edit only files inside the task's scope.
 3. If a task touches an Open Question or contradicts a locked decision, stop and report. Do not resolve it.
 4. Run the gates for every touched module and paste the real output. If you did not capture a line, say so.
-5. Never push, never rewrite history, never amend a commit whose hash is cited in a document.
+5. Never rewrite history, never amend a commit whose hash is cited in a document. For the push policy, see CLAUDE.md Auto-push (owner amendment 2026-09-30).
 6. Access-control changes (suspension, gating, admin auth) are held from `main` until the owner confirms (saas-core ADR-0022 "Deployment Gate").
 7. Report: files changed (`git show --stat`), gates, deviations, anything unverified.
 

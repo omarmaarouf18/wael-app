@@ -58,6 +58,14 @@ mode). End-to-end behavior matrix executed against real compose stack with 24
 verified scenarios; docs/frontend/BEHAVIOR.md recorded with raw captured
 outputs (masked), backend findings, and fail-closed audit evidence.
 Lowest-friction Linux desktop target documented in frontend/README.md.
+Owner amendment (2026-09-30, pushing): CLAUDE.md now carries the Auto-push
+rule (auto-push `develop` via `make push` only when every gate and `make ci`
+passed with output shown, tree clean, a secret scan of the range is clean,
+no suspension/gating/admin-auth changes, pushing non-authored commits only
+after gating that HEAD yourself, and `git rev-parse HEAD` equals
+`git ls-remote origin develop`) and a Session start check (clean tree, no
+second agent session in this directory, every queued commit accounted for).
+SPEC Section 12 rule 5 now points to CLAUDE.md Auto-push.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.

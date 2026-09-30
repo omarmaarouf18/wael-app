@@ -92,3 +92,34 @@ A full 40-character hash in Markdown is allowed only if verified with
 `git cat-file -e <sha>^{commit}` in the same session; otherwise use 7
 characters. This section is the single source of truth.
 
+## Auto-push (owner amendment 2026-09-30)
+Previous rule: never push without explicit confirmation in the current
+session. Amended: after finishing a task, the agent pushes `develop`
+automatically with `make push`, only when ALL hold:
+- every gate for touched modules passed and `make ci` passed (output shown);
+- working tree clean, no skipped gate;
+- a secret scan of the diff is clean (`gitleaks detect --log-opts
+  "origin/develop..HEAD"` or the pre-push equivalent);
+- the task did not touch suspension, gating, or admin authorization
+  (SPEC Section 12 rule 6): those are pushed to `develop` only after the
+  owner says so;
+- pushing commits the agent did not author is allowed only after the agent
+  runs the full gates and `make ci` on that HEAD itself, with a clean tree,
+  plus a secret scan of the range;
+- the push is verified: `git rev-parse HEAD` equals
+  `git ls-remote origin develop` (show both).
+Never push `main`, never force-push, never use --no-verify, never amend or
+rewrite pushed commits. On any failure: stop and report, do not retry with
+workarounds.
+
+## Session start check (owner amendment 2026-09-30)
+At session start, and again before staging, committing, or pushing, verify
+ALL of:
+- `git status --short` is empty, or every change in it is the agent's own;
+- no other agent session is running in this directory (unexpected reflog
+  entries between commands, files changing between reads);
+- every commit in `origin/develop..HEAD` is accounted for: author session
+  known, gates known.
+If any check fails: stop and ask the owner. Two agent sessions shared this
+worktree on 2026-09-30 and raced; this check exists to prevent a repeat.
+
