@@ -41,7 +41,16 @@ hidden from student listing); vocational training is one fixed level with
 empty-term subjects (frontend hides term filter); open question 1 resolved
 (Phase 2.2 seed contains bachelor years 1-4 and vocational level only);
 Phase 4 gains diploma CRUD admin endpoints task before subject CRUD;
-SPEC.md Sections 1, 3, 5, 11 and ADR-0007 amended.
+SPEC.md Sections 1, 3, 5, 11 and ADR-0007 amended. Notification bundled
+fallback restricted to debug mode with empty state in release; live
+notification deduplication added. User-facing messages routed through
+ErrorMessages with complete sanitization (no raw exception text). Debug
+diagnostics screen added under frontend/lib/debug/ (base URL, masked session,
+SSE state, last 50 calls without bodies or query strings, absent in release
+mode). End-to-end behavior matrix executed against real compose stack with 24
+verified scenarios; docs/frontend/BEHAVIOR.md recorded with raw captured
+outputs (masked), backend findings, and fail-closed audit evidence.
+Lowest-friction Linux desktop target documented in frontend/README.md.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
@@ -49,7 +58,6 @@ RUNBOOK, DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
 rows in `docs/asset-provenance.md`.
 
 ## Decisions
-Product decisions recorded in `docs/adr/`:
 - [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)
 - [ADR-0002: Single-Role Student App With a Separate Web Admin Panel](docs/adr/0002-single-role-student-app.md)
 - [ADR-0003: Payment Per Subject (Materia)](docs/adr/0003-per-subject-payment.md)
