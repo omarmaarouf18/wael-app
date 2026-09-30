@@ -55,6 +55,55 @@ func checkPathContainment(baseDir, destPath string) error {
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("storage: directory traversal detected")
 	}
+
+	evalBase, err := filepath.EvalSymlinks(absBase)
+	if err != nil {
+		return fmt.Errorf("storage: invalid base directory: %w", err)
+	}
+	absEvalBase, err := filepath.Abs(evalBase)
+	if err != nil {
+		return fmt.Errorf("storage: invalid base directory: %w", err)
+	}
+
+	// If destPath exists (including if it is a symlink), evaluate it directly
+	if _, err := os.Lstat(absDest); err == nil {
+		evalDest, err := filepath.EvalSymlinks(absDest)
+		if err != nil {
+			return fmt.Errorf("storage: directory traversal detected")
+		}
+		absEvalDest, err := filepath.Abs(evalDest)
+		if err != nil {
+			return fmt.Errorf("storage: invalid destination path: %w", err)
+		}
+		relEval, err := filepath.Rel(absEvalBase, absEvalDest)
+		if err != nil || relEval == "." || relEval == ".." || strings.HasPrefix(relEval, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("storage: directory traversal detected")
+		}
+		return nil
+	}
+
+	// If destPath does not exist, walk up existing ancestors to ensure no parent symlink escapes base
+	curr := filepath.Dir(absDest)
+	for {
+		evalCurr, err := filepath.EvalSymlinks(curr)
+		if err == nil {
+			absEvalCurr, err := filepath.Abs(evalCurr)
+			if err != nil {
+				return fmt.Errorf("storage: invalid directory path: %w", err)
+			}
+			relCurr, err := filepath.Rel(absEvalBase, absEvalCurr)
+			if err != nil || (relCurr != "." && (relCurr == ".." || strings.HasPrefix(relCurr, ".."+string(filepath.Separator)))) {
+				return fmt.Errorf("storage: directory traversal detected")
+			}
+			break
+		}
+		parent := filepath.Dir(curr)
+		if parent == curr {
+			break
+		}
+		curr = parent
+	}
+
 	return nil
 }
 
@@ -191,7 +240,7 @@ func (l *LocalStorage) OpenFile(key string) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	// #nosec G304 //nolint:gosec -- canonical UUID key validation and filepath.Rel containment check ensure file path stays within base directory
+	// #nosec G304 //nolint:gosec -- canonical UUID key validation, EvalSymlinks resolution, and filepath.Rel containment check ensure file path stays within base directory
 	data, err := os.ReadFile(destPath)
 	if err != nil {
 		return nil, fmt.Errorf("storage: failed to open file %s: %w", key, err)

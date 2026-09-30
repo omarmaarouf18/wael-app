@@ -407,3 +407,66 @@ func TestLocalStorage_AtomicNoOverwrite(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalStorage_SymlinkContainment(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "storage-symlink-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	storageBase := filepath.Join(tempDir, "storage")
+	outsideDir := filepath.Join(tempDir, "outside")
+	if err := os.MkdirAll(outsideDir, 0700); err != nil {
+		t.Fatalf("failed to create outside dir: %v", err)
+	}
+	outsideFile := filepath.Join(outsideDir, "secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("outside secret"), 0600); err != nil {
+		t.Fatalf("failed to write outside file: %v", err)
+	}
+
+	encKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	store, err := NewLocalStorage(storageBase, encKey, "test")
+	if err != nil {
+		t.Fatalf("failed to create LocalStorage: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// A valid canonical lowercase UUID
+	validUUIDKey := "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+	symlinkPath := filepath.Join(storageBase, validUUIDKey)
+
+	// Create a symlink inside storageBase pointing outside storageBase
+	if err := os.Symlink(outsideFile, symlinkPath); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	// 1. Upload must be rejected by containment alone (not regex)
+	err = store.Upload(ctx, validUUIDKey, strings.NewReader("malicious overwrite"), "text/plain")
+	if err == nil {
+		t.Fatalf("expected Upload to be rejected for symlink pointing outside, got nil")
+	}
+	if !strings.Contains(err.Error(), "directory traversal detected") {
+		t.Fatalf("expected 'directory traversal detected' in error, got: %v", err)
+	}
+
+	// Verify outside file was NOT overwritten
+	outsideContent, err := os.ReadFile(outsideFile)
+	if err != nil {
+		t.Fatalf("failed to read outside file: %v", err)
+	}
+	if string(outsideContent) != "outside secret" {
+		t.Fatalf("vulnerability: outside file was overwritten! got %q", string(outsideContent))
+	}
+
+	// 2. OpenFile must be rejected by containment alone (not regex)
+	rc, err := store.OpenFile(validUUIDKey)
+	if err == nil {
+		rc.Close()
+		t.Fatalf("expected OpenFile to be rejected for symlink pointing outside, got nil")
+	}
+	if !strings.Contains(err.Error(), "directory traversal detected") {
+		t.Fatalf("expected 'directory traversal detected' in error, got: %v", err)
+	}
+}
