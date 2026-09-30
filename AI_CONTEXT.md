@@ -27,7 +27,10 @@ written). ADR-0001 leak-response note added; ADR-0003 amended (manual
 payment via InstaPay or e-wallets, admin activation). Notification bundled
 fallback restricted to debug mode with empty state in release; live
 notification deduplication added. User-facing messages routed through
-ErrorMessages with complete sanitization (no raw exception text).
+ErrorMessages with complete sanitization (no raw exception text). Debug
+diagnostics screen added under frontend/lib/debug/ (base URL, masked session,
+SSE state, last 50 calls without bodies or query strings, absent in release
+mode).
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
