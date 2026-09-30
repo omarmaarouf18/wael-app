@@ -2,13 +2,30 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
-func TestLoad_MinimalDev(t *testing.T) {
+func fullProdEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("APP_ENV", "production")
 	t.Setenv("JWT_SECRET", "test-jwt-secret")
 	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	t.Setenv("MONGO_URI", "mongodb://localhost:27017")
+	t.Setenv("REDIS_URI", "redis://localhost:6379")
+	t.Setenv("TLS_CERT_PATH", "/tmp/cert.pem")
+	t.Setenv("TLS_KEY_PATH", "/tmp/key.pem")
+	t.Setenv("TLS_CA_PATH", "/tmp/ca.pem")
+}
+
+func TestLoad_MinimalDev(t *testing.T) {
+	t.Setenv("APP_ENV", "local")
+	t.Setenv("JWT_SECRET", "test-jwt-secret")
+	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	_ = os.Unsetenv("MONGO_URI")
+	_ = os.Unsetenv("REDIS_URI")
 	_ = os.Unsetenv("TLS_CERT_PATH")
 	_ = os.Unsetenv("TLS_KEY_PATH")
 	_ = os.Unsetenv("TLS_CA_PATH")
@@ -47,13 +64,7 @@ func TestLoad_AppEnvValidation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run("APP_ENV="+tc.envVal, func(t *testing.T) {
-			t.Setenv("JWT_SECRET", "test-jwt-secret")
-			t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-			t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
-			_ = os.Unsetenv("TLS_CERT_PATH")
-			_ = os.Unsetenv("TLS_KEY_PATH")
-			_ = os.Unsetenv("TLS_CA_PATH")
-
+			fullProdEnv(t)
 			if tc.envVal == "" {
 				_ = os.Unsetenv("APP_ENV")
 			} else {
@@ -75,4 +86,67 @@ func TestLoad_AppEnvValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoad_RequiredVariablesTable(t *testing.T) {
+	requiredVars := []string{
+		"JWT_SECRET",
+		"GATEWAY_SECRET",
+		"INTERNAL_SERVICE_TOKEN",
+		"MONGO_URI",
+		"REDIS_URI",
+		"TLS_CERT_PATH",
+		"TLS_KEY_PATH",
+		"TLS_CA_PATH",
+	}
+
+	for _, v := range requiredVars {
+		t.Run("missing_"+v+"_in_production", func(t *testing.T) {
+			fullProdEnv(t)
+			_ = os.Unsetenv(v)
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("expected error for empty %s in production, got nil", v)
+			}
+			if !strings.Contains(err.Error(), v) {
+				t.Fatalf("expected error to contain %q, got %q", v, err.Error())
+			}
+		})
+	}
+
+	t.Run("all_required_unset_default_production", func(t *testing.T) {
+		for _, v := range append(requiredVars, "APP_ENV") {
+			_ = os.Unsetenv(v)
+		}
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected error when all variables unset with default production, got nil")
+		}
+		if !strings.Contains(err.Error(), "JWT_SECRET") {
+			t.Fatalf("expected error to name first missing variable JWT_SECRET, got %q", err.Error())
+		}
+	})
+
+	t.Run("local_dev_with_only_secrets_succeeds_with_defaults", func(t *testing.T) {
+		for _, v := range []string{"MONGO_URI", "REDIS_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH"} {
+			_ = os.Unsetenv(v)
+		}
+		t.Setenv("APP_ENV", "local")
+		t.Setenv("JWT_SECRET", "test-jwt-secret")
+		t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
+		t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("expected Load to succeed with local dev defaults, got: %v", err)
+		}
+		if cfg.Port != "3004" {
+			t.Errorf("expected default Port 3004, got %q", cfg.Port)
+		}
+		if cfg.TLSEnabled() {
+			t.Error("expected TLS disabled by default in local dev")
+		}
+		if cfg.MongoDatabase != "notification_db" {
+			t.Errorf("expected default MongoDatabase notification_db, got %q", cfg.MongoDatabase)
+		}
+	})
 }

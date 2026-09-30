@@ -75,6 +75,7 @@ after gating that HEAD yourself, and `git rev-parse HEAD` equals
 second agent session in this directory, every queued commit accounted for).
 SPEC Section 12 rule 5 now points to CLAUDE.md Auto-push.
 Hardening Phase A (W-03): verified Markdown commit citations in CI and aligned pre-push hook to scan git-tracked markdown files with git ls-files.
+Hardening Phase A (W-01, W-02): fail-closed configuration outside local/test across api-gateway, auth-service, and notification-service (requiring Mongo, Redis, TLS triple, and Resend mail credentials in production; refusing memory stores, LogSender, plain HTTP, and TLS without client CA outside dev; table test coverage for all required vars; startup logs disclosing active sender and store types).
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
@@ -94,4 +95,4 @@ Hardening reference and backlog: docs/BOOTSTRAP-REFERENCE.md.
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-W-01 + W-02: strict config and mail sender refusal outside local/test.
+W-04: add --check-env flag on all services (gateway, auth, notification).

@@ -41,15 +41,42 @@ func Load() (*Config, error) {
 	if internalToken == "" {
 		return nil, errors.New("config: required env var INTERNAL_SERVICE_TOKEN is empty")
 	}
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "3004"
-	}
+
 	appEnv := os.Getenv("APP_ENV")
 	if appEnv == "" {
 		appEnv = "production"
 	} else if appEnv != "local" && appEnv != "test" && appEnv != "production" {
 		return nil, fmt.Errorf("config: invalid APP_ENV %q: must be one of local, test, production", appEnv)
+	}
+	dev := appEnv == "local" || appEnv == "test"
+
+	mongoURI := os.Getenv("MONGO_URI")
+	redisURI := os.Getenv("REDIS_URI")
+	tlsCertPath := os.Getenv("TLS_CERT_PATH")
+	tlsKeyPath := os.Getenv("TLS_KEY_PATH")
+	tlsCAPath := os.Getenv("TLS_CA_PATH")
+
+	if !dev {
+		if mongoURI == "" {
+			return nil, errors.New("config: required env var MONGO_URI is empty")
+		}
+		if redisURI == "" {
+			return nil, errors.New("config: required env var REDIS_URI is empty")
+		}
+		if tlsCertPath == "" {
+			return nil, errors.New("config: required env var TLS_CERT_PATH is empty")
+		}
+		if tlsKeyPath == "" {
+			return nil, errors.New("config: required env var TLS_KEY_PATH is empty")
+		}
+		if tlsCAPath == "" {
+			return nil, errors.New("config: required env var TLS_CA_PATH is empty")
+		}
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3004"
 	}
 	dbName := os.Getenv("NOTIFICATION_MONGO_DATABASE")
 	if dbName == "" {
@@ -61,14 +88,14 @@ func Load() (*Config, error) {
 	return &Config{
 		Port:                 port,
 		AppEnv:               appEnv,
-		MongoURI:             os.Getenv("MONGO_URI"),
+		MongoURI:             mongoURI,
 		MongoDatabase:        dbName,
-		RedisURI:             os.Getenv("REDIS_URI"),
+		RedisURI:             redisURI,
 		JWTSecret:            jwtSecret,
 		GatewaySecret:        gatewaySecret,
 		InternalServiceToken: internalToken,
-		TLSCertPath:          os.Getenv("TLS_CERT_PATH"),
-		TLSKeyPath:           os.Getenv("TLS_KEY_PATH"),
-		TLSCAPath:            os.Getenv("TLS_CA_PATH"),
+		TLSCertPath:          tlsCertPath,
+		TLSKeyPath:           tlsKeyPath,
+		TLSCAPath:            tlsCAPath,
 	}, nil
 }

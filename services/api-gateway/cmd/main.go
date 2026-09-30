@@ -23,13 +23,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("[GATEWAY] %v (redis=%s)", err, redact.RedactURI("<see REDIS_URI>"))
 	}
-	log.Printf("[GATEWAY] domain=%s tls=%t mtls-client=%t", cfg.AppDomain, cfg.TLSEnabled(), cfg.MTLSClientEnabled())
+	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
+	log.Printf("[GATEWAY] env=%s domain=%s tls=%t mtls-client=%t", cfg.AppEnv, cfg.AppDomain, cfg.TLSEnabled(), cfg.MTLSClientEnabled())
 
-	rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
-	if err != nil {
-		log.Fatalf("[GATEWAY] redis unreachable: %v (uri=%s)", err, redact.RedactURI(cfg.RedisURI))
+	var rl *middleware.RateLimiter
+	if cfg.RedisURI != "" {
+		rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
+		if err != nil {
+			log.Fatalf("[GATEWAY] redis unreachable: %v (uri=%s)", err, redact.RedactURI(cfg.RedisURI))
+		}
+		defer func() { _ = rdb.Close() }()
+		rl = middleware.NewRateLimiter(ratelimit.NewRateLimiter(rdb, 100, time.Minute, "gateway"), cfg.TrustedProxyIPs)
+		log.Printf("[GATEWAY] active rate limiter: Redis (%s)", redact.RedactURI(cfg.RedisURI))
+	} else {
+		if !dev {
+			log.Fatalf("[GATEWAY] rate limiter required outside dev: REDIS_URI is required")
+		}
+		log.Printf("[GATEWAY] active rate limiter: disabled (REDIS_URI empty, localhost dev only)")
 	}
-	defer func() { _ = rdb.Close() }()
 
 	baseTransport := http.DefaultTransport
 	if cfg.MTLSClientEnabled() {
@@ -38,10 +49,10 @@ func main() {
 			log.Fatalf("[GATEWAY] mTLS client config: %v", err)
 		}
 		baseTransport = &http.Transport{TLSClientConfig: tlsCfg}
+	} else if !dev {
+		log.Fatalf("[GATEWAY] mTLS client config required outside dev")
 	}
 	transport := resilience.NewRoundTripper(baseTransport, "api-gateway", 2, 2*time.Second)
-
-	rl := middleware.NewRateLimiter(ratelimit.NewRateLimiter(rdb, 100, time.Minute, "gateway"), cfg.TrustedProxyIPs)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -57,7 +68,9 @@ func main() {
 	}
 
 	handler := handlerutil.MaxBytesMiddleware(1 << 20)(mux)
-	handler = middleware.RateLimit(rl)(handler)
+	if rl != nil {
+		handler = middleware.RateLimit(rl)(handler)
+	}
 	handler = middleware.Logging(cfg.AllowedOrigin)(handler)
 
 	addr := ":" + cfg.Port
@@ -77,6 +90,9 @@ func main() {
 		fmt.Printf("api-gateway listening HTTPS on %s\n", addr)
 		log.Fatal(srv.ListenAndServeTLS(certFile, keyFile))
 		return
+	}
+	if !dev {
+		log.Fatalf("[GATEWAY] plain HTTP not permitted outside dev")
 	}
 	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	fmt.Printf("api-gateway listening HTTP on %s\n", addr)

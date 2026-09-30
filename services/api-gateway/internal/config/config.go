@@ -21,6 +21,7 @@ type ServiceRoute struct {
 // Config holds all runtime configuration for the API Gateway.
 type Config struct {
 	Port                string
+	AppEnv              string
 	Routes              []ServiceRoute
 	GatewaySecret       string
 	AllowedOrigin       string
@@ -50,9 +51,33 @@ func Load() (*Config, error) {
 	if gatewaySecret == "" {
 		return nil, fmt.Errorf("config: required env var GATEWAY_SECRET is required and must not be empty")
 	}
+
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "" {
+		appEnv = "production"
+	} else if appEnv != "local" && appEnv != "test" && appEnv != "production" {
+		return nil, fmt.Errorf("config: invalid APP_ENV %q: must be one of local, test, production", appEnv)
+	}
+	dev := appEnv == "local" || appEnv == "test"
+
 	redisURI := os.Getenv("REDIS_URI")
-	if redisURI == "" {
-		return nil, fmt.Errorf("config: required env var REDIS_URI is empty")
+	tlsCertPath := os.Getenv("TLS_CERT_PATH")
+	tlsKeyPath := os.Getenv("TLS_KEY_PATH")
+	tlsCAPath := os.Getenv("TLS_CA_PATH")
+
+	if !dev {
+		if redisURI == "" {
+			return nil, fmt.Errorf("config: required env var REDIS_URI is empty")
+		}
+		if tlsCertPath == "" {
+			return nil, fmt.Errorf("config: required env var TLS_CERT_PATH is empty")
+		}
+		if tlsKeyPath == "" {
+			return nil, fmt.Errorf("config: required env var TLS_KEY_PATH is empty")
+		}
+		if tlsCAPath == "" {
+			return nil, fmt.Errorf("config: required env var TLS_CA_PATH is empty")
+		}
 	}
 
 	trustedProxyRaw := envOrDefault("TRUSTED_PROXY_IPS", "127.0.0.1,::1")
@@ -66,11 +91,12 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		Port:                envOrDefault("PORT", "8080"),
+		AppEnv:              appEnv,
 		GatewaySecret:       gatewaySecret,
 		AllowedOrigin:       envOrDefault("ALLOWED_ORIGIN", "http://localhost:3000"),
-		TLSCertPath:         os.Getenv("TLS_CERT_PATH"),
-		TLSKeyPath:          os.Getenv("TLS_KEY_PATH"),
-		TLSCAPath:           os.Getenv("TLS_CA_PATH"),
+		TLSCertPath:         tlsCertPath,
+		TLSKeyPath:          tlsKeyPath,
+		TLSCAPath:           tlsCAPath,
 		ExternalTLSCertPath: os.Getenv("EXTERNAL_TLS_CERT_PATH"),
 		ExternalTLSKeyPath:  os.Getenv("EXTERNAL_TLS_KEY_PATH"),
 		RedisURI:            redisURI,

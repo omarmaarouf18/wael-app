@@ -27,22 +27,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("[NOTIF] %v", err)
 	}
+	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
+
 	jwtutil.Init(cfg.JWTSecret)
 
 	ctx := context.Background()
-	var st store.Store = store.NewMemoryStore()
+	var st store.Store
 	if cfg.MongoURI != "" {
 		ms, err := store.NewMongoStore(ctx, cfg.MongoURI, cfg.MongoDatabase)
 		if err != nil {
 			log.Fatalf("[NOTIF] mongo (%s): %v", redact.RedactURI(cfg.MongoURI), err)
 		}
 		st = ms
-		log.Printf("[NOTIF] using MongoDB database %s", cfg.MongoDatabase)
+		log.Printf("[NOTIF] active notification store: MongoDB (database: %s)", cfg.MongoDatabase)
 	} else {
-		log.Printf("[NOTIF] MONGO_URI empty: using in-process memory store (localhost dev only)")
+		if !dev {
+			log.Fatalf("[NOTIF] memory store not permitted outside dev: MONGO_URI is required")
+		}
+		st = store.NewMemoryStore()
+		log.Printf("[NOTIF] active notification store: in-process memory (localhost dev only)")
 	}
 
-	var b bus.Bus = bus.NewMemoryBus()
+	var b bus.Bus
 	if cfg.RedisURI != "" {
 		rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
 		if err != nil {
@@ -50,8 +56,13 @@ func main() {
 		}
 		defer func() { _ = rdb.Close() }()
 		b = bus.NewRedisBus(rdb)
+		log.Printf("[NOTIF] active notification bus: Redis (%s)", redact.RedactURI(cfg.RedisURI))
 	} else {
-		log.Printf("[NOTIF] REDIS_URI empty: using in-process fan-out bus (localhost dev only)")
+		if !dev {
+			log.Fatalf("[NOTIF] memory bus not permitted outside dev: REDIS_URI is required")
+		}
+		b = bus.NewMemoryBus()
+		log.Printf("[NOTIF] active notification bus: in-process memory (localhost dev only)")
 	}
 
 	srv := handlers.New(st, b, cfg.GatewaySecret, cfg.InternalServiceToken)
@@ -78,6 +89,9 @@ func main() {
 			log.Fatal(httpSrv.ListenAndServeTLS("", ""))
 			return
 		}
+		if !dev {
+			log.Fatalf("[NOTIF] server TLS without client CA not permitted outside dev: TLS_CA_PATH is required")
+		}
 		httpSrv := &http.Server{
 			Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second,
 			TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
@@ -85,6 +99,9 @@ func main() {
 		fmt.Printf("notification-service listening HTTPS on %s\n", addr)
 		log.Fatal(httpSrv.ListenAndServeTLS(cfg.TLSCertPath, cfg.TLSKeyPath))
 		return
+	}
+	if !dev {
+		log.Fatalf("[NOTIF] plain HTTP not permitted outside dev: TLS is required")
 	}
 	httpSrv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	fmt.Printf("notification-service listening HTTP on %s\n", addr)

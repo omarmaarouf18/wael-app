@@ -28,26 +28,32 @@ func main() {
 	if err != nil {
 		log.Fatalf("[AUTH] %v", err)
 	}
+	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
+
 	jwtutil.Init(cfg.JWTSecret)
 	if err := notify.InitClient(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath); err != nil {
 		log.Fatalf("[AUTH] notify mTLS client: %v", err)
 	}
 
 	ctx := context.Background()
-	var st store.Store = store.NewMemoryStore()
+	var st store.Store
 	if cfg.MongoURI != "" {
 		ms, err := store.NewMongoStore(ctx, cfg.MongoURI, cfg.MongoDatabase)
 		if err != nil {
 			log.Fatalf("[AUTH] mongo (%s): %v", redact.RedactURI(cfg.MongoURI), err)
 		}
 		st = ms
-		log.Printf("[AUTH] using MongoDB database %s", cfg.MongoDatabase)
+		log.Printf("[AUTH] active user store: MongoDB (database: %s)", cfg.MongoDatabase)
 	} else {
-		log.Printf("[AUTH] MONGO_URI empty: using in-process memory store (localhost dev only)")
+		if !dev {
+			log.Fatalf("[AUTH] memory store not permitted outside dev: MONGO_URI is required")
+		}
+		st = store.NewMemoryStore()
+		log.Printf("[AUTH] active user store: in-process memory (localhost dev only)")
 	}
 
-	var codes otp.Store = otp.NewMemoryStore()
-	var lockout handlers.Lockout = handlers.NewMemoryLockout()
+	var codes otp.Store
+	var lockout handlers.Lockout
 	if cfg.RedisURI != "" {
 		rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
 		if err != nil {
@@ -57,13 +63,26 @@ func main() {
 		jwtutil.SetRedisClient(rdb)
 		codes = otp.NewRedisStore(rdb, "auth")
 		lockout = handlers.NewRedisLockout(ratelimit.NewAuthRateLimiter(rdb, "auth"))
+		log.Printf("[AUTH] active OTP and lockout store: Redis (%s)", redact.RedactURI(cfg.RedisURI))
 	} else {
-		log.Printf("[AUTH] REDIS_URI empty: using in-process code/lockout stores (localhost dev only)")
+		if !dev {
+			log.Fatalf("[AUTH] memory code/lockout stores not permitted outside dev: REDIS_URI is required")
+		}
+		codes = otp.NewMemoryStore()
+		lockout = handlers.NewMemoryLockout()
+		log.Printf("[AUTH] active OTP and lockout store: in-process memory (localhost dev only)")
 	}
 
-	var sender mailer.Sender = mailer.LogSender{}
+	var sender mailer.Sender
 	if cfg.ResendAPIKey != "" {
 		sender = &mailer.ResendSender{APIKey: cfg.ResendAPIKey, From: cfg.ResendFromEmail}
+		log.Printf("[AUTH] active mail sender: Resend (%s)", cfg.ResendFromEmail)
+	} else {
+		if !dev {
+			log.Fatalf("[AUTH] LogSender not permitted outside dev: RESEND_API_KEY is required")
+		}
+		sender = mailer.LogSender{}
+		log.Printf("[AUTH] active mail sender: LogSender (localhost dev only)")
 	}
 
 	srv := handlers.New(st, codes, lockout, sender, cfg.AppEnv, cfg.GatewaySecret)
@@ -96,6 +115,9 @@ func main() {
 			log.Fatal(httpSrv.ListenAndServeTLS("", ""))
 			return
 		}
+		if !dev {
+			log.Fatalf("[AUTH] server TLS without client CA not permitted outside dev: TLS_CA_PATH is required")
+		}
 		httpSrv := &http.Server{
 			Addr:              addr,
 			Handler:           handler,
@@ -105,6 +127,9 @@ func main() {
 		fmt.Printf("auth-service listening HTTPS on %s\n", addr)
 		log.Fatal(httpSrv.ListenAndServeTLS(cfg.TLSCertPath, cfg.TLSKeyPath))
 		return
+	}
+	if !dev {
+		log.Fatalf("[AUTH] plain HTTP not permitted outside dev: TLS is required")
 	}
 	httpSrv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	fmt.Printf("auth-service listening HTTP on %s\n", addr)

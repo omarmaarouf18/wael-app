@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +16,7 @@ func setEnv(t *testing.T, k, v string) {
 
 func baseEnv(t *testing.T) {
 	t.Helper()
+	setEnv(t, "APP_ENV", "local")
 	setEnv(t, "GATEWAY_SECRET", "test-gateway-secret-1234567890")
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
 	setEnv(t, "AUTH_SERVICE_URL", "http://auth-service:3002")
@@ -24,6 +26,18 @@ func baseEnv(t *testing.T) {
 	_ = os.Unsetenv("TLS_CA_PATH")
 	_ = os.Unsetenv("EXTERNAL_TLS_CERT_PATH")
 	_ = os.Unsetenv("EXTERNAL_TLS_KEY_PATH")
+}
+
+func fullProdEnv(t *testing.T) {
+	t.Helper()
+	setEnv(t, "APP_ENV", "production")
+	setEnv(t, "GATEWAY_SECRET", "test-gateway-secret-1234567890")
+	setEnv(t, "REDIS_URI", "redis://localhost:6379")
+	setEnv(t, "TLS_CERT_PATH", "/tmp/cert.pem")
+	setEnv(t, "TLS_KEY_PATH", "/tmp/key.pem")
+	setEnv(t, "TLS_CA_PATH", "/tmp/ca.pem")
+	setEnv(t, "AUTH_SERVICE_URL", "https://auth-service:3002")
+	setEnv(t, "NOTIFICATION_SERVICE_URL", "https://notification-service:3004")
 }
 
 func TestLoad_HTTPDevNoTLS(t *testing.T) {
@@ -57,4 +71,90 @@ func TestLoad_MTLSRequiresHTTPS(t *testing.T) {
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error for http target with mTLS active")
 	}
+}
+
+func TestLoad_AppEnvValidation(t *testing.T) {
+	cases := []struct {
+		envVal      string
+		expectError bool
+	}{
+		{"local", false},
+		{"test", false},
+		{"production", false},
+		{"staging", true},
+		{"development", true},
+		{"unknown", true},
+	}
+
+	for _, tc := range cases {
+		t.Run("APP_ENV="+tc.envVal, func(t *testing.T) {
+			fullProdEnv(t)
+			setEnv(t, "APP_ENV", tc.envVal)
+			_, err := Load()
+			if tc.expectError && err == nil {
+				t.Fatalf("expected error for APP_ENV=%q, got nil", tc.envVal)
+			}
+			if !tc.expectError && err != nil {
+				t.Fatalf("unexpected error for APP_ENV=%q: %v", tc.envVal, err)
+			}
+		})
+	}
+}
+
+func TestLoad_RequiredVariablesTable(t *testing.T) {
+	requiredVars := []string{
+		"GATEWAY_SECRET",
+		"REDIS_URI",
+		"TLS_CERT_PATH",
+		"TLS_KEY_PATH",
+		"TLS_CA_PATH",
+	}
+
+	for _, v := range requiredVars {
+		t.Run("missing_"+v+"_in_production", func(t *testing.T) {
+			fullProdEnv(t)
+			_ = os.Unsetenv(v)
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("expected error for empty %s in production, got nil", v)
+			}
+			if !strings.Contains(err.Error(), v) {
+				t.Fatalf("expected error to contain %q, got %q", v, err.Error())
+			}
+		})
+	}
+
+	t.Run("all_required_unset_default_production", func(t *testing.T) {
+		for _, v := range append(requiredVars, "APP_ENV", "AUTH_SERVICE_URL", "NOTIFICATION_SERVICE_URL") {
+			_ = os.Unsetenv(v)
+		}
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected error when all variables unset with default production, got nil")
+		}
+		if !strings.Contains(err.Error(), "GATEWAY_SECRET") {
+			t.Fatalf("expected error to name first missing variable GATEWAY_SECRET, got %q", err.Error())
+		}
+	})
+
+	t.Run("local_dev_with_only_secrets_succeeds_with_defaults", func(t *testing.T) {
+		for _, v := range []string{"REDIS_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "EXTERNAL_TLS_CERT_PATH", "EXTERNAL_TLS_KEY_PATH"} {
+			_ = os.Unsetenv(v)
+		}
+		setEnv(t, "APP_ENV", "local")
+		setEnv(t, "GATEWAY_SECRET", "test-gateway-secret-1234567890")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("expected Load to succeed with local dev defaults, got: %v", err)
+		}
+		if cfg.Port != "8080" {
+			t.Errorf("expected default Port 8080, got %q", cfg.Port)
+		}
+		if cfg.TLSEnabled() {
+			t.Error("expected TLS disabled by default in local dev")
+		}
+		if cfg.MTLSClientEnabled() {
+			t.Error("expected mTLS client disabled by default in local dev")
+		}
+	})
 }
