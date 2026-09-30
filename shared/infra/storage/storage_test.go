@@ -470,3 +470,141 @@ func TestLocalStorage_SymlinkContainment(t *testing.T) {
 		t.Fatalf("expected 'directory traversal detected' in error, got: %v", err)
 	}
 }
+
+func TestLocalStorage_EncryptionProperties(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "storage-enc-props-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	encKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	store, err := NewLocalStorage(tempDir, encKey, "test")
+	if err != nil {
+		t.Fatalf("failed to create LocalStorage: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// 1. Two uploads of identical plaintext produce different ciphertext on disk (12-byte random nonce from crypto/rand)
+	key1 := "11111111-1111-1111-1111-111111111111"
+	key2 := "22222222-2222-2222-2222-222222222222"
+	identicalPlaintext := "identical proprietary textbook content"
+
+	if err := store.Upload(ctx, key1, strings.NewReader(identicalPlaintext), "text/plain"); err != nil {
+		t.Fatalf("Upload key1 failed: %v", err)
+	}
+	if err := store.Upload(ctx, key2, strings.NewReader(identicalPlaintext), "text/plain"); err != nil {
+		t.Fatalf("Upload key2 failed: %v", err)
+	}
+
+	raw1, err := os.ReadFile(filepath.Join(tempDir, key1))
+	if err != nil {
+		t.Fatalf("reading raw1 failed: %v", err)
+	}
+	raw2, err := os.ReadFile(filepath.Join(tempDir, key2))
+	if err != nil {
+		t.Fatalf("reading raw2 failed: %v", err)
+	}
+
+	// Plaintext never appears on disk
+	if bytes.Contains(raw1, []byte(identicalPlaintext)) || bytes.Contains(raw2, []byte(identicalPlaintext)) {
+		t.Fatalf("vulnerability: plaintext appears unencrypted on disk")
+	}
+
+	// 12-byte nonce stored with ciphertext
+	if len(raw1) < 12 || len(raw2) < 12 {
+		t.Fatalf("file on disk too short to contain 12-byte nonce")
+	}
+	nonce1 := raw1[:12]
+	nonce2 := raw2[:12]
+	if bytes.Equal(nonce1, nonce2) {
+		t.Fatalf("expected different random 12-byte nonces, got identical nonces")
+	}
+	if bytes.Equal(raw1, raw2) {
+		t.Fatalf("expected different ciphertexts on disk for identical plaintext, got identical bytes")
+	}
+
+	// 2. AAD = the storage key, so swapping two encrypted files makes OpenFile fail
+	// Swap key1 and key2 on disk
+	tmpSwap := filepath.Join(tempDir, "tmp-swap")
+	path1 := filepath.Join(tempDir, key1)
+	path2 := filepath.Join(tempDir, key2)
+	if err := os.Rename(path1, tmpSwap); err != nil {
+		t.Fatalf("rename 1 failed: %v", err)
+	}
+	if err := os.Rename(path2, path1); err != nil {
+		t.Fatalf("rename 2 failed: %v", err)
+	}
+	if err := os.Rename(tmpSwap, path2); err != nil {
+		t.Fatalf("rename 3 failed: %v", err)
+	}
+
+	// Reading key1 (which now contains ciphertext encrypted with key2 as AAD) must fail
+	rc1, err := store.OpenFile(key1)
+	if err == nil {
+		rc1.Close()
+		t.Fatalf("expected OpenFile to fail after file swap due to AAD mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to decrypt") {
+		t.Fatalf("expected 'failed to decrypt' error on swapped file, got: %v", err)
+	}
+
+	// Reading key2 (which now contains ciphertext encrypted with key1 as AAD) must fail
+	rc2, err := store.OpenFile(key2)
+	if err == nil {
+		rc2.Close()
+		t.Fatalf("expected OpenFile to fail after file swap due to AAD mismatch, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to decrypt") {
+		t.Fatalf("expected 'failed to decrypt' error on swapped file, got: %v", err)
+	}
+
+	// Swap back so files are correct again
+	if err := os.Rename(path2, tmpSwap); err != nil {
+		t.Fatalf("swap back 1 failed: %v", err)
+	}
+	if err := os.Rename(path1, path2); err != nil {
+		t.Fatalf("swap back 2 failed: %v", err)
+	}
+	if err := os.Rename(tmpSwap, path1); err != nil {
+		t.Fatalf("swap back 3 failed: %v", err)
+	}
+
+	// Verify both now decrypt correctly again
+	rcValid, err := store.OpenFile(key1)
+	if err != nil {
+		t.Fatalf("OpenFile failed after restoring file: %v", err)
+	}
+	rcValid.Close()
+
+	// 3. Flipping one byte on disk makes OpenFile fail (no partial plaintext)
+	key3 := "33333333-3333-3333-3333-333333333333"
+	secretPlaintext := "highly confidential secret material for testing tamper detection"
+	if err := store.Upload(ctx, key3, strings.NewReader(secretPlaintext), "text/plain"); err != nil {
+		t.Fatalf("Upload key3 failed: %v", err)
+	}
+
+	path3 := filepath.Join(tempDir, key3)
+	raw3, err := os.ReadFile(path3)
+	if err != nil {
+		t.Fatalf("reading raw3 failed: %v", err)
+	}
+
+	// Flip a byte in the ciphertext body
+	tampered := make([]byte, len(raw3))
+	copy(tampered, raw3)
+	tampered[len(tampered)-5] ^= 0xFF
+	if err := os.WriteFile(path3, tampered, 0600); err != nil {
+		t.Fatalf("writing tampered file failed: %v", err)
+	}
+
+	rcTampered, err := store.OpenFile(key3)
+	if err == nil {
+		rcTampered.Close()
+		t.Fatalf("expected OpenFile to fail on tampered file, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to decrypt") {
+		t.Fatalf("expected 'failed to decrypt' error on tampered file, got: %v", err)
+	}
+}

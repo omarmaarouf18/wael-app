@@ -194,7 +194,7 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 		return fmt.Errorf("storage: failed to generate nonce: %w", err)
 	}
 
-	ciphertext := l.aead.Seal(nonce, nonce, plaintext, nil)
+	ciphertext := l.aead.Seal(nonce, nonce, plaintext, []byte(key))
 
 	tmpFile, err := os.CreateTemp(destDir, ".upload-*.tmp")
 	if err != nil {
@@ -252,7 +252,7 @@ func (l *LocalStorage) OpenFile(key string) (io.ReadCloser, error) {
 	}
 
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
-	plaintext, err := l.aead.Open(nil, nonce, ciphertext, nil)
+	plaintext, err := l.aead.Open(nil, nonce, ciphertext, []byte(key))
 	if err != nil {
 		return nil, fmt.Errorf("storage: failed to decrypt file %s: %w", key, err)
 	}
