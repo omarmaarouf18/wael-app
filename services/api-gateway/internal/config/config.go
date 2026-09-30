@@ -61,14 +61,14 @@ func Load() (*Config, error) {
 	dev := appEnv == "local" || appEnv == "test"
 
 	redisURI := os.Getenv("REDIS_URI")
+	if redisURI == "" {
+		return nil, fmt.Errorf("config: required env var REDIS_URI is empty")
+	}
 	tlsCertPath := os.Getenv("TLS_CERT_PATH")
 	tlsKeyPath := os.Getenv("TLS_KEY_PATH")
 	tlsCAPath := os.Getenv("TLS_CA_PATH")
 
 	if !dev {
-		if redisURI == "" {
-			return nil, fmt.Errorf("config: required env var REDIS_URI is empty")
-		}
 		if tlsCertPath == "" {
 			return nil, fmt.Errorf("config: required env var TLS_CERT_PATH is empty")
 		}

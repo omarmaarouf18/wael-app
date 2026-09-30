@@ -137,24 +137,15 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		}
 	})
 
-	t.Run("local_dev_with_only_secrets_succeeds_with_defaults", func(t *testing.T) {
-		for _, v := range []string{"REDIS_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "EXTERNAL_TLS_CERT_PATH", "EXTERNAL_TLS_KEY_PATH"} {
-			_ = os.Unsetenv(v)
+	t.Run("missing_REDIS_URI_in_local", func(t *testing.T) {
+		baseEnv(t)
+		_ = os.Unsetenv("REDIS_URI")
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected error for empty REDIS_URI in local, got nil")
 		}
-		setEnv(t, "APP_ENV", "local")
-		setEnv(t, "GATEWAY_SECRET", "test-gateway-secret-1234567890")
-		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("expected Load to succeed with local dev defaults, got: %v", err)
-		}
-		if cfg.Port != "8080" {
-			t.Errorf("expected default Port 8080, got %q", cfg.Port)
-		}
-		if cfg.TLSEnabled() {
-			t.Error("expected TLS disabled by default in local dev")
-		}
-		if cfg.MTLSClientEnabled() {
-			t.Error("expected mTLS client disabled by default in local dev")
+		if !strings.Contains(err.Error(), "REDIS_URI") {
+			t.Fatalf("expected error to contain %q, got %q", "REDIS_URI", err.Error())
 		}
 	})
 }

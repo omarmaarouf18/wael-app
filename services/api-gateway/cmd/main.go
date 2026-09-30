@@ -26,21 +26,11 @@ func main() {
 	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
 	log.Printf("[GATEWAY] env=%s domain=%s tls=%t mtls-client=%t", cfg.AppEnv, cfg.AppDomain, cfg.TLSEnabled(), cfg.MTLSClientEnabled())
 
-	var rl *middleware.RateLimiter
-	if cfg.RedisURI != "" {
-		rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
-		if err != nil {
-			log.Fatalf("[GATEWAY] redis unreachable: %v (uri=%s)", err, redact.RedactURI(cfg.RedisURI))
-		}
-		defer func() { _ = rdb.Close() }()
-		rl = middleware.NewRateLimiter(ratelimit.NewRateLimiter(rdb, 100, time.Minute, "gateway"), cfg.TrustedProxyIPs)
-		log.Printf("[GATEWAY] active rate limiter: Redis (%s)", redact.RedactURI(cfg.RedisURI))
-	} else {
-		if !dev {
-			log.Fatalf("[GATEWAY] rate limiter required outside dev: REDIS_URI is required")
-		}
-		log.Printf("[GATEWAY] active rate limiter: disabled (REDIS_URI empty, localhost dev only)")
+	rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
+	if err != nil {
+		log.Fatalf("[GATEWAY] redis unreachable: %v (uri=%s)", err, redact.RedactURI(cfg.RedisURI))
 	}
+	defer func() { _ = rdb.Close() }()
 
 	baseTransport := http.DefaultTransport
 	if cfg.MTLSClientEnabled() {
@@ -53,6 +43,9 @@ func main() {
 		log.Fatalf("[GATEWAY] mTLS client config required outside dev")
 	}
 	transport := resilience.NewRoundTripper(baseTransport, "api-gateway", 2, 2*time.Second)
+
+	rl := middleware.NewRateLimiter(ratelimit.NewRateLimiter(rdb, 100, time.Minute, "gateway"), cfg.TrustedProxyIPs)
+	log.Printf("[GATEWAY] active rate limiter: Redis (%s)", redact.RedactURI(cfg.RedisURI))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -68,9 +61,7 @@ func main() {
 	}
 
 	handler := handlerutil.MaxBytesMiddleware(1 << 20)(mux)
-	if rl != nil {
-		handler = middleware.RateLimit(rl)(handler)
-	}
+	handler = middleware.RateLimit(rl)(handler)
 	handler = middleware.Logging(cfg.AllowedOrigin)(handler)
 
 	addr := ":" + cfg.Port
