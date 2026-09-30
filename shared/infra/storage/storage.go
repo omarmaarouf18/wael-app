@@ -11,15 +11,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
+	"time"
 )
 
-// ErrKeyExists indicates an attempt to upload with an existing storage key.
-var ErrKeyExists = errors.New("storage: key already exists")
+const fileFormatVersion byte = 1
+
+var (
+	// ErrKeyExists indicates an attempt to upload with an existing storage key.
+	ErrKeyExists = errors.New("storage: key already exists")
+	// ErrLinkUnsupported indicates that the underlying filesystem does not support hard links.
+	ErrLinkUnsupported = errors.New("storage: hard links not supported by underlying filesystem")
+)
 
 // Storage defines the interface for secure document and attachment storage.
 type Storage interface {
@@ -27,9 +35,10 @@ type Storage interface {
 	OpenFile(key string) (io.ReadCloser, error)
 }
 
-// LocalStorage implements Storage using local disk with AES-256-GCM encryption at rest.
+// LocalStorage implements Storage using local disk with AES-256-GCM encryption at rest and os.Root containment.
 type LocalStorage struct {
 	baseDir string
+	root    *os.Root
 	aead    cipher.AEAD
 }
 
@@ -42,69 +51,53 @@ func validateUUIDKey(key string) error {
 	return nil
 }
 
-func checkPathContainment(baseDir, destPath string) error {
-	absBase, err := filepath.Abs(baseDir)
-	if err != nil {
-		return fmt.Errorf("storage: invalid base directory: %w", err)
+func isEscapeError(err error) bool {
+	if err == nil {
+		return false
 	}
-	absDest, err := filepath.Abs(destPath)
-	if err != nil {
-		return fmt.Errorf("storage: invalid destination path: %w", err)
-	}
-	rel, err := filepath.Rel(absBase, absDest)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("storage: directory traversal detected")
-	}
+	msg := err.Error()
+	return strings.Contains(msg, "escapes from parent") || strings.Contains(msg, "outside the root")
+}
 
-	evalBase, err := filepath.EvalSymlinks(absBase)
-	if err != nil {
-		return fmt.Errorf("storage: invalid base directory: %w", err)
+func isLinkUnsupported(err error) bool {
+	if errors.Is(err, errors.ErrUnsupported) {
+		return true
 	}
-	absEvalBase, err := filepath.Abs(evalBase)
-	if err != nil {
-		return fmt.Errorf("storage: invalid base directory: %w", err)
+	var linkErr *os.LinkError
+	if errors.As(err, &linkErr) {
+		if errors.Is(linkErr.Err, errors.ErrUnsupported) {
+			return true
+		}
+		var errno syscall.Errno
+		if errors.As(linkErr.Err, &errno) {
+			return errno == syscall.ENOSYS || errno == syscall.EOPNOTSUPP || errno == syscall.EXDEV || errno == syscall.EPERM
+		}
 	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return errno == syscall.ENOSYS || errno == syscall.EOPNOTSUPP || errno == syscall.EXDEV || errno == syscall.EPERM
+	}
+	return false
+}
 
-	// If destPath exists (including if it is a symlink), evaluate it directly
-	if _, err := os.Lstat(absDest); err == nil {
-		evalDest, err := filepath.EvalSymlinks(absDest)
-		if err != nil {
-			return fmt.Errorf("storage: directory traversal detected")
-		}
-		absEvalDest, err := filepath.Abs(evalDest)
-		if err != nil {
-			return fmt.Errorf("storage: invalid destination path: %w", err)
-		}
-		relEval, err := filepath.Rel(absEvalBase, absEvalDest)
-		if err != nil || relEval == "." || relEval == ".." || strings.HasPrefix(relEval, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("storage: directory traversal detected")
-		}
-		return nil
+func sweepStaleTempFiles(r *os.Root, maxAge time.Duration) {
+	entries, err := fs.ReadDir(r.FS(), ".")
+	if err != nil {
+		return
 	}
-
-	// If destPath does not exist, walk up existing ancestors to ensure no parent symlink escapes base
-	curr := filepath.Dir(absDest)
-	for {
-		evalCurr, err := filepath.EvalSymlinks(curr)
-		if err == nil {
-			absEvalCurr, err := filepath.Abs(evalCurr)
+	now := time.Now()
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() && strings.HasPrefix(name, ".upload-") && strings.HasSuffix(name, ".tmp") {
+			info, err := entry.Info()
 			if err != nil {
-				return fmt.Errorf("storage: invalid directory path: %w", err)
+				continue
 			}
-			relCurr, err := filepath.Rel(absEvalBase, absEvalCurr)
-			if err != nil || (relCurr != "." && (relCurr == ".." || strings.HasPrefix(relCurr, ".."+string(filepath.Separator)))) {
-				return fmt.Errorf("storage: directory traversal detected")
+			if now.Sub(info.ModTime()) > maxAge {
+				_ = r.Remove(name)
 			}
-			break
 		}
-		parent := filepath.Dir(curr)
-		if parent == curr {
-			break
-		}
-		curr = parent
 	}
-
-	return nil
 }
 
 func createDocAEAD(hexKey, appEnv string) (cipher.AEAD, error) {
@@ -146,7 +139,7 @@ func createDocAEAD(hexKey, appEnv string) (cipher.AEAD, error) {
 	return gcm, nil
 }
 
-// NewLocalStorage initializes a new LocalStorage with AES-256-GCM encryption at rest.
+// NewLocalStorage initializes a new LocalStorage with AES-256-GCM encryption at rest and os.Root containment.
 func NewLocalStorage(baseDir, encKey, appEnv string) (*LocalStorage, error) {
 	aead, err := createDocAEAD(encKey, appEnv)
 	if err != nil {
@@ -157,31 +150,63 @@ func NewLocalStorage(baseDir, encKey, appEnv string) (*LocalStorage, error) {
 		return nil, fmt.Errorf("storage: failed to create base directory: %w", err)
 	}
 
+	root, err := os.OpenRoot(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("storage: failed to open base directory root: %w", err)
+	}
+
+	sweepStaleTempFiles(root, 1*time.Hour)
+
 	return &LocalStorage{
 		baseDir: baseDir,
+		root:    root,
 		aead:    aead,
 	}, nil
 }
 
-// Upload writes an encrypted document file to the local disk.
+// Close closes the underlying base directory root handle.
+func (l *LocalStorage) Close() error {
+	if l.root != nil {
+		return l.root.Close()
+	}
+	return nil
+}
+
+func (l *LocalStorage) createTemp() (*os.File, string, error) {
+	for i := 0; i < 100; i++ {
+		var b [16]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return nil, "", fmt.Errorf("storage: failed to generate temp file name: %w", err)
+		}
+		name := fmt.Sprintf(".upload-%x.tmp", b)
+		f, err := l.root.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+		if err == nil {
+			return f, name, nil
+		}
+		if !errors.Is(err, os.ErrExist) && !os.IsExist(err) {
+			return nil, "", fmt.Errorf("storage: failed to create temporary file: %w", err)
+		}
+	}
+	return nil, "", errors.New("storage: failed to create temporary file: too many collisions")
+}
+
+// Upload writes an encrypted document file to the local disk within os.Root.
 func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader, contentType string) error {
 	if err := validateUUIDKey(key); err != nil {
 		return err
 	}
 
-	destPath := filepath.Join(l.baseDir, filepath.Clean(key))
-	if err := checkPathContainment(l.baseDir, destPath); err != nil {
-		return err
-	}
-
-	destDir := filepath.Dir(destPath)
-	if err := os.MkdirAll(destDir, 0700); err != nil {
-		return fmt.Errorf("storage: failed to create subdirectories: %w", err)
-	}
-
-	// Fail fast if destination file already exists
-	if _, err := os.Stat(destPath); err == nil {
+	// Check containment and existence within root
+	if _, err := l.root.Stat(key); err == nil {
 		return ErrKeyExists
+	} else if isEscapeError(err) {
+		return fmt.Errorf("storage: directory traversal detected: %w", err)
+	}
+
+	if _, err := l.root.Lstat(key); err == nil {
+		return ErrKeyExists
+	} else if isEscapeError(err) {
+		return fmt.Errorf("storage: directory traversal detected: %w", err)
 	}
 
 	plaintext, err := io.ReadAll(reader)
@@ -194,15 +219,20 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 		return fmt.Errorf("storage: failed to generate nonce: %w", err)
 	}
 
-	ciphertext := l.aead.Seal(nonce, nonce, plaintext, []byte(key))
+	// File format: [version=1][nonce 12][ciphertext+tag]
+	header := make([]byte, 1+len(nonce))
+	header[0] = fileFormatVersion
+	copy(header[1:], nonce)
+	aad := append([]byte{fileFormatVersion}, []byte(key)...)
 
-	tmpFile, err := os.CreateTemp(destDir, ".upload-*.tmp")
+	ciphertext := l.aead.Seal(header, nonce, plaintext, aad)
+
+	tmpFile, tmpName, err := l.createTemp()
 	if err != nil {
-		return fmt.Errorf("storage: failed to create temporary file: %w", err)
+		return err
 	}
-	tmpPath := tmpFile.Name()
 	defer func() {
-		_ = os.Remove(tmpPath)
+		_ = l.root.Remove(tmpName)
 	}()
 
 	if _, err := tmpFile.Write(ciphertext); err != nil {
@@ -219,9 +249,15 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 		return fmt.Errorf("storage: failed to close temporary file: %w", err)
 	}
 
-	if err := os.Link(tmpPath, destPath); err != nil {
+	if err := l.root.Link(tmpName, key); err != nil {
 		if errors.Is(err, os.ErrExist) || os.IsExist(err) {
 			return ErrKeyExists
+		}
+		if isLinkUnsupported(err) {
+			return fmt.Errorf("%w: %v", ErrLinkUnsupported, err)
+		}
+		if isEscapeError(err) {
+			return fmt.Errorf("storage: directory traversal detected: %w", err)
 		}
 		return fmt.Errorf("storage: failed to publish destination file: %w", err)
 	}
@@ -229,30 +265,34 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 	return nil
 }
 
-// OpenFile opens and decrypts the local file for reading.
+// OpenFile opens and decrypts the local file for reading using os.Root.
 func (l *LocalStorage) OpenFile(key string) (io.ReadCloser, error) {
 	if err := validateUUIDKey(key); err != nil {
 		return nil, err
 	}
 
-	destPath := filepath.Join(l.baseDir, filepath.Clean(key))
-	if err := checkPathContainment(l.baseDir, destPath); err != nil {
-		return nil, err
-	}
-
-	// #nosec G304 //nolint:gosec -- canonical UUID key validation, EvalSymlinks resolution, and filepath.Rel containment check ensure file path stays within base directory
-	data, err := os.ReadFile(destPath)
+	// #nosec G304 //nolint:gosec -- canonical UUID key validation and os.Root containment ensure file path stays within base directory
+	data, err := l.root.ReadFile(key)
 	if err != nil {
+		if isEscapeError(err) {
+			return nil, fmt.Errorf("storage: directory traversal detected: %w", err)
+		}
 		return nil, fmt.Errorf("storage: failed to open file %s: %w", key, err)
 	}
 
 	nonceSize := l.aead.NonceSize()
-	if len(data) < nonceSize {
-		return nil, fmt.Errorf("storage: file %s is too short to contain valid ciphertext", key)
+	if len(data) < 1+nonceSize {
+		return nil, fmt.Errorf("storage: file %s is too short to contain valid header", key)
 	}
 
-	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
-	plaintext, err := l.aead.Open(nil, nonce, ciphertext, []byte(key))
+	version := data[0]
+	if version != fileFormatVersion {
+		return nil, fmt.Errorf("storage: unsupported file format version %d", version)
+	}
+
+	nonce, ciphertext := data[1:1+nonceSize], data[1+nonceSize:]
+	aad := append([]byte{version}, []byte(key)...)
+	plaintext, err := l.aead.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("storage: failed to decrypt file %s: %w", key, err)
 	}

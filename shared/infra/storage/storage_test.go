@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestLocalStorage(t *testing.T) {
@@ -232,14 +234,12 @@ func TestLocalStorage_HardenedKeyValidationAndContainment(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 1. Direct unit test of checkPathContainment for sibling-prefix escape
-	t.Run("checkPathContainment sibling-prefix escape", func(t *testing.T) {
-		err := checkPathContainment(storageBase, filepath.Join(siblingEvil, "file.bin"))
+	// 1. Direct test of sibling-prefix escape
+	t.Run("OpenFile sibling-prefix escape", func(t *testing.T) {
+		rc, err := store.OpenFile("../storage-evil/file.bin")
 		if err == nil {
-			t.Errorf("expected directory traversal error for sibling prefix, got nil")
-		}
-		if !strings.Contains(err.Error(), "directory traversal detected") {
-			t.Errorf("expected 'directory traversal detected', got: %v", err)
+			rc.Close()
+			t.Errorf("expected error for sibling prefix, got nil")
 		}
 	})
 
@@ -512,12 +512,15 @@ func TestLocalStorage_EncryptionProperties(t *testing.T) {
 		t.Fatalf("vulnerability: plaintext appears unencrypted on disk")
 	}
 
-	// 12-byte nonce stored with ciphertext
-	if len(raw1) < 12 || len(raw2) < 12 {
-		t.Fatalf("file on disk too short to contain 12-byte nonce")
+	// 1-byte version header + 12-byte nonce stored with ciphertext
+	if len(raw1) < 13 || len(raw2) < 13 {
+		t.Fatalf("file on disk too short to contain version header and 12-byte nonce")
 	}
-	nonce1 := raw1[:12]
-	nonce2 := raw2[:12]
+	if raw1[0] != 1 || raw2[0] != 1 {
+		t.Fatalf("expected version byte 1, got raw1[0]=%d, raw2[0]=%d", raw1[0], raw2[0])
+	}
+	nonce1 := raw1[1:13]
+	nonce2 := raw2[1:13]
 	if bytes.Equal(nonce1, nonce2) {
 		t.Fatalf("expected different random 12-byte nonces, got identical nonces")
 	}
@@ -606,5 +609,153 @@ func TestLocalStorage_EncryptionProperties(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to decrypt") {
 		t.Fatalf("expected 'failed to decrypt' error on tampered file, got: %v", err)
+	}
+}
+
+func TestLocalStorage_FileFormatVersion(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "storage-version-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	encKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	store, err := NewLocalStorage(tempDir, encKey, "test")
+	if err != nil {
+		t.Fatalf("failed to create LocalStorage: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	key := "a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+	content := "versioned storage content"
+
+	// 1. Round-trip
+	if err := store.Upload(ctx, key, strings.NewReader(content), "text/plain"); err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	rc, err := store.OpenFile(key)
+	if err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+	defer rc.Close()
+	gotBytes, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
+	}
+	if string(gotBytes) != content {
+		t.Fatalf("got %q, want %q", string(gotBytes), content)
+	}
+
+	// Verify header on disk has version byte = 1
+	raw, err := os.ReadFile(filepath.Join(tempDir, key))
+	if err != nil {
+		t.Fatalf("ReadFile on disk failed: %v", err)
+	}
+	if len(raw) < 13 {
+		t.Fatalf("raw file too short: %d bytes", len(raw))
+	}
+	if raw[0] != 1 {
+		t.Fatalf("expected version byte 1, got %d", raw[0])
+	}
+
+	// 2. Unknown version byte
+	keyUnknown := "b2eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+	unknownData := make([]byte, len(raw))
+	copy(unknownData, raw)
+	unknownData[0] = 99 // unsupported version 99
+	if err := os.WriteFile(filepath.Join(tempDir, keyUnknown), unknownData, 0600); err != nil {
+		t.Fatalf("failed to write unknown version file: %v", err)
+	}
+
+	rcUnknown, err := store.OpenFile(keyUnknown)
+	if err == nil {
+		rcUnknown.Close()
+		t.Fatalf("expected OpenFile to fail for unknown version, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported file format version") {
+		t.Fatalf("expected 'unsupported file format version' error, got: %v", err)
+	}
+
+	// 3. Tampered version byte
+	keyTampered := "c3eebc99-9c0b-4ef8-bb6d-6bb9bd380a33"
+	tamperedData := make([]byte, len(raw))
+	copy(tamperedData, raw)
+	tamperedData[0] = 2 // tampered version byte
+	if err := os.WriteFile(filepath.Join(tempDir, keyTampered), tamperedData, 0600); err != nil {
+		t.Fatalf("failed to write tampered version file: %v", err)
+	}
+
+	rcTampered, err := store.OpenFile(keyTampered)
+	if err == nil {
+		rcTampered.Close()
+		t.Fatalf("expected OpenFile to fail for tampered version byte, got nil")
+	}
+}
+
+func TestLocalStorage_StartupSweep(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "storage-sweep-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a backdated temp file (> 1h old)
+	oldTmp := filepath.Join(tempDir, ".upload-old1234.tmp")
+	if err := os.WriteFile(oldTmp, []byte("stale temp content"), 0600); err != nil {
+		t.Fatalf("WriteFile oldTmp failed: %v", err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(oldTmp, oldTime, oldTime); err != nil {
+		t.Fatalf("Chtimes failed: %v", err)
+	}
+
+	// Create a fresh temp file (< 1h old)
+	recentTmp := filepath.Join(tempDir, ".upload-recent5678.tmp")
+	if err := os.WriteFile(recentTmp, []byte("recent temp content"), 0600); err != nil {
+		t.Fatalf("WriteFile recentTmp failed: %v", err)
+	}
+
+	// Create a non-temp file
+	nonTmp := filepath.Join(tempDir, "preserved.txt")
+	if err := os.WriteFile(nonTmp, []byte("keep me"), 0600); err != nil {
+		t.Fatalf("WriteFile nonTmp failed: %v", err)
+	}
+
+	encKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	store, err := NewLocalStorage(tempDir, encKey, "test")
+	if err != nil {
+		t.Fatalf("NewLocalStorage failed: %v", err)
+	}
+	defer store.Close()
+
+	// Assert old temp file was removed by startup sweep
+	if _, err := os.Stat(oldTmp); !os.IsNotExist(err) {
+		t.Errorf("expected old temp file to be removed by startup sweep, stat err: %v", err)
+	}
+
+	// Assert recent temp file was preserved
+	if _, err := os.Stat(recentTmp); err != nil {
+		t.Errorf("expected recent temp file to be preserved, got err: %v", err)
+	}
+
+	// Assert non-temp file was preserved
+	if _, err := os.Stat(nonTmp); err != nil {
+		t.Errorf("expected non-temp file to be preserved, got err: %v", err)
+	}
+}
+
+func TestLocalStorage_ErrLinkUnsupported(t *testing.T) {
+	if !isLinkUnsupported(errors.ErrUnsupported) {
+		t.Errorf("expected isLinkUnsupported(errors.ErrUnsupported) to be true")
+	}
+	linkErr := &os.LinkError{Op: "linkat", Old: "a", New: "b", Err: syscall.EXDEV}
+	if !isLinkUnsupported(linkErr) {
+		t.Errorf("expected isLinkUnsupported(linkErr with EXDEV) to be true")
+	}
+	linkErrENOSYS := &os.LinkError{Op: "linkat", Old: "a", New: "b", Err: syscall.ENOSYS}
+	if !isLinkUnsupported(linkErrENOSYS) {
+		t.Errorf("expected isLinkUnsupported(linkErr with ENOSYS) to be true")
 	}
 }
