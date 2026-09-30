@@ -113,7 +113,7 @@ fi
 
 for mod in services/api-gateway services/auth-service services/notification-service shared/infra tools/docgen tests/contracts tests/e2e; do
   echo "-- checking $mod --"
-  (cd "$mod" && go build ./... && go vet ./... && go test ./... -count=1) || {
+  (cd "$mod" && go build ./... && go vet ./... && go test -race ./... -count=1) || {
     echo "BLOCKED: $mod failed build/vet/test"
     exit 1
   }

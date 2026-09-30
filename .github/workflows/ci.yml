@@ -117,7 +117,7 @@ jobs:
 
       - name: Test
         working-directory: ${{ matrix.service.path }}
-        run: go test ./... -count=1
+        run: go test -race ./... -count=1
 
   security:
     name: Security Scan

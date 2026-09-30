@@ -61,6 +61,11 @@ mode). End-to-end behavior matrix executed against real compose stack with 24
 verified scenarios; docs/frontend/BEHAVIOR.md recorded with raw captured
 outputs (masked), backend findings, and fail-closed audit evidence.
 Lowest-friction Linux desktop target documented in frontend/README.md.
+Race detector: `go test -race` is now the test gate in `.githooks/pre-push`
+and CI for every Go module (owner-approved 2026-09-30). A pre-existing
+data race in TestStream_BearerAndQueryToken (from 2a3b95d, invisible
+because gates ran without -race) was fixed with a mutex-guarded test
+recorder (e276fc3); no production code changed.
 Owner amendment (2026-09-30, pushing): CLAUDE.md now carries the Auto-push
 rule (auto-push `develop` via `make push` only when every gate and `make ci`
 passed with output shown, tree clean, a secret scan of the range is clean,
