@@ -24,7 +24,8 @@ Section 2 D15-D19, Section 3 questions 12-16, Phase 0.0 public-repo
 hygiene, Section 15 review notes (ADR numbering after 0010; leak response:
 replace the video, change `youtube_video_id`, RUNBOOK to carry it when
 written). ADR-0001 leak-response note added; ADR-0003 amended (manual
-payment via InstaPay or e-wallets, admin activation).
+payment via InstaPay or e-wallets, admin activation). Section 15 corrected
+same day: ADR-0007 reserves ADR-0008-0010.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.

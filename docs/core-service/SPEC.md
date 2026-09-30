@@ -336,8 +336,9 @@ task 0.0 (Section 11) were added with it.
    `youtube_video_id`. Recorded as a dated note in ADR-0001. No RUNBOOK
    exists yet; when Phase 8 writes `RUNBOOK.md`, it must carry the same
    leak-response note.
-2. **ADR numbering**: ADR-0007 reserves ADR-0009 (file storage) and
-   ADR-0010 (app content). The new ADRs for WhatsApp OTP and for client
+2. **ADR numbering**: ADR-0007 reserves ADR-0008 (admin identity; since
+   written in Phase 0.3), ADR-0009 (file storage) and ADR-0010 (app
+   content). The new ADRs for WhatsApp OTP and for client
    ownership use numbers after 0010.
 3. **ADR-0003 amendment applied** (docs only): payment is manual via
    InstaPay or e-wallets, with admin activation. The payment flow itself
