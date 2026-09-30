@@ -79,6 +79,7 @@ SPEC Section 12 rule 5 now points to CLAUDE.md Auto-push.
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
 RUNBOOK, DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
 rows in `docs/asset-provenance.md`.
+Hardening reference and backlog: docs/BOOTSTRAP-REFERENCE.md.
 
 ## Decisions
 - [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)
