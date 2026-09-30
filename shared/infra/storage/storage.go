@@ -8,6 +8,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,6 +17,9 @@ import (
 	"regexp"
 	"strings"
 )
+
+// ErrKeyExists indicates an attempt to upload with an existing storage key.
+var ErrKeyExists = errors.New("storage: key already exists")
 
 // Storage defines the interface for secure document and attachment storage.
 type Storage interface {
@@ -121,6 +125,16 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 		return err
 	}
 
+	destDir := filepath.Dir(destPath)
+	if err := os.MkdirAll(destDir, 0700); err != nil {
+		return fmt.Errorf("storage: failed to create subdirectories: %w", err)
+	}
+
+	// Fail fast if destination file already exists
+	if _, err := os.Stat(destPath); err == nil {
+		return ErrKeyExists
+	}
+
 	plaintext, err := io.ReadAll(reader)
 	if err != nil {
 		return fmt.Errorf("storage: failed to read file content: %w", err)
@@ -133,19 +147,34 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 
 	ciphertext := l.aead.Seal(nonce, nonce, plaintext, nil)
 
-	if err := os.MkdirAll(filepath.Dir(destPath), 0700); err != nil {
-		return fmt.Errorf("storage: failed to create subdirectories: %w", err)
-	}
-
-	// #nosec G304 //nolint:gosec -- canonical UUID key validation and filepath.Rel containment check ensure file path stays within base directory
-	file, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+	tmpFile, err := os.CreateTemp(destDir, ".upload-*.tmp")
 	if err != nil {
-		return fmt.Errorf("storage: failed to open destination file: %w", err)
+		return fmt.Errorf("storage: failed to create temporary file: %w", err)
 	}
-	defer file.Close()
+	tmpPath := tmpFile.Name()
+	defer func() {
+		_ = os.Remove(tmpPath)
+	}()
 
-	if _, err := file.Write(ciphertext); err != nil {
+	if _, err := tmpFile.Write(ciphertext); err != nil {
+		_ = tmpFile.Close()
 		return fmt.Errorf("storage: failed to write encrypted file: %w", err)
+	}
+
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("storage: failed to sync temporary file: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("storage: failed to close temporary file: %w", err)
+	}
+
+	if err := os.Link(tmpPath, destPath); err != nil {
+		if errors.Is(err, os.ErrExist) || os.IsExist(err) {
+			return ErrKeyExists
+		}
+		return fmt.Errorf("storage: failed to publish destination file: %w", err)
 	}
 
 	return nil

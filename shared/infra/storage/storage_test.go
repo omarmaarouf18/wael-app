@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -327,4 +328,82 @@ func TestLocalStorage_HardenedKeyValidationAndContainment(t *testing.T) {
 			t.Fatalf("decrypted content mismatch: got %q, want %q", string(readBytes), content)
 		}
 	})
+}
+
+type failingReader struct{}
+
+func (f *failingReader) Read(p []byte) (n int, err error) {
+	return 0, errors.New("simulated read error")
+}
+
+func TestLocalStorage_AtomicNoOverwrite(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "storage-atomic-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	encKey := hex.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	store, err := NewLocalStorage(tempDir, encKey, "test")
+	if err != nil {
+		t.Fatalf("failed to create LocalStorage: %v", err)
+	}
+
+	ctx := context.Background()
+	key := "a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+	firstContent := "first immutable content"
+	secondContent := "second attempted overwrite"
+
+	// 1. Initial upload succeeds
+	if err := store.Upload(ctx, key, strings.NewReader(firstContent), "text/plain"); err != nil {
+		t.Fatalf("initial upload failed: %v", err)
+	}
+
+	// 2. Duplicate upload returns ErrKeyExists and never truncates
+	err = store.Upload(ctx, key, strings.NewReader(secondContent), "text/plain")
+	if err == nil {
+		t.Fatalf("expected ErrKeyExists on duplicate key upload, got nil")
+	}
+	if !errors.Is(err, ErrKeyExists) {
+		t.Fatalf("expected errors.Is(err, ErrKeyExists), got %v", err)
+	}
+
+	// Verify first content is intact
+	rc, err := store.OpenFile(key)
+	if err != nil {
+		t.Fatalf("OpenFile failed: %v", err)
+	}
+	defer rc.Close()
+
+	readBytes, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatalf("failed to read content: %v", err)
+	}
+	if string(readBytes) != firstContent {
+		t.Fatalf("content was altered or overwritten! got %q, want %q", string(readBytes), firstContent)
+	}
+
+	// 3. Simulated failure during upload leaves no file at dest and no leftover temp files
+	failKey := "b2eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+	err = store.Upload(ctx, failKey, &failingReader{}, "text/plain")
+	if err == nil {
+		t.Fatalf("expected error on failing reader, got nil")
+	}
+
+	// Assert failKey does not exist
+	failDest := filepath.Join(tempDir, failKey)
+	if _, statErr := os.Stat(failDest); !os.IsNotExist(statErr) {
+		t.Fatalf("expected destPath to not exist on failed upload, stat err: %v", statErr)
+	}
+
+	// Assert no temp files exist
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		t.Fatalf("failed to read tempDir: %v", err)
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".upload-") || strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Errorf("found leftover temp file: %s", entry.Name())
+		}
+	}
 }
