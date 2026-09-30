@@ -28,12 +28,15 @@ sources; `placeholder_course.png` is referenced but not committed). Core
 Phase 0.6: added AGENTS.md pointer ("Follow CLAUDE.md verbatim") and updated
 CLAUDE.md (no-illustrative-output, proactive commit disclosure). Core
 Phase 0.4: ADR-0009 (file storage: local encrypted storage at rest with
-AES-256-GCM, server-generated canonical UUID keys, symlink-proof containment,
-atomic no-overwrite uploads via temp files and hard links, AAD binding to key,
-streaming via OpenFile with per-call entitlement checks, no signed URLs, and
-fail-closed DOCUMENT_ENCRYPTION_KEY policy) written (Status Proposed);
+AES-256-GCM, server-generated canonical UUID keys, os.Root containment with
+TOCTOU single-writer assumption, atomic no-overwrite uploads via temp files and
+hard links, version byte header and AAD binding to key, startup sweep of stale
+temp files, streaming via OpenFile with per-call entitlement checks, no signed URLs,
+and fail-closed DOCUMENT_ENCRYPTION_KEY policy) written (Status Proposed);
 `shared/infra/storage` implemented and verified with exhaustive key/env matrix,
-atomic upload, symlink containment, and cryptographic tamper tests.
+atomic upload, os.Root symlink containment, version header, temp sweep, and
+cryptographic tamper tests; real contract tests added to `tests/contracts`;
+APP_ENV allowlist enforced in auth and notification services.
 Owner review recorded (2026-09-30, docs only, nothing implemented): SPEC
 Section 2 D15-D19, Section 3 questions 12-16, Phase 0.0 public-repo
 hygiene, Section 15 review notes (ADR numbering after 0010; leak response:
