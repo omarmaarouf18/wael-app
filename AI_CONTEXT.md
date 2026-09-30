@@ -93,6 +93,4 @@ Hardening reference and backlog: docs/BOOTSTRAP-REFERENCE.md.
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-Continue core academy work from `docs/core-service/SPEC.md`: Phase 0.5,
-fix the e2e test to use `t.Run` per stage. Complete the remaining Phase 0
-prerequisites before Phase 1.
+apply Phase A of docs/BOOTSTRAP-REFERENCE.md, starting from the first finding marked Confirmed in Appendix K.

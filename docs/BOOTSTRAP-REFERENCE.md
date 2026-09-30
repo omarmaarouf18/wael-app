@@ -783,3 +783,32 @@ exceeds an agreed size (for example 16 KB).
 The dev-only default `devpassword123` in `infrastructure/.env.example` must never appear in
 any staging or production file; enforce it with a `--check-env` rule that rejects that
 value when `APP_ENV` is not `local`.
+
+## Appendix K: Verification against develop
+
+Examined commit: `46c7997...`
+
+| ID | Status | Evidence | Correction |
+|---|---|---|---|
+| W-01 | Partial | `services/auth-service/internal/config/config.go:64-66`, `services/auth-service/cmd/main.go:37-62` | APP_ENV is now allowlisted to local, test, or production (services/auth-service/internal/config/config.go:64-66), but Load() does not require Mongo, Redis, or TLS in production, and cmd/main.go (lines 37-62) still falls back to in-memory stores and plain HTTP with a log line. |
+| W-02 | Confirmed | `services/auth-service/cmd/main.go:64-67`, `services/auth-service/internal/mailer/mailer.go:26-30` | none |
+| W-03 | Confirmed | `.github/workflows/ci.yml:29-82`, `.githooks/pre-push:28-42` | none |
+| W-04 | Confirmed | `grep -rn "check-env" services/` (0 matches) | none |
+| W-05 | Confirmed | `grep -rn "MONGO_URI" services/*/*_test.go shared/*/*_test.go` (0 matches), `.github/workflows/ci.yml:84-120` (no service containers) | none |
+| W-06 | Partial | `tests/contracts/contracts_test.go:20-159`, `tests/e2e/chain_test.go:113` | tests/contracts is no longer an empty skeleton: contracts_test.go executes 3 active contract tests (gateway token strip, error body shape, JWT claim set) which run and pass in the gate. However, tests/e2e/chain_test.go still skips when E2E_GATEWAY_URL is unset, reporting green while running 0 end-to-end tests. |
+| W-07 | Confirmed | `.github/workflows/ci.yml:19,24,146,189`, `.githooks/pre-push:125`, `services/*/Dockerfile:11,28,41` | none |
+| W-08 | Confirmed | `services/*/Dockerfile:50-51,45-46`, `infrastructure/docker-compose.yml:98` | none |
+| W-09 | Confirmed | `infrastructure/docker-compose.yml:24,45,50` | none |
+| W-10 | Confirmed | `infrastructure/certs/generate-certs.sh:11,31,37,39,40` | none |
+| W-11 | Confirmed | `shared/infra/jwtutil/jwt.go:142`, `services/auth-service/cmd/main.go:74-81`, `grep -rn "RevokeToken\|RevokeAllUserTokens" services/` (0 matches) | none |
+| W-12 | Confirmed | `services/auth-service/internal/handlers/auth.go:136-139`, `services/api-gateway/internal/middleware/limiter.go:47` | none |
+| W-13 | Confirmed | `tools/docgen/main.go:8`, `Makefile:1-51` (no docs target), absence of `docs/changelog/` | none |
+| W-14 | Confirmed | `.github/workflows/ci.yml:183-207`, absence of frontend composition or route parity scripts | none |
+| W-15 | Unknown (not visible from the repo) | GitHub repository rulesets and branch protection settings cannot be inspected from local git clone | none |
+| W-16 | Confirmed | `services/auth-service/internal/otp/otp.go:31-34`, `services/auth-service/internal/handlers/auth.go:174-178,337-341` | none |
+| W-17 | Confirmed | `services/auth-service/internal/config/config.go:64-66` (staging not allowed; no staging OTP strategy exists) | none |
+
+### Not verified
+- W-15: GitHub repository rulesets, branch protection rules, and remote security settings (not visible from local repo).
+- Real database container execution for MongoDB and Redis (unverified locally without live compose stack; `tests/e2e` skipped).
+- Remote GitHub Actions execution environment behaviors (workflow runs in GitHub Actions runners; validated locally via pre-push gate).
