@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Public repo: CI never needs write access to the repo contents.
+permissions:
+  contents: read
+
 jobs:
   lint-formatting:
     name: Lint & Formatting
@@ -149,6 +153,28 @@ jobs:
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
           gosec ./...
+
+  gitleaks:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache: false
+
+      # Full history, all refs. Known test-fixture false positives are
+      # allowlisted by fingerprint in .gitleaksignore.
+      - name: Run gitleaks
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          gitleaks git --log-opts="--all" --redact
 
   flutter-test:
     name: Flutter Lint & Test

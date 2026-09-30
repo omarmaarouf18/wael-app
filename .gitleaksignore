@@ -1,0 +1,12 @@
+# Known false positives, allowlisted by fingerprint. All three are
+# hardcoded dummy fixtures inside Go *_test.go files, not real secrets.
+# A new entry here must name why it is safe.
+#
+# 1. "test-jwt-secret-0123456789abcdef": dummy JWT_SECRET env value set by a
+#    test helper in auth-service config tests.
+b722d4a8eaefad05ed2fc91b57bfa310d8dd7966:services/auth-service/internal/config/config_test.go:generic-api-key:18
+# 2./3. "0123456789abcdef..." 64-hex-char dummy encryption keys in the
+#    storage tests of the since-removed shared/infra/storage package
+#    (historical commit; the file no longer exists at HEAD).
+f8e19c9606a487afe9cd91ec1b542661a8a0d65a:shared/infra/storage/storage_test.go:generic-api-key:21
+f8e19c9606a487afe9cd91ec1b542661a8a0d65a:shared/infra/storage/storage_test.go:generic-api-key:149

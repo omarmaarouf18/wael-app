@@ -18,7 +18,13 @@ auth/notifications/academy mocks. Core Phase 0.1: gateway strips client
 `X-Internal-Token` and injects none; it no longer requires or receives
 `INTERNAL_SERVICE_TOKEN`. Core Phase 0.2: corrected ADR-0007 per
 `docs/core-service/SPEC.md` Section 14. Core Phase 0.3: ADR-0008 (admin
-identity and console boundaries) written and accepted.
+identity and console boundaries) written and accepted. Core Phase 0.0:
+public-repo hygiene — gitleaks CI job (pinned v8.30.1, full history) with
+`.gitleaksignore` for three known test-fixture findings, top-level
+`permissions: contents: read` in ci.yml, extended `.gitignore` (signing
+keys/keystores, credential JSONs, logs/databases, Flutter coverage), and
+`docs/asset-provenance.md` (all rows UNCONFIRMED until the owner records
+sources; `placeholder_course.png` is referenced but not committed).
 Owner review recorded (2026-09-30, docs only, nothing implemented): SPEC
 Section 2 D15-D19, Section 3 questions 12-16, Phase 0.0 public-repo
 hygiene, Section 15 review notes (ADR numbering after 0010; leak response:
@@ -37,7 +43,8 @@ SPEC.md Sections 1, 3, 5, 11 and ADR-0007 amended.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
-RUNBOOK, DEPLOYMENT, changelog (ADRs now exist).
+RUNBOOK, DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
+rows in `docs/asset-provenance.md`.
 
 ## Decisions
 Product decisions recorded in `docs/adr/`:

@@ -41,6 +41,7 @@ Thumbs.db
 
 # Flutter Client Ignores
 /frontend/.dart_tool/
+/frontend/.flutter-plugins
 /frontend/.flutter-plugins-dependencies
 /frontend/.pub-cache/
 /frontend/.pub/
@@ -48,6 +49,7 @@ Thumbs.db
 /frontend/android/app/debug/
 /frontend/android/app/profile/
 /frontend/android/app/release/
+/frontend/coverage/
 
 # Service certificates and keys
 services/*/certs/
@@ -58,3 +60,29 @@ scratch/
 tools/docgen/docgen
 __pycache__/
 *.py[cod]
+
+# Signing keys, keystores, and provisioning profiles (never commit)
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.p8
+*.mobileprovision
+key.properties
+
+# Credential and service-account files (never commit)
+*-service-account*.json
+service-account*.json
+firebase-adminsdk*.json
+firebase-*.json
+
+# Logs, dumps, and local databases
+*.log
+*.dump
+*.db
+*.sqlite
+
+# Agent and tool state
+/.claude/
+/.delegate/
+skills-lock.json
