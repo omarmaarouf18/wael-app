@@ -418,7 +418,7 @@ a captured-mail sink. Decide this in an ADR before building staging.
 |---|---|---|---|
 | W-01 | Fail-open production config | P1 | Any deploy |
 | W-02 | OTP codes in logs without real sender | P1 | Any deploy |
-| W-03 | No SHA citation check in CI | P1 | Trust in docs |
+| W-03 (done) | No SHA citation check in CI | P1 | Trust in docs |
 | W-04 | No `--check-env` | P1 | CD pre-flight |
 | W-05 | No real-DB tests | P1 | Academy Phase 1 |
 | W-06 | Empty contract/E2E suites report green | P2 | Release gate |
@@ -449,7 +449,7 @@ result; the last column is the target.
 | ADR template and index | Yes (27) | Yes (8) | Yes |
 | Categorized changelog with verified SHAs | Yes | No | Yes |
 | SHA citation check locally | Yes | Yes | Yes |
-| SHA citation check in CI | Yes | **No** | Yes |
+| SHA citation check in CI | Yes | Yes | Yes |
 | Branch ruleset (required checks, linear history, no force push) | Unknown | Unknown | Yes |
 | CODEOWNERS | No | No | Yes |
 | Dependabot or Renovate | No | No | Yes |
@@ -509,7 +509,7 @@ done, because the academy service will copy whatever the existing services do.
 
 ### Phase A: foundations (before more feature code)
 
-1. **W-03** Add the Markdown SHA step to `ci.yml`. *Done when:* a deliberately bad hash on a
+1. **W-03** (done) Add the Markdown SHA step to `ci.yml`. *Done when:* a deliberately bad hash on a
    throwaway branch fails the job.
 2. **W-01** Strict `Load()` for gateway, auth, notification with a shared helper for the
    `APP_ENV` allow-list. *Done when:* table tests cover every missing variable per
@@ -792,7 +792,7 @@ Examined commit: `46c7997...`
 |---|---|---|---|
 | W-01 | Partial | `services/auth-service/internal/config/config.go:64-66`, `services/auth-service/cmd/main.go:37-62` | APP_ENV is now allowlisted to local, test, or production (services/auth-service/internal/config/config.go:64-66), but Load() does not require Mongo, Redis, or TLS in production, and cmd/main.go (lines 37-62) still falls back to in-memory stores and plain HTTP with a log line. |
 | W-02 | Confirmed | `services/auth-service/cmd/main.go:64-67`, `services/auth-service/internal/mailer/mailer.go:26-30` | none |
-| W-03 | Confirmed | `.github/workflows/ci.yml:29-82`, `.githooks/pre-push:28-42` | none |
+| W-03 | Fixed in 36033d7 | .github/workflows/ci.yml:37-54 | none |
 | W-04 | Confirmed | `grep -rn "check-env" services/` (0 matches) | none |
 | W-05 | Confirmed | `grep -rn "MONGO_URI" services/*/*_test.go shared/*/*_test.go` (0 matches), `.github/workflows/ci.yml:84-120` (no service containers) | none |
 | W-06 | Partial | `tests/contracts/contracts_test.go:20-159`, `tests/e2e/chain_test.go:113` | tests/contracts is no longer an empty skeleton: contracts_test.go executes 3 active contract tests (gateway token strip, error body shape, JWT claim set) which run and pass in the gate. However, tests/e2e/chain_test.go still skips when E2E_GATEWAY_URL is unset, reporting green while running 0 end-to-end tests. |
