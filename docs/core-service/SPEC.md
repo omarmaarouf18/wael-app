@@ -13,7 +13,7 @@ This is the build contract for the core of the application. It is written for im
 2. **Section 2 (Defaults) is this spec's own choices.** They exist so work can start; only the owner may override them. Overrides are recorded as a dated note in Section 2, never silently in code.
 3. **Section 3 (Open questions) must not be implemented.** If a task needs one of them, stop and report which one.
 4. Work in the phases of Section 11, one task per session, one logical change per commit, gates from `CLAUDE.md`.
-5. Never claim behavior you did not read in code. Never fabricate command output. Never write a full 40-character commit hash in any markdown file.
+5. Never claim behavior you did not read in code. Never fabricate command output. Commit hash rules: see CLAUDE.md, section 'Commit hashes in Markdown'.
 
 ## 1. Owner decisions (locked)
 

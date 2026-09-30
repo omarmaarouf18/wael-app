@@ -63,3 +63,32 @@ Follow Section 12 of `docs/core-service/SPEC.md` for implementation work,
 including its task scope, open-question, and reporting rules. Treat the
 reference implementation pointers and corrections in later SPEC sections as
 guidance for the academy service; do not silently turn them into decisions.
+
+## Security defaults
+- Environment handling is allowlist-based: only APP_ENV=local|test relaxes
+  security. Empty or unknown values are treated as production. Follow the
+  pattern in services/*/internal/config/config.go.
+- Code ported from a reference project (saas-core) gets a security review
+  before commit: list every fail-open or silent-fallback path found and
+  report it, even if the SPEC does not mention it.
+
+## Definition of "unverified"
+Anything not executed, skipped, or not shown as captured output is
+unverified. Skipped tests are listed by name and count. "Unverified: None"
+is valid only with zero skipped tests and every gate's output shown.
+
+## Scope
+Doc sentences made false by your change are in scope; fix them and list
+them under "Docs corrected". If a fix exceeds the stated scope, report it
+instead of leaving the doc wrong.
+
+## Output evidence
+For each gate (gofmt, vet, test, gosec, govulncheck, contract tests,
+flutter analyze/test) show the command and its last 3 output lines, or
+write "not captured". Never summarize a gate as passed without this.
+
+## Commit hashes in Markdown
+A full 40-character hash in Markdown is allowed only if verified with
+`git cat-file -e <sha>^{commit}` in the same session; otherwise use 7
+characters. This section is the single source of truth.
+
