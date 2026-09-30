@@ -24,7 +24,9 @@ public-repo hygiene — gitleaks CI job (pinned v8.30.1, full history) with
 `permissions: contents: read` in ci.yml, extended `.gitignore` (signing
 keys/keystores, credential JSONs, logs/databases, Flutter coverage), and
 `docs/asset-provenance.md` (all rows UNCONFIRMED until the owner records
-sources; `placeholder_course.png` is referenced but not committed).
+sources; `placeholder_course.png` is referenced but not committed). Core
+Phase 0.6: added AGENTS.md pointer ("Follow CLAUDE.md verbatim") and updated
+CLAUDE.md (no-illustrative-output, proactive commit disclosure).
 Owner review recorded (2026-09-30, docs only, nothing implemented): SPEC
 Section 2 D15-D19, Section 3 questions 12-16, Phase 0.0 public-repo
 hygiene, Section 15 review notes (ADR numbering after 0010; leak response:
