@@ -133,10 +133,11 @@ commit citation.
 
 ### 3.2 Local gate (`make setup` then `.githooks/pre-push`)
 
-Runs, in order: `gofmt` -> `dart format` -> Markdown SHA validity and reachability -> Go
-version drift guard (go.work, every go.mod, ci.yml, every Dockerfile) -> per module
-`go build/vet/test` -> `govulncheck` -> `gosec` -> contract tests -> frontend composition
-gate -> `flutter analyze` and `flutter test`.
+Runs, in order: `gofmt` -> `dart format` -> frontend composition gate -> Markdown SHA
+validity and reachability -> Go version drift guard (go.work, every go.mod, ci.yml, every
+Dockerfile) -> per module `go build/vet/test` -> `govulncheck` -> `gosec` -> contract tests
+-> `flutter analyze` and `flutter test`. The CI job "Flutter Lint & Test" uses the same
+frontend order: format, composition gate, analyze, test.
 
 Makefile targets worth keeping: `ensure-hooks`, `setup`, `ci`, `commit`, `push` (verifies
 local HEAD equals remote HEAD and writes `PUSH_VERIFIED`), `report-hash`,
@@ -168,10 +169,34 @@ Known limitation: the hook is inactive on a fresh clone until any `make` target 
 
 ### 3.5 Frontend composition gate
 
-`scripts/frontend_composition_gate.sh` blocks `Scaffold(`, `AppBar(`, `BoxDecoration(`,
-`Color(0xFF`, `.toUpperCase()` and AppBar colour overrides inside `frontend/lib/screens/`.
-Screens compose only shared widgets and design tokens. It exists because styling drifted
-twice through per-screen overrides.
+`scripts/frontend_composition_gate.sh` scans `frontend/lib/screens/` only (widgets are the
+shared layer and are not scanned). Screens compose shared widgets and design tokens; the
+gate fails on nine text-matched rules:
+
+| Rule label | Pattern it counts |
+|---|---|
+| `scaffold` | `Scaffold(` |
+| `appbar` | `AppBar(` |
+| `box_decoration` | `BoxDecoration(` |
+| `text_style` | `TextStyle(` |
+| `font_size` | `fontSize:` |
+| `color_literal` | `Color(0x` followed by eight hex digits |
+| `material_color` | `Colors.<name>` (`Colors.transparent` is allowed) |
+| `to_upper_case` | `.toUpperCase()` |
+| `non_directional_insets` | `EdgeInsets.only(` and `EdgeInsets.fromLTRB(` (Arabic is RTL) |
+
+Matching is textual, so a pattern inside a comment counts too.
+
+Ratchet: wael-app started with existing violations, so the gate compares per-file, per-rule
+counts against `scripts/frontend_gate_baseline.txt` (`file|rule|count`):
+
+- a count above the baseline, or a violation in a file with no baseline entry, fails;
+- a count below the baseline also fails, with a note to lower the baseline in the same
+  commit (`scripts/frontend_composition_gate.sh --update`), so the baseline can only go down;
+- an empty baseline makes the gate strict;
+- if `frontend/lib/screens` does not exist the gate prints `GATE SKIP` and exits 0.
+
+It exists because styling drifted twice through per-screen overrides.
 
 ---
 
@@ -388,12 +413,15 @@ one dense paragraph of history rather than a structured state file.
 `make docs-check`; add `docs/changelog/`; restructure `AI_CONTEXT.md` into fixed sections
 with a size budget (Appendix H).
 
-**W-14 `P2` Frontend gates are thinner than the reference.**
-No composition-layer gate (saas-core's `frontend_composition_gate.sh`), no backend to
-frontend route parity check. CI does pin Flutter (3.44.6) and runs format, analyze and
-test. Goldens are not used, so the golden regeneration workflow is not needed yet.
-*Fix:* port the composition gate once `frontend/lib/widgets/` exists as the shared layer;
-port the parity checker when the academy routes arrive.
+**W-14 `P2` Frontend gates were thinner than the reference. Fixed in 06f0612 (composition gate).**
+The composition-layer gate (saas-core's `frontend_composition_gate.sh`) is ported as
+`scripts/frontend_composition_gate.sh` with a ratchet baseline
+(`scripts/frontend_gate_baseline.txt`), and runs in `.githooks/pre-push` and in the CI job
+"Flutter Lint & Test". CI also pins Flutter (3.44.6) and runs format, analyze and test.
+Goldens are not used, so the golden regeneration workflow is not needed yet.
+*Still open:* the backend to frontend route parity check; port it when the academy routes
+arrive. The baseline still holds existing violations; it is lowered as screens migrate to
+the shared widget layer.
 
 **W-15 `P3` Branch protection and repository security settings are unknown.**
 `main` must be fast-forward only after CI, per `CLAUDE.md`, but only a repository ruleset
@@ -429,7 +457,7 @@ a captured-mail sink. Decide this in an ADR before building staging.
 | W-11 | 24h tokens, no logout, revocation unused | P2 | Suspension (R7) |
 | W-12 | Error semantics hide outages | P2 | Ops |
 | W-13 | No docs gate, placeholder docgen | P2 | Academy Phase 1 |
-| W-14 | Thin frontend gates | P2 | Frontend growth |
+| W-14 (gate done) | Thin frontend gates (route parity check still open) | P2 | Frontend growth |
 | W-15 | Ruleset/security settings unknown | P3 | Merge discipline |
 | W-16 | OTP hash choice | P3 | Hardening |
 | W-17 | Staging OTP strategy | P3 | Staging |
@@ -461,7 +489,7 @@ result; the last column is the target.
 | Hook and CI share one script | No | No | Yes |
 | Docs drift gate | Yes | No | Yes |
 | Route parity gate | Yes | No | Yes |
-| Frontend composition gate | Yes | No | Yes |
+| Frontend composition gate | Yes | Yes | Yes |
 | **CI** | | | |
 | Least-privilege `permissions:` | No | Yes | Yes |
 | Actions pinned by SHA | No | No | Yes |
@@ -803,7 +831,7 @@ Examined commit: `46c7997...`
 | W-11 | Confirmed | `shared/infra/jwtutil/jwt.go:142`, `services/auth-service/cmd/main.go:74-81`, `grep -rn "RevokeToken\|RevokeAllUserTokens" services/` (0 matches) | none |
 | W-12 | Confirmed | `services/auth-service/internal/handlers/auth.go:136-139`, `services/api-gateway/internal/middleware/limiter.go:47` | none |
 | W-13 | Confirmed | `tools/docgen/main.go:8`, `Makefile:1-51` (no docs target), absence of `docs/changelog/` | none |
-| W-14 | Confirmed | `.github/workflows/ci.yml:183-207`, absence of frontend composition or route parity scripts | none |
+| W-14 | Fixed in 06f0612 (gate); route parity check still open | `scripts/frontend_composition_gate.sh`, `scripts/frontend_gate_baseline.txt`, `.githooks/pre-push:26-30`, `.github/workflows/ci.yml` (step "Frontend Composition Gate") | Composition gate ported with a ratchet baseline and run in the pre-push hook and in CI job "Flutter Lint & Test". The route parity script does not exist yet. |
 | W-15 | Unknown (not visible from the repo) | GitHub repository rulesets and branch protection settings cannot be inspected from local git clone | none |
 | W-16 | Confirmed | `services/auth-service/internal/otp/otp.go:31-34`, `services/auth-service/internal/handlers/auth.go:174-178,337-341` | none |
 | W-17 | Confirmed | `services/auth-service/internal/config/config.go:64-66` (staging not allowed; no staging OTP strategy exists) | none |
