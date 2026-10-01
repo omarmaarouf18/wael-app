@@ -737,3 +737,125 @@ func TestSubjectsAndVideosReadEndpoints(t *testing.T) {
 		}
 	})
 }
+
+func TestOwnership_ListAndDetail(t *testing.T) {
+	s := newTestServer(false)
+	h := s.PublicHandler()
+	ctx := context.Background()
+
+	// Create a published subject
+	subj := &models.Subject{
+		ID:              "subj-own-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة الملكية",
+		TitleEn:         "Ownership Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(1 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj); err != nil {
+		t.Fatalf("CreateSubject failed: %v", err)
+	}
+
+	user1Token := makeStudentToken(t, "user-own-1")
+	user2Token := makeStudentToken(t, "user-own-2")
+
+	// 1. Initial state: neither user owns it
+	t.Run("initial_not_owned", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+user1Token)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		var listResp models.SubjectListResponseDTO
+		if err := json.NewDecoder(rec.Body).Decode(&listResp); err != nil {
+			t.Fatal(err)
+		}
+		if len(listResp.Items) != 1 || listResp.Items[0].Owned {
+			t.Fatalf("expected 1 item with owned=false, got %+v", listResp.Items)
+		}
+
+		// Detail
+		reqD := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-own-1", nil)
+		reqD.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqD.Header.Set("Authorization", "Bearer "+user1Token)
+		recD := httptest.NewRecorder()
+		h.ServeHTTP(recD, reqD)
+
+		if recD.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", recD.Code)
+		}
+		var detailResp models.SubjectDetailDTO
+		if err := json.NewDecoder(recD.Body).Decode(&detailResp); err != nil {
+			t.Fatal(err)
+		}
+		if detailResp.Owned {
+			t.Fatalf("expected detail owned=false, got true")
+		}
+	})
+
+	// 2. Grant entitlement to user 1
+	if err := s.Store.Grant(ctx, &models.Entitlement{UserID: "user-own-1", SubjectID: "subj-own-1"}); err != nil {
+		t.Fatalf("Grant failed: %v", err)
+	}
+
+	t.Run("user1_owned_user2_not_owned", func(t *testing.T) {
+		// User 1 list
+		req1 := httptest.NewRequest(http.MethodGet, "/academy/subjects", nil)
+		req1.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req1.Header.Set("Authorization", "Bearer "+user1Token)
+		rec1 := httptest.NewRecorder()
+		h.ServeHTTP(rec1, req1)
+
+		var listResp1 models.SubjectListResponseDTO
+		_ = json.NewDecoder(rec1.Body).Decode(&listResp1)
+		if len(listResp1.Items) != 1 || !listResp1.Items[0].Owned {
+			t.Fatalf("expected user 1 list owned=true, got %+v", listResp1.Items)
+		}
+
+		// User 1 detail
+		reqD1 := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-own-1", nil)
+		reqD1.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqD1.Header.Set("Authorization", "Bearer "+user1Token)
+		recD1 := httptest.NewRecorder()
+		h.ServeHTTP(recD1, reqD1)
+
+		var detailResp1 models.SubjectDetailDTO
+		_ = json.NewDecoder(recD1.Body).Decode(&detailResp1)
+		if !detailResp1.Owned {
+			t.Fatalf("expected user 1 detail owned=true, got false")
+		}
+
+		// User 2 list (must NOT be owned)
+		req2 := httptest.NewRequest(http.MethodGet, "/academy/subjects", nil)
+		req2.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req2.Header.Set("Authorization", "Bearer "+user2Token)
+		rec2 := httptest.NewRecorder()
+		h.ServeHTTP(rec2, req2)
+
+		var listResp2 models.SubjectListResponseDTO
+		_ = json.NewDecoder(rec2.Body).Decode(&listResp2)
+		if len(listResp2.Items) != 1 || listResp2.Items[0].Owned {
+			t.Fatalf("expected user 2 list owned=false, got %+v", listResp2.Items)
+		}
+
+		// User 2 detail (must NOT be owned)
+		reqD2 := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-own-1", nil)
+		reqD2.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqD2.Header.Set("Authorization", "Bearer "+user2Token)
+		recD2 := httptest.NewRecorder()
+		h.ServeHTTP(recD2, reqD2)
+
+		var detailResp2 models.SubjectDetailDTO
+		_ = json.NewDecoder(recD2.Body).Decode(&detailResp2)
+		if detailResp2.Owned {
+			t.Fatalf("expected user 2 detail owned=false, got true")
+		}
+	})
+}

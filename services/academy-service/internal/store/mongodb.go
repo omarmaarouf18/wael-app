@@ -97,6 +97,43 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 		return fmt.Errorf("store: ensure subject_files subject_id index: %w", err)
 	}
 
+	// Partial unique index on entitlements(user_id, subject_id) where active = true
+	_, err = s.db.Collection("entitlements").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "subject_id", Value: 1},
+		},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{"active": true}).
+			SetName("uniq_active_user_subject_entitlement"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure entitlements active unique index: %w", err)
+	}
+
+	// Non-unique compound index on entitlements(user_id, subject_id, expires_at)
+	_, err = s.db.Collection("entitlements").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "subject_id", Value: 1},
+			{Key: "expires_at", Value: 1},
+		},
+		Options: options.Index().SetName("idx_entitlements_user_subject_expires"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure entitlements user_subject_expires index: %w", err)
+	}
+
+	// Index on entitlements(user_id)
+	_, err = s.db.Collection("entitlements").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "user_id", Value: 1}},
+		Options: options.Index().SetName("idx_entitlements_user_id"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure entitlements user_id index: %w", err)
+	}
+
 	return nil
 }
 
@@ -164,6 +201,18 @@ func (s *MongoStore) CreateSubject(ctx context.Context, subj *models.Subject) er
 			return ErrDuplicate
 		}
 		return fmt.Errorf("store: insert subject: %w", err)
+	}
+	return nil
+}
+
+// UpdateSubject updates an existing subject in MongoDB.
+func (s *MongoStore) UpdateSubject(ctx context.Context, subj *models.Subject) error {
+	res, err := s.db.Collection("subjects").ReplaceOne(ctx, bson.M{"_id": subj.ID}, subj)
+	if err != nil {
+		return fmt.Errorf("store: update subject: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -337,4 +386,128 @@ func (s *MongoStore) Close(ctx context.Context) error {
 // Database returns the underlying mongo.Database handle (for testing/cleanup).
 func (s *MongoStore) Database() *mongo.Database {
 	return s.db
+}
+
+// Grant grants an entitlement to a user for a subject.
+// Enforces:
+// 1. Subject must exist and not be expired (D20: ErrSubjectExpired).
+// 2. Copies expires_at from subject's access_expires_at (D21).
+// 3. Deactivates any expired entitlements for this (user_id, subject_id).
+// 4. Guarantees at most ONE unexpired entitlement per (user_id, subject_id).
+func (s *MongoStore) Grant(ctx context.Context, e *models.Entitlement) error {
+	subj, err := s.GetSubjectByID(ctx, e.SubjectID)
+	if err != nil {
+		return fmt.Errorf("store: get subject: %w", err)
+	}
+	if subj == nil {
+		return ErrNotFound
+	}
+
+	now := time.Now()
+	if !subj.AccessExpiresAt.After(now) {
+		return ErrSubjectExpired
+	}
+
+	e.ExpiresAt = subj.AccessExpiresAt
+	if e.GrantedAt.IsZero() {
+		e.GrantedAt = now
+	}
+	if e.ID == "" {
+		e.ID = generateID()
+	}
+	if e.Source == "" {
+		e.Source = models.EntitlementSourceAdminGrant
+	}
+
+	// Deactivate any expired entitlements for this user and subject
+	filterExpired := bson.M{
+		"user_id":    e.UserID,
+		"subject_id": e.SubjectID,
+		"active":     true,
+		"expires_at": bson.M{"$lte": now},
+	}
+	_, err = s.db.Collection("entitlements").UpdateMany(ctx, filterExpired, bson.M{
+		"$set": bson.M{"active": false},
+	})
+	if err != nil {
+		return fmt.Errorf("store: deactivate expired entitlements: %w", err)
+	}
+
+	e.Active = true
+	_, err = s.db.Collection("entitlements").InsertOne(ctx, e)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert entitlement: %w", err)
+	}
+	return nil
+}
+
+// HasActiveEntitlement reports whether user owns the subject with expires_at > now.
+func (s *MongoStore) HasActiveEntitlement(ctx context.Context, userID, subjectID string) (bool, error) {
+	now := time.Now()
+	filter := bson.M{
+		"user_id":    userID,
+		"subject_id": subjectID,
+		"active":     true,
+		"expires_at": bson.M{"$gt": now},
+	}
+	err := s.db.Collection("entitlements").FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return false, nil
+		}
+		return false, fmt.Errorf("store: find active entitlement: %w", err)
+	}
+	return true, nil
+}
+
+// GetActiveEntitlementSubjectIDs returns a set of subject IDs owned by user with expires_at > now.
+func (s *MongoStore) GetActiveEntitlementSubjectIDs(ctx context.Context, userID string) (map[string]bool, error) {
+	now := time.Now()
+	filter := bson.M{
+		"user_id":    userID,
+		"active":     true,
+		"expires_at": bson.M{"$gt": now},
+	}
+	opts := options.Find().SetProjection(bson.M{"subject_id": 1})
+	cursor, err := s.db.Collection("entitlements").Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: find active entitlements: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	type subjectIDDoc struct {
+		SubjectID string `bson:"subject_id"`
+	}
+	var docs []subjectIDDoc
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("store: decode active entitlements: %w", err)
+	}
+
+	result := make(map[string]bool, len(docs))
+	for _, d := range docs {
+		result[d.SubjectID] = true
+	}
+	return result, nil
+}
+
+// ListEntitlementsByUser returns all entitlements for a user (including expired history).
+func (s *MongoStore) ListEntitlementsByUser(ctx context.Context, userID string) ([]*models.Entitlement, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "granted_at", Value: -1}})
+	cursor, err := s.db.Collection("entitlements").Find(ctx, bson.M{"user_id": userID}, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: find user entitlements: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var result []*models.Entitlement
+	if err := cursor.All(ctx, &result); err != nil {
+		return nil, fmt.Errorf("store: decode user entitlements: %w", err)
+	}
+	if result == nil {
+		result = []*models.Entitlement{}
+	}
+	return result, nil
 }

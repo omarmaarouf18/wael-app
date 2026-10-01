@@ -5,17 +5,21 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 )
 
 // Common store errors.
 var (
-	ErrDuplicate = errors.New("store: duplicate key")
-	ErrNotFound  = errors.New("store: not found")
+	ErrDuplicate      = errors.New("store: duplicate key")
+	ErrNotFound       = errors.New("store: not found")
+	ErrSubjectExpired = errors.New("store: subject access has expired")
 )
 
 // SubjectFilter specifies criteria for querying subjects.
@@ -35,6 +39,7 @@ type Store interface {
 	SeedLevels(ctx context.Context) error
 	ListLevels(ctx context.Context, onlyWithPublishedSubjects bool) ([]*models.Level, error)
 	CreateSubject(ctx context.Context, s *models.Subject) error
+	UpdateSubject(ctx context.Context, s *models.Subject) error
 	ListSubjects(ctx context.Context, filter SubjectFilter) ([]*models.Subject, int, error)
 	GetSubjectByID(ctx context.Context, id string) (*models.Subject, error)
 	GetSubjectCounts(ctx context.Context, subjectID string) (models.SubjectCountsDTO, error)
@@ -42,24 +47,32 @@ type Store interface {
 	ListVideosBySubject(ctx context.Context, subjectID string, onlyPublished bool) ([]*models.Video, error)
 	CreateFile(ctx context.Context, f *models.SubjectFile) error
 	ListFilesBySubject(ctx context.Context, subjectID string) ([]*models.SubjectFile, error)
+
+	// Entitlements (Phase 3.1)
+	Grant(ctx context.Context, e *models.Entitlement) error
+	HasActiveEntitlement(ctx context.Context, userID, subjectID string) (bool, error)
+	GetActiveEntitlementSubjectIDs(ctx context.Context, userID string) (map[string]bool, error)
+	ListEntitlementsByUser(ctx context.Context, userID string) ([]*models.Entitlement, error)
 }
 
 // MemoryStore is an in-memory Store for local dev and unit testing.
 type MemoryStore struct {
-	mu       sync.RWMutex
-	levels   map[string]*models.Level
-	subjects map[string]*models.Subject
-	videos   map[string]*models.Video
-	files    map[string]*models.SubjectFile
+	mu           sync.RWMutex
+	levels       map[string]*models.Level
+	subjects     map[string]*models.Subject
+	videos       map[string]*models.Video
+	files        map[string]*models.SubjectFile
+	entitlements []*models.Entitlement
 }
 
 // NewMemoryStore creates an empty MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		levels:   make(map[string]*models.Level),
-		subjects: make(map[string]*models.Subject),
-		videos:   make(map[string]*models.Video),
-		files:    make(map[string]*models.SubjectFile),
+		levels:       make(map[string]*models.Level),
+		subjects:     make(map[string]*models.Subject),
+		videos:       make(map[string]*models.Video),
+		files:        make(map[string]*models.SubjectFile),
+		entitlements: make([]*models.Entitlement, 0),
 	}
 }
 
@@ -130,6 +143,19 @@ func (s *MemoryStore) CreateSubject(_ context.Context, subj *models.Subject) err
 
 	if _, exists := s.subjects[subj.ID]; exists {
 		return ErrDuplicate
+	}
+	cp := *subj
+	s.subjects[subj.ID] = &cp
+	return nil
+}
+
+// UpdateSubject updates an existing subject in memory.
+func (s *MemoryStore) UpdateSubject(_ context.Context, subj *models.Subject) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.subjects[subj.ID]; !exists {
+		return ErrNotFound
 	}
 	cp := *subj
 	s.subjects[subj.ID] = &cp
@@ -286,5 +312,106 @@ func (s *MemoryStore) ListFilesBySubject(_ context.Context, subjectID string) ([
 		return result[i].CreatedAt.Before(result[j].CreatedAt)
 	})
 
+	return result, nil
+}
+
+func generateID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// Grant grants an entitlement to a user for a subject.
+// Enforces:
+// 1. Subject must exist and not be expired (D20: ErrSubjectExpired).
+// 2. Copies expires_at from subject's access_expires_at (D21).
+// 3. Deactivates any expired entitlements for this (user_id, subject_id).
+// 4. Guarantees at most ONE unexpired entitlement per (user_id, subject_id).
+func (s *MemoryStore) Grant(ctx context.Context, e *models.Entitlement) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	subj, exists := s.subjects[e.SubjectID]
+	if !exists {
+		return ErrNotFound
+	}
+
+	now := time.Now()
+	if !subj.AccessExpiresAt.After(now) {
+		return ErrSubjectExpired
+	}
+
+	e.ExpiresAt = subj.AccessExpiresAt
+	if e.GrantedAt.IsZero() {
+		e.GrantedAt = now
+	}
+	if e.ID == "" {
+		e.ID = generateID()
+	}
+	if e.Source == "" {
+		e.Source = models.EntitlementSourceAdminGrant
+	}
+
+	// Deactivate any expired entitlements for this user and subject
+	for _, ent := range s.entitlements {
+		if ent.UserID == e.UserID && ent.SubjectID == e.SubjectID && ent.Active && !ent.ExpiresAt.After(now) {
+			ent.Active = false
+		}
+	}
+
+	// Check if an unexpired active entitlement already exists
+	for _, ent := range s.entitlements {
+		if ent.UserID == e.UserID && ent.SubjectID == e.SubjectID && ent.Active && ent.ExpiresAt.After(now) {
+			return ErrDuplicate
+		}
+	}
+
+	e.Active = true
+	cp := *e
+	s.entitlements = append(s.entitlements, &cp)
+	return nil
+}
+
+// HasActiveEntitlement reports whether user owns the subject with expires_at > now.
+func (s *MemoryStore) HasActiveEntitlement(_ context.Context, userID, subjectID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	for _, e := range s.entitlements {
+		if e.UserID == userID && e.SubjectID == subjectID && e.Active && e.ExpiresAt.After(now) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// GetActiveEntitlementSubjectIDs returns a set of subject IDs owned by user with expires_at > now.
+func (s *MemoryStore) GetActiveEntitlementSubjectIDs(_ context.Context, userID string) (map[string]bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	result := make(map[string]bool)
+	for _, e := range s.entitlements {
+		if e.UserID == userID && e.Active && e.ExpiresAt.After(now) {
+			result[e.SubjectID] = true
+		}
+	}
+	return result, nil
+}
+
+// ListEntitlementsByUser returns all entitlements for a user (including expired history).
+func (s *MemoryStore) ListEntitlementsByUser(_ context.Context, userID string) ([]*models.Entitlement, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.Entitlement
+	for _, e := range s.entitlements {
+		if e.UserID == userID {
+			cp := *e
+			result = append(result, &cp)
+		}
+	}
 	return result, nil
 }

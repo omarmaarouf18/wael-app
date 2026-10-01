@@ -225,13 +225,29 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	claims := StudentClaims(r)
+	var ownedMap map[string]bool
+	if claims != nil && claims.UserID != "" {
+		ownedCtx, ownedCancel := context.WithTimeout(r.Context(), dbTimeout)
+		ownedMap, err = s.Store.GetActiveEntitlementSubjectIDs(ownedCtx, claims.UserID)
+		ownedCancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+	}
+
 	items := make([]models.SubjectListItemDTO, len(subjects))
 	for i, subj := range subjects {
 		countCtx, countCancel := context.WithTimeout(r.Context(), dbTimeout)
 		counts, _ := s.Store.GetSubjectCounts(countCtx, subj.ID)
 		countCancel()
 
-		items[i] = subj.ToListItemDTO(counts, false, s.ExposePrice)
+		owned := false
+		if ownedMap != nil {
+			owned = ownedMap[subj.ID]
+		}
+		items[i] = subj.ToListItemDTO(counts, owned, s.ExposePrice)
 	}
 	if items == nil {
 		items = []models.SubjectListItemDTO{}
@@ -273,6 +289,18 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	claims := StudentClaims(r)
+	owned := false
+	if claims != nil && claims.UserID != "" {
+		ownedCtx, ownedCancel := context.WithTimeout(r.Context(), dbTimeout)
+		owned, err = s.Store.HasActiveEntitlement(ownedCtx, claims.UserID, id)
+		ownedCancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+	}
+
 	countsCtx, countsCancel := context.WithTimeout(r.Context(), dbTimeout)
 	counts, err := s.Store.GetSubjectCounts(countsCtx, id)
 	countsCancel()
@@ -307,7 +335,7 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request) {
 		fileDTOs[i] = f.ToDTO()
 	}
 
-	dto := subj.ToDetailDTO(counts, videoDTOs, fileDTOs, false, s.ExposePrice)
+	dto := subj.ToDetailDTO(counts, videoDTOs, fileDTOs, owned, s.ExposePrice)
 	handlerutil.WriteJSON(w, http.StatusOK, dto)
 }
 
