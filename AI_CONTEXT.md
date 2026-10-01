@@ -92,7 +92,9 @@ SPEC Phase 2.1: `academy-service` skeleton (`github.com/omarmaarouf18/wael-app/a
 
 Owner decisions recorded (2026-10-01, docs only, nothing implemented): subscriptions expire per subject date set by the admin, copied per activation (D21) with re-purchase allowed and no activation of an already-expired subject (D20); every activation writes an append-only payment record at the subject's price; Android first, iOS deferred. SPEC Sections 1, 2, 3, 5, 7 and ADR-0007 amended.
 
-Frontend F0: `scripts/frontend_composition_gate.sh` ratchet gate (baseline `scripts/frontend_gate_baseline.txt`, 83 entries) runs in `.githooks/pre-push` and the CI `flutter-test` job; `docs/frontend/DESIGN_SYSTEM.md` and `docs/frontend/STATUS.md` added.
+Frontend F0: `scripts/frontend_composition_gate.sh` ratchet gate (baseline `scripts/frontend_gate_baseline.txt`, 83 entries at F0) runs in `.githooks/pre-push` and the CI `flutter-test` job; `docs/frontend/DESIGN_SYSTEM.md` and `docs/frontend/STATUS.md` added.
+
+Frontend F1 (token gaps): `AppTypography.uppercaseLabel`, semantic colours (success/warning/danger/info with Bg variants, WCAG AA verified by `frontend/test/theme_tokens_test.dart`) and glass/scrim tokens added to `theme.dart`; raw colours and `.toUpperCase()` removed from `lib/widgets/` and the non-catalog screens (catalog screens untouched); the composition gate no longer stops at a rule with zero matches (it was fail-open); baseline lowered from 83 entries (392 violations) to 68 (358).
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.

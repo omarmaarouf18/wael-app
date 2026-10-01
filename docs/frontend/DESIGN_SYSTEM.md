@@ -13,7 +13,8 @@ the per-file baseline).
 1. **No raw values in screens.** No `Color(0x...)`, `Colors.x` (except
    `Colors.transparent`), `TextStyle(`, `fontSize:`, `BoxDecoration(`, `Scaffold(`,
    `AppBar(` or `.toUpperCase()` in `lib/screens/`. Use the tokens below and the
-   widgets in `lib/widgets/`.
+   widgets in `lib/widgets/`. Uppercase labels go through
+   `AppTypography.uppercaseLabel(text)`, the only sanctioned uppercase.
 2. **Widgets first.** If a screen needs a pattern twice, add or extend a widget in
    `lib/widgets/` instead of copying markup between screens.
 3. **Directional insets.** The app is Arabic-first and RTL. Use
@@ -81,6 +82,44 @@ the per-file baseline).
 | `statusRejectedBg` | `0x26C1121F` |
 | `starRating` | `0xFFF59E0B` |
 
+### Semantic (feedback)
+
+For snackbars, inline messages and banners. Each foreground is at least 4.5:1 (WCAG AA)
+on `voidCanvas`, `surfaceLayer1`, `surfaceElevated` and `surfaceHigh`, and on its own
+`*Bg` variant composited over those surfaces; `test/theme_tokens_test.dart` enforces this.
+
+| Token | Value | Notes |
+|-------|-------|-------|
+| `success` | `0xFF10B981` | Alias of `statusApproved` |
+| `successBg` | `0x2610B981` | Alias of `statusApprovedBg` |
+| `warning` | `0xFFF59E0B` | Alias of `statusPending` |
+| `warningBg` | `0x26F59E0B` | Alias of `statusPendingBg` |
+| `danger` | `0xFFF4707A` | Lighter than `crimson` on purpose |
+| `dangerBg` | `0x26F4707A` | |
+| `info` | `0xFF60A5FA` | |
+| `infoBg` | `0x2660A5FA` | |
+
+Contrast ratios (foreground / foreground on its `*Bg` over the surface):
+
+| Token | `voidCanvas` | `surfaceLayer1` | `surfaceElevated` | `surfaceHigh` |
+|-------|-------------:|----------------:|------------------:|--------------:|
+| `success` | 7.90 / 6.59 | 7.44 / 6.01 | 7.00 / 5.56 | 6.42 / 5.04 |
+| `warning` | 9.33 / 7.57 | 8.79 / 6.86 | 8.27 / 6.33 | 7.59 / 5.72 |
+| `danger` | 7.10 / 6.01 | 6.69 / 5.48 | 6.30 / 5.07 | 5.78 / 4.61 |
+| `info` | 7.88 / 6.53 | 7.43 / 5.93 | 6.98 / 5.48 | 6.41 / 4.96 |
+
+`crimson` (and so `statusRejected`) is only 3.03:1 on `surfaceLayer1`. Use it for brand
+fills, borders and large display text; use `danger` for red body text and small icons.
+
+### Glass chrome and overlays
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `headerGlass` | `0xF2090909` | Translucent header background (also the theme AppBar) |
+| `navBarGlass` | `0xF20B0B0B` | Translucent bottom bar background |
+| `glassHairline` | `0x14FFFFFF` | 1px hairline on glass chrome and rings on dark surfaces |
+| `scrimBlack` | `0xFF000000` | Scrims, text shadows, vignette gradients (apply alpha as needed) |
+
 ## AppSpacing
 
 | Token | Value |
@@ -121,6 +160,7 @@ Each size also has a ready-made `BorderRadius`: `radiusXs`, `radiusSm`, `radiusM
 | `card` | `0x80000000`, offset (0, 4), blur 12 |
 | `crimsonGlow` | `0x40C1121F`, offset (0, 4), blur 20 |
 | `bottomNav` | `0xCC000000`, offset (0, -4), blur 24 |
+| `bottomNavSoft` | `0x99000000`, offset (0, -4), blur 24 (main shell bar) |
 
 ## AppMotion
 
@@ -161,6 +201,10 @@ headings) and Plus Jakarta Sans (body and labels); Arabic uses Cairo throughout.
 | `labelMd` | Plus Jakarta Sans, 13, w600, -, 0.8 | 12, w600, -, 0.5 | `textPrimary` |
 | `labelSm` | Plus Jakarta Sans, 10, w700, -, 1.5 | 10, w700, -, 1.0 | `textSecondary` |
 
+`AppTypography.uppercaseLabel(String text)` is not a style: it returns `text` upper-cased
+(Arabic has no letter case and passes through unchanged). Screens use it instead of
+`.toUpperCase()`.
+
 ## AppTheme.darkTheme
 
 Brightness dark. `scaffoldBackgroundColor` and `canvasColor` are `voidCanvas`;
@@ -182,9 +226,14 @@ file for their exact values.
 
 ## Known gaps
 
-- The gate's failure message names `AppShell`, `ThemedPanel` and
-  `AppTypography.uppercaseLabel`, which do not exist yet. Today the shell is
-  `DashboardScreenTemplate` and the card is `ThemedCard`.
+- The gate's failure message names `AppShell` and `ThemedPanel`, which do not exist yet.
+  Today the shell is `DashboardScreenTemplate` and the card is `ThemedCard`.
 - `DashboardScreenTemplate` is not used by any screen yet (see `STATUS.md`).
-- `theme.dart` itself still has raw values (for example the AppBar background
-  `0xF2090909` and the input hint style size) that are not named tokens.
+- `theme.dart` itself still has a raw value that is not a named token: the input hint
+  style size (`fontSize: 14`).
+- Raw colours and `.toUpperCase()` are gone from `lib/widgets/` and the non-catalog
+  screens (splash, OTP, forgot password, login, signup, notifications, settings, main
+  shell). The catalog screens (home, courses, course detail, ebook, payment) still carry
+  them and move with SPEC Phase 2-3.
+- The gate matches text, so `Color.fromARGB(`, `Color.fromRGBO(` and a pattern split
+  across lines (`Scaffold\n(`) are not detected, and a pattern inside a comment is.
