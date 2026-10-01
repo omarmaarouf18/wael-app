@@ -18,18 +18,20 @@ type Video struct {
 }
 
 // VideoMetadataDTO is the student-facing video representation.
-// CRITICAL: youtube_video_id is intentionally omitted in this phase.
-// It is returned ONLY in Phase 3 when student entitlement ownership holds.
+// CRITICAL: youtube_video_id is gated by R2 and appears ONLY in GET /academy/subjects/{id}
+// when the student owns the subject (owned == true). It is never returned in lists, errors, or logs.
 type VideoMetadataDTO struct {
-	ID          string        `json:"id"`
-	Position    int           `json:"position"`
-	Title       LocalizedText `json:"title"`
-	Description LocalizedText `json:"description"`
+	ID             string        `json:"id"`
+	Position       int           `json:"position"`
+	Title          LocalizedText `json:"title"`
+	Description    LocalizedText `json:"description"`
+	YouTubeVideoID string        `json:"youtube_video_id,omitempty"`
 }
 
-// ToDTO converts a Video to student-safe metadata (no youtube_video_id).
-func (v *Video) ToDTO() VideoMetadataDTO {
-	return VideoMetadataDTO{
+// ToDTO converts a Video to student-safe metadata.
+// youtube_video_id is populated ONLY when includeYouTubeID is true (R2 gating).
+func (v *Video) ToDTO(includeYouTubeID bool) VideoMetadataDTO {
+	dto := VideoMetadataDTO{
 		ID:       v.ID,
 		Position: v.Position,
 		Title: LocalizedText{
@@ -41,4 +43,8 @@ func (v *Video) ToDTO() VideoMetadataDTO {
 			En: v.DescriptionEn,
 		},
 	}
+	if includeYouTubeID {
+		dto.YouTubeVideoID = v.YouTubeVideoID
+	}
+	return dto
 }

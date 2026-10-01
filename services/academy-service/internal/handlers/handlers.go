@@ -327,7 +327,7 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request) {
 
 	videoDTOs := make([]models.VideoMetadataDTO, len(videos))
 	for i, v := range videos {
-		videoDTOs[i] = v.ToDTO()
+		videoDTOs[i] = v.ToDTO(owned)
 	}
 
 	fileDTOs := make([]models.FileMetadataDTO, len(files))

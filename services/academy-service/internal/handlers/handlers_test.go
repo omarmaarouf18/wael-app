@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -690,7 +692,7 @@ func TestSubjectsAndVideosReadEndpoints(t *testing.T) {
 			YouTubeVideoID: "REAL_YT_ID_11",
 			Published:      true,
 		}
-		videoDTO := rawVideo.ToDTO()
+		videoDTO := rawVideo.ToDTO(false)
 		videoBytes, err := json.Marshal(videoDTO)
 		if err != nil {
 			t.Fatal(err)
@@ -856,6 +858,357 @@ func TestOwnership_ListAndDetail(t *testing.T) {
 		_ = json.NewDecoder(recD2.Body).Decode(&detailResp2)
 		if detailResp2.Owned {
 			t.Fatalf("expected user 2 detail owned=false, got true")
+		}
+	})
+}
+
+func TestR2Gating_SubjectDetailAndLeakTests(t *testing.T) {
+	s := newTestServer(false)
+	h := s.PublicHandler()
+	ctx := context.Background()
+
+	const (
+		videoIDPos1        = "yt_gate_pos1_111"
+		videoIDPos2        = "yt_gate_pos2_222"
+		videoIDUnpublished = "yt_gate_unpub_333"
+		videoIDExpiredSubj = "yt_gate_exp_4444"
+	)
+
+	// Subject 1: published with videos
+	subj1 := &models.Subject{
+		ID:              "subj-gate-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة البوابة",
+		TitleEn:         "Gated Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj1); err != nil {
+		t.Fatalf("CreateSubject subj1: %v", err)
+	}
+
+	// Video 1: published, position 2
+	v1 := &models.Video{
+		ID:             "vid-pos2",
+		SubjectID:      "subj-gate-1",
+		Position:       2,
+		TitleAr:        "فيديو 2",
+		TitleEn:        "Video 2",
+		YouTubeVideoID: videoIDPos2,
+		Published:      true,
+		CreatedAt:      time.Now(),
+	}
+	// Video 2: published, position 1
+	v2 := &models.Video{
+		ID:             "vid-pos1",
+		SubjectID:      "subj-gate-1",
+		Position:       1,
+		TitleAr:        "فيديو 1",
+		TitleEn:        "Video 1",
+		YouTubeVideoID: videoIDPos1,
+		Published:      true,
+		CreatedAt:      time.Now(),
+	}
+	// Video 3: UNPUBLISHED, position 3
+	v3 := &models.Video{
+		ID:             "vid-unpub",
+		SubjectID:      "subj-gate-1",
+		Position:       3,
+		TitleAr:        "فيديو غير منشور",
+		TitleEn:        "Unpublished Video",
+		YouTubeVideoID: videoIDUnpublished,
+		Published:      false,
+		CreatedAt:      time.Now(),
+	}
+	for _, v := range []*models.Video{v1, v2, v3} {
+		if err := s.Store.CreateVideo(ctx, v); err != nil {
+			t.Fatalf("CreateVideo: %v", err)
+		}
+	}
+
+	// Subject 2: short expiry for owned-but-expired test (expires_at = now - 1s after waiting)
+	subjExpired := &models.Subject{
+		ID:              "subj-gate-exp",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة منتهية للبوابة",
+		TitleEn:         "Expired Gated Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(50 * time.Millisecond),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subjExpired); err != nil {
+		t.Fatalf("CreateSubject subjExpired: %v", err)
+	}
+	vExp := &models.Video{
+		ID:             "vid-exp",
+		SubjectID:      "subj-gate-exp",
+		Position:       1,
+		TitleAr:        "فيديو منتهي",
+		TitleEn:        "Expired Video",
+		YouTubeVideoID: videoIDExpiredSubj,
+		Published:      true,
+		CreatedAt:      time.Now(),
+	}
+	if err := s.Store.CreateVideo(ctx, vExp); err != nil {
+		t.Fatalf("CreateVideo vExp: %v", err)
+	}
+
+	ownerToken := makeStudentToken(t, "user-gate-owner")
+	nonOwnerToken := makeStudentToken(t, "user-gate-nonowner")
+	otherUserToken := makeStudentToken(t, "user-gate-other")
+	expiredUserToken := makeStudentToken(t, "user-gate-expired")
+
+	// Grant subj-gate-1 to owner
+	if err := s.Store.Grant(ctx, &models.Entitlement{UserID: "user-gate-owner", SubjectID: "subj-gate-1"}); err != nil {
+		t.Fatalf("Grant to owner: %v", err)
+	}
+
+	// Grant subj-gate-exp to expiredUser before it expires
+	if err := s.Store.Grant(ctx, &models.Entitlement{UserID: "user-gate-expired", SubjectID: "subj-gate-exp"}); err != nil {
+		t.Fatalf("Grant to expiredUser: %v", err)
+	}
+
+	// Wait for subj-gate-exp entitlement to expire
+	time.Sleep(70 * time.Millisecond)
+
+	// 1. Positive test: owned -> IDs present in position order
+	t.Run("positive_owned_ids_present_in_position_order", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-1", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+		rawBody := rec.Body.String()
+
+		var detail models.SubjectDetailDTO
+		if err := json.Unmarshal([]byte(rawBody), &detail); err != nil {
+			t.Fatalf("unmarshal detail: %v", err)
+		}
+		if !detail.Owned {
+			t.Fatalf("expected owned=true")
+		}
+		if len(detail.Videos) != 2 {
+			t.Fatalf("expected 2 published videos, got %d", len(detail.Videos))
+		}
+		if detail.Videos[0].Position != 1 || detail.Videos[0].YouTubeVideoID != videoIDPos1 {
+			t.Errorf("video[0] position=%d ytID=%q, want pos=1 ytID=%q", detail.Videos[0].Position, detail.Videos[0].YouTubeVideoID, videoIDPos1)
+		}
+		if detail.Videos[1].Position != 2 || detail.Videos[1].YouTubeVideoID != videoIDPos2 {
+			t.Errorf("video[1] position=%d ytID=%q, want pos=2 ytID=%q", detail.Videos[1].Position, detail.Videos[1].YouTubeVideoID, videoIDPos2)
+		}
+		// Confirm IDs appear in raw JSON
+		if !strings.Contains(rawBody, videoIDPos1) || !strings.Contains(rawBody, videoIDPos2) {
+			t.Errorf("raw JSON missing video IDs: %s", rawBody)
+		}
+		// Confirm unpublished video ID does not appear
+		if strings.Contains(rawBody, videoIDUnpublished) {
+			t.Errorf("LEAK: raw JSON contains unpublished video ID %q: %s", videoIDUnpublished, rawBody)
+		}
+	})
+
+	// 2. Leak test: not owned
+	t.Run("leak_not_owned", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-1", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+nonOwnerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		rawBody := rec.Body.String()
+		for _, forbidden := range []string{"youtube_video_id", videoIDPos1, videoIDPos2, videoIDUnpublished} {
+			if strings.Contains(rawBody, forbidden) {
+				t.Fatalf("LEAK in not_owned: body contains forbidden %q: %s", forbidden, rawBody)
+			}
+		}
+	})
+
+	// 3. Leak test: owned-but-expired (expires_at = now - 1s)
+	t.Run("leak_owned_but_expired", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-exp", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+expiredUserToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		rawBody := rec.Body.String()
+		for _, forbidden := range []string{"youtube_video_id", videoIDExpiredSubj} {
+			if strings.Contains(rawBody, forbidden) {
+				t.Fatalf("LEAK in owned_but_expired: body contains forbidden %q: %s", forbidden, rawBody)
+			}
+		}
+	})
+
+	// 4. Leak test: owned by ANOTHER user
+	t.Run("leak_owned_by_another_user", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-1", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+otherUserToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		rawBody := rec.Body.String()
+		for _, forbidden := range []string{"youtube_video_id", videoIDPos1, videoIDPos2, videoIDUnpublished} {
+			if strings.Contains(rawBody, forbidden) {
+				t.Fatalf("LEAK in owned_by_another_user: body contains forbidden %q: %s", forbidden, rawBody)
+			}
+		}
+	})
+
+	// 5. Leak test: unpublished video inside an owned subject
+	t.Run("leak_unpublished_video_inside_owned_subject", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-1", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		rawBody := rec.Body.String()
+		if strings.Contains(rawBody, videoIDUnpublished) {
+			t.Fatalf("LEAK: owned subject detail contains unpublished video ID %q: %s", videoIDUnpublished, rawBody)
+		}
+	})
+
+	// 6. Leak test: list endpoints while owned
+	t.Run("leak_list_endpoints_while_owned", func(t *testing.T) {
+		// /academy/subjects
+		reqList := httptest.NewRequest(http.MethodGet, "/academy/subjects", nil)
+		reqList.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqList.Header.Set("Authorization", "Bearer "+ownerToken)
+		recList := httptest.NewRecorder()
+		h.ServeHTTP(recList, reqList)
+
+		if recList.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", recList.Code)
+		}
+		rawListBody := recList.Body.String()
+		for _, forbidden := range []string{"youtube_video_id", videoIDPos1, videoIDPos2, videoIDUnpublished, videoIDExpiredSubj} {
+			if strings.Contains(rawListBody, forbidden) {
+				t.Fatalf("LEAK in /academy/subjects while owned: body contains %q: %s", forbidden, rawListBody)
+			}
+		}
+
+		// /academy/levels
+		reqLevels := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
+		reqLevels.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqLevels.Header.Set("Authorization", "Bearer "+ownerToken)
+		recLevels := httptest.NewRecorder()
+		h.ServeHTTP(recLevels, reqLevels)
+
+		if recLevels.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", recLevels.Code)
+		}
+		rawLevelsBody := recLevels.Body.String()
+		for _, forbidden := range []string{"youtube_video_id", videoIDPos1, videoIDPos2, videoIDUnpublished, videoIDExpiredSubj} {
+			if strings.Contains(rawLevelsBody, forbidden) {
+				t.Fatalf("LEAK in /academy/levels while owned: body contains %q: %s", forbidden, rawLevelsBody)
+			}
+		}
+	})
+
+	// 7. Leak test: error bodies (404/401) while owned
+	t.Run("leak_error_bodies_while_owned", func(t *testing.T) {
+		// 404 for unknown subject
+		req404 := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-non-existent", nil)
+		req404.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req404.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec404 := httptest.NewRecorder()
+		h.ServeHTTP(rec404, req404)
+
+		if rec404.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rec404.Code)
+		}
+		raw404 := rec404.Body.String()
+		for _, forbidden := range []string{"youtube_video_id", videoIDPos1, videoIDPos2, videoIDUnpublished} {
+			if strings.Contains(raw404, forbidden) {
+				t.Fatalf("LEAK in 404 body: contains %q: %s", forbidden, raw404)
+			}
+		}
+
+		// 401 for invalid token
+		req401 := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-1", nil)
+		req401.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req401.Header.Set("Authorization", "Bearer invalid-token-sig")
+		rec401 := httptest.NewRecorder()
+		h.ServeHTTP(rec401, req401)
+
+		if rec401.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", rec401.Code)
+		}
+		raw401 := rec401.Body.String()
+		for _, forbidden := range []string{"youtube_video_id", videoIDPos1, videoIDPos2, videoIDUnpublished} {
+			if strings.Contains(raw401, forbidden) {
+				t.Fatalf("LEAK in 401 body: contains %q: %s", forbidden, raw401)
+			}
+		}
+	})
+
+	// 8. Log check: run handler with captured logger and assert no video ID appears in log output
+	t.Run("log_check_no_video_id_in_logs", func(t *testing.T) {
+		var logBuf bytes.Buffer
+		origOutput := log.Writer()
+		log.SetOutput(&logBuf)
+		defer log.SetOutput(origOutput)
+
+		// Execute 200 owned detail request
+		reqDetail := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-1", nil)
+		reqDetail.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqDetail.Header.Set("Authorization", "Bearer "+ownerToken)
+		recDetail := httptest.NewRecorder()
+		h.ServeHTTP(recDetail, reqDetail)
+		if recDetail.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", recDetail.Code)
+		}
+
+		// Execute not-owned detail request
+		reqUnowned := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-1", nil)
+		reqUnowned.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqUnowned.Header.Set("Authorization", "Bearer "+nonOwnerToken)
+		recUnowned := httptest.NewRecorder()
+		h.ServeHTTP(recUnowned, reqUnowned)
+		if recUnowned.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", recUnowned.Code)
+		}
+
+		// Execute 404 request
+		req404 := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-not-found", nil)
+		req404.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req404.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec404 := httptest.NewRecorder()
+		h.ServeHTTP(rec404, req404)
+
+		// Execute list request
+		reqList := httptest.NewRequest(http.MethodGet, "/academy/subjects", nil)
+		reqList.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqList.Header.Set("Authorization", "Bearer "+ownerToken)
+		recList := httptest.NewRecorder()
+		h.ServeHTTP(recList, reqList)
+
+		capturedLogs := logBuf.String()
+		for _, forbidden := range []string{videoIDPos1, videoIDPos2, videoIDUnpublished, videoIDExpiredSubj} {
+			if strings.Contains(capturedLogs, forbidden) {
+				t.Fatalf("LEAK in server logs: log output contains video ID %q:\n%s", forbidden, capturedLogs)
+			}
 		}
 	})
 }
