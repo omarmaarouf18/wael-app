@@ -30,12 +30,22 @@ RULES=(
 	"non_directional_insets|EdgeInsets\\.(only|fromLTRB)\\("
 )
 
+# Prints "file|rule|count" for every file/rule with at least one match.
+# grep -c exits 1 when a rule has no match anywhere, which is the goal state, so
+# only exit codes above 1 (bad regex, unreadable file) are errors. Errors must
+# stop the gate: a partial result would silently skip every later rule.
 current() {
-	local rule label regex
+	local rule label regex out rc
 	for rule in "${RULES[@]}"; do
 		label="${rule%%|*}"
 		regex="${rule#*|}"
-		grep -rcP "$regex" "$SCREENS_DIR" --include='*.dart' 2>/dev/null |
+		rc=0
+		out="$(grep -rcP "$regex" "$SCREENS_DIR" --include='*.dart')" || rc=$?
+		if [ "$rc" -gt 1 ]; then
+			echo "GATE ERROR: grep failed with exit $rc for rule $label" >&2
+			return 2
+		fi
+		printf '%s\n' "$out" |
 			awk -F: -v l="$label" -v root="$REPO_ROOT/" '$2 > 0 { sub(root, "", $1); print $1 "|" l "|" $2 }'
 	done | sort
 }
@@ -45,8 +55,16 @@ if [ ! -d "$SCREENS_DIR" ]; then
 	exit 0
 fi
 
+# Evaluate once, before touching the baseline. A failure here aborts the script
+# (set -e) instead of leaving a truncated baseline or a half-checked tree.
+CURRENT="$(current)"
+
 if [ "${1:-}" = "--update" ]; then
-	current >"$BASELINE"
+	if [ -n "$CURRENT" ]; then
+		printf '%s\n' "$CURRENT" >"$BASELINE"
+	else
+		: >"$BASELINE"
+	fi
 	echo "baseline written: $(wc -l <"$BASELINE") file/rule entries"
 	exit 0
 fi
@@ -55,17 +73,18 @@ touch "$BASELINE"
 failed=0
 improved=0
 while IFS='|' read -r file label count; do
+	[ -n "$file" ] || continue
 	base="$(awk -F'|' -v f="$file" -v l="$label" '$1 == f && $2 == l { print $3 }' "$BASELINE")"
 	base="${base:-0}"
 	if [ "$count" -gt "$base" ]; then
 		echo "BLOCKED: $file: $label $count (baseline $base)"
 		failed=1
 	fi
-done < <(current)
+done <<<"$CURRENT"
 
 while IFS='|' read -r file label base; do
 	[ -n "$file" ] || continue
-	now="$(current | awk -F'|' -v f="$file" -v l="$label" '$1 == f && $2 == l { print $3 }')"
+	now="$(awk -F'|' -v f="$file" -v l="$label" '$1 == f && $2 == l { print $3 }' <<<"$CURRENT")"
 	now="${now:-0}"
 	if [ "$now" -lt "$base" ]; then improved=1; fi
 done <"$BASELINE"
