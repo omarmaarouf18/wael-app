@@ -137,7 +137,7 @@ Runs, in order: `gofmt` -> `dart format` -> frontend composition gate -> Markdow
 validity and reachability -> Go version drift guard (go.work, every go.mod, ci.yml, every
 Dockerfile) -> per module `go build/vet/test` -> `govulncheck` -> `gosec` -> contract tests
 -> `flutter analyze` and `flutter test`. The CI job "Flutter Lint & Test" uses the same
-frontend order: format, composition gate, analyze, test.
+frontend order: format, composition gate, gate self-test, analyze, test.
 
 Makefile targets worth keeping: `ensure-hooks`, `setup`, `ci`, `commit`, `push` (verifies
 local HEAD equals remote HEAD and writes `PUSH_VERIFIED`), `report-hash`,
@@ -180,7 +180,7 @@ gate fails on nine text-matched rules:
 | `box_decoration` | `BoxDecoration(` |
 | `text_style` | `TextStyle(` |
 | `font_size` | `fontSize:` |
-| `color_literal` | `Color(0x` followed by eight hex digits |
+| `color_literal` | `Color(0x` followed by eight hex digits, `Color.fromARGB(`, `Color.fromRGBO(` |
 | `material_color` | `Colors.<name>` (`Colors.transparent` is allowed) |
 | `to_upper_case` | `.toUpperCase()` |
 | `non_directional_insets` | `EdgeInsets.only(` and `EdgeInsets.fromLTRB(` (Arabic is RTL) |
@@ -194,7 +194,12 @@ counts against `scripts/frontend_gate_baseline.txt` (`file|rule|count`):
 - a count below the baseline also fails, with a note to lower the baseline in the same
   commit (`scripts/frontend_composition_gate.sh --update`), so the baseline can only go down;
 - an empty baseline makes the gate strict;
-- if `frontend/lib/screens` does not exist the gate prints `GATE SKIP` and exits 0.
+- if `frontend/lib/screens` does not exist, or grep fails on a file, the gate prints
+  `GATE ERROR` and exits 2 (fail closed).
+
+`scripts/frontend_gate_test.sh` self-tests the gate on throwaway layouts (an injected
+violation per rule, ratchet up and down, missing directory, unreadable file) and runs in
+`.githooks/pre-push` and in CI right after the gate.
 
 It exists because styling drifted twice through per-screen overrides.
 

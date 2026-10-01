@@ -10,7 +10,7 @@ the per-file baseline).
 
 ## Rules
 
-1. **No raw values in screens.** No `Color(0x...)`, `Colors.x` (except
+1. **No raw values in screens.** No `Color(0x...)`, `Color.fromARGB(`, `Color.fromRGBO(`, `Colors.x` (except
    `Colors.transparent`), `TextStyle(`, `fontSize:`, `BoxDecoration(`, `Scaffold(`,
    `AppBar(` or `.toUpperCase()` in `lib/screens/`. Use the tokens below and the
    widgets in `lib/widgets/`. Uppercase labels go through
@@ -235,5 +235,5 @@ file for their exact values.
   screens (splash, OTP, forgot password, login, signup, notifications, settings, main
   shell). The catalog screens (home, courses, course detail, ebook, payment) still carry
   them and move with SPEC Phase 2-3.
-- The gate matches text, so `Color.fromARGB(`, `Color.fromRGBO(` and a pattern split
-  across lines (`Scaffold\n(`) are not detected, and a pattern inside a comment is.
+- The gate matches text, so a pattern split across lines (`Scaffold\n(`) is not
+  detected, and a pattern inside a comment is counted.

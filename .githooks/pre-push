@@ -28,6 +28,12 @@ if [ -d "frontend/lib" ]; then
     echo "BLOCKED: frontend composition gate failed"
     exit 1
   }
+
+  echo "-- checking frontend composition gate self-test --"
+  bash scripts/frontend_gate_test.sh || {
+    echo "BLOCKED: frontend composition gate self-test failed"
+    exit 1
+  }
 fi
 
 # 3. Markdown commit SHAs must resolve to reachable commits

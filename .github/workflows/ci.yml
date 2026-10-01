@@ -238,6 +238,9 @@ jobs:
       - name: Frontend Composition Gate
         run: bash scripts/frontend_composition_gate.sh
 
+      - name: Frontend Composition Gate Self-Test
+        run: bash scripts/frontend_gate_test.sh
+
       - name: Flutter Analyze
         working-directory: frontend
         run: flutter analyze

@@ -24,7 +24,7 @@ RULES=(
 	"box_decoration|(?<![A-Za-z0-9_])BoxDecoration\\("
 	"text_style|(?<![A-Za-z0-9_])TextStyle\\("
 	"font_size|(?<![A-Za-z0-9_])fontSize:"
-	"color_literal|Color\\(0x[0-9A-Fa-f]{8}\\)"
+	"color_literal|Color\\(0x[0-9A-Fa-f]{8}\\)|(?<![A-Za-z0-9_])Color\\.from(ARGB|RGBO)\\("
 	"material_color|(?<![A-Za-z0-9_])Colors\\.(?!transparent\\b)[a-z]"
 	"to_upper_case|\\.toUpperCase\\(\\)"
 	"non_directional_insets|EdgeInsets\\.(only|fromLTRB)\\("
@@ -50,9 +50,10 @@ current() {
 	done | sort
 }
 
+# Fail closed: a renamed or moved screens directory must not turn the gate off.
 if [ ! -d "$SCREENS_DIR" ]; then
-	echo "GATE SKIP: $SCREENS_DIR not found"
-	exit 0
+	echo "GATE ERROR: $SCREENS_DIR not found" >&2
+	exit 2
 fi
 
 # Evaluate once, before touching the baseline. A failure here aborts the script
