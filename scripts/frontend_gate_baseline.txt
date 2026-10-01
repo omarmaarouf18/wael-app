@@ -65,4 +65,3 @@ frontend/lib/screens/signup_screen.dart|font_size|1
 frontend/lib/screens/signup_screen.dart|non_directional_insets|1
 frontend/lib/screens/signup_screen.dart|scaffold|1
 frontend/lib/screens/signup_screen.dart|text_style|1
-frontend/lib/screens/splash_screen.dart|scaffold|1

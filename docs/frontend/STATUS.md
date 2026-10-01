@@ -28,8 +28,8 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `payment_screen.dart` | 672 | no | 8 (36) | yes |
 | `settings_screen.dart` | 660 | no | 5 (17) | no |
 | `signup_screen.dart` | 349 | no | 5 (5) | no |
-| `splash_screen.dart` | 59 | no | 1 (1) | no |
-| **Total** | 7826 | 0 of 13 | 68 (358) | 5 of 13 |
+| `splash_screen.dart` | 60 | yes | 0 (0) | no |
+| **Total** | 7827 | 1 of 13 | 67 (357) | 5 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.
