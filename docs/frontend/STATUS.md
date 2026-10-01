@@ -40,20 +40,30 @@ The gate scans screens only, so widgets carry no baseline entries.
 
 | File | Lines | Used by screens |
 |------|------:|-----------------|
+| `accent_title.dart` | 56 | none |
+| `app_badge.dart` | 59 | none |
+| `app_bottom_nav.dart` | 108 | main shell |
 | `app_shell.dart` | 116 | 8 screens |
+| `brand_lockup.dart` | 44 | main shell |
 | `confirm_action_dialog.dart` | 103 | none |
+| `header_icon_button.dart` | 52 | main shell |
 | `hero_backdrop.dart` | 85 | login |
+| `icon_tile.dart` | 41 | notifications, settings |
 | `language_toggle_chip.dart` | 58 | login |
 | `otp_pin_input.dart` | 178 | forgot password, otp |
 | `pill_filter_bar.dart` | 88 | ebook |
 | `primary_button.dart` | 89 | 8 screens |
+| `profile_avatar.dart` | 42 | settings |
+| `search_field.dart` | 75 | none |
 | `secondary_button.dart` | 90 | none |
+| `selectable_chip.dart` | 125 | none |
 | `status_badge.dart` | 76 | payment |
+| `status_dot.dart` | 37 | notifications, settings |
 | `themed_card.dart` | 55 | 7 screens |
 | `themed_empty_state.dart` | 64 | notifications |
 | `themed_error_banner.dart` | 81 | 5 screens |
 | `themed_loading_indicator.dart` | 49 | none |
-| `themed_panel.dart` | 51 | otp |
+| `themed_panel.dart` | 53 | otp |
 | `themed_section_header.dart` | 48 | settings |
 | `themed_text_field.dart` | 104 | 6 screens |
 

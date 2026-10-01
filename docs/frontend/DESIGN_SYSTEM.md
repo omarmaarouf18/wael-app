@@ -235,7 +235,7 @@ file for their exact values.
 | `ThemedTextField` | `themed_text_field.dart` | Themed form field with label, hint, validator and prefix/suffix. |
 | `AppShell` | `app_shell.dart` | `Scaffold` + `AppBar` from tokens: optional back button at the start edge, title, `actions` at the end edge, optional FAB and bottom bar. Mirrors in RTL. `titleWidget` replaces the title text (brand lockup). The body is wrapped in a `SafeArea` (top inset only when there is no header); `safeArea: false` lets a full-bleed body (hero art) run under the status bar. Screens use it instead of their own `Scaffold(` / `AppBar(`. |
 | `SecondaryButton` | `secondary_button.dart` | Low-emphasis bordered button; same sizing, loading state and icon slots as `PrimaryButton`. |
-| `ThemedPanel` (+ `PanelTone`) | `themed_panel.dart` | Static bordered surface (`base`, `raised`, `inset`), directional padding. Not tappable; use `ThemedCard` for interactive or elevated content. |
+| `ThemedPanel` (+ `PanelTone`) | `themed_panel.dart` | Static bordered surface (`base`, `raised`, `inset`), directional padding, configurable corner radius. Not tappable; use `ThemedCard` for interactive or elevated content. |
 | `ThemedErrorBanner` | `themed_error_banner.dart` | Persistent inline error (no auto-dismiss, live region) with an optional localised retry. |
 | `ThemedEmptyState` | `themed_empty_state.dart` | Centered icon, optional title, message and optional action. |
 | `ThemedLoadingIndicator` | `themed_loading_indicator.dart` | Centered crimson spinner with a localised semantic label and optional visible label. |
@@ -243,11 +243,15 @@ file for their exact values.
 | `HeroBackdrop` | `hero_backdrop.dart` | Full-width hero art (fraction of screen height) dissolving into `voidCanvas` with a linear fade and radial vignette; image, then fallback image, then flat surface. Place under `PositionedDirectional` in a `Stack`. |
 | `LanguageToggleChip` | `language_toggle_chip.dart` | Pill with a globe icon and the name of the language it switches to. |
 | `StatusDot` | `status_dot.dart` | Small filled circle (unread pip, live indicator) with an optional ring. |
-| `IconTile` | `icon_tile.dart` | Rounded square with a centred icon (list leading icons, setting rows). |
+| `IconTile` | `icon_tile.dart` | Rounded square with a centred icon (list leading icons, setting rows); optional border. |
 | `ProfileAvatar` | `profile_avatar.dart` | Circular avatar with a hairline ring and a badge dot at the top end corner. |
 | `BrandLockup` | `brand_lockup.dart` | App title over the ruled eyebrow (main shell header). |
 | `HeaderIconButton` | `header_icon_button.dart` | 36px circular header icon button with an optional pip at the top end corner. |
 | `AppBottomNav` (+ `AppNavItem`) | `app_bottom_nav.dart` | Glass bottom navigation with a crimson pin under the selected item; items run from the start edge. |
+| `AppBadge` | `app_badge.dart` | Small bordered label (subject code, term, counts); `accent` tints crimson, `pill` rounds fully. No letter spacing in Arabic. |
+| `SelectableChip` (+ `ChipVariant`) | `selectable_chip.dart` | Selectable chip: `filled` pill (crimson when selected, optional count) or `outlined` rounded chip with icon and glow. |
+| `AccentTitle` | `accent_title.dart` | Section title with a crimson bar at the start edge and an optional trailing widget. |
+| `SearchField` | `search_field.dart` | Rounded search box; the clear button appears once there is text. |
 | `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |
 | `OtpPinInput` (+ `OtpDigitsFormatter`) | `otp_pin_input.dart` | N-digit code input (default 6) over one hidden text field: paste, SMS autofill, backspace. Always laid out left to right; maps Arabic-Indic and Persian digits to ASCII. |
 
