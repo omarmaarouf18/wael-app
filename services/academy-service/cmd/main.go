@@ -84,7 +84,7 @@ func main() {
 	}
 	log.Printf("[ACADEMY] levels seeded successfully")
 
-	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL, cfg.ExposePriceToStudents)
+	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL, cfg.ExposePriceToStudents, cfg.SupportWhatsApp)
 
 	// Build and start admin listener on internal network
 	adminRunner, err := buildServer(cfg, cfg.AdminListenAddr, srv.AdminHandler())

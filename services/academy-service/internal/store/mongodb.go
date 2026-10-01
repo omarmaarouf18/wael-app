@@ -134,6 +134,30 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 		return fmt.Errorf("store: ensure entitlements user_id index: %w", err)
 	}
 
+	// Partial unique index on purchase_requests(user_id, subject_id) where status = pending (R5)
+	_, err = s.db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "subject_id", Value: 1},
+		},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{"status": models.RequestStatusPending}).
+			SetName("uniq_pending_user_subject_request"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure purchase_requests pending unique index: %w", err)
+	}
+
+	// Index on purchase_requests(status)
+	_, err = s.db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "status", Value: 1}},
+		Options: options.Index().SetName("idx_purchase_requests_status"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure purchase_requests status index: %w", err)
+	}
+
 	return nil
 }
 
@@ -510,4 +534,91 @@ func (s *MongoStore) ListEntitlementsByUser(ctx context.Context, userID string) 
 		result = []*models.Entitlement{}
 	}
 	return result, nil
+}
+
+// CreateOrGetPendingRequest creates a pending request or retrieves the existing pending request (R5).
+// Enforces partial unique index on (user_id, subject_id) where status = "pending".
+// Concurrent callers are guaranteed to receive the same pending request.
+func (s *MongoStore) CreateOrGetPendingRequest(ctx context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error) {
+	if req.ID == "" {
+		req.ID = generateID()
+	}
+	if req.Status == "" {
+		req.Status = models.RequestStatusPending
+	}
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = time.Now().UTC()
+	}
+
+	col := s.db.Collection("purchase_requests")
+	filter := bson.M{
+		"user_id":    req.UserID,
+		"subject_id": req.SubjectID,
+		"status":     models.RequestStatusPending,
+	}
+
+	// 1. Try to find existing pending request first
+	var existing models.PurchaseRequest
+	err := col.FindOne(ctx, filter).Decode(&existing)
+	if err == nil {
+		return &existing, false, nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, false, fmt.Errorf("store: find pending purchase request: %w", err)
+	}
+
+	// 2. Not found, attempt insert
+	_, err = col.InsertOne(ctx, req)
+	if err == nil {
+		return req, true, nil
+	}
+
+	// 3. If duplicate key, concurrent insert won: fetch the existing row
+	if mongo.IsDuplicateKeyError(err) {
+		err = col.FindOne(ctx, filter).Decode(&existing)
+		if err == nil {
+			return &existing, false, nil
+		}
+		return nil, false, fmt.Errorf("store: find pending purchase request after duplicate: %w", err)
+	}
+
+	return nil, false, fmt.Errorf("store: insert purchase request: %w", err)
+}
+
+// GetPendingRequest returns the pending request for a user and subject, or nil if none exists.
+func (s *MongoStore) GetPendingRequest(ctx context.Context, userID, subjectID string) (*models.PurchaseRequest, error) {
+	filter := bson.M{
+		"user_id":    userID,
+		"subject_id": subjectID,
+		"status":     models.RequestStatusPending,
+	}
+	var pr models.PurchaseRequest
+	err := s.db.Collection("purchase_requests").FindOne(ctx, filter).Decode(&pr)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: get pending purchase request: %w", err)
+	}
+	return &pr, nil
+}
+
+// ListRequestsByUser returns all requests for a user ordered by CreatedAt ascending.
+func (s *MongoStore) ListRequestsByUser(ctx context.Context, userID string) ([]*models.PurchaseRequest, error) {
+	filter := bson.M{"user_id": userID}
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}})
+	cursor, err := s.db.Collection("purchase_requests").Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: list purchase requests: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []*models.PurchaseRequest
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("store: decode purchase requests: %w", err)
+	}
+	if results == nil {
+		results = []*models.PurchaseRequest{}
+	}
+	return results, nil
 }

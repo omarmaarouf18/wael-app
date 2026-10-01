@@ -23,23 +23,25 @@ const claimsContextKey contextKey = "claims"
 
 // Server wires academy-service HTTP dependencies.
 type Server struct {
-	Store         store.Store
-	AppEnv        string
-	GatewaySecret string
-	InternalToken string
-	AuthURL       string
-	ExposePrice   bool
+	Store           store.Store
+	AppEnv          string
+	GatewaySecret   string
+	InternalToken   string
+	AuthURL         string
+	ExposePrice     bool
+	SupportWhatsApp string
 }
 
 // New creates a Server with dependencies.
-func New(st store.Store, appEnv, gatewaySecret, internalToken, authURL string, exposePrice bool) *Server {
+func New(st store.Store, appEnv, gatewaySecret, internalToken, authURL string, exposePrice bool, supportWhatsApp string) *Server {
 	return &Server{
-		Store:         st,
-		AppEnv:        appEnv,
-		GatewaySecret: gatewaySecret,
-		InternalToken: internalToken,
-		AuthURL:       authURL,
-		ExposePrice:   exposePrice,
+		Store:           st,
+		AppEnv:          appEnv,
+		GatewaySecret:   gatewaySecret,
+		InternalToken:   internalToken,
+		AuthURL:         authURL,
+		ExposePrice:     exposePrice,
+		SupportWhatsApp: supportWhatsApp,
 	}
 }
 
@@ -263,15 +265,18 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 
 // GetSubjectDetail serves GET /academy/subjects/{id}.
 // Returns subject metadata, published video titles/descriptions (NEVER youtube_video_id),
-// and attached file metadata. Returns 404 for unknown or unpublished subjects.
-func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request) {
+// attached file metadata, and pending request status if unowned.
+// Returns 404 for unknown or unpublished subjects.
+func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
 		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
 		return
 	}
 
-	id := strings.TrimPrefix(r.URL.Path, "/academy/subjects/")
-	id = strings.TrimSpace(id)
+	if id == "" {
+		id = strings.TrimPrefix(r.URL.Path, "/academy/subjects/")
+		id = strings.TrimSpace(id)
+	}
 	if id == "" || strings.Contains(id, "/") {
 		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "subject not found", nil)
 		return
@@ -336,7 +341,120 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dto := subj.ToDetailDTO(counts, videoDTOs, fileDTOs, owned, s.ExposePrice)
+	if !owned && claims != nil && claims.UserID != "" {
+		reqCtx, reqCancel := context.WithTimeout(r.Context(), dbTimeout)
+		pr, err := s.Store.GetPendingRequest(reqCtx, claims.UserID, id)
+		reqCancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+		if pr != nil && pr.Status == models.RequestStatusPending {
+			dto.Request = &models.SubjectRequestDTO{Status: models.RequestStatusPending}
+		}
+	}
+
 	handlerutil.WriteJSON(w, http.StatusOK, dto)
+}
+
+// CreateAccessRequest handles POST /academy/subjects/{id}/access-request.
+// Idempotent: returns the existing pending request (same id, 200) if one exists (R5).
+// Refuses (409, generic) if the student already owns the subject (R1) or if
+// access_expires_at is in the past (D20).
+func (s *Server) CreateAccessRequest(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+		return
+	}
+
+	claims := StudentClaims(r)
+	if claims == nil || claims.UserID == "" {
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	subj, err := s.Store.GetSubjectByID(ctx, id)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if subj == nil || subj.Status != models.StatusPublished {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "subject not found", nil)
+		return
+	}
+
+	now := time.Now().UTC()
+	// D20: Refuse if subject access has expired
+	if !subj.AccessExpiresAt.IsZero() && subj.AccessExpiresAt.Before(now) {
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "request conflict", nil)
+		return
+	}
+
+	// R1: Refuse if student already owns the subject
+	ownedCtx, ownedCancel := context.WithTimeout(r.Context(), dbTimeout)
+	owned, err := s.Store.HasActiveEntitlement(ownedCtx, claims.UserID, id)
+	ownedCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if owned {
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "request conflict", nil)
+		return
+	}
+
+	reqID, _ := jwtutil.GenerateUUID()
+	newReq := &models.PurchaseRequest{
+		ID:        reqID,
+		UserID:    claims.UserID,
+		SubjectID: id,
+		Status:    models.RequestStatusPending,
+		CreatedAt: now,
+	}
+
+	prCtx, prCancel := context.WithTimeout(r.Context(), dbTimeout)
+	pr, _, err := s.Store.CreateOrGetPendingRequest(prCtx, newReq)
+	prCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
+	resp := models.AccessRequestResponseDTO{
+		ID:          pr.ID,
+		SubjectID:   pr.SubjectID,
+		Status:      pr.Status,
+		CreatedAt:   pr.CreatedAt,
+		WhatsAppURL: models.FormatWhatsAppURL(s.SupportWhatsApp),
+	}
+	handlerutil.WriteJSON(w, http.StatusOK, resp)
+}
+
+// SubjectSubroute dispatches requests under /academy/subjects/.
+// Handles:
+// - GET /academy/subjects/{id} -> GetSubjectDetail
+// - POST /academy/subjects/{id}/access-request -> CreateAccessRequest
+func (s *Server) SubjectSubroute(w http.ResponseWriter, r *http.Request) {
+	subpath := strings.TrimPrefix(r.URL.Path, "/academy/subjects/")
+	subpath = strings.Trim(subpath, "/")
+	if subpath == "" {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "subject not found", nil)
+		return
+	}
+
+	parts := strings.Split(subpath, "/")
+	if len(parts) == 1 && parts[0] != "" {
+		s.GetSubjectDetail(w, r, parts[0])
+		return
+	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "access-request" {
+		s.CreateAccessRequest(w, r, parts[0])
+		return
+	}
+
+	handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
 }
 
 // PublicHandler constructs the HTTP handler for the public listener.
@@ -345,7 +463,7 @@ func (s *Server) PublicHandler() http.Handler {
 	mux.HandleFunc("/health", Health)
 	mux.HandleFunc("/academy/levels", s.GetLevels)
 	mux.HandleFunc("/academy/subjects", s.ListSubjects)
-	mux.HandleFunc("/academy/subjects/", s.GetSubjectDetail)
+	mux.HandleFunc("/academy/subjects/", s.SubjectSubroute)
 
 	var h http.Handler = mux
 	h = s.StudentAuth(h)

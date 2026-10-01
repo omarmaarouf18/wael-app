@@ -42,6 +42,7 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "ADMIN_LISTEN_ADDR", ":9002")
 	setEnv(t, "JWT_SECRET", "test-jwt-secret")
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
+	setEnv(t, "SUPPORT_WHATSAPP", "+201000000000")
 }
 
 func TestLoad_MinimalDev(t *testing.T) {
@@ -64,6 +65,9 @@ func TestLoad_MinimalDev(t *testing.T) {
 	}
 	if cfg.TLSEnabled() {
 		t.Fatal("expected TLS disabled without cert paths")
+	}
+	if cfg.SupportWhatsApp != "+201000000000" {
+		t.Fatalf("supportWhatsApp = %q, want +201000000000", cfg.SupportWhatsApp)
 	}
 }
 
@@ -136,6 +140,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"AUTH_SERVICE_URL",
 		"JWT_SECRET",
 		"REDIS_URI",
+		"SUPPORT_WHATSAPP",
 	}
 
 	for _, v := range requiredVars {
@@ -166,7 +171,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 	})
 
 	t.Run("local_dev_with_only_secrets_succeeds_with_defaults", func(t *testing.T) {
-		for _, v := range []string{"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "AUTH_SERVICE_URL", "ADMIN_LISTEN_ADDR", "JWT_SECRET", "REDIS_URI"} {
+		for _, v := range []string{"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "AUTH_SERVICE_URL", "ADMIN_LISTEN_ADDR", "JWT_SECRET", "REDIS_URI", "SUPPORT_WHATSAPP"} {
 			_ = os.Unsetenv(v)
 		}
 		setEnv(t, "APP_ENV", "local")
@@ -178,6 +183,9 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		}
 		if cfg.Port != "3003" {
 			t.Errorf("expected default Port 3003, got %q", cfg.Port)
+		}
+		if cfg.SupportWhatsApp != "+201000000000" {
+			t.Errorf("expected default SupportWhatsApp +201000000000, got %q", cfg.SupportWhatsApp)
 		}
 		if cfg.TLSEnabled() {
 			t.Error("expected TLS disabled by default in local dev")

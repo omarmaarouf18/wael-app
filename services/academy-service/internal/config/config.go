@@ -26,6 +26,7 @@ type Config struct {
 	TLSCAPath             string
 	AdminListenAddr       string
 	ExposePriceToStudents bool
+	SupportWhatsApp       string
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -91,6 +92,14 @@ func Load() (*Config, error) {
 		if redisURI == "" {
 			return nil, errors.New("config: required env var REDIS_URI is empty")
 		}
+		if os.Getenv("SUPPORT_WHATSAPP") == "" {
+			return nil, errors.New("config: required env var SUPPORT_WHATSAPP is empty")
+		}
+	}
+
+	supportWhatsApp := os.Getenv("SUPPORT_WHATSAPP")
+	if supportWhatsApp == "" {
+		supportWhatsApp = "+201000000000"
 	}
 
 	if adminListenAddr == "" {
@@ -135,5 +144,6 @@ func Load() (*Config, error) {
 		TLSCAPath:             tlsCAPath,
 		AdminListenAddr:       adminListenAddr,
 		ExposePriceToStudents: exposePrice,
+		SupportWhatsApp:       supportWhatsApp,
 	}, nil
 }

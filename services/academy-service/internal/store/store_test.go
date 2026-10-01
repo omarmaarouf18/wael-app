@@ -432,6 +432,96 @@ func runStoreSuite(t *testing.T, s Store) {
 	if !concEnts[0].Active {
 		t.Errorf("expected the single entitlement to be active")
 	}
+
+	// 10. Purchase Requests: CreateOrGetPendingRequest idempotency and concurrency (Phase 3.3, R5)
+	const prUser = "u-pr-student-1"
+	const prSubj = "subj-concurrent-1"
+
+	// Concurrency test: 20 goroutines calling CreateOrGetPendingRequest
+	var prWg sync.WaitGroup
+	prIDs := make([]string, 20)
+	var prCallSuccessCount atomic.Int32
+
+	for i := 0; i < 20; i++ {
+		prWg.Add(1)
+		idx := i
+		go func() {
+			defer prWg.Done()
+			req, _, err := s.CreateOrGetPendingRequest(ctx, &models.PurchaseRequest{
+				UserID:    prUser,
+				SubjectID: prSubj,
+			})
+			if err != nil {
+				t.Errorf("goroutine %d CreateOrGetPendingRequest failed: %v", idx, err)
+				return
+			}
+			prIDs[idx] = req.ID
+			prCallSuccessCount.Add(1)
+		}()
+	}
+	prWg.Wait()
+
+	if prCallSuccessCount.Load() != 20 {
+		t.Fatalf("expected all 20 calls to succeed, got %d", prCallSuccessCount.Load())
+	}
+	// All callers get the same id
+	expectedPRID := prIDs[0]
+	if expectedPRID == "" {
+		t.Fatal("expected non-empty PR ID")
+	}
+	for i, id := range prIDs {
+		if id != expectedPRID {
+			t.Errorf("caller %d got id %q, want %q", i, id, expectedPRID)
+		}
+	}
+
+	// Exactly one pending row exists in store
+	userReqs, err := s.ListRequestsByUser(ctx, prUser)
+	if err != nil {
+		t.Fatalf("ListRequestsByUser failed: %v", err)
+	}
+	if len(userReqs) != 1 {
+		t.Fatalf("expected exactly 1 purchase request in store, got %d", len(userReqs))
+	}
+	if userReqs[0].ID != expectedPRID {
+		t.Errorf("stored request ID = %q, want %q", userReqs[0].ID, expectedPRID)
+	}
+	if userReqs[0].Status != models.RequestStatusPending {
+		t.Errorf("stored request status = %q, want %q", userReqs[0].Status, models.RequestStatusPending)
+	}
+
+	// Idempotent second call returns existing request (same id, created=false)
+	secondReq, created, err := s.CreateOrGetPendingRequest(ctx, &models.PurchaseRequest{
+		UserID:    prUser,
+		SubjectID: prSubj,
+	})
+	if err != nil {
+		t.Fatalf("second call failed: %v", err)
+	}
+	if created {
+		t.Errorf("expected created = false on second call")
+	}
+	if secondReq.ID != expectedPRID {
+		t.Errorf("second call got ID = %q, want %q", secondReq.ID, expectedPRID)
+	}
+
+	// GetPendingRequest returns the pending request
+	pending, err := s.GetPendingRequest(ctx, prUser, prSubj)
+	if err != nil {
+		t.Fatalf("GetPendingRequest failed: %v", err)
+	}
+	if pending == nil || pending.ID != expectedPRID {
+		t.Fatalf("GetPendingRequest = %v, want ID %q", pending, expectedPRID)
+	}
+
+	// GetPendingRequest for nonexistent pair returns nil, nil
+	nonePending, err := s.GetPendingRequest(ctx, "nonexistent-user", prSubj)
+	if err != nil {
+		t.Fatalf("GetPendingRequest nonexistent failed: %v", err)
+	}
+	if nonePending != nil {
+		t.Errorf("expected nil for nonexistent user, got %v", nonePending)
+	}
 }
 
 func TestMemoryStore(t *testing.T) {

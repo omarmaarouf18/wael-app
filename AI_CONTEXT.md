@@ -102,6 +102,8 @@ SPEC Phase 3.1: `entitlements` model per SPEC Section 5 (including `expires_at` 
 
 SPEC Phase 3.2: R2 gating on `youtube_video_id` in `GET /academy/subjects/{id}`: video IDs are returned only when `owned == true` at that moment, populated in position order; never returned in list endpoints, 401/404 error bodies, or server logs; verified with exhaustive leak test suite (unowned, owned-but-expired, owned by another user, unpublished video in owned subject, list endpoints while owned, error bodies while owned) and captured logger asserting zero video IDs logged.
 
+SPEC Phase 3.3: `purchase_requests` model per SPEC Section 5; `Store` methods `CreateOrGetPendingRequest`, `GetPendingRequest`, `ListRequestsByUser` in MemoryStore and MongoStore; partial unique index on `(user_id, subject_id)` where `status = "pending"` enforcing at most one pending request per pair (R5), plus index on `status`; `POST /academy/subjects/{id}/access-request` student route returning `AccessRequestResponseDTO` with support WhatsApp link, idempotent on subsequent calls (returning existing pending request with same ID, 200 OK); D20 refusal returning generic 409 when `access_expires_at` is past; R1 refusal returning generic 409 when subject is already owned; `GET /academy/subjects/{id}` populates `request: {"status": "pending"}` when unowned and pending; concurrency test with 20 parallel requests produces exactly 1 pending row with all callers receiving the same ID across both stores under `-race`.
+
 Frontend F0: `scripts/frontend_composition_gate.sh` ratchet gate (baseline `scripts/frontend_gate_baseline.txt`, 83 entries at F0) runs in `.githooks/pre-push` and the CI `flutter-test` job; `docs/frontend/DESIGN_SYSTEM.md` and `docs/frontend/STATUS.md` added.
 
 Frontend F1 (token gaps): `AppTypography.uppercaseLabel`, semantic colours (success/warning/danger/info with Bg variants, WCAG AA verified by `frontend/test/theme_tokens_test.dart`) and glass/scrim tokens added to `theme.dart`; raw colours and `.toUpperCase()` removed from `lib/widgets/` and the non-catalog screens (catalog screens untouched); the composition gate no longer stops at a rule with zero matches (it was fail-open); baseline lowered from 83 entries (392 violations) to 68 (358).
@@ -131,7 +133,7 @@ Owner question: reminder notification before a subscription expires (SPEC Sectio
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-SPEC Phase 3.3: purchase_requests and the idempotent access-request endpoint with concurrency test.
+SPEC Phase 3.4: rate-limit tiers (D13).
 
 
 

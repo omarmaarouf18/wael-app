@@ -53,26 +53,33 @@ type Store interface {
 	HasActiveEntitlement(ctx context.Context, userID, subjectID string) (bool, error)
 	GetActiveEntitlementSubjectIDs(ctx context.Context, userID string) (map[string]bool, error)
 	ListEntitlementsByUser(ctx context.Context, userID string) ([]*models.Entitlement, error)
+
+	// Purchase Requests (Phase 3.3)
+	CreateOrGetPendingRequest(ctx context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error)
+	GetPendingRequest(ctx context.Context, userID, subjectID string) (*models.PurchaseRequest, error)
+	ListRequestsByUser(ctx context.Context, userID string) ([]*models.PurchaseRequest, error)
 }
 
 // MemoryStore is an in-memory Store for local dev and unit testing.
 type MemoryStore struct {
-	mu           sync.RWMutex
-	levels       map[string]*models.Level
-	subjects     map[string]*models.Subject
-	videos       map[string]*models.Video
-	files        map[string]*models.SubjectFile
-	entitlements []*models.Entitlement
+	mu               sync.RWMutex
+	levels           map[string]*models.Level
+	subjects         map[string]*models.Subject
+	videos           map[string]*models.Video
+	files            map[string]*models.SubjectFile
+	entitlements     []*models.Entitlement
+	purchaseRequests []*models.PurchaseRequest
 }
 
 // NewMemoryStore creates an empty MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		levels:       make(map[string]*models.Level),
-		subjects:     make(map[string]*models.Subject),
-		videos:       make(map[string]*models.Video),
-		files:        make(map[string]*models.SubjectFile),
-		entitlements: make([]*models.Entitlement, 0),
+		levels:           make(map[string]*models.Level),
+		subjects:         make(map[string]*models.Subject),
+		videos:           make(map[string]*models.Video),
+		files:            make(map[string]*models.SubjectFile),
+		entitlements:     make([]*models.Entitlement, 0),
+		purchaseRequests: make([]*models.PurchaseRequest, 0),
 	}
 }
 
@@ -413,5 +420,65 @@ func (s *MemoryStore) ListEntitlementsByUser(_ context.Context, userID string) (
 			result = append(result, &cp)
 		}
 	}
+	return result, nil
+}
+
+// CreateOrGetPendingRequest atomically creates a pending request or returns the existing pending request (R5).
+func (s *MemoryStore) CreateOrGetPendingRequest(_ context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.UserID == req.UserID && r.SubjectID == req.SubjectID && r.Status == models.RequestStatusPending {
+			cp := *r
+			return &cp, false, nil
+		}
+	}
+
+	if req.ID == "" {
+		req.ID = generateID()
+	}
+	if req.Status == "" {
+		req.Status = models.RequestStatusPending
+	}
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = time.Now().UTC()
+	}
+
+	cp := *req
+	s.purchaseRequests = append(s.purchaseRequests, &cp)
+	res := *req
+	return &res, true, nil
+}
+
+// GetPendingRequest returns the pending request for a user and subject, or nil if none exists.
+func (s *MemoryStore) GetPendingRequest(_ context.Context, userID, subjectID string) (*models.PurchaseRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.UserID == userID && r.SubjectID == subjectID && r.Status == models.RequestStatusPending {
+			cp := *r
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+// ListRequestsByUser returns all requests for a user ordered by CreatedAt ascending.
+func (s *MemoryStore) ListRequestsByUser(_ context.Context, userID string) ([]*models.PurchaseRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.PurchaseRequest
+	for _, r := range s.purchaseRequests {
+		if r.UserID == userID {
+			cp := *r
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
 	return result, nil
 }

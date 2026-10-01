@@ -60,6 +60,7 @@ type SubjectDetailDTO struct {
 	Price           *int               `json:"price,omitempty"`
 	Currency        string             `json:"currency,omitempty"`
 	AccessExpiresAt time.Time          `json:"access_expires_at"`
+	Request         *SubjectRequestDTO `json:"request,omitempty"`
 }
 
 // SubjectListResponseDTO is the paginated response for GET /academy/subjects.

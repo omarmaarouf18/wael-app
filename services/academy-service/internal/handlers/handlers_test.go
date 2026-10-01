@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
+	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 )
 
@@ -23,7 +25,7 @@ func init() {
 func newTestServer(exposePrice bool) *Server {
 	st := store.NewMemoryStore()
 	_ = st.SeedLevels(context.Background())
-	return New(st, "test", "test-gateway-secret", "test-internal-token", "http://auth-service:3002", exposePrice)
+	return New(st, "test", "test-gateway-secret", "test-internal-token", "http://auth-service:3002", exposePrice, "+201000000000")
 }
 
 func makeStudentToken(t *testing.T, userID string) string {
@@ -1211,4 +1213,407 @@ func TestR2Gating_SubjectDetailAndLeakTests(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestPurchaseRequests_StudentEndpoint(t *testing.T) {
+	s := newTestServer(false)
+	ctx := context.Background()
+
+	// 1. Published subject with future expiry
+	subjActive := &models.Subject{
+		ID:              "subj-pr-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة نشطة",
+		TitleEn:         "Active Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	_ = s.Store.CreateSubject(ctx, subjActive)
+
+	// 2. Expired subject (access_expires_at in past)
+	subjExpired := &models.Subject{
+		ID:              "subj-pr-expired",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة منتهية",
+		TitleEn:         "Expired Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(-1 * time.Hour),
+		CreatedAt:       time.Now().Add(-48 * time.Hour),
+		UpdatedAt:       time.Now().Add(-48 * time.Hour),
+	}
+	_ = s.Store.CreateSubject(ctx, subjExpired)
+
+	// 3. Unpublished subject
+	subjDraft := &models.Subject{
+		ID:              "subj-pr-draft",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة مسودة",
+		TitleEn:         "Draft Subject",
+		Status:          models.StatusDraft,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	_ = s.Store.CreateSubject(ctx, subjDraft)
+
+	// 4. Owned subject for user-owned
+	subjOwned := &models.Subject{
+		ID:              "subj-pr-owned",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة مملوكة",
+		TitleEn:         "Owned Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	_ = s.Store.CreateSubject(ctx, subjOwned)
+	_ = s.Store.Grant(ctx, &models.Entitlement{
+		UserID:    "user-pr-owner",
+		SubjectID: "subj-pr-owned",
+	})
+
+	h := s.PublicHandler()
+	studentToken := makeStudentToken(t, "user-pr-student")
+	ownerToken := makeStudentToken(t, "user-pr-owner")
+
+	t.Run("valid_first_request_returns_200_and_DTO", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-pr-1/access-request", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+studentToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: body=%s", rec.Code, rec.Body.String())
+		}
+
+		var resp models.AccessRequestResponseDTO
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("json unmarshal failed: %v", err)
+		}
+		if resp.ID == "" {
+			t.Error("expected non-empty request id")
+		}
+		if resp.SubjectID != "subj-pr-1" {
+			t.Errorf("subject_id = %q, want subj-pr-1", resp.SubjectID)
+		}
+		if resp.Status != models.RequestStatusPending {
+			t.Errorf("status = %q, want pending", resp.Status)
+		}
+		if resp.CreatedAt.IsZero() {
+			t.Error("expected non-zero created_at")
+		}
+		if resp.WhatsAppURL != "https://wa.me/201000000000" {
+			t.Errorf("whatsapp_url = %q, want https://wa.me/201000000000", resp.WhatsAppURL)
+		}
+
+		// Leak check: no admin fields in response body
+		bodyStr := rec.Body.String()
+		for _, forbidden := range []string{"decided_by", "decided_at", "reject_reason", "price", "payment"} {
+			if strings.Contains(bodyStr, forbidden) {
+				t.Fatalf("LEAK: access-request response body contains forbidden field %q: %s", forbidden, bodyStr)
+			}
+		}
+	})
+
+	t.Run("idempotent_second_request_returns_same_id_200", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-pr-1/access-request", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+studentToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: body=%s", rec.Code, rec.Body.String())
+		}
+
+		var resp models.AccessRequestResponseDTO
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("json unmarshal failed: %v", err)
+		}
+
+		// Check against store
+		pr, err := s.Store.GetPendingRequest(ctx, "user-pr-student", "subj-pr-1")
+		if err != nil {
+			t.Fatalf("GetPendingRequest failed: %v", err)
+		}
+		if pr == nil {
+			t.Fatal("expected pending request in store")
+		}
+		if resp.ID != pr.ID {
+			t.Errorf("second call ID = %q, want %q", resp.ID, pr.ID)
+		}
+	})
+
+	t.Run("refuse_409_when_already_owned_R1", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-pr-owned/access-request", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409 Conflict when already owned, got %d: body=%s", rec.Code, rec.Body.String())
+		}
+
+		var safeErr handlerutil.SafeError
+		if err := json.Unmarshal(rec.Body.Bytes(), &safeErr); err != nil {
+			t.Fatalf("json unmarshal failed: %v", err)
+		}
+		if safeErr.Code != handlerutil.ErrCodeConflict {
+			t.Errorf("expected code conflict, got %q", safeErr.Code)
+		}
+	})
+
+	t.Run("refuse_409_when_subject_expired_D20", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-pr-expired/access-request", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+studentToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409 Conflict for expired subject, got %d: body=%s", rec.Code, rec.Body.String())
+		}
+
+		var safeErr handlerutil.SafeError
+		if err := json.Unmarshal(rec.Body.Bytes(), &safeErr); err != nil {
+			t.Fatalf("json unmarshal failed: %v", err)
+		}
+		if safeErr.Code != handlerutil.ErrCodeConflict {
+			t.Errorf("expected code conflict, got %q", safeErr.Code)
+		}
+	})
+
+	t.Run("refuse_404_for_unpublished_or_unknown_subject", func(t *testing.T) {
+		for _, path := range []string{
+			"/academy/subjects/subj-pr-draft/access-request",
+			"/academy/subjects/subj-non-existent-999/access-request",
+		} {
+			req := httptest.NewRequest(http.MethodPost, path, nil)
+			req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+			req.Header.Set("Authorization", "Bearer "+studentToken)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("%s: expected 404, got %d", path, rec.Code)
+			}
+		}
+	})
+
+	t.Run("auth_checks_missing_secret_or_token", func(t *testing.T) {
+		// Missing gateway secret
+		req1 := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-pr-1/access-request", nil)
+		req1.Header.Set("Authorization", "Bearer "+studentToken)
+		rec1 := httptest.NewRecorder()
+		h.ServeHTTP(rec1, req1)
+		if rec1.Code != http.StatusUnauthorized {
+			t.Errorf("missing secret: expected 401, got %d", rec1.Code)
+		}
+
+		// Missing bearer token
+		req2 := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-pr-1/access-request", nil)
+		req2.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		rec2 := httptest.NewRecorder()
+		h.ServeHTTP(rec2, req2)
+		if rec2.Code != http.StatusUnauthorized {
+			t.Errorf("missing token: expected 401, got %d", rec2.Code)
+		}
+	})
+
+	t.Run("method_not_allowed_for_non_post", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-pr-1/access-request", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+studentToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("GET access-request: expected 405, got %d", rec.Code)
+		}
+	})
+}
+
+func TestPurchaseRequests_SubjectDetailPendingStatus(t *testing.T) {
+	s := newTestServer(false)
+	ctx := context.Background()
+
+	subj := &models.Subject{
+		ID:              "subj-detail-req-test",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة طلب",
+		TitleEn:         "Request Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	_ = s.Store.CreateSubject(ctx, subj)
+
+	h := s.PublicHandler()
+	studentA := makeStudentToken(t, "user-detail-student-a")
+	studentB := makeStudentToken(t, "user-detail-student-b")
+
+	// 1. Before requesting: detail for student A has no request field
+	reqA1 := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-detail-req-test", nil)
+	reqA1.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqA1.Header.Set("Authorization", "Bearer "+studentA)
+	recA1 := httptest.NewRecorder()
+	h.ServeHTTP(recA1, reqA1)
+	if recA1.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recA1.Code)
+	}
+	var detailA1 models.SubjectDetailDTO
+	_ = json.Unmarshal(recA1.Body.Bytes(), &detailA1)
+	if detailA1.Request != nil {
+		t.Errorf("expected request == nil before access request, got %v", detailA1.Request)
+	}
+	if strings.Contains(recA1.Body.String(), `"request"`) {
+		t.Errorf("expected request key absent from JSON, got %s", recA1.Body.String())
+	}
+
+	// 2. Student A submits access request
+	postReq := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-detail-req-test/access-request", nil)
+	postReq.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	postReq.Header.Set("Authorization", "Bearer "+studentA)
+	postRec := httptest.NewRecorder()
+	h.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", postRec.Code)
+	}
+
+	// 3. Detail for student A now has request: {"status": "pending"}
+	reqA2 := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-detail-req-test", nil)
+	reqA2.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqA2.Header.Set("Authorization", "Bearer "+studentA)
+	recA2 := httptest.NewRecorder()
+	h.ServeHTTP(recA2, reqA2)
+	var detailA2 models.SubjectDetailDTO
+	_ = json.Unmarshal(recA2.Body.Bytes(), &detailA2)
+	if detailA2.Request == nil {
+		t.Fatal("expected request != nil after access request")
+	}
+	if detailA2.Request.Status != models.RequestStatusPending {
+		t.Errorf("request.status = %q, want pending", detailA2.Request.Status)
+	}
+	if !strings.Contains(recA2.Body.String(), `"request":{"status":"pending"}`) {
+		t.Errorf("expected JSON to contain request pending, got %s", recA2.Body.String())
+	}
+
+	// 4. Detail for student B still has no request field
+	reqB := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-detail-req-test", nil)
+	reqB.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqB.Header.Set("Authorization", "Bearer "+studentB)
+	recB := httptest.NewRecorder()
+	h.ServeHTTP(recB, reqB)
+	var detailB models.SubjectDetailDTO
+	_ = json.Unmarshal(recB.Body.Bytes(), &detailB)
+	if detailB.Request != nil {
+		t.Errorf("expected student B request == nil, got %v", detailB.Request)
+	}
+
+	// 5. When subject becomes owned, request is absent
+	_ = s.Store.Grant(ctx, &models.Entitlement{
+		UserID:    "user-detail-student-a",
+		SubjectID: "subj-detail-req-test",
+	})
+	reqA3 := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-detail-req-test", nil)
+	reqA3.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqA3.Header.Set("Authorization", "Bearer "+studentA)
+	recA3 := httptest.NewRecorder()
+	h.ServeHTTP(recA3, reqA3)
+	var detailA3 models.SubjectDetailDTO
+	_ = json.Unmarshal(recA3.Body.Bytes(), &detailA3)
+	if !detailA3.Owned {
+		t.Fatal("expected owned == true")
+	}
+	if detailA3.Request != nil {
+		t.Errorf("expected request == nil when owned, got %v", detailA3.Request)
+	}
+}
+
+func TestPurchaseRequests_HandlerConcurrency(t *testing.T) {
+	s := newTestServer(false)
+	ctx := context.Background()
+
+	subj := &models.Subject{
+		ID:              "subj-conc-handler-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة التزامن هاندلر",
+		TitleEn:         "Handler Concurrency Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	_ = s.Store.CreateSubject(ctx, subj)
+
+	h := s.PublicHandler()
+	studentToken := makeStudentToken(t, "user-conc-handler-student")
+
+	var wg sync.WaitGroup
+	const routines = 20
+	resps := make([]models.AccessRequestResponseDTO, routines)
+	codes := make([]int, routines)
+
+	for i := 0; i < routines; i++ {
+		wg.Add(1)
+		idx := i
+		go func() {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-conc-handler-1/access-request", nil)
+			req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+			req.Header.Set("Authorization", "Bearer "+studentToken)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			codes[idx] = rec.Code
+			if rec.Code == http.StatusOK {
+				_ = json.Unmarshal(rec.Body.Bytes(), &resps[idx])
+			}
+		}()
+	}
+	wg.Wait()
+
+	// All 20 goroutines must get 200 OK
+	for i, code := range codes {
+		if code != http.StatusOK {
+			t.Errorf("routine %d got code %d, want 200", i, code)
+		}
+	}
+
+	// All 20 callers must receive the exact same request ID
+	expectedID := resps[0].ID
+	if expectedID == "" {
+		t.Fatal("expected non-empty request ID")
+	}
+	for i, resp := range resps {
+		if resp.ID != expectedID {
+			t.Errorf("caller %d got ID %q, want %q", i, resp.ID, expectedID)
+		}
+		if resp.Status != models.RequestStatusPending {
+			t.Errorf("caller %d got status %q, want pending", i, resp.Status)
+		}
+	}
+
+	// Exactly one pending row exists in store
+	userReqs, err := s.Store.ListRequestsByUser(ctx, "user-conc-handler-student")
+	if err != nil {
+		t.Fatalf("ListRequestsByUser failed: %v", err)
+	}
+	if len(userReqs) != 1 {
+		t.Fatalf("expected exactly 1 stored request, got %d", len(userReqs))
+	}
+	if userReqs[0].ID != expectedID {
+		t.Errorf("stored ID %q != expected %q", userReqs[0].ID, expectedID)
+	}
 }
