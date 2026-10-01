@@ -523,6 +523,53 @@ func (s *MongoStore) HasActiveEntitlement(ctx context.Context, userID, subjectID
 	return true, nil
 }
 
+// GetActiveEntitlement returns the active unexpired entitlement for (userID, subjectID), or nil if none.
+func (s *MongoStore) GetActiveEntitlement(ctx context.Context, userID, subjectID string) (*models.Entitlement, error) {
+	now := time.Now()
+	filter := bson.M{
+		"user_id":    userID,
+		"subject_id": subjectID,
+		"active":     true,
+		"expires_at": bson.M{"$gt": now},
+	}
+	var ent models.Entitlement
+	err := s.db.Collection("entitlements").FindOne(ctx, filter).Decode(&ent)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find active entitlement: %w", err)
+	}
+	return &ent, nil
+}
+
+// GetActiveEntitlements returns a map of subjectID -> active unexpired entitlement for the user.
+func (s *MongoStore) GetActiveEntitlements(ctx context.Context, userID string) (map[string]*models.Entitlement, error) {
+	now := time.Now()
+	filter := bson.M{
+		"user_id":    userID,
+		"active":     true,
+		"expires_at": bson.M{"$gt": now},
+	}
+	cursor, err := s.db.Collection("entitlements").Find(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("store: find active entitlements: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var docs []models.Entitlement
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("store: decode active entitlements: %w", err)
+	}
+
+	result := make(map[string]*models.Entitlement, len(docs))
+	for _, d := range docs {
+		cp := d
+		result[d.SubjectID] = &cp
+	}
+	return result, nil
+}
+
 // GetActiveEntitlementSubjectIDs returns a set of subject IDs owned by user with expires_at > now.
 func (s *MongoStore) GetActiveEntitlementSubjectIDs(ctx context.Context, userID string) (map[string]bool, error) {
 	now := time.Now()

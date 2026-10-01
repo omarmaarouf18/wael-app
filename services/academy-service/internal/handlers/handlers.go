@@ -233,10 +233,10 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	claims := StudentClaims(r)
-	var ownedMap map[string]bool
+	var activeEnts map[string]*models.Entitlement
 	if claims != nil && claims.UserID != "" {
 		ownedCtx, ownedCancel := context.WithTimeout(r.Context(), dbTimeout)
-		ownedMap, err = s.Store.GetActiveEntitlementSubjectIDs(ownedCtx, claims.UserID)
+		activeEnts, err = s.Store.GetActiveEntitlements(ownedCtx, claims.UserID)
 		ownedCancel()
 		if err != nil {
 			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
@@ -251,10 +251,16 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 		countCancel()
 
 		owned := false
-		if ownedMap != nil {
-			owned = ownedMap[subj.ID]
+		var ent *models.Entitlement
+		if activeEnts != nil {
+			ent = activeEnts[subj.ID]
+			owned = ent != nil
 		}
-		items[i] = subj.ToListItemDTO(counts, owned, s.ExposePrice)
+		dto := subj.ToListItemDTO(counts, owned, s.ExposePrice)
+		if owned && ent != nil {
+			dto.AccessExpiresAt = ent.ExpiresAt
+		}
+		items[i] = dto
 	}
 	if items == nil {
 		items = []models.SubjectListItemDTO{}
@@ -301,14 +307,16 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id str
 
 	claims := StudentClaims(r)
 	owned := false
+	var activeEnt *models.Entitlement
 	if claims != nil && claims.UserID != "" {
 		ownedCtx, ownedCancel := context.WithTimeout(r.Context(), dbTimeout)
-		owned, err = s.Store.HasActiveEntitlement(ownedCtx, claims.UserID, id)
+		activeEnt, err = s.Store.GetActiveEntitlement(ownedCtx, claims.UserID, id)
 		ownedCancel()
 		if err != nil {
 			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 			return
 		}
+		owned = activeEnt != nil
 	}
 
 	countsCtx, countsCancel := context.WithTimeout(r.Context(), dbTimeout)
@@ -346,6 +354,9 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	dto := subj.ToDetailDTO(counts, videoDTOs, fileDTOs, owned, s.ExposePrice)
+	if owned && activeEnt != nil {
+		dto.AccessExpiresAt = activeEnt.ExpiresAt
+	}
 	if !owned && claims != nil && claims.UserID != "" {
 		reqCtx, reqCancel := context.WithTimeout(r.Context(), dbTimeout)
 		pr, err := s.Store.GetPendingRequest(reqCtx, claims.UserID, id)

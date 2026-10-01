@@ -320,6 +320,35 @@ func runStoreSuite(t *testing.T, s Store) {
 		t.Errorf("expected subj-pub-1 in ownedMap")
 	}
 
+	// GetActiveEntitlement
+	activeEnt, err := s.GetActiveEntitlement(ctx, "u-grant-1", "subj-pub-1")
+	if err != nil {
+		t.Fatalf("GetActiveEntitlement failed: %v", err)
+	}
+	if activeEnt == nil || activeEnt.SubjectID != "subj-pub-1" {
+		t.Fatalf("expected active entitlement for subj-pub-1, got %v", activeEnt)
+	}
+	if !activeEnt.ExpiresAt.Truncate(time.Millisecond).Equal(pubSubj.AccessExpiresAt.Truncate(time.Millisecond)) {
+		t.Errorf("expected activeEnt.ExpiresAt = %v, got %v", pubSubj.AccessExpiresAt, activeEnt.ExpiresAt)
+	}
+
+	activeEntNone, err := s.GetActiveEntitlement(ctx, "u-other", "subj-pub-1")
+	if err != nil {
+		t.Fatalf("GetActiveEntitlement for u-other failed: %v", err)
+	}
+	if activeEntNone != nil {
+		t.Fatalf("expected nil for u-other, got %v", activeEntNone)
+	}
+
+	// GetActiveEntitlements
+	activeMap, err := s.GetActiveEntitlements(ctx, "u-grant-1")
+	if err != nil {
+		t.Fatalf("GetActiveEntitlements failed: %v", err)
+	}
+	if activeMap["subj-pub-1"] == nil {
+		t.Errorf("expected subj-pub-1 in activeMap")
+	}
+
 	// Duplicate grant while active returns ErrDuplicate
 	err = s.Grant(ctx, &models.Entitlement{UserID: "u-grant-1", SubjectID: "subj-pub-1"})
 	if !errors.Is(err, ErrDuplicate) {

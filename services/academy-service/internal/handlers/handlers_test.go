@@ -2603,3 +2603,196 @@ func TestPlayVideo_StoreErrorsFailClosed(t *testing.T) {
 		}
 	})
 }
+
+func TestSubjectDetail_AccessExpiresAt_EntitlementVersusSubject(t *testing.T) {
+	s := newTestServer(false)
+	h := s.PublicHandler()
+	ctx := context.Background()
+
+	// 1. Admin creates subject with access_expires_at = T1
+	t1 := time.Now().Add(10 * 24 * time.Hour).Truncate(time.Second)
+	subj := &models.Subject{
+		ID:              "subj-exp-test-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة اختبار الصلاحية",
+		TitleEn:         "Expiry Test Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: t1,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj); err != nil {
+		t.Fatalf("CreateSubject failed: %v", err)
+	}
+
+	// 2. Grant entitlement to student A (copies T1 per D21)
+	const userA = "student-exp-a"
+	if err := s.Store.Grant(ctx, &models.Entitlement{
+		UserID:    userA,
+		SubjectID: "subj-exp-test-1",
+	}); err != nil {
+		t.Fatalf("Grant failed: %v", err)
+	}
+
+	// 3. Admin updates subject access_expires_at to T2 (e.g. 30 days in future)
+	t2 := time.Now().Add(30 * 24 * time.Hour).Truncate(time.Second)
+	subj.AccessExpiresAt = t2
+	subj.UpdatedAt = time.Now()
+	if err := s.Store.UpdateSubject(ctx, subj); err != nil {
+		t.Fatalf("UpdateSubject failed: %v", err)
+	}
+
+	// 4. Student A (OWNED) requests detail: access_expires_at MUST be T1 (entitlement date)
+	tokA := makeStudentToken(t, userA)
+	reqA := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-exp-test-1", nil)
+	reqA.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqA.Header.Set("Authorization", "Bearer "+tokA)
+	recA := httptest.NewRecorder()
+	h.ServeHTTP(recA, reqA)
+	if recA.Code != http.StatusOK {
+		t.Fatalf("student A call: expected 200, got %d: %s", recA.Code, recA.Body.String())
+	}
+
+	var detailA models.SubjectDetailDTO
+	if err := json.Unmarshal(recA.Body.Bytes(), &detailA); err != nil {
+		t.Fatalf("failed to decode student A response: %v", err)
+	}
+	if !detailA.Owned {
+		t.Fatalf("expected student A to own subject")
+	}
+	if !detailA.AccessExpiresAt.Equal(t1) {
+		t.Errorf("student A access_expires_at = %v, want %v (student's entitlement date)", detailA.AccessExpiresAt, t1)
+	}
+	if detailA.AccessExpiresAt.Equal(t2) {
+		t.Errorf("student A access_expires_at should NOT match updated subject date %v", t2)
+	}
+
+	// 5. Student B (UNOWNED) requests detail: access_expires_at MUST be T2 (subject's current date)
+	const userB = "student-exp-b"
+	tokB := makeStudentToken(t, userB)
+	reqB := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-exp-test-1", nil)
+	reqB.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqB.Header.Set("Authorization", "Bearer "+tokB)
+	recB := httptest.NewRecorder()
+	h.ServeHTTP(recB, reqB)
+	if recB.Code != http.StatusOK {
+		t.Fatalf("student B call: expected 200, got %d: %s", recB.Code, recB.Body.String())
+	}
+
+	var detailB models.SubjectDetailDTO
+	if err := json.Unmarshal(recB.Body.Bytes(), &detailB); err != nil {
+		t.Fatalf("failed to decode student B response: %v", err)
+	}
+	if detailB.Owned {
+		t.Fatalf("expected student B NOT to own subject")
+	}
+	if !detailB.AccessExpiresAt.Equal(t2) {
+		t.Errorf("student B access_expires_at = %v, want %v (subject's updated date)", detailB.AccessExpiresAt, t2)
+	}
+}
+
+func TestListSubjects_AccessExpiresAt_EntitlementVersusSubject(t *testing.T) {
+	s := newTestServer(false)
+	h := s.PublicHandler()
+	ctx := context.Background()
+
+	// 1. Admin creates subject with access_expires_at = T1
+	t1 := time.Now().Add(14 * 24 * time.Hour).Truncate(time.Second)
+	subj := &models.Subject{
+		ID:              "subj-exp-list-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة قائمة الصلاحية",
+		TitleEn:         "Expiry List Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: t1,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj); err != nil {
+		t.Fatalf("CreateSubject failed: %v", err)
+	}
+
+	// 2. Grant entitlement to student A (copies T1 per D21)
+	const userA = "student-exp-list-a"
+	if err := s.Store.Grant(ctx, &models.Entitlement{
+		UserID:    userA,
+		SubjectID: "subj-exp-list-1",
+	}); err != nil {
+		t.Fatalf("Grant failed: %v", err)
+	}
+
+	// 3. Admin moves subject date to T2
+	t2 := time.Now().Add(45 * 24 * time.Hour).Truncate(time.Second)
+	subj.AccessExpiresAt = t2
+	subj.UpdatedAt = time.Now()
+	if err := s.Store.UpdateSubject(ctx, subj); err != nil {
+		t.Fatalf("UpdateSubject failed: %v", err)
+	}
+
+	// 4. Student A lists subjects: owned subject has access_expires_at = T1
+	tokA := makeStudentToken(t, userA)
+	reqA := httptest.NewRequest(http.MethodGet, "/academy/subjects?level=bachelor-y1", nil)
+	reqA.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqA.Header.Set("Authorization", "Bearer "+tokA)
+	recA := httptest.NewRecorder()
+	h.ServeHTTP(recA, reqA)
+	if recA.Code != http.StatusOK {
+		t.Fatalf("student A list: expected 200, got %d: %s", recA.Code, recA.Body.String())
+	}
+
+	var listA models.SubjectListResponseDTO
+	if err := json.Unmarshal(recA.Body.Bytes(), &listA); err != nil {
+		t.Fatalf("failed to decode student A list response: %v", err)
+	}
+	var foundA *models.SubjectListItemDTO
+	for i := range listA.Items {
+		if listA.Items[i].ID == "subj-exp-list-1" {
+			foundA = &listA.Items[i]
+			break
+		}
+	}
+	if foundA == nil {
+		t.Fatalf("subject subj-exp-list-1 not found in student A list")
+	}
+	if !foundA.Owned {
+		t.Errorf("expected foundA.Owned = true")
+	}
+	if !foundA.AccessExpiresAt.Equal(t1) {
+		t.Errorf("student A list item access_expires_at = %v, want %v (entitlement date)", foundA.AccessExpiresAt, t1)
+	}
+
+	// 5. Student B lists subjects: unowned subject has access_expires_at = T2
+	const userB = "student-exp-list-b"
+	tokB := makeStudentToken(t, userB)
+	reqB := httptest.NewRequest(http.MethodGet, "/academy/subjects?level=bachelor-y1", nil)
+	reqB.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqB.Header.Set("Authorization", "Bearer "+tokB)
+	recB := httptest.NewRecorder()
+	h.ServeHTTP(recB, reqB)
+	if recB.Code != http.StatusOK {
+		t.Fatalf("student B list: expected 200, got %d: %s", recB.Code, recB.Body.String())
+	}
+
+	var listB models.SubjectListResponseDTO
+	if err := json.Unmarshal(recB.Body.Bytes(), &listB); err != nil {
+		t.Fatalf("failed to decode student B list response: %v", err)
+	}
+	var foundB *models.SubjectListItemDTO
+	for i := range listB.Items {
+		if listB.Items[i].ID == "subj-exp-list-1" {
+			foundB = &listB.Items[i]
+			break
+		}
+	}
+	if foundB == nil {
+		t.Fatalf("subject subj-exp-list-1 not found in student B list")
+	}
+	if foundB.Owned {
+		t.Errorf("expected foundB.Owned = false")
+	}
+	if !foundB.AccessExpiresAt.Equal(t2) {
+		t.Errorf("student B list item access_expires_at = %v, want %v (subject date)", foundB.AccessExpiresAt, t2)
+	}
+}

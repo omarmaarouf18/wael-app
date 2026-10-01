@@ -52,6 +52,8 @@ type Store interface {
 	// Entitlements (Phase 3.1)
 	Grant(ctx context.Context, e *models.Entitlement) error
 	HasActiveEntitlement(ctx context.Context, userID, subjectID string) (bool, error)
+	GetActiveEntitlement(ctx context.Context, userID, subjectID string) (*models.Entitlement, error)
+	GetActiveEntitlements(ctx context.Context, userID string) (map[string]*models.Entitlement, error)
 	GetActiveEntitlementSubjectIDs(ctx context.Context, userID string) (map[string]bool, error)
 	ListEntitlementsByUser(ctx context.Context, userID string) ([]*models.Entitlement, error)
 
@@ -412,6 +414,37 @@ func (s *MemoryStore) HasActiveEntitlement(_ context.Context, userID, subjectID 
 		}
 	}
 	return false, nil
+}
+
+// GetActiveEntitlement returns the active unexpired entitlement for (userID, subjectID), or nil if none.
+func (s *MemoryStore) GetActiveEntitlement(_ context.Context, userID, subjectID string) (*models.Entitlement, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	for _, e := range s.entitlements {
+		if e.UserID == userID && e.SubjectID == subjectID && e.Active && e.ExpiresAt.After(now) {
+			cp := *e
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+// GetActiveEntitlements returns a map of subjectID -> active unexpired entitlement for the user.
+func (s *MemoryStore) GetActiveEntitlements(_ context.Context, userID string) (map[string]*models.Entitlement, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	result := make(map[string]*models.Entitlement)
+	for _, e := range s.entitlements {
+		if e.UserID == userID && e.Active && e.ExpiresAt.After(now) {
+			cp := *e
+			result[e.SubjectID] = &cp
+		}
+	}
+	return result, nil
 }
 
 // GetActiveEntitlementSubjectIDs returns a set of subject IDs owned by user with expires_at > now.
