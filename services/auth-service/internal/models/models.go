@@ -89,3 +89,53 @@ func (a *Admin) IsActive(now time.Time) bool {
 	}
 	return a.ExpiresAt.After(now)
 }
+
+// AuditLog represents an entry in the admin_audit_log collection.
+// Schema matches SPEC Section 5: _id, actor_id, actor_name, action, target_type, target_id, detail, created_at.
+// No IP address is stored.
+type AuditLog struct {
+	ID         string    `json:"id" bson:"_id"`
+	ActorID    string    `json:"actor_id" bson:"actor_id"`
+	ActorName  string    `json:"actor_name" bson:"actor_name"`
+	Action     string    `json:"action" bson:"action"`
+	TargetType string    `json:"target_type" bson:"target_type"`
+	TargetID   string    `json:"target_id" bson:"target_id"`
+	Detail     string    `json:"detail,omitempty" bson:"detail,omitempty"`
+	CreatedAt  time.Time `json:"created_at" bson:"created_at"`
+}
+
+// UserDTO represents a sanitized account view for admin listing and detail endpoints.
+// Never exposes password_hash, OTP, or reset token fields.
+type UserDTO struct {
+	ID            string     `json:"id"`
+	FullName      string     `json:"full_name"`
+	Email         string     `json:"email"`
+	Phone         string     `json:"phone"`
+	Status        UserStatus `json:"status"`
+	StatusReason  string     `json:"status_reason,omitempty"`
+	EmailVerified bool       `json:"email_verified"`
+	CreatedAt     time.Time  `json:"created_at"`
+	SuspendedAt   time.Time  `json:"suspended_at,omitempty"`
+	ReactivatedAt time.Time  `json:"reactivated_at,omitempty"`
+	DeletedAt     time.Time  `json:"deleted_at,omitempty"`
+}
+
+// ToDTO converts a User into a sanitized UserDTO.
+func (u *User) ToDTO() *UserDTO {
+	if u == nil {
+		return nil
+	}
+	return &UserDTO{
+		ID:            u.ID,
+		FullName:      u.FullName,
+		Email:         u.Email,
+		Phone:         u.Phone,
+		Status:        u.EffectiveStatus(),
+		StatusReason:  u.StatusReason,
+		EmailVerified: u.EmailVerified,
+		CreatedAt:     u.CreatedAt,
+		SuspendedAt:   u.SuspendedAt,
+		ReactivatedAt: u.ReactivatedAt,
+		DeletedAt:     u.DeletedAt,
+	}
+}

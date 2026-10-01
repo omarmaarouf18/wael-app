@@ -446,10 +446,172 @@ func runAdminStoreSuite(t *testing.T, s Store) {
 	}
 }
 
+func runPhase15StoreSuite(t *testing.T, s Store) {
+	ctx := context.Background()
+
+	// 1. Audit log create and list (newest first, pagination)
+	t0 := time.Now().Add(-2 * time.Hour).Truncate(time.Millisecond)
+	t1 := time.Now().Add(-1 * time.Hour).Truncate(time.Millisecond)
+	t2 := time.Now().Truncate(time.Millisecond)
+
+	log1 := &models.AuditLog{
+		ActorID:    "adm-1",
+		ActorName:  "Admin One",
+		Action:     "account_suspend",
+		TargetType: "user",
+		TargetID:   "u-target-1",
+		Detail:     "violating terms",
+		CreatedAt:  t0,
+	}
+	log2 := &models.AuditLog{
+		ActorID:    "adm-1",
+		ActorName:  "Admin One",
+		Action:     "account_reactivate",
+		TargetType: "user",
+		TargetID:   "u-target-1",
+		Detail:     "resolved",
+		CreatedAt:  t1,
+	}
+	log3 := &models.AuditLog{
+		ActorID:    "adm-2",
+		ActorName:  "Admin Two",
+		Action:     "account_delete",
+		TargetType: "user",
+		TargetID:   "u-target-2",
+		Detail:     "requested by user",
+		CreatedAt:  t2,
+	}
+
+	for _, l := range []*models.AuditLog{log1, log2, log3} {
+		if err := s.CreateAuditLog(ctx, l); err != nil {
+			t.Fatalf("CreateAuditLog: %v", err)
+		}
+		if l.ID == "" {
+			t.Fatalf("expected CreateAuditLog to assign an ID")
+		}
+	}
+
+	// List audit logs: newest first -> log3, log2, log1
+	logs, total, err := s.ListAuditLogs(ctx, 1, 2)
+	if err != nil {
+		t.Fatalf("ListAuditLogs page 1 limit 2: %v", err)
+	}
+	if total != 3 {
+		t.Fatalf("expected total 3 audit logs, got %d", total)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("expected 2 items on page 1, got %d", len(logs))
+	}
+	if logs[0].Action != "account_delete" || logs[1].Action != "account_reactivate" {
+		t.Fatalf("expected newest first order, got %s then %s", logs[0].Action, logs[1].Action)
+	}
+
+	logsPage2, total2, err := s.ListAuditLogs(ctx, 2, 2)
+	if err != nil {
+		t.Fatalf("ListAuditLogs page 2 limit 2: %v", err)
+	}
+	if total2 != 3 || len(logsPage2) != 1 || logsPage2[0].Action != "account_suspend" {
+		t.Fatalf("unexpected page 2 results: total=%d, len=%d, action=%s", total2, len(logsPage2), logsPage2[0].Action)
+	}
+
+	// 2. ListUsers with status and search filters
+	now := time.Now().Truncate(time.Millisecond)
+	u1 := &models.User{
+		ID:           "u-search-1",
+		FullName:     "Hassan Mohamed",
+		Email:        "hassan@example.com",
+		Phone:        "+201011112222",
+		PasswordHash: "h1",
+		Role:         models.RoleUser,
+		Status:       models.StatusActive,
+		CreatedAt:    now.Add(-3 * time.Minute),
+	}
+	u2 := &models.User{
+		ID:           "u-search-2",
+		FullName:     "Special .* Name",
+		Email:        "regex@example.com",
+		Phone:        "+201033334444",
+		PasswordHash: "h2",
+		Role:         models.RoleUser,
+		Status:       models.StatusSuspended,
+		CreatedAt:    now.Add(-2 * time.Minute),
+	}
+	u3 := &models.User{
+		ID:           "u-search-3",
+		FullName:     "Deleted Person",
+		Email:        "deleted@example.com",
+		Phone:        "+201055556666",
+		PasswordHash: "h3",
+		Role:         models.RoleUser,
+		Status:       models.StatusDeleted,
+		CreatedAt:    now.Add(-1 * time.Minute),
+	}
+	for _, u := range []*models.User{u1, u2, u3} {
+		if err := s.Create(ctx, u); err != nil {
+			t.Fatalf("Create user %s: %v", u.ID, err)
+		}
+		// In Mongo, Create sets status to active if unset, but u2 is suspended and u3 is deleted; ensure status persisted
+		if u.Status != models.StatusActive {
+			_ = s.SetStatus(ctx, u.ID, string(models.StatusActive), string(u.Status), "init", now)
+		}
+	}
+
+	// Status filter
+	activeList, totalActive, err := s.ListUsers(ctx, UserFilter{Status: "active"})
+	if err != nil {
+		t.Fatalf("ListUsers active: %v", err)
+	}
+	if totalActive < 1 {
+		t.Fatalf("expected at least 1 active user, got %d", totalActive)
+	}
+	for _, u := range activeList {
+		if u.EffectiveStatus() != models.StatusActive {
+			t.Errorf("expected active user, got %s (%s)", u.ID, u.EffectiveStatus())
+		}
+	}
+
+	// Regex escaping check: Search ".*" must match ONLY u2 literally, NOT all users
+	regexList, totalRegex, err := s.ListUsers(ctx, UserFilter{Search: ".*"})
+	if err != nil {
+		t.Fatalf("ListUsers regex escaping: %v", err)
+	}
+	if totalRegex != 1 || len(regexList) != 1 || regexList[0].ID != "u-search-2" {
+		t.Fatalf("expected exact literal match for '.*' (u-search-2), got total=%d, len=%d", totalRegex, len(regexList))
+	}
+
+	// Search by normalized phone
+	phoneList, totalPhone, err := s.ListUsers(ctx, UserFilter{Search: "01011112222", NormalizedPhone: "+201011112222"})
+	if err != nil {
+		t.Fatalf("ListUsers phone: %v", err)
+	}
+	if totalPhone != 1 || len(phoneList) != 1 || phoneList[0].ID != "u-search-1" {
+		t.Fatalf("expected match by normalized phone for u-search-1, got %d matches", totalPhone)
+	}
+
+	// Search by ID exact
+	idList, totalID, err := s.ListUsers(ctx, UserFilter{Search: "u-search-1"})
+	if err != nil {
+		t.Fatalf("ListUsers by id: %v", err)
+	}
+	if totalID != 1 || len(idList) != 1 || idList[0].ID != "u-search-1" {
+		t.Fatalf("expected match by id for u-search-1, got %d matches", totalID)
+	}
+
+	// 3. SetStatus CAS active|suspended -> deleted
+	if err := s.SetStatus(ctx, "u-search-1", "active|suspended", string(models.StatusDeleted), "deleted CAS test", now); err != nil {
+		t.Fatalf("SetStatus active->deleted failed: %v", err)
+	}
+	// Try deleting again -> must fail with ErrStatusConflict (already deleted)
+	if err := s.SetStatus(ctx, "u-search-1", "active|suspended", string(models.StatusDeleted), "repeat delete", now); !errors.Is(err, ErrStatusConflict) {
+		t.Fatalf("expected ErrStatusConflict when deleting already deleted user, got: %v", err)
+	}
+}
+
 func TestMemoryStore_CRUD(t *testing.T) {
 	s := NewMemoryStore()
 	runUserStoreSuite(t, s)
 	runAdminStoreSuite(t, s)
+	runPhase15StoreSuite(t, s)
 }
 
 func TestMongoStore_CRUD(t *testing.T) {
@@ -470,6 +632,7 @@ func TestMongoStore_CRUD(t *testing.T) {
 
 	runUserStoreSuite(t, s)
 	runAdminStoreSuite(t, s)
+	runPhase15StoreSuite(t, s)
 }
 
 func TestMongoStore_RawLegacyDocWithoutStatusField(t *testing.T) {

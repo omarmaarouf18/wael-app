@@ -5,19 +5,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/models"
+	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// MongoStore persists users in the "users" collection, blocklist entries in "blocklist", and admins in "admins".
+// MongoStore persists users in the "users" collection, blocklist entries in "blocklist",
+// admins in "admins", and audit logs in "admin_audit_log".
 type MongoStore struct {
-	coll      *mongo.Collection
-	blockColl *mongo.Collection
-	adminColl *mongo.Collection
+	coll           *mongo.Collection
+	blockColl      *mongo.Collection
+	adminColl      *mongo.Collection
+	adminAuditColl *mongo.Collection
 }
 
 // NewMongoStore connects to MongoDB, ensures unique indexes on email, phone (partial for active/suspended),
@@ -87,7 +91,34 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		return nil, fmt.Errorf("store: ensure admin token_hash index: %w", err)
 	}
 
-	return &MongoStore{coll: coll, blockColl: blockColl, adminColl: adminColl}, nil
+	// Ensure indexes on admin_audit_log: (actor_id, created_at) and (target_type, target_id)
+	adminAuditColl := db.Collection("admin_audit_log")
+	_, err = adminAuditColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "actor_id", Value: 1},
+			{Key: "created_at", Value: -1},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: ensure admin_audit_log actor_id_created_at index: %w", err)
+	}
+
+	_, err = adminAuditColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "target_type", Value: 1},
+			{Key: "target_id", Value: 1},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: ensure admin_audit_log target_type_target_id index: %w", err)
+	}
+
+	return &MongoStore{
+		coll:           coll,
+		blockColl:      blockColl,
+		adminColl:      adminColl,
+		adminAuditColl: adminAuditColl,
+	}, nil
 }
 
 // Create inserts a new user. Status defaults to "active" explicitly for new users.
@@ -204,7 +235,19 @@ func (s *MongoStore) SetStatus(ctx context.Context, userID, from, to, reason str
 	}
 
 	var filter bson.M
-	if from == string(models.StatusActive) || from == "" {
+	if from == "active|suspended" {
+		filter = bson.M{
+			"_id": userID,
+			"$or": []bson.M{
+				{"status": string(models.StatusActive)},
+				{"status": models.StatusActive},
+				{"status": ""},
+				{"status": bson.M{"$exists": false}},
+				{"status": string(models.StatusSuspended)},
+				{"status": models.StatusSuspended},
+			},
+		}
+	} else if from == string(models.StatusActive) || from == "" {
 		filter = bson.M{
 			"_id": userID,
 			"$or": []bson.M{
@@ -355,4 +398,139 @@ func (s *MongoStore) RevokeAdmin(ctx context.Context, id string, at time.Time) e
 		return ErrAdminNotFound
 	}
 	return nil
+}
+
+// ListUsers returns paginated users matching filter criteria.
+func (s *MongoStore) ListUsers(ctx context.Context, filter UserFilter) ([]*models.User, int, error) {
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	var andConditions []bson.M
+
+	if filter.Status != "" {
+		if filter.Status == string(models.StatusActive) {
+			andConditions = append(andConditions, bson.M{
+				"$or": []bson.M{
+					{"status": string(models.StatusActive)},
+					{"status": models.StatusActive},
+					{"status": ""},
+					{"status": bson.M{"$exists": false}},
+				},
+			})
+		} else {
+			andConditions = append(andConditions, bson.M{"status": filter.Status})
+		}
+	}
+
+	if filter.Search != "" {
+		escaped := regexp.QuoteMeta(filter.Search)
+		searchOr := []bson.M{
+			{"_id": filter.Search},
+			{"full_name": bson.M{"$regex": escaped, "$options": "i"}},
+			{"email": bson.M{"$regex": escaped, "$options": "i"}},
+			{"phone": bson.M{"$regex": escaped, "$options": "i"}},
+		}
+		if filter.NormalizedPhone != "" && filter.NormalizedPhone != filter.Search {
+			searchOr = append(searchOr, bson.M{"phone": filter.NormalizedPhone})
+		}
+		andConditions = append(andConditions, bson.M{"$or": searchOr})
+	}
+
+	query := bson.M{}
+	if len(andConditions) == 1 {
+		query = andConditions[0]
+	} else if len(andConditions) > 1 {
+		query = bson.M{"$and": andConditions}
+	}
+
+	total, err := s.coll.CountDocuments(ctx, query)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: count users: %w", err)
+	}
+
+	skip := int64((page - 1) * limit)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(limit))
+
+	cursor, err := s.coll.Find(ctx, query, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: find users: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var users []*models.User
+	if err := cursor.All(ctx, &users); err != nil {
+		return nil, 0, fmt.Errorf("store: decode users: %w", err)
+	}
+	if users == nil {
+		users = []*models.User{}
+	}
+	return users, int(total), nil
+}
+
+// CreateAuditLog records an admin action in admin_audit_log.
+func (s *MongoStore) CreateAuditLog(ctx context.Context, entry *models.AuditLog) error {
+	if entry.ID == "" {
+		id, err := jwtutil.GenerateUUID()
+		if err != nil {
+			return err
+		}
+		entry.ID = id
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.adminAuditColl.InsertOne(ctx, entry)
+	if err != nil {
+		return fmt.Errorf("store: insert audit log: %w", err)
+	}
+	return nil
+}
+
+// ListAuditLogs returns paginated audit log entries, newest first.
+func (s *MongoStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	total, err := s.adminAuditColl.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: count audit logs: %w", err)
+	}
+
+	skip := int64((page - 1) * limit)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(limit))
+
+	cursor, err := s.adminAuditColl.Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: find audit logs: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var logs []*models.AuditLog
+	if err := cursor.All(ctx, &logs); err != nil {
+		return nil, 0, fmt.Errorf("store: decode audit logs: %w", err)
+	}
+	if logs == nil {
+		logs = []*models.AuditLog{}
+	}
+	return logs, int(total), nil
 }

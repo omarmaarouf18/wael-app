@@ -157,6 +157,7 @@ Notes:
 - `users`: `full_name`, `phone` (normalized), `status` (`active`/`suspended`/`deleted`), `status_reason`, `suspended_at`, `reactivated_at`, `deleted_at`. Unique partial index on `phone` for non-deleted accounts. Existing documents with no `status` are treated as `active` via a helper such as `EffectiveStatus()`.
 - `admins`: `_id` (admin id), `name`, `token_hash` (SHA-256, never plaintext), `created_at`, `expires_at`, `revoked_at`.
 - `blocklist`: `kind` (`email`/`phone`), `hash`, `reason`, `created_at`; unique (`kind`, `hash`).
+- `admin_audit_log` *(added 2026-10-01, owner)*: `_id`, `actor_id`, `actor_name`, `action`, `target_type`, `target_id`, `detail`, `created_at`; no IP. Compound indexes on (`actor_id`, `created_at`) and (`target_type`, `target_id`).
 
 ## 6. API
 
@@ -214,6 +215,7 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 | `GET /accounts?search=&status=&page=&limit=` | Search by name, email, phone, or id |
 | `POST /accounts/{id}/suspend` (reason 1-1000), `POST /accounts/{id}/reactivate` | Atomic compare-and-set. Same-state change returns 409 |
 | `DELETE /accounts/{id}` (reason required) | Soft delete plus blocklist entries (D8) |
+| `GET /audit-log?page=&limit=` | Audit trail (auth actions, newest first) |
 
 ## 7. Access rules (the heart)
 

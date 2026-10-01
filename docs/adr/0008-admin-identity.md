@@ -81,6 +81,13 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 3. **Lockout**: Reuse the existing `Lockout` interface and thresholds, with separate key prefixes `"admin-verify-ip:"` and `"admin-verify-tok:<hash>"`.
 4. **Listener Ports & Compose Isolation**: `ADMIN_LISTEN_ADDR` default `":9001"` for `auth-service` (`academy-service` will use `":9002"` later). Required outside local/test. No `ports:` in compose.
 
+### 9. Amendment (2026-10-01, Owner Decision on Audit Log Ownership for Phase 1.5)
+
+1. **Per-Service Ownership**: Each service owns its own `admin_audit_log` collection in its own database, following the exact `docs/core-service/SPEC.md` Section 5 schema (`_id`, `actor_id`, `actor_name`, `action`, `target_type`, `target_id`, `detail`, `created_at`; no IP addresses persisted).
+2. **Action Segregation**: `auth-service` records account management actions (`account_suspend`, `account_reactivate`, `account_delete`) in its database (`auth_db`); `academy-service` records catalog, review, and entitlement actions in its database.
+3. **Endpoint**: Each service exposes `GET /internal/admin/audit-log?page=&limit=` on its admin listener (`ADMIN_LISTEN_ADDR`), authenticated via `X-Internal-Token` and `X-Admin-Token` (validated via `auth-service`).
+4. **Console Merging**: The admin console (Phase 6) queries both services and merges entries ordered by `created_at` descending. No shared database and no cross-service database writes.
+
 ## Consequences
 
 

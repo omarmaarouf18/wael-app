@@ -74,3 +74,31 @@ func TestAdmin_IsActive(t *testing.T) {
 		t.Fatal("revoked admin must not be active")
 	}
 }
+
+func TestUser_ToDTO(t *testing.T) {
+	var nilUser *User
+	if nilUser.ToDTO() != nil {
+		t.Fatal("expected nil DTO for nil user")
+	}
+
+	now := time.Now().UTC()
+	u := &User{
+		ID:                  "u1",
+		FullName:            "Alice Test",
+		Email:               "alice@example.com",
+		Phone:               "+201012345678",
+		PasswordHash:        "secret-hash",
+		OTPHash:             "otp-hash",
+		OTPExpiresAt:        now.Add(time.Minute),
+		ResetTokenHash:      "reset-hash",
+		ResetTokenExpiresAt: now.Add(time.Minute),
+		Role:                RoleUser,
+		Status:              StatusActive,
+		CreatedAt:           now,
+	}
+
+	dto := u.ToDTO()
+	if dto.ID != u.ID || dto.FullName != u.FullName || dto.Email != u.Email || dto.Phone != u.Phone || dto.Status != StatusActive {
+		t.Fatalf("DTO fields mismatch: %+v", dto)
+	}
+}

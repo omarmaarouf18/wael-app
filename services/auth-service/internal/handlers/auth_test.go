@@ -471,6 +471,15 @@ func (f *failingStore) FindAdminByID(ctx context.Context, id string) (*models.Ad
 	return nil, f.err
 }
 func (f *failingStore) RevokeAdmin(ctx context.Context, id string, at time.Time) error { return f.err }
+func (f *failingStore) ListUsers(ctx context.Context, filter store.UserFilter) ([]*models.User, int, error) {
+	return nil, 0, f.err
+}
+func (f *failingStore) CreateAuditLog(ctx context.Context, entry *models.AuditLog) error {
+	return f.err
+}
+func (f *failingStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error) {
+	return nil, 0, f.err
+}
 
 func TestSignup_StoreDown_Returns503(t *testing.T) {
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")

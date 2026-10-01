@@ -7,10 +7,13 @@ package store
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/models"
+	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 )
 
 var (
@@ -27,6 +30,15 @@ var (
 	ErrAdminNotFound = errors.New("store: admin not found")
 )
 
+// UserFilter specifies filtering and pagination parameters for ListUsers.
+type UserFilter struct {
+	Search          string
+	NormalizedPhone string
+	Status          string
+	Page            int
+	Limit           int
+}
+
 // Store is the user persistence contract.
 type Store interface {
 	Create(ctx context.Context, u *models.User) error
@@ -36,6 +48,7 @@ type Store interface {
 	Update(ctx context.Context, u *models.User) error
 	SetStatus(ctx context.Context, userID, from, to, reason string, at time.Time) error
 	Count(ctx context.Context) (int, error)
+	ListUsers(ctx context.Context, filter UserFilter) ([]*models.User, int, error)
 
 	IsBlocked(ctx context.Context, kind, hash string) (bool, error)
 	AddToBlocklist(ctx context.Context, kind, hash, reason string, at time.Time) error
@@ -44,6 +57,9 @@ type Store interface {
 	FindAdminByTokenHash(ctx context.Context, tokenHash string) (*models.Admin, error)
 	FindAdminByID(ctx context.Context, id string) (*models.Admin, error)
 	RevokeAdmin(ctx context.Context, id string, at time.Time) error
+
+	CreateAuditLog(ctx context.Context, entry *models.AuditLog) error
+	ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error)
 }
 
 type blockEntry struct {
@@ -61,6 +77,7 @@ type MemoryStore struct {
 	blocklist    map[string]blockEntry
 	adminsByID   map[string]*models.Admin
 	adminsByHash map[string]*models.Admin
+	auditLogs    []*models.AuditLog
 }
 
 // NewMemoryStore creates an empty MemoryStore.
@@ -71,6 +88,7 @@ func NewMemoryStore() *MemoryStore {
 		blocklist:    map[string]blockEntry{},
 		adminsByID:   map[string]*models.Admin{},
 		adminsByHash: map[string]*models.Admin{},
+		auditLogs:    []*models.AuditLog{},
 	}
 }
 
@@ -207,13 +225,19 @@ func (s *MemoryStore) SetStatus(_ context.Context, userID, from, to, reason stri
 	}
 
 	currentStatus := string(existing.EffectiveStatus())
-	expectedFrom := from
-	if expectedFrom == "" {
-		expectedFrom = string(models.StatusActive)
-	}
+	if from == "active|suspended" {
+		if currentStatus != string(models.StatusActive) && currentStatus != string(models.StatusSuspended) {
+			return ErrStatusConflict
+		}
+	} else {
+		expectedFrom := from
+		if expectedFrom == "" {
+			expectedFrom = string(models.StatusActive)
+		}
 
-	if currentStatus != expectedFrom {
-		return ErrStatusConflict
+		if currentStatus != expectedFrom {
+			return ErrStatusConflict
+		}
 	}
 
 	if existing.Phone != "" && (models.UserStatus(to) == models.StatusActive || models.UserStatus(to) == models.StatusSuspended) {
@@ -337,4 +361,118 @@ func (s *MemoryStore) RevokeAdmin(_ context.Context, id string, at time.Time) er
 	}
 	adm.RevokedAt = at
 	return nil
+}
+
+// ListUsers returns paginated users matching filter criteria.
+func (s *MemoryStore) ListUsers(_ context.Context, filter UserFilter) ([]*models.User, int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var matched []*models.User
+	searchLower := strings.ToLower(filter.Search)
+
+	for _, u := range s.byID {
+		if filter.Status != "" {
+			if string(u.EffectiveStatus()) != filter.Status {
+				continue
+			}
+		}
+
+		if filter.Search != "" {
+			matches := u.ID == filter.Search ||
+				strings.Contains(strings.ToLower(u.FullName), searchLower) ||
+				strings.Contains(strings.ToLower(u.Email), searchLower) ||
+				strings.Contains(u.Phone, filter.Search) ||
+				(filter.NormalizedPhone != "" && u.Phone == filter.NormalizedPhone)
+			if !matches {
+				continue
+			}
+		}
+
+		matched = append(matched, cloneUser(u))
+	}
+
+	sort.Slice(matched, func(i, j int) bool {
+		return matched[i].CreatedAt.After(matched[j].CreatedAt)
+	})
+
+	total := len(matched)
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	start := (page - 1) * limit
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	return matched[start:end], total, nil
+}
+
+// CreateAuditLog records an admin action in admin_audit_log.
+func (s *MemoryStore) CreateAuditLog(_ context.Context, entry *models.AuditLog) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if entry.ID == "" {
+		id, err := jwtutil.GenerateUUID()
+		if err != nil {
+			return err
+		}
+		entry.ID = id
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
+	cp := *entry
+	s.auditLogs = append(s.auditLogs, &cp)
+	return nil
+}
+
+// ListAuditLogs returns paginated audit log entries, newest first.
+func (s *MemoryStore) ListAuditLogs(_ context.Context, page, limit int) ([]*models.AuditLog, int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	logs := make([]*models.AuditLog, len(s.auditLogs))
+	for i, l := range s.auditLogs {
+		cp := *l
+		logs[i] = &cp
+	}
+
+	sort.Slice(logs, func(i, j int) bool {
+		return logs[i].CreatedAt.After(logs[j].CreatedAt)
+	})
+
+	total := len(logs)
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	start := (page - 1) * limit
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	return logs[start:end], total, nil
 }

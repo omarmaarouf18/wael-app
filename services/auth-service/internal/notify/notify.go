@@ -100,3 +100,30 @@ func PasswordChanged(ctx context.Context, baseURL, internalToken, userID string)
 		"تم تغيير كلمة المرور للتو. تواصل مع الدعم إذا لم تكن أنت.",
 		"security", "/settings")
 }
+
+// AccountSuspended notifies an account when suspended (generic text, no reason exposed).
+func AccountSuspended(ctx context.Context, baseURL, internalToken, userID string) error {
+	return Push(ctx, baseURL, internalToken, userID,
+		"Account suspended", "تم تعليق الحساب",
+		"Your account has been suspended. Please contact support.",
+		"تم تعليق حسابك. يرجى التواصل مع الدعم.",
+		"security", "/support")
+}
+
+// AccountReactivated notifies an account when reactivated.
+func AccountReactivated(ctx context.Context, baseURL, internalToken, userID string) error {
+	return Push(ctx, baseURL, internalToken, userID,
+		"Account reactivated", "تم إعادة تفعيل الحساب",
+		"Your account has been reactivated. You may now sign in.",
+		"تم إعادة تفعيل حسابك. يمكنك الآن تسجيل الدخول.",
+		"security", "/login")
+}
+
+// AccountDeleted notifies an account when deleted.
+func AccountDeleted(ctx context.Context, baseURL, internalToken, userID string) error {
+	return Push(ctx, baseURL, internalToken, userID,
+		"Account deleted", "تم حذف الحساب",
+		"Your account has been deleted.",
+		"تم حذف حسابك.",
+		"security", "/login")
+}
