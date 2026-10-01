@@ -110,6 +110,8 @@ Frontend F2: the composition gate fails closed (missing `frontend/lib/screens` i
 
 Frontend F3a: all non-catalog screens (splash, OTP, forgot password, login, signup, notifications, settings, main shell) now build on `AppShell` and the shared widget layer, one commit per screen, with English and Arabic widget tests (`test/screen_harness.dart`); catalog screens (home, courses, course detail, ebook, payment) are untouched and carry the remaining baseline (35 entries, 298 violations). `DashboardScreenTemplate` was deleted and `PrimaryButton.isSecondary` removed. No screen has been run visually yet; the owner's manual Arabic check list is in the F3a report. Known finding: `courses_screen.dart:390` overflows a Row by 22px at 390px in Arabic.
 
+Frontend F3b (in progress): `AcademyRepository` (`HttpAcademyRepository`, models in `lib/models/academy_catalog.dart`) and `AcademyCatalogProvider` read the academy-service student routes (levels, subjects, subject detail); home and courses screens are on them with loading / error-with-retry / empty states; course detail, ebook and payment still use bundled mock data. The mock catalog provider is removed once course detail moves.
+
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
 RUNBOOK, DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
