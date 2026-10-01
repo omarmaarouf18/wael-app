@@ -3,6 +3,7 @@ go 1.26
 toolchain go1.26.6
 
 use (
+	./services/academy-service
 	./services/api-gateway
 	./services/auth-service
 	./services/notification-service

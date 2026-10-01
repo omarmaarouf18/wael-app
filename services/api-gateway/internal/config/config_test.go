@@ -21,6 +21,7 @@ func baseEnv(t *testing.T) {
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
 	setEnv(t, "AUTH_SERVICE_URL", "http://auth-service:3002")
 	setEnv(t, "NOTIFICATION_SERVICE_URL", "http://notification-service:3004")
+	setEnv(t, "ACADEMY_SERVICE_URL", "http://academy-service:3003")
 	_ = os.Unsetenv("TLS_CERT_PATH")
 	_ = os.Unsetenv("TLS_KEY_PATH")
 	_ = os.Unsetenv("TLS_CA_PATH")
@@ -38,6 +39,7 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "TLS_CA_PATH", "/tmp/ca.pem")
 	setEnv(t, "AUTH_SERVICE_URL", "https://auth-service:3002")
 	setEnv(t, "NOTIFICATION_SERVICE_URL", "https://notification-service:3004")
+	setEnv(t, "ACADEMY_SERVICE_URL", "https://academy-service:3003")
 }
 
 func TestLoad_HTTPDevNoTLS(t *testing.T) {
@@ -49,8 +51,8 @@ func TestLoad_HTTPDevNoTLS(t *testing.T) {
 	if cfg.TLSEnabled() {
 		t.Fatal("expected TLS disabled when cert paths empty")
 	}
-	if len(cfg.Routes) != 2 {
-		t.Fatalf("expected 2 routes, got %d", len(cfg.Routes))
+	if len(cfg.Routes) != 3 {
+		t.Fatalf("expected 3 routes, got %d", len(cfg.Routes))
 	}
 }
 
@@ -125,7 +127,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 	}
 
 	t.Run("all_required_unset_default_production", func(t *testing.T) {
-		for _, v := range append(requiredVars, "APP_ENV", "AUTH_SERVICE_URL", "NOTIFICATION_SERVICE_URL") {
+		for _, v := range append(requiredVars, "APP_ENV", "AUTH_SERVICE_URL", "NOTIFICATION_SERVICE_URL", "ACADEMY_SERVICE_URL") {
 			_ = os.Unsetenv(v)
 		}
 		_, err := Load()

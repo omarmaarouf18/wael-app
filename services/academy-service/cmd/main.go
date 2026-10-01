@@ -1,0 +1,154 @@
+// Command academy-service is the core learning platform service: catalog,
+// entitlements, access requests, video metadata, and PDF storage.
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/config"
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/handlers"
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
+	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
+	"github.com/omarmaarouf18/wael-app/shared/infra/redact"
+	"github.com/omarmaarouf18/wael-app/shared/infra/tlsutil"
+)
+
+func runCheckEnv(stdout, stderr io.Writer) int {
+	if _, err := config.Load(); err != nil {
+		fmt.Fprintf(stderr, "check-env: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "check-env: ok")
+	return 0
+}
+
+func main() {
+	checkEnv := flag.Bool("check-env", false, "validate environment variables and exit")
+	flag.Parse()
+	if *checkEnv {
+		os.Exit(runCheckEnv(os.Stdout, os.Stderr))
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("[ACADEMY] %v", err)
+	}
+	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
+
+	ctx := context.Background()
+	var st store.Store
+	if cfg.MongoURI != "" {
+		ms, err := store.NewMongoStore(ctx, cfg.MongoURI, cfg.MongoDatabase)
+		if err != nil {
+			log.Fatalf("[ACADEMY] mongo (%s): %v", redact.RedactURI(cfg.MongoURI), err)
+		}
+		st = ms
+		log.Printf("[ACADEMY] active store: MongoDB (database: %s)", cfg.MongoDatabase)
+	} else {
+		if !dev {
+			log.Fatalf("[ACADEMY] memory store not permitted outside dev: MONGO_URI is required")
+		}
+		st = store.NewMemoryStore()
+		log.Printf("[ACADEMY] active store: in-process memory (localhost dev only)")
+	}
+
+	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL)
+
+	// Build and start admin listener on internal network
+	adminRunner, err := buildServer(cfg, cfg.AdminListenAddr, srv.AdminHandler())
+	if err != nil {
+		log.Fatalf("[ACADEMY] admin listener: %v", err)
+	}
+	go func() {
+		fmt.Printf("academy-service admin listener %s on %s\n", adminRunner.desc, cfg.AdminListenAddr)
+		if err := adminRunner.serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("[ACADEMY] admin listener: %v", err)
+		}
+	}()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", handlers.Health)
+
+	var handler http.Handler = mux
+	handler = srv.GatewayAuth(handler)
+	handler = handlerutil.MaxBytesMiddleware(1 << 20)(handler)
+
+	addr := ":" + cfg.Port
+	publicRunner, err := buildServer(cfg, addr, handler)
+	if err != nil {
+		log.Fatalf("[ACADEMY] %v", err)
+	}
+	fmt.Printf("academy-service listening %s on %s\n", publicRunner.desc, addr)
+	log.Fatal(publicRunner.serve())
+}
+
+type serverRunner struct {
+	server *http.Server
+	serve  func() error
+	desc   string
+}
+
+// buildServer constructs an http.Server and its serve function following the
+// TLS/mTLS policy:
+//   - Outside dev: HTTPS + mTLS with client CA verification is strictly required.
+//     TLS without client CA or plain HTTP returns an error (fail closed).
+//   - Dev/local: plain HTTP, TLS, or mTLS are accepted per configuration.
+func buildServer(cfg *config.Config, addr string, handler http.Handler) (*serverRunner, error) {
+	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
+	if cfg.TLSEnabled() {
+		if cfg.TLSCAPath != "" {
+			tlsCfg, err := tlsutil.LoadServerTLSConfig(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath)
+			if err != nil {
+				return nil, fmt.Errorf("server mTLS: %w", err)
+			}
+			httpSrv := &http.Server{
+				Addr:              addr,
+				Handler:           handler,
+				ReadHeaderTimeout: 5 * time.Second,
+				TLSConfig:         tlsCfg,
+			}
+			return &serverRunner{
+				server: httpSrv,
+				serve:  func() error { return httpSrv.ListenAndServeTLS("", "") },
+				desc:   "HTTPS+mTLS",
+			}, nil
+		}
+		if !dev {
+			return nil, errors.New("server TLS without client CA not permitted outside dev: TLS_CA_PATH is required")
+		}
+		httpSrv := &http.Server{
+			Addr:              addr,
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
+			TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+		return &serverRunner{
+			server: httpSrv,
+			serve:  func() error { return httpSrv.ListenAndServeTLS(cfg.TLSCertPath, cfg.TLSKeyPath) },
+			desc:   "HTTPS",
+		}, nil
+	}
+
+	if !dev {
+		return nil, errors.New("plain HTTP not permitted outside dev: TLS is required")
+	}
+	httpSrv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return &serverRunner{
+		server: httpSrv,
+		serve:  func() error { return httpSrv.ListenAndServe() },
+		desc:   "HTTP",
+	}, nil
+}

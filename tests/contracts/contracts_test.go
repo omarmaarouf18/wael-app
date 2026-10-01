@@ -174,8 +174,22 @@ func TestContract_GatewayHasNoInternalRoute(t *testing.T) {
 	}
 }
 
-// 5. Admin port isolation contract: verify docker-compose.yml does not publish port 9001 under ports:
-// and that auth-service has no ports section (only expose / internal network).
+// 4b. Gateway academy route contract: verify gateway routes /api/v1/academy/ to academy-service with prefix stripped.
+func TestContract_GatewayAcademyRouteExists(t *testing.T) {
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^TestGateway_AcademyRoute$", "github.com/omarmaarouf18/wael-app/api-gateway/internal/proxy")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gateway academy route contract verification failed: %v\nOutput:\n%s", err, string(out))
+	}
+	outStr := string(out)
+	if !strings.Contains(outStr, "PASS: TestGateway_AcademyRoute") {
+		t.Errorf("contract verification missing TestGateway_AcademyRoute pass:\n%s", outStr)
+	}
+}
+
+// 5. Admin port isolation contract: verify docker-compose.yml does not publish admin ports
+// (port 9001 for auth-service, port 9002 for academy-service) under ports:
+// and that neither service defines a ports section (only expose / internal network).
 func TestContract_AdminPortNotPublishedInCompose(t *testing.T) {
 	candidates := []string{
 		"../../infrastructure/docker-compose.yml",
@@ -200,7 +214,8 @@ func TestContract_AdminPortNotPublishedInCompose(t *testing.T) {
 	currentService := ""
 	inPortsSection := false
 	authServiceHasPorts := false
-	port9001Published := false
+	academyServiceHasPorts := false
+	adminPortPublished := false
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -218,14 +233,17 @@ func TestContract_AdminPortNotPublishedInCompose(t *testing.T) {
 			if currentService == "auth-service" {
 				authServiceHasPorts = true
 			}
+			if currentService == "academy-service" {
+				academyServiceHasPorts = true
+			}
 			continue
 		}
 
 		// If indentation drops back to 4 spaces and it's not a list item under ports
 		if inPortsSection {
 			if strings.HasPrefix(line, "      - ") {
-				if strings.Contains(line, "9001") {
-					port9001Published = true
+				if strings.Contains(line, "9001") || strings.Contains(line, "9002") {
+					adminPortPublished = true
 				}
 			} else if !strings.HasPrefix(line, "      ") && trimmed != "" {
 				inPortsSection = false
@@ -240,7 +258,10 @@ func TestContract_AdminPortNotPublishedInCompose(t *testing.T) {
 	if authServiceHasPorts {
 		t.Errorf("contract violation: auth-service in %s defines a ports section (must use internal network only, no ports published)", pathUsed)
 	}
-	if port9001Published {
-		t.Errorf("contract violation: port 9001 is published under ports: in %s (must not be publicly exposed)", pathUsed)
+	if academyServiceHasPorts {
+		t.Errorf("contract violation: academy-service in %s defines a ports section (must use internal network only, no ports published)", pathUsed)
+	}
+	if adminPortPublished {
+		t.Errorf("contract violation: admin port (9001/9002) is published under ports: in %s (must not be publicly exposed)", pathUsed)
 	}
 }

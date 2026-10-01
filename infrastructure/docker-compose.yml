@@ -79,6 +79,7 @@ services:
       REDIS_URI: ${REDIS_URI}
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
       NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL}
+      ACADEMY_SERVICE_URL: ${ACADEMY_SERVICE_URL}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN}
       APP_ENV: ${APP_ENV}
       APP_DOMAIN: ${APP_DOMAIN}
@@ -185,6 +186,47 @@ services:
     healthcheck:
       # notification-service enforces mTLS (client cert required), so the probe presents one.
       test: ["CMD-SHELL", "curl -sf --cert /app/certs/notification-service.crt --key /app/certs/notification-service.key --cacert /app/certs/ca.crt https://localhost:${NOTIFICATION_SERVICE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    networks:
+      - wael-net
+
+  academy-service:
+    build:
+      context: ../services/academy-service
+      dockerfile: Dockerfile
+      target: dev
+    container_name: wael-academy-service
+    restart: unless-stopped
+    expose:
+      - "${ACADEMY_SERVICE_PORT}"
+    volumes:
+      - ../services/academy-service:/app
+      - ./certs/ca.crt:/app/certs/ca.crt:ro
+      - ./certs/academy-service.crt:/app/certs/academy-service.crt:ro
+      - ./certs/academy-service.key:/app/certs/academy-service.key:ro
+      - ../shared/infra:/shared/infra:ro
+    environment:
+      PORT: ${ACADEMY_SERVICE_PORT}
+      MONGO_URI: ${MONGO_URI}
+      ACADEMY_MONGO_DATABASE: ${ACADEMY_MONGO_DATABASE}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+      APP_ENV: ${APP_ENV}
+      GATEWAY_SECRET: ${GATEWAY_SECRET}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      TLS_CERT_PATH: /app/certs/academy-service.crt
+      TLS_KEY_PATH: /app/certs/academy-service.key
+      TLS_CA_PATH: /app/certs/ca.crt
+      ADMIN_LISTEN_ADDR: ":9002"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      # academy-service enforces mTLS (client cert required), so the probe presents one.
+      test: ["CMD-SHELL", "curl -sf --cert /app/certs/academy-service.crt --key /app/certs/academy-service.key --cacert /app/certs/ca.crt https://localhost:${ACADEMY_SERVICE_PORT}/health"]
       interval: 10s
       timeout: 5s
       retries: 12

@@ -10,7 +10,7 @@ echo "Generating local root CA..."
 openssl genrsa -out ca.key 4096
 openssl req -x509 -new -nodes -key ca.key -sha256 -days 825 -out ca.crt -subj "/CN=Wael-App-Local-Root-CA"
 
-SERVICES=("api-gateway" "auth-service" "notification-service")
+SERVICES=("api-gateway" "auth-service" "notification-service" "academy-service")
 
 for service in "${SERVICES[@]}"; do
   echo "Generating certificate for service: $service..."

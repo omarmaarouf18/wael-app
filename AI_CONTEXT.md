@@ -3,9 +3,9 @@
 ## Current state
 Monorepo (`github.com/omarmaarouf18/wael-app`, public): api-gateway,
 auth-service (single role `user`, no tenants), notification-service (SSE,
-list, mark-read, internal push), shared/infra, Flutter app with real gateway
-auth, local compose (mongo:7, redis:7, mTLS), pre-push hook, CI. Branch:
-`develop` (work), `main` (fast-forward merges after CI).
+list, mark-read, internal push), academy-service (skeleton), shared/infra,
+Flutter app with real gateway auth, local compose (mongo:7, redis:7, mTLS),
+pre-push hook, CI. Branch: `develop` (work), `main` (fast-forward merges after CI).
 
 ## Done
 Skeleton, shared/infra, gateway+auth, notifications, Flutter wiring+rename,
@@ -88,6 +88,8 @@ Core Phase 1.5: `auth-service` admin account endpoints served ONLY on internal a
 
 Core Phase 1.6: notification-service stream caps: per-account concurrent stream cap (`STREAM_MAX_CONCURRENT`, default 3) with newest wins, oldest evicted policy (evicting oldest stream context without 429) and leak-free release on every exit path (defer with `sync.Once`); dead-connection detection in `Stream` via write/flush error checking and 10s write deadlines (`http.NewResponseController.SetWriteDeadline`); per-account connection open rate limit (`STREAM_OPEN_RATE_LIMIT`, default 10/min) keyed on JWT user id with 429 and `Retry-After` header; in-process memory tracking with zero slot leaks under concurrency, eviction, and context cancellation; limits added to config `Load()`, check-env, and `.env.example`.
 
+SPEC Phase 2.1: `academy-service` skeleton (`github.com/omarmaarouf18/wael-app/academy-service` Go module on Go 1.26 / toolchain go1.26.6, added to `go.work`); config `Load()` with allowlist-based `APP_ENV` and table tests; `--check-env` flag and test suite; `/health` on public listener behind `GatewayAuth` (`X-Gateway-Secret`); internal admin listener (`ADMIN_LISTEN_ADDR` defaulting to `:9002`, not published on host) serving only `/internal/admin/*` behind `X-Internal-Token` (empty 404 for 2.1); `buildServer` enforcing TLS/mTLS parity across public and admin listeners; `Store` interface with `MemoryStore` and `MongoStore` with `EnsureIndexes` (no domain collections invented yet) and `REQUIRE_DB`-gated MongoDB integration tests; docker-compose service definition with mTLS certs and healthcheck; gateway route `/api/v1/academy/` forwarding to `academy-service` with `/api/v1` stripped; contract tests asserting gateway academy route exists, gateway has no `/internal/` route, and admin ports 9001/9002 are not published in compose; added to CI `Build & Test` and `Security Scan` matrices (`Build & Test (services/academy-service, academy-service)` and `Security Scan (services/academy-service, academy-service)`).
+
 Owner decisions recorded (2026-10-01, docs only, nothing implemented): subscriptions expire per subject date set by the admin, copied per activation (D21) with re-purchase allowed and no activation of an already-expired subject (D20); every activation writes an append-only payment record at the subject's price; Android first, iOS deferred. SPEC Sections 1, 2, 3, 5, 7 and ADR-0007 amended.
 
 Frontend F0: `scripts/frontend_composition_gate.sh` ratchet gate (baseline `scripts/frontend_gate_baseline.txt`, 83 entries) runs in `.githooks/pre-push` and the CI `flutter-test` job; `docs/frontend/DESIGN_SYSTEM.md` and `docs/frontend/STATUS.md` added.
@@ -111,7 +113,7 @@ Owner question: reminder notification before a subscription expires (SPEC Sectio
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-SPEC Phase 2.1: academy-service skeleton (config, --check-env, health, Store interface with Memory and Mongo, both listeners).
+SPEC Phase 2.2: `levels` seed (bachelor years 1-4 and the vocational level only) and `GET /academy/levels` (levels with no published subjects are hidden).
 
 
 

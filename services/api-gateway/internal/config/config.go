@@ -111,6 +111,7 @@ func Load() (*Config, error) {
 	}{
 		{"/api/v1/auth/", "AUTH_SERVICE_URL", "http://auth-service:3002"},
 		{"/api/v1/notifications/", "NOTIFICATION_SERVICE_URL", "http://notification-service:3004"},
+		{"/api/v1/academy/", "ACADEMY_SERVICE_URL", "http://academy-service:3003"},
 	}
 	for _, rd := range routeDefs {
 		target := envOrDefault(rd.envKey, rd.defaultURL)

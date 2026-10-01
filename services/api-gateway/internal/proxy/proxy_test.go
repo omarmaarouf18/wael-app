@@ -95,6 +95,7 @@ func TestGateway_NoInternalRoute(t *testing.T) {
 	routes := []config.ServiceRoute{
 		{Prefix: "/api/v1/auth/", Target: backend.URL, StripPrefix: "/api/v1"},
 		{Prefix: "/api/v1/notifications/", Target: backend.URL, StripPrefix: "/api/v1"},
+		{Prefix: "/api/v1/academy/", Target: backend.URL, StripPrefix: "/api/v1"},
 	}
 	for _, route := range routes {
 		h, err := New(route, "gw-secret", nil, backend.Client().Transport)
@@ -131,5 +132,38 @@ func TestGateway_NoInternalRoute(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("expected 404 for unrouted internal path %s, got %d", path, rec.Code)
 		}
+	}
+}
+
+func TestGateway_AcademyRoute(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/academy/health" {
+			t.Errorf("backend path = %q, want /academy/health", got)
+		}
+		if got := r.Header.Get("X-Gateway-Secret"); got != "gw-secret" {
+			t.Errorf("X-Gateway-Secret = %q, want gw-secret", got)
+		}
+		if got := r.Header.Get("X-Forwarded-Prefix"); got != "/api/v1/academy/" {
+			t.Errorf("X-Forwarded-Prefix = %q, want /api/v1/academy/", got)
+		}
+		if got := r.Header.Get("X-Internal-Token"); got != "" {
+			t.Errorf("backend received client X-Internal-Token %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	route := config.ServiceRoute{Prefix: "/api/v1/academy/", Target: backend.URL, StripPrefix: "/api/v1"}
+	h, err := New(route, "gw-secret", nil, backend.Client().Transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://gateway/api/v1/academy/health", nil)
+	req.Header.Set("X-Internal-Token", "attacker-token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }

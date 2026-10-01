@@ -125,6 +125,7 @@ jobs:
           - { path: services/api-gateway, name: api-gateway }
           - { path: services/auth-service, name: auth-service }
           - { path: services/notification-service, name: notification-service }
+          - { path: services/academy-service, name: academy-service }
           - { path: shared/infra, name: shared-infra }
           - { path: tools/docgen, name: docgen }
           - { path: tests/contracts, name: contracts }
@@ -163,6 +164,7 @@ jobs:
           - { path: services/api-gateway, name: api-gateway }
           - { path: services/auth-service, name: auth-service }
           - { path: services/notification-service, name: notification-service }
+          - { path: services/academy-service, name: academy-service }
           - { path: shared/infra, name: shared-infra }
     steps:
       - name: Checkout Code

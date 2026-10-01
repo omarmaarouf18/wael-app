@@ -7,57 +7,60 @@ import (
 	"testing"
 )
 
-func setGatewayProdEnv(t *testing.T) {
+func setAcademyProdEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "production")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret-1234567890")
-	t.Setenv("REDIS_URI", "redis://localhost:6379")
+	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	t.Setenv("MONGO_URI", "mongodb://localhost:27017")
 	t.Setenv("TLS_CERT_PATH", "/tmp/cert.pem")
 	t.Setenv("TLS_KEY_PATH", "/tmp/key.pem")
 	t.Setenv("TLS_CA_PATH", "/tmp/ca.pem")
 	t.Setenv("AUTH_SERVICE_URL", "https://auth-service:3002")
-	t.Setenv("NOTIFICATION_SERVICE_URL", "https://notification-service:3004")
-	t.Setenv("ACADEMY_SERVICE_URL", "https://academy-service:3003")
+	t.Setenv("ADMIN_LISTEN_ADDR", ":9002")
 }
 
-func setGatewayLocalEnv(t *testing.T) {
+func setAcademyLocalEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret-1234567890")
-	t.Setenv("REDIS_URI", "redis://localhost:6379")
-	_ = os.Unsetenv("TLS_CERT_PATH")
-	_ = os.Unsetenv("TLS_KEY_PATH")
-	_ = os.Unsetenv("TLS_CA_PATH")
-	_ = os.Unsetenv("AUTH_SERVICE_URL")
-	_ = os.Unsetenv("NOTIFICATION_SERVICE_URL")
-	_ = os.Unsetenv("ACADEMY_SERVICE_URL")
+	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
+	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	for _, v := range []string{
+		"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH",
+		"TLS_CA_PATH", "AUTH_SERVICE_URL", "ADMIN_LISTEN_ADDR",
+	} {
+		_ = os.Unsetenv(v)
+	}
 }
 
 func TestRunCheckEnv_ProductionMissingRequiredVar(t *testing.T) {
-	setGatewayProdEnv(t)
-	_ = os.Unsetenv("REDIS_URI")
+	setAcademyProdEnv(t)
+	_ = os.Unsetenv("MONGO_URI")
 
 	var stdout, stderr bytes.Buffer
 	code := runCheckEnv(&stdout, &stderr)
 	if code != 1 {
-		t.Fatalf("expected exit code 1 for missing REDIS_URI, got %d", code)
+		t.Fatalf("expected exit code 1 for missing MONGO_URI, got %d", code)
 	}
-	if !strings.Contains(stderr.String(), "REDIS_URI") {
-		t.Fatalf("expected stderr to contain 'REDIS_URI', got: %s", stderr.String())
+	if !strings.Contains(stderr.String(), "MONGO_URI") {
+		t.Fatalf("expected stderr to contain 'MONGO_URI', got: %s", stderr.String())
 	}
 }
 
 func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 	requiredVars := []string{
 		"GATEWAY_SECRET",
-		"REDIS_URI",
+		"INTERNAL_SERVICE_TOKEN",
+		"MONGO_URI",
 		"TLS_CERT_PATH",
 		"TLS_KEY_PATH",
 		"TLS_CA_PATH",
+		"AUTH_SERVICE_URL",
+		"ADMIN_LISTEN_ADDR",
 	}
 	for _, v := range requiredVars {
 		t.Run("missing_"+v, func(t *testing.T) {
-			setGatewayProdEnv(t)
+			setAcademyProdEnv(t)
 			_ = os.Unsetenv(v)
 			var stdout, stderr bytes.Buffer
 			code := runCheckEnv(&stdout, &stderr)
@@ -72,7 +75,7 @@ func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 }
 
 func TestRunCheckEnv_ValidProduction(t *testing.T) {
-	setGatewayProdEnv(t)
+	setAcademyProdEnv(t)
 
 	var stdout, stderr bytes.Buffer
 	code := runCheckEnv(&stdout, &stderr)
@@ -85,7 +88,7 @@ func TestRunCheckEnv_ValidProduction(t *testing.T) {
 }
 
 func TestRunCheckEnv_LocalMinimal(t *testing.T) {
-	setGatewayLocalEnv(t)
+	setAcademyLocalEnv(t)
 
 	var stdout, stderr bytes.Buffer
 	code := runCheckEnv(&stdout, &stderr)
