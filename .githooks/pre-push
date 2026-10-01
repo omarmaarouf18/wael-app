@@ -22,6 +22,12 @@ if [ -d "frontend/lib" ]; then
     echo "$UNFORMATTED_DART"
     exit 1
   }
+
+  echo "-- checking frontend composition gate --"
+  bash scripts/frontend_composition_gate.sh || {
+    echo "BLOCKED: frontend composition gate failed"
+    exit 1
+  }
 fi
 
 # 3. Markdown commit SHAs must resolve to reachable commits

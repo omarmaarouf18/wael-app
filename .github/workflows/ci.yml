@@ -233,6 +233,9 @@ jobs:
         working-directory: frontend
         run: dart format --output=none --set-exit-if-changed lib/ test/
 
+      - name: Frontend Composition Gate
+        run: bash scripts/frontend_composition_gate.sh
+
       - name: Flutter Analyze
         working-directory: frontend
         run: flutter analyze
