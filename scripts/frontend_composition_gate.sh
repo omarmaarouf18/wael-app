@@ -94,7 +94,7 @@ if [ "$failed" -eq 1 ]; then
 	cat <<'EOF'
 
 New composition violations in frontend/lib/screens/. Use instead:
-  Scaffold/AppBar          -> AppShell / screen templates (lib/widgets/)
+  Scaffold/AppBar          -> AppShell (lib/widgets/app_shell.dart)
   BoxDecoration            -> ThemedCard / ThemedPanel (lib/widgets/)
   TextStyle / fontSize     -> AppTypography.* (lib/core/theme.dart)
   Color(0x..) / Colors.x   -> AppColors.* (Colors.transparent is allowed)

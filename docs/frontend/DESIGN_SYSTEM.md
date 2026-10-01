@@ -223,12 +223,37 @@ file for their exact values.
 | `StatusBadge` | `status_badge.dart` | Badge for a `PaymentStatus` (pending / approved / rejected) using the status colour tokens. |
 | `ThemedCard` | `themed_card.dart` | Bordered card surface with optional tap and glow. |
 | `ThemedTextField` | `themed_text_field.dart` | Themed form field with label, hint, validator and prefix/suffix. |
+| `AppShell` | `app_shell.dart` | `Scaffold` + `AppBar` from tokens: optional back button at the start edge, title, `actions` at the end edge, optional FAB and bottom bar. Mirrors in RTL. Screens use it instead of their own `Scaffold(` / `AppBar(`. |
+| `SecondaryButton` | `secondary_button.dart` | Low-emphasis bordered button; same sizing, loading state and icon slots as `PrimaryButton`. |
+| `ThemedPanel` (+ `PanelTone`) | `themed_panel.dart` | Static bordered surface (`base`, `raised`, `inset`), directional padding. Not tappable; use `ThemedCard` for interactive or elevated content. |
+| `ThemedErrorBanner` | `themed_error_banner.dart` | Persistent inline error (no auto-dismiss, live region) with an optional localised retry. |
+| `ThemedEmptyState` | `themed_empty_state.dart` | Centered icon, optional title, message and optional action. |
+| `ThemedLoadingIndicator` | `themed_loading_indicator.dart` | Centered crimson spinner with a localised semantic label and optional visible label. |
+| `ThemedSectionHeader` | `themed_section_header.dart` | Eyebrow section title (upper-cased via `uppercaseLabel` for Latin, no letter spacing for Arabic) with an optional end-aligned action. |
+| `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |
+| `OtpPinInput` (+ `OtpDigitsFormatter`) | `otp_pin_input.dart` | N-digit code input (default 6) over one hidden text field: paste, SMS autofill, backspace. Always laid out left to right; maps Arabic-Indic and Persian digits to ASCII. |
+
+Widget conventions: tokens only, `EdgeInsetsDirectional` only, and every string a widget
+owns (Retry, Cancel, Confirm, Back, Loading, the OTP label) comes from `AppLocalizations`.
+Text that varies per call site is passed in already localised.
+
+### Component library
+
+`lib/debug/component_library_screen.dart` shows every widget above and has an EN/AR toggle.
+It is debug-only: the `/components` route exists only when `kDebugMode` is true
+(`buildAppRoutes` in `main.dart`) and the only link to it is on the diagnostics screen
+(debug-only too). Open it in a debug build via `/debug`, then the widgets icon in the app
+bar.
 
 ## Known gaps
 
-- The gate's failure message names `AppShell` and `ThemedPanel`, which do not exist yet.
-  Today the shell is `DashboardScreenTemplate` and the card is `ThemedCard`.
-- `DashboardScreenTemplate` is not used by any screen yet (see `STATUS.md`).
+- No screen uses the shared shell or the F2 widgets yet (migration is F3a, see
+  `STATUS.md`). `DashboardScreenTemplate` overlaps with `AppShell` plus the
+  loading / error / empty widgets and should be retired when screens migrate.
+- `DashboardScreenTemplate` positions its notification pip with `Positioned(right:)`,
+  which does not mirror in RTL.
+- `PrimaryButton(isSecondary: true)` duplicates `SecondaryButton`; remove the flag once
+  screens move over.
 - `theme.dart` itself still has a raw value that is not a named token: the input hint
   style size (`fontSize: 14`).
 - Raw colours and `.toUpperCase()` are gone from `lib/widgets/` and the non-catalog

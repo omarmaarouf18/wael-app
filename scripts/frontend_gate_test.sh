@@ -156,5 +156,44 @@ else
 	fi
 fi
 
+# 8. Every name the failure message points to must exist in the real tree, so
+#    the advice never refers to a widget, token or file that is not there.
+MESSAGE="$(sed -n "/<<'EOF'/,/^EOF/p" "$GATE_SRC" | grep -- '->' | sed 's/.*->//')"
+check_name() { # check_name <description> <command...>
+	local desc="$1"
+	shift
+	if "$@"; then
+		passed=$((passed + 1))
+		echo "ok   - $desc"
+	else
+		failed=$((failed + 1))
+		echo "FAIL - $desc"
+	fi
+}
+class_exists() {
+	grep -rqE "^(abstract |final |base |sealed )?(class|enum|mixin) $1\b" "$REPO_ROOT/frontend/lib"
+}
+static_exists() {
+	grep -qE "static [A-Za-z<>?, ]+ $1\(" "$REPO_ROOT/frontend/lib/core/theme.dart"
+}
+names_checked=0
+while IFS= read -r name; do
+	[ -n "$name" ] || continue
+	case "$name" in Arabic | RTL | Colors | EdgeInsetsDirectional) continue ;; esac
+	names_checked=$((names_checked + 1))
+	check_name "failure message names $name, which exists as a class or enum" class_exists "$name"
+done < <(grep -oE '\b[A-Z][A-Za-z0-9]*\b' <<<"$MESSAGE" | sort -u)
+while IFS= read -r member; do
+	[ -n "$member" ] || continue
+	names_checked=$((names_checked + 1))
+	check_name "failure message names AppTypography.$member, which exists" static_exists "$member"
+done < <(grep -oE 'AppTypography\.[a-z][A-Za-z]*' <<<"$MESSAGE" | sed 's/AppTypography\.//' | sort -u)
+while IFS= read -r path; do
+	[ -n "$path" ] || continue
+	names_checked=$((names_checked + 1))
+	check_name "failure message names $path, which exists" test -e "$REPO_ROOT/frontend/$path"
+done < <(grep -oE 'lib/[A-Za-z_/]+(\.dart)?' <<<"$MESSAGE" | sort -u)
+check_name "failure message names at least 8 things to verify" test "$names_checked" -ge 8
+
 echo "== frontend gate self-test: $passed passed, $failed failed =="
 [ "$failed" -eq 0 ]

@@ -40,9 +40,22 @@ The gate scans screens only, so widgets carry no baseline entries.
 
 | File | Lines | Used by screens |
 |------|------:|-----------------|
+| `app_shell.dart` | 102 | none (F2, migration is F3a) |
+| `confirm_action_dialog.dart` | 103 | none (F2) |
 | `dashboard_screen_template.dart` | 300 | none |
+| `otp_pin_input.dart` | 178 | none (F2) |
 | `pill_filter_bar.dart` | 88 | ebook |
 | `primary_button.dart` | 99 | 8 screens |
+| `secondary_button.dart` | 40 | none (F2) |
 | `status_badge.dart` | 76 | payment |
 | `themed_card.dart` | 55 | 7 screens |
+| `themed_empty_state.dart` | 64 | none (F2) |
+| `themed_error_banner.dart` | 81 | none (F2) |
+| `themed_loading_indicator.dart` | 49 | none (F2) |
+| `themed_panel.dart` | 51 | none (F2) |
+| `themed_section_header.dart` | 48 | none (F2) |
 | `themed_text_field.dart` | 104 | 7 screens |
+
+The F2 widgets are exercised by `test/widget_layer_test.dart` (English and Arabic) and
+shown in the debug-only component library (`lib/debug/component_library_screen.dart`,
+route `/components`, linked from the diagnostics screen). No screen uses them yet.
