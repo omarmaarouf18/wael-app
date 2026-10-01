@@ -5,8 +5,8 @@ the tree and `scripts/frontend_gate_baseline.txt` at the commit that added this 
 refresh the numbers when the baseline is lowered. Token and widget reference:
 `docs/frontend/DESIGN_SYSTEM.md`.
 
-- **Uses shared shell**: the screen builds on `DashboardScreenTemplate`. No screen does yet;
-  every screen declares its own `Scaffold(`.
+- **Uses shared shell**: the screen builds on `AppShell`. Screens are migrated one per commit
+  (F3a); until a screen is migrated it declares its own `Scaffold(`.
 - **Baseline entries**: file/rule pairs in the gate baseline (violation count in
   parentheses). The baseline only goes down.
 - **Catalog screen**: course catalog and payment screens. They move with SPEC Phase 2-3,
@@ -42,11 +42,10 @@ The gate scans screens only, so widgets carry no baseline entries.
 |------|------:|-----------------|
 | `app_shell.dart` | 102 | none (F2, migration is F3a) |
 | `confirm_action_dialog.dart` | 103 | none (F2) |
-| `dashboard_screen_template.dart` | 300 | none |
 | `otp_pin_input.dart` | 178 | none (F2) |
 | `pill_filter_bar.dart` | 88 | ebook |
-| `primary_button.dart` | 99 | 8 screens |
-| `secondary_button.dart` | 40 | none (F2) |
+| `primary_button.dart` | 89 | 8 screens |
+| `secondary_button.dart` | 90 | none (F2) |
 | `status_badge.dart` | 76 | payment |
 | `themed_card.dart` | 55 | 7 screens |
 | `themed_empty_state.dart` | 64 | none (F2) |

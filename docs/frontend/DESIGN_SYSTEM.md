@@ -217,9 +217,8 @@ file for their exact values.
 
 | Widget | File | Purpose |
 |--------|------|---------|
-| `DashboardScreenTemplate` | `dashboard_screen_template.dart` | Screen shell: optional header (title, back button, custom actions), body, loading / error (with retry) / empty states, optional floating action button. |
 | `PillFilterBar` (+ `FilterPillItem`) | `pill_filter_bar.dart` | Horizontal pill filter with optional per-item count. |
-| `PrimaryButton` | `primary_button.dart` | Primary and secondary button with loading state and leading/trailing icon. |
+| `PrimaryButton` | `primary_button.dart` | Primary (crimson, glow) button with loading state and leading/trailing icon. |
 | `StatusBadge` | `status_badge.dart` | Badge for a `PaymentStatus` (pending / approved / rejected) using the status colour tokens. |
 | `ThemedCard` | `themed_card.dart` | Bordered card surface with optional tap and glow. |
 | `ThemedTextField` | `themed_text_field.dart` | Themed form field with label, hint, validator and prefix/suffix. |
@@ -247,13 +246,8 @@ bar.
 
 ## Known gaps
 
-- No screen uses the shared shell or the F2 widgets yet (migration is F3a, see
-  `STATUS.md`). `DashboardScreenTemplate` overlaps with `AppShell` plus the
-  loading / error / empty widgets and should be retired when screens migrate.
-- `DashboardScreenTemplate` positions its notification pip with `Positioned(right:)`,
-  which does not mirror in RTL.
-- `PrimaryButton(isSecondary: true)` duplicates `SecondaryButton`; remove the flag once
-  screens move over.
+- Screens are being moved onto the shared shell and the F2 widgets one at a time (F3a, see
+  `STATUS.md`); the catalog screens move with SPEC Phase 2-3.
 - `theme.dart` itself still has a raw value that is not a named token: the input hint
   style size (`fontSize: 14`).
 - Raw colours and `.toUpperCase()` are gone from `lib/widgets/` and the non-catalog
