@@ -25,9 +25,6 @@ frontend/lib/screens/home_screen.dart|material_color|5
 frontend/lib/screens/home_screen.dart|non_directional_insets|1
 frontend/lib/screens/home_screen.dart|scaffold|1
 frontend/lib/screens/home_screen.dart|text_style|2
-frontend/lib/screens/main_shell.dart|box_decoration|6
-frontend/lib/screens/main_shell.dart|font_size|3
-frontend/lib/screens/main_shell.dart|scaffold|1
 frontend/lib/screens/payment_screen.dart|appbar|1
 frontend/lib/screens/payment_screen.dart|box_decoration|5
 frontend/lib/screens/payment_screen.dart|font_size|10

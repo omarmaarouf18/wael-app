@@ -22,14 +22,14 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `forgot_password_screen.dart` | 165 | yes | 0 (0) | no |
 | `home_screen.dart` | 1083 | no | 6 (38) | yes |
 | `login_screen.dart` | 343 | yes | 0 (0) | no |
-| `main_shell.dart` | 300 | no | 3 (10) | no |
+| `main_shell.dart` | 103 | yes | 0 (0) | no |
 | `notifications_screen.dart` | 189 | yes | 0 (0) | no |
 | `otp_screen.dart` | 111 | yes | 0 (0) | no |
 | `payment_screen.dart` | 672 | no | 8 (36) | yes |
 | `settings_screen.dart` | 550 | yes | 0 (0) | no |
 | `signup_screen.dart` | 332 | yes | 0 (0) | no |
 | `splash_screen.dart` | 61 | yes | 0 (0) | no |
-| **Total** | 7554 | 7 of 13 | 38 (308) | 5 of 13 |
+| **Total** | 7357 | 8 of 13 | 35 (298) | 5 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.
@@ -40,7 +40,7 @@ The gate scans screens only, so widgets carry no baseline entries.
 
 | File | Lines | Used by screens |
 |------|------:|-----------------|
-| `app_shell.dart` | 116 | 7 screens |
+| `app_shell.dart` | 116 | 8 screens |
 | `confirm_action_dialog.dart` | 103 | none |
 | `hero_backdrop.dart` | 85 | login |
 | `language_toggle_chip.dart` | 58 | login |

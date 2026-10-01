@@ -115,6 +115,7 @@ fills, borders and large display text; use `danger` for red body text and small 
 
 | Token | Value | Use |
 |-------|-------|-----|
+| `brandRule` | `0x4DFFFFFF` | Thin rules beside the brand eyebrow |
 | `headerGlass` | `0xF2090909` | Translucent header background (also the theme AppBar) |
 | `navBarGlass` | `0xF20B0B0B` | Translucent bottom bar background |
 | `glassHairline` | `0x14FFFFFF` | 1px hairline on glass chrome and rings on dark surfaces |
@@ -203,6 +204,8 @@ headings) and Plus Jakarta Sans (body and labels); Arabic uses Cairo throughout.
 | `bodyXs` | `bodySm` at 11, height 1.4 | same | `textMuted` |
 | `actionSm` | `labelSm` at 11, spacing 1.0 | same | `textMuted` |
 | `footerEyebrow` | `academyEyebrow` at 9, spacing 2.0 (0 in Arabic) | same | `textTertiary` |
+| `shellWordmark` | `headlineSm` at 18, spacing 1.5, w800 | same | `textPrimary` |
+| `shellEyebrow` | `academyEyebrow` at 9, spacing 2.8 (0 in Arabic) | same | `textMuted` |
 | `headerWordmark` | `headlineSm` (Syne 17 / Cairo 16) with weight w800, 2.0 | same | `textPrimary` |
 | `headerEyebrow` | `academyEyebrow` at 8 | same | `textMuted` |
 | `wordmarkTitle` | Syne, 32, w800, 1.15, 6.0, black shadow | (Arabic style at the same size and spacing) | `textPrimary` |
@@ -242,6 +245,9 @@ file for their exact values.
 | `StatusDot` | `status_dot.dart` | Small filled circle (unread pip, live indicator) with an optional ring. |
 | `IconTile` | `icon_tile.dart` | Rounded square with a centred icon (list leading icons, setting rows). |
 | `ProfileAvatar` | `profile_avatar.dart` | Circular avatar with a hairline ring and a badge dot at the top end corner. |
+| `BrandLockup` | `brand_lockup.dart` | App title over the ruled eyebrow (main shell header). |
+| `HeaderIconButton` | `header_icon_button.dart` | 36px circular header icon button with an optional pip at the top end corner. |
+| `AppBottomNav` (+ `AppNavItem`) | `app_bottom_nav.dart` | Glass bottom navigation with a crimson pin under the selected item; items run from the start edge. |
 | `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |
 | `OtpPinInput` (+ `OtpDigitsFormatter`) | `otp_pin_input.dart` | N-digit code input (default 6) over one hidden text field: paste, SMS autofill, backspace. Always laid out left to right; maps Arabic-Indic and Persian digits to ASCII. |
 
