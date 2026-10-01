@@ -4,6 +4,7 @@ package handlers
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -435,7 +436,8 @@ func (s *Server) CreateAccessRequest(w http.ResponseWriter, r *http.Request, id 
 }
 
 // EnforceTier wraps an HTTP handler with tiered rate limiting per SPEC Section 2 (D13).
-// Keyed on JWT user id; fails closed when Redis is unavailable or limiter is unconfigured.
+// Keyed on JWT user id; fails closed with 503 on backend failure (Redis down, limiter
+// unconfigured outside dev, missing claims), and 429 + Retry-After only when over limit.
 func (s *Server) EnforceTier(tier string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if s.Limiter == nil {
@@ -443,17 +445,22 @@ func (s *Server) EnforceTier(tier string, next http.HandlerFunc) http.HandlerFun
 				next(w, r)
 				return
 			}
-			limiter.WriteRateLimitedResponse(w, 30*time.Second)
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", errors.New("rate limiter unconfigured"))
 			return
 		}
 
 		claims := StudentClaims(r)
 		if claims == nil || claims.UserID == "" {
-			limiter.WriteRateLimitedResponse(w, 30*time.Second)
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", errors.New("missing claims"))
 			return
 		}
 
-		limited, retryAfter := s.Limiter.CheckAndRecord(tier, claims.UserID)
+		limited, retryAfter, err := s.Limiter.CheckAndRecord(tier, claims.UserID)
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+
 		if limited {
 			limiter.WriteRateLimitedResponse(w, retryAfter)
 			return

@@ -56,6 +56,10 @@ not verified. Never invent command output or commit hashes.
 - Reports should identify changed files, verification performed, deviations,
   and anything unverified. Quote captured command output exactly when quoting
   it; otherwise summarize it without presenting it as literal output.
+- Skipped tests: paste the literal output of
+  for m in services/* shared/infra tests/*; do (cd $m && go test -v ./... 2>&1 | grep -- '--- SKIP'); done
+  and grep -n 'skip:' frontend/test/*.dart. Never count or describe
+  skips from memory.
 
 ## Project-specific rules
 

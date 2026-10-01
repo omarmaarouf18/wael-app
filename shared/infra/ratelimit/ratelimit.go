@@ -135,9 +135,14 @@ end
 return {0, 0}
 `
 
-func (rl *RateLimiter) CheckAndRecord(key string) (bool, time.Duration) {
+// CheckAndRecordWithError checks and records a request for the given key, returning
+// any Redis or communication error encountered.
+func (rl *RateLimiter) CheckAndRecordWithError(key string) (bool, time.Duration, error) {
 	if key == "" {
-		return false, 0
+		return false, 0, nil
+	}
+	if rl == nil || rl.client == nil {
+		return false, 0, fmt.Errorf("ratelimit: redis client is nil")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -148,21 +153,29 @@ func (rl *RateLimiter) CheckAndRecord(key string) (bool, time.Duration) {
 
 	res, err := rl.client.Eval(ctx, checkAndRecordScript, []string{countKey, lockoutKey}, rl.limit, int(rl.window.Seconds()), rl.cap).Result()
 	if err != nil {
-		// FAIL CLOSED: Log critical error and block request
 		log.Printf("[SECURITY CRITICAL] Redis rate limiter error (FAIL CLOSED): %v. Restricting traffic for key: %s", err, key)
-		return true, 30 * time.Second
+		return false, 0, err
 	}
 
 	results, ok := res.([]interface{})
 	if !ok || len(results) < 2 {
-		log.Printf("[SECURITY CRITICAL] Unexpected rate limiter response: %v. Fail closed for key: %s", res, key)
-		return true, 30 * time.Second
+		err := fmt.Errorf("unexpected rate limiter response: %v", res)
+		log.Printf("[SECURITY CRITICAL] %v. Fail closed for key: %s", err, key)
+		return false, 0, err
 	}
 
 	limited := results[0].(int64) == 1
 	ttl := results[1].(int64)
 
-	return limited, time.Duration(ttl) * time.Second
+	return limited, time.Duration(ttl) * time.Second, nil
+}
+
+func (rl *RateLimiter) CheckAndRecord(key string) (bool, time.Duration) {
+	limited, ttl, err := rl.CheckAndRecordWithError(key)
+	if err != nil {
+		return true, 30 * time.Second
+	}
+	return limited, ttl
 }
 
 // AuthRateLimiter is a Redis-backed dual-key lockout tracker (IP + email).

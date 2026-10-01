@@ -30,14 +30,20 @@ func TestRedisTierLimiter_ReadTier(t *testing.T) {
 	const userID = "user-read-test"
 
 	for i := 1; i <= DefaultLimitRead; i++ {
-		limited, retryAfter := tl.CheckAndRecord(TierRead, userID)
+		limited, retryAfter, err := tl.CheckAndRecord(TierRead, userID)
+		if err != nil {
+			t.Fatalf("read call %d unexpected error: %v", i, err)
+		}
 		if limited {
 			t.Fatalf("read call %d unexpectedly rate limited (retryAfter=%v)", i, retryAfter)
 		}
 	}
 
 	// 31st call must be rate limited
-	limited, retryAfter := tl.CheckAndRecord(TierRead, userID)
+	limited, retryAfter, err := tl.CheckAndRecord(TierRead, userID)
+	if err != nil {
+		t.Fatalf("read call 31 unexpected error: %v", err)
+	}
 	if !limited {
 		t.Fatalf("expected call %d to be rate limited", DefaultLimitRead+1)
 	}
@@ -51,14 +57,20 @@ func TestRedisTierLimiter_DownloadTier(t *testing.T) {
 	const userID = "user-download-test"
 
 	for i := 1; i <= DefaultLimitDownload; i++ {
-		limited, retryAfter := tl.CheckAndRecord(TierDownload, userID)
+		limited, retryAfter, err := tl.CheckAndRecord(TierDownload, userID)
+		if err != nil {
+			t.Fatalf("download call %d unexpected error: %v", i, err)
+		}
 		if limited {
 			t.Fatalf("download call %d unexpectedly rate limited (retryAfter=%v)", i, retryAfter)
 		}
 	}
 
 	// 11th call must be rate limited
-	limited, retryAfter := tl.CheckAndRecord(TierDownload, userID)
+	limited, retryAfter, err := tl.CheckAndRecord(TierDownload, userID)
+	if err != nil {
+		t.Fatalf("download call 11 unexpected error: %v", err)
+	}
 	if !limited {
 		t.Fatalf("expected call %d to be rate limited", DefaultLimitDownload+1)
 	}
@@ -72,14 +84,20 @@ func TestRedisTierLimiter_WriteTier(t *testing.T) {
 	const userID = "user-write-test"
 
 	for i := 1; i <= DefaultLimitWrite; i++ {
-		limited, retryAfter := tl.CheckAndRecord(TierWrite, userID)
+		limited, retryAfter, err := tl.CheckAndRecord(TierWrite, userID)
+		if err != nil {
+			t.Fatalf("write call %d unexpected error: %v", i, err)
+		}
 		if limited {
 			t.Fatalf("write call %d unexpectedly rate limited (retryAfter=%v)", i, retryAfter)
 		}
 	}
 
 	// 6th call must be rate limited
-	limited, retryAfter := tl.CheckAndRecord(TierWrite, userID)
+	limited, retryAfter, err := tl.CheckAndRecord(TierWrite, userID)
+	if err != nil {
+		t.Fatalf("write call 6 unexpected error: %v", err)
+	}
 	if !limited {
 		t.Fatalf("expected call %d to be rate limited", DefaultLimitWrite+1)
 	}
@@ -95,21 +113,30 @@ func TestRedisTierLimiter_PerUserIsolation(t *testing.T) {
 
 	// Exhaust user A write tier
 	for i := 1; i <= DefaultLimitWrite; i++ {
-		_, _ = tl.CheckAndRecord(TierWrite, userA)
+		_, _, _ = tl.CheckAndRecord(TierWrite, userA)
 	}
-	limitedA, _ := tl.CheckAndRecord(TierWrite, userA)
+	limitedA, _, err := tl.CheckAndRecord(TierWrite, userA)
+	if err != nil {
+		t.Fatalf("user A write unexpected error: %v", err)
+	}
 	if !limitedA {
 		t.Fatal("expected user A to be rate limited")
 	}
 
 	// User B is still unconstrained
-	limitedB, _ := tl.CheckAndRecord(TierWrite, userB)
+	limitedB, _, err := tl.CheckAndRecord(TierWrite, userB)
+	if err != nil {
+		t.Fatalf("user B write unexpected error: %v", err)
+	}
 	if limitedB {
 		t.Fatal("user B should not be affected by user A rate limit")
 	}
 
 	// User A reading is not affected by user A write limit
-	limitedARead, _ := tl.CheckAndRecord(TierRead, userA)
+	limitedARead, _, err := tl.CheckAndRecord(TierRead, userA)
+	if err != nil {
+		t.Fatalf("user A read unexpected error: %v", err)
+	}
 	if limitedARead {
 		t.Fatal("user A read tier should not be affected by user A write limit")
 	}
@@ -126,11 +153,17 @@ func TestRedisTierLimiter_CustomLimits(t *testing.T) {
 	customTL := NewRedisTierLimiter(rdb, 3, 2, 1)
 
 	// Custom write: limit is 1
-	limited, _ := customTL.CheckAndRecord(TierWrite, "user-custom")
+	limited, _, err := customTL.CheckAndRecord(TierWrite, "user-custom")
+	if err != nil {
+		t.Fatalf("call 1 unexpected error: %v", err)
+	}
 	if limited {
 		t.Fatal("call 1 should succeed")
 	}
-	limited, retryAfter := customTL.CheckAndRecord(TierWrite, "user-custom")
+	limited, retryAfter, err := customTL.CheckAndRecord(TierWrite, "user-custom")
+	if err != nil {
+		t.Fatalf("call 2 unexpected error: %v", err)
+	}
 	if !limited || retryAfter <= 0 {
 		t.Fatalf("call 2 should be limited with positive retryAfter, got limited=%v, retryAfter=%v", limited, retryAfter)
 	}
@@ -140,12 +173,9 @@ func TestRedisTierLimiter_FailClosed_NilRedis(t *testing.T) {
 	tl := NewRedisTierLimiter(nil, 30, 10, 5)
 
 	for _, tier := range []string{TierRead, TierDownload, TierWrite, "unknown"} {
-		limited, retryAfter := tl.CheckAndRecord(tier, "user-fail-closed")
-		if !limited {
-			t.Errorf("tier %s: expected fail closed (limited=true)", tier)
-		}
-		if retryAfter <= 0 {
-			t.Errorf("tier %s: expected positive retryAfter on fail closed, got %v", tier, retryAfter)
+		_, _, err := tl.CheckAndRecord(tier, "user-fail-closed")
+		if err == nil {
+			t.Errorf("tier %s: expected error on nil Redis", tier)
 		}
 	}
 }
@@ -163,12 +193,9 @@ func TestRedisTierLimiter_FailClosed_RedisDown(t *testing.T) {
 	_ = rdb.Close()
 	mr.Close()
 
-	limited, retryAfter := tl.CheckAndRecord(TierRead, "user-redis-down")
-	if !limited {
-		t.Fatal("expected fail closed (limited=true) when Redis is down")
-	}
-	if retryAfter <= 0 {
-		t.Fatalf("expected positive retryAfter on fail closed, got %v", retryAfter)
+	_, _, err = tl.CheckAndRecord(TierRead, "user-redis-down")
+	if err == nil {
+		t.Fatal("expected error when Redis is down")
 	}
 }
 
@@ -203,8 +230,8 @@ func TestRedisTierLimiter_Concurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			limited, _ := tl.CheckAndRecord(TierWrite, userID) // limit is 5
-			if !limited {
+			limited, _, err := tl.CheckAndRecord(TierWrite, userID) // limit is 5
+			if err == nil && !limited {
 				mu.Lock()
 				allowedCount++
 				mu.Unlock()

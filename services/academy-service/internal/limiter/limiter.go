@@ -2,6 +2,8 @@
 package limiter
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"math"
 	"net/http"
@@ -27,27 +29,25 @@ const (
 	DefaultLimitWrite    = 5
 )
 
-// RateLimiter checks rate limits for a given key.
-type RateLimiter interface {
-	CheckAndRecord(key string) (bool, time.Duration)
-}
-
 // TierLimiter manages rate limits across tiers (Read, Download, Write).
+// Returns (limited bool, retryAfter time.Duration, err error).
+// On backend failure (Redis down, nil client, etc.), err != nil.
+// When user exceeds limit, limited = true, retryAfter > 0, err = nil.
 type TierLimiter interface {
-	CheckAndRecord(tier, key string) (bool, time.Duration)
+	CheckAndRecord(tier, key string) (bool, time.Duration, error)
 }
 
 // RedisTierLimiter implements TierLimiter backed by Redis via shared/infra/ratelimit.
-// Keyed on JWT user id; fails closed when Redis is unavailable or unconfigured.
+// Keyed on JWT user id; fails closed with error when Redis is unavailable or unconfigured.
 type RedisTierLimiter struct {
 	client   *redis.Client
-	read     RateLimiter
-	download RateLimiter
-	write    RateLimiter
+	read     *ratelimit.RateLimiter
+	download *ratelimit.RateLimiter
+	write    *ratelimit.RateLimiter
 }
 
 // NewRedisTierLimiter creates a Redis-backed TierLimiter with specified limits per minute.
-// If client is nil, it fails closed on all checks.
+// If client is nil, it fails closed with error on all checks.
 func NewRedisTierLimiter(client *redis.Client, readLimit, downloadLimit, writeLimit int) *RedisTierLimiter {
 	if readLimit <= 0 {
 		readLimit = DefaultLimitRead
@@ -72,14 +72,14 @@ func NewRedisTierLimiter(client *redis.Client, readLimit, downloadLimit, writeLi
 }
 
 // CheckAndRecord checks and records request for tier and key.
-// Returns (limited, retryAfter). Fails closed if client or limiter is nil.
-func (r *RedisTierLimiter) CheckAndRecord(tier, key string) (bool, time.Duration) {
+// Returns (limited, retryAfter, err). Fails closed with error if client, tier, or Redis fails.
+func (r *RedisTierLimiter) CheckAndRecord(tier, key string) (bool, time.Duration, error) {
 	if r == nil || r.client == nil {
 		log.Printf("[SECURITY CRITICAL] Redis rate limiter client is nil (FAIL CLOSED) for tier=%s key=%s", tier, key)
-		return true, 30 * time.Second
+		return false, 0, errors.New("rate limiter client is nil")
 	}
 
-	var l RateLimiter
+	var l *ratelimit.RateLimiter
 	switch tier {
 	case TierRead:
 		l = r.read
@@ -89,15 +89,15 @@ func (r *RedisTierLimiter) CheckAndRecord(tier, key string) (bool, time.Duration
 		l = r.write
 	default:
 		log.Printf("[SECURITY CRITICAL] Unknown rate limit tier %q (FAIL CLOSED)", tier)
-		return true, 30 * time.Second
+		return false, 0, fmt.Errorf("unknown rate limit tier: %q", tier)
 	}
 
 	if l == nil {
 		log.Printf("[SECURITY CRITICAL] Limiter for tier %s is nil (FAIL CLOSED)", tier)
-		return true, 30 * time.Second
+		return false, 0, fmt.Errorf("limiter for tier %s is nil", tier)
 	}
 
-	return l.CheckAndRecord(key)
+	return l.CheckAndRecordWithError(key)
 }
 
 // WriteRateLimitedResponse writes a standard 429 response with Retry-After header.

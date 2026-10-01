@@ -1862,11 +1862,19 @@ func TestRateLimitTiers_FailClosed_RedisDown(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 fail-closed when Redis is down, got %d", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 fail-closed when Redis is down, got %d", rec.Code)
 	}
-	if rec.Header().Get("Retry-After") == "" {
-		t.Fatal("expected Retry-After on fail closed")
+	if rec.Header().Get("Retry-After") != "" {
+		t.Fatal("Retry-After must NOT be set on 503 backend failure")
+	}
+
+	var errBody map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("invalid json body: %v", err)
+	}
+	if errBody["code"] != handlerutil.ErrCodeUnavailable {
+		t.Errorf("expected code=%s, got %v", handlerutil.ErrCodeUnavailable, errBody["code"])
 	}
 }
 
@@ -1884,11 +1892,19 @@ func TestRateLimitTiers_FailClosed_NilLimiterOutsideDev(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 fail-closed when Limiter is nil in production, got %d", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 fail-closed when Limiter is nil in production, got %d", rec.Code)
 	}
-	if rec.Header().Get("Retry-After") == "" {
-		t.Fatal("expected Retry-After on fail closed")
+	if rec.Header().Get("Retry-After") != "" {
+		t.Fatal("Retry-After must NOT be set on 503 backend failure")
+	}
+
+	var errBody map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("invalid json body: %v", err)
+	}
+	if errBody["code"] != handlerutil.ErrCodeUnavailable {
+		t.Errorf("expected code=%s, got %v", handlerutil.ErrCodeUnavailable, errBody["code"])
 	}
 }
 
@@ -1905,10 +1921,18 @@ func TestRateLimitTiers_NoClaimsFailClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 when claims are missing, got %d", rec.Code)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when claims are missing, got %d", rec.Code)
 	}
-	if rec.Header().Get("Retry-After") == "" {
-		t.Fatal("expected Retry-After on fail closed")
+	if rec.Header().Get("Retry-After") != "" {
+		t.Fatal("Retry-After must NOT be set on 503 backend failure")
+	}
+
+	var errBody map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("invalid json body: %v", err)
+	}
+	if errBody["code"] != handlerutil.ErrCodeUnavailable {
+		t.Errorf("expected code=%s, got %v", handlerutil.ErrCodeUnavailable, errBody["code"])
 	}
 }
