@@ -104,6 +104,8 @@ Frontend F1 (token gaps): `AppTypography.uppercaseLabel`, semantic colours (succ
 
 Frontend F2: the composition gate fails closed (missing `frontend/lib/screens` is exit 2, `Color.fromARGB(`/`Color.fromRGBO(` counted) and is self-tested by `scripts/frontend_gate_test.sh` (run by `make ci` and CI); shared widget layer added under `frontend/lib/widgets/` (`AppShell`, `SecondaryButton`, `ThemedPanel`, `ThemedErrorBanner`, `ThemedEmptyState`, `ThemedLoadingIndicator`, `ThemedSectionHeader`, `ConfirmActionDialog`, `OtpPinInput`) with English and Arabic widget tests and a debug-only component library at `/components` (absent from release builds); no screen migrated yet (F3a).
 
+Frontend F3a (in progress): non-catalog screens move onto the shared widget layer one per commit; done so far: splash, OTP (`OtpPinInput`), forgot password, login (`HeroBackdrop`, `LanguageToggleChip`); next: signup, notifications, settings, main shell. `DashboardScreenTemplate` was deleted and `PrimaryButton.isSecondary` removed (`SecondaryButton` owns that style). Per-screen widget tests run in English and Arabic (`test/screen_harness.dart`); STATUS.md has the per-file baseline.
+
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
 RUNBOOK, DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
