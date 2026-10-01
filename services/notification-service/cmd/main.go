@@ -84,6 +84,8 @@ func main() {
 	}
 
 	srv := handlers.New(st, b, cfg.GatewaySecret, cfg.InternalServiceToken)
+	srv.Limiter = handlers.NewStreamLimiter(cfg.StreamMaxConcurrent, cfg.StreamOpenRateLimit, time.Minute)
+	log.Printf("[NOTIF] stream caps: max concurrent=%d, open rate limit=%d/min", cfg.StreamMaxConcurrent, cfg.StreamOpenRateLimit)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handlers.Health)
 	mux.HandleFunc("/notifications/stream", srv.Stream)

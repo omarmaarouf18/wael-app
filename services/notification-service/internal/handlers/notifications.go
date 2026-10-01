@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/notification-service/internal/bus"
@@ -20,17 +21,134 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 )
 
+// StreamLimiter manages per-account concurrent stream slots and connection open rate limits.
+type StreamLimiter struct {
+	mu            sync.Mutex
+	maxConcurrent int
+	rateLimit     int
+	window        time.Duration
+	activeSlots   map[string]int
+	openAttempts  map[string][]time.Time
+}
+
+// NewStreamLimiter creates a StreamLimiter with max concurrent connections and open rate limit per window.
+func NewStreamLimiter(maxConcurrent, rateLimit int, window time.Duration) *StreamLimiter {
+	if maxConcurrent <= 0 {
+		maxConcurrent = 3
+	}
+	if rateLimit <= 0 {
+		rateLimit = 10
+	}
+	if window <= 0 {
+		window = time.Minute
+	}
+	return &StreamLimiter{
+		maxConcurrent: maxConcurrent,
+		rateLimit:     rateLimit,
+		window:        window,
+		activeSlots:   make(map[string]int),
+		openAttempts:  make(map[string][]time.Time),
+	}
+}
+
+// acquireStreamSlot attempts to reserve a concurrent stream slot for userID.
+// Returns a release function and true if acquired; nil and false if cap is exceeded.
+func (sl *StreamLimiter) acquireStreamSlot(userID string) (func(), bool) {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+
+	if sl.activeSlots[userID] >= sl.maxConcurrent {
+		return nil, false
+	}
+	sl.activeSlots[userID]++
+
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			sl.mu.Lock()
+			defer sl.mu.Unlock()
+			sl.activeSlots[userID]--
+			if sl.activeSlots[userID] <= 0 {
+				delete(sl.activeSlots, userID)
+			}
+		})
+	}
+	return release, true
+}
+
+// allowStreamOpen checks if a new stream open attempt is permitted under the rate limit.
+// Returns true and 0 if allowed; false and retry-after seconds if rate limit exceeded.
+func (sl *StreamLimiter) allowStreamOpen(userID string) (bool, int) {
+	return sl.allowStreamOpenAt(userID, time.Now())
+}
+
+// allowStreamOpenAt allows passing an explicit timestamp for deterministic testing.
+func (sl *StreamLimiter) allowStreamOpenAt(userID string, now time.Time) (bool, int) {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+
+	cutoff := now.Add(-sl.window)
+	attempts := sl.openAttempts[userID]
+
+	valid := make([]time.Time, 0, len(attempts))
+	for _, t := range attempts {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+
+	if len(valid) >= sl.rateLimit {
+		oldest := valid[0]
+		remaining := oldest.Add(sl.window).Sub(now)
+		secs := int(remaining.Seconds())
+		if secs < 1 {
+			secs = 1
+		}
+		sl.openAttempts[userID] = valid
+		return false, secs
+	}
+
+	valid = append(valid, now)
+	sl.openAttempts[userID] = valid
+	return true, 0
+}
+
+// ActiveSlots returns the count of active stream slots for userID.
+func (sl *StreamLimiter) ActiveSlots(userID string) int {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	return sl.activeSlots[userID]
+}
+
+// TotalActiveSlots returns the total active slots across all accounts.
+func (sl *StreamLimiter) TotalActiveSlots() int {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	total := 0
+	for _, count := range sl.activeSlots {
+		total += count
+	}
+	return total
+}
+
 // Server wires notification dependencies.
 type Server struct {
 	Store         store.Store
 	Bus           bus.Bus
 	GatewaySecret string
 	InternalToken string
+	Limiter       *StreamLimiter
 }
 
-// New creates a Server.
+// New creates a Server with safe default stream limits (cap: 3, rate: 10/min).
 func New(st store.Store, b bus.Bus, gatewaySecret, internalToken string) *Server {
-	return &Server{Store: st, Bus: b, GatewaySecret: gatewaySecret, InternalToken: internalToken}
+	return &Server{
+		Store:         st,
+		Bus:           b,
+		GatewaySecret: gatewaySecret,
+		InternalToken: internalToken,
+		Limiter:       NewStreamLimiter(3, 10, time.Minute),
+	}
 }
 
 // GatewayAuth requires the gateway secret on user routes (not /health;
@@ -92,6 +210,21 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "stream unsupported", nil)
 		return
+	}
+
+	if s.Limiter != nil {
+		if allowed, retryAfter := s.Limiter.allowStreamOpen(claims.UserID); !allowed {
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+			handlerutil.WriteSafeError(w, r, http.StatusTooManyRequests, "rate_limited", "stream open rate limit exceeded", nil)
+			return
+		}
+
+		release, ok := s.Limiter.acquireStreamSlot(claims.UserID)
+		if !ok {
+			handlerutil.WriteSafeError(w, r, http.StatusTooManyRequests, "stream_cap_exceeded", "concurrent stream cap exceeded", nil)
+			return
+		}
+		defer release()
 	}
 	ch, unsub, err := s.Bus.Subscribe(r.Context(), claims.UserID)
 	if err != nil {

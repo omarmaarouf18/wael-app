@@ -148,5 +148,91 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		if cfg.MongoDatabase != "notification_db" {
 			t.Errorf("expected default MongoDatabase notification_db, got %q", cfg.MongoDatabase)
 		}
+		if cfg.StreamMaxConcurrent != 3 {
+			t.Errorf("expected default StreamMaxConcurrent 3, got %d", cfg.StreamMaxConcurrent)
+		}
+		if cfg.StreamOpenRateLimit != 10 {
+			t.Errorf("expected default StreamOpenRateLimit 10, got %d", cfg.StreamOpenRateLimit)
+		}
+	})
+}
+
+func TestLoad_StreamCapsConfig(t *testing.T) {
+	setBaseDev := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("APP_ENV", "local")
+		t.Setenv("JWT_SECRET", "test-jwt-secret")
+		t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
+		t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+		_ = os.Unsetenv("STREAM_MAX_CONCURRENT")
+		_ = os.Unsetenv("STREAM_OPEN_RATE_LIMIT")
+		_ = os.Unsetenv("NOTIFICATION_STREAM_MAX_CONCURRENT")
+		_ = os.Unsetenv("NOTIFICATION_STREAM_OPEN_RATE_LIMIT")
+	}
+
+	t.Run("defaults", func(t *testing.T) {
+		setBaseDev(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.StreamMaxConcurrent != 3 {
+			t.Errorf("StreamMaxConcurrent = %d, want 3", cfg.StreamMaxConcurrent)
+		}
+		if cfg.StreamOpenRateLimit != 10 {
+			t.Errorf("StreamOpenRateLimit = %d, want 10", cfg.StreamOpenRateLimit)
+		}
+	})
+
+	t.Run("custom_via_STREAM_vars", func(t *testing.T) {
+		setBaseDev(t)
+		t.Setenv("STREAM_MAX_CONCURRENT", "5")
+		t.Setenv("STREAM_OPEN_RATE_LIMIT", "25")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.StreamMaxConcurrent != 5 {
+			t.Errorf("StreamMaxConcurrent = %d, want 5", cfg.StreamMaxConcurrent)
+		}
+		if cfg.StreamOpenRateLimit != 25 {
+			t.Errorf("StreamOpenRateLimit = %d, want 25", cfg.StreamOpenRateLimit)
+		}
+	})
+
+	t.Run("custom_via_NOTIFICATION_STREAM_vars", func(t *testing.T) {
+		setBaseDev(t)
+		t.Setenv("NOTIFICATION_STREAM_MAX_CONCURRENT", "7")
+		t.Setenv("NOTIFICATION_STREAM_OPEN_RATE_LIMIT", "30")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.StreamMaxConcurrent != 7 {
+			t.Errorf("StreamMaxConcurrent = %d, want 7", cfg.StreamMaxConcurrent)
+		}
+		if cfg.StreamOpenRateLimit != 30 {
+			t.Errorf("StreamOpenRateLimit = %d, want 30", cfg.StreamOpenRateLimit)
+		}
+	})
+
+	t.Run("invalid_STREAM_MAX_CONCURRENT", func(t *testing.T) {
+		for _, invalid := range []string{"0", "-1", "abc"} {
+			setBaseDev(t)
+			t.Setenv("STREAM_MAX_CONCURRENT", invalid)
+			if _, err := Load(); err == nil {
+				t.Errorf("expected error for STREAM_MAX_CONCURRENT=%q", invalid)
+			}
+		}
+	})
+
+	t.Run("invalid_STREAM_OPEN_RATE_LIMIT", func(t *testing.T) {
+		for _, invalid := range []string{"0", "-5", "xyz"} {
+			setBaseDev(t)
+			t.Setenv("STREAM_OPEN_RATE_LIMIT", invalid)
+			if _, err := Load(); err == nil {
+				t.Errorf("expected error for STREAM_OPEN_RATE_LIMIT=%q", invalid)
+			}
+		}
 	})
 }

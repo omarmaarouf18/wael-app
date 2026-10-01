@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type Config struct {
@@ -21,6 +22,8 @@ type Config struct {
 	TLSCertPath          string
 	TLSKeyPath           string
 	TLSCAPath            string
+	StreamMaxConcurrent  int
+	StreamOpenRateLimit  int
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -85,6 +88,36 @@ func Load() (*Config, error) {
 	if dbName == "" {
 		dbName = "notification_db"
 	}
+	streamMaxConcurrent := 3
+	if v := os.Getenv("STREAM_MAX_CONCURRENT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid STREAM_MAX_CONCURRENT %q: must be a positive integer", v)
+		}
+		streamMaxConcurrent = n
+	} else if v := os.Getenv("NOTIFICATION_STREAM_MAX_CONCURRENT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid NOTIFICATION_STREAM_MAX_CONCURRENT %q: must be a positive integer", v)
+		}
+		streamMaxConcurrent = n
+	}
+
+	streamOpenRateLimit := 10
+	if v := os.Getenv("STREAM_OPEN_RATE_LIMIT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid STREAM_OPEN_RATE_LIMIT %q: must be a positive integer", v)
+		}
+		streamOpenRateLimit = n
+	} else if v := os.Getenv("NOTIFICATION_STREAM_OPEN_RATE_LIMIT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid NOTIFICATION_STREAM_OPEN_RATE_LIMIT %q: must be a positive integer", v)
+		}
+		streamOpenRateLimit = n
+	}
+
 	return &Config{
 		Port:                 port,
 		AppEnv:               appEnv,
@@ -97,5 +130,7 @@ func Load() (*Config, error) {
 		TLSCertPath:          tlsCertPath,
 		TLSKeyPath:           tlsKeyPath,
 		TLSCAPath:            tlsCAPath,
+		StreamMaxConcurrent:  streamMaxConcurrent,
+		StreamOpenRateLimit:  streamOpenRateLimit,
 	}, nil
 }

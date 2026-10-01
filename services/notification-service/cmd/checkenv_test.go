@@ -99,3 +99,17 @@ func TestRunCheckEnv_LocalMinimal(t *testing.T) {
 		t.Fatalf("expected stdout to contain 'check-env: ok', got: %s", stdout.String())
 	}
 }
+
+func TestRunCheckEnv_InvalidStreamCaps(t *testing.T) {
+	setNotifLocalEnv(t)
+	t.Setenv("STREAM_MAX_CONCURRENT", "-1")
+
+	var stdout, stderr bytes.Buffer
+	code := runCheckEnv(&stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1 for invalid STREAM_MAX_CONCURRENT, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "STREAM_MAX_CONCURRENT") {
+		t.Fatalf("expected stderr to contain 'STREAM_MAX_CONCURRENT', got: %s", stderr.String())
+	}
+}
