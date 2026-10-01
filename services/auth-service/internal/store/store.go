@@ -6,11 +6,20 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/models"
+)
+
+var (
+	// ErrUserNotFound is returned when an operation references a non-existent user.
+	ErrUserNotFound = errors.New("store: user not found")
+	// ErrStatusConflict is returned when SetStatus compare-and-set fails because
+	// the user's current status does not match the expected `from` status.
+	ErrStatusConflict = errors.New("store: status conflict")
 )
 
 // Store is the user persistence contract.
@@ -19,6 +28,7 @@ type Store interface {
 	FindByEmail(ctx context.Context, email string) (*models.User, error)
 	FindByID(ctx context.Context, id string) (*models.User, error)
 	Update(ctx context.Context, u *models.User) error
+	SetStatus(ctx context.Context, userID, from, to, reason string, at time.Time) error
 	Count(ctx context.Context) (int, error)
 }
 
@@ -77,13 +87,14 @@ func (s *MemoryStore) FindByID(_ context.Context, id string) (*models.User, erro
 	return cloneUser(s.byID[id]), nil
 }
 
-// Update replaces the stored user record.
+// Update replaces non-status fields of the stored user record.
+// Status fields are never modified by Update to prevent lost updates (finding P-1).
 func (s *MemoryStore) Update(_ context.Context, u *models.User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	existing, ok := s.byID[u.ID]
 	if !ok {
-		return fmt.Errorf("store: user not found")
+		return ErrUserNotFound
 	}
 	if u.Email != existing.Email {
 		if _, taken := s.byMail[u.Email]; taken {
@@ -91,10 +102,64 @@ func (s *MemoryStore) Update(_ context.Context, u *models.User) error {
 		}
 		delete(s.byMail, existing.Email)
 	}
-	u.UpdatedAt = time.Now()
+	now := time.Now()
+	u.UpdatedAt = now
+
 	cp := cloneUser(u)
+	// Preserve existing status fields to avoid overwriting concurrent status changes
+	cp.Status = existing.Status
+	cp.StatusReason = existing.StatusReason
+	cp.SuspendedAt = existing.SuspendedAt
+	cp.ReactivatedAt = existing.ReactivatedAt
+	cp.DeletedAt = existing.DeletedAt
+	cp.UpdatedAt = now
+
 	s.byID[u.ID] = cp
 	s.byMail[u.Email] = cp
+	return nil
+}
+
+// SetStatus performs an atomic compare-and-set of the user's status under mutex lock.
+// When from is "active", a user with an empty status also matches.
+// Returns ErrStatusConflict if the current status does not match `from`.
+func (s *MemoryStore) SetStatus(_ context.Context, userID, from, to, reason string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	existing, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+
+	currentStatus := string(existing.EffectiveStatus())
+	expectedFrom := from
+	if expectedFrom == "" {
+		expectedFrom = string(models.StatusActive)
+	}
+
+	if currentStatus != expectedFrom {
+		return ErrStatusConflict
+	}
+
+	if at.IsZero() {
+		at = time.Now()
+	}
+
+	cp := cloneUser(existing)
+	cp.Status = models.UserStatus(to)
+	cp.StatusReason = reason
+	cp.UpdatedAt = at
+	switch models.UserStatus(to) {
+	case models.StatusSuspended:
+		cp.SuspendedAt = at
+	case models.StatusActive:
+		cp.ReactivatedAt = at
+	case models.StatusDeleted:
+		cp.DeletedAt = at
+	}
+
+	s.byID[userID] = cp
+	s.byMail[cp.Email] = cp
 	return nil
 }
 

@@ -79,6 +79,7 @@ Hardening Phase A (W-01, W-02): fail-closed configuration outside local/test acr
 Hardening Phase A (W-04): added --check-env flag to api-gateway, auth-service, and notification-service (validates configuration via config.Load() and exits 0/1 without starting resources; test coverage under cmd/checkenv_test.go in each service).
 Hardening Phase A (W-05): real Mongo/Redis tests in CI via service containers (mongo:7, redis:7-alpine) and dual-implementation store test suites (MemoryStore and MongoStore for auth and notification services, atomic single-redemption for auth OTP with RedisStore and MemoryStore under -race, requireDB helper enforcing REQUIRE_DB=1 in CI).
 Hardening Phase A / Core Phase 0.5 (W-06): split tests/e2e into sequential t.Run stages with E2E_REQUIRED fail-closed flag and requireOrSkip; added compose-backed CI job "E2E (compose)" executing full e2e chain with fresh ephemeral secrets.
+Core Phase 1.1: added full_name, phone, status (active/suspended/deleted), status_reason, suspended_at, reactivated_at, deleted_at to models.User with EffectiveStatus() helper; implemented compare-and-set SetStatus and non-status Update semantics across MemoryStore and MongoStore preventing lost-update bug P-1; verified with full unit and store test suites under -race.
 
 Owner decisions recorded (2026-10-01, docs only, nothing implemented): subscriptions expire per subject date set by the admin, copied per activation (D21) with re-purchase allowed and no activation of an already-expired subject (D20); every activation writes an append-only payment record at the subject's price; Android first, iOS deferred. SPEC Sections 1, 2, 3, 5, 7 and ADR-0007 amended.
 
@@ -101,5 +102,6 @@ Owner question: reminder notification before a subscription expires (SPEC Sectio
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-SPEC Phase 1.1: user fields (full_name, phone, status) and EffectiveStatus().
+SPEC Phase 1.2: signup with name and phone (normalization, unique index, blocklist check).
+
 
