@@ -199,5 +199,67 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		if cfg.AuthServiceURL != "https://auth-service:3002" {
 			t.Errorf("expected default AuthServiceURL https://auth-service:3002, got %q", cfg.AuthServiceURL)
 		}
+		if cfg.RateLimitRead != 30 {
+			t.Errorf("expected default RateLimitRead 30, got %d", cfg.RateLimitRead)
+		}
+		if cfg.RateLimitDownload != 10 {
+			t.Errorf("expected default RateLimitDownload 10, got %d", cfg.RateLimitDownload)
+		}
+		if cfg.RateLimitWrite != 5 {
+			t.Errorf("expected default RateLimitWrite 5, got %d", cfg.RateLimitWrite)
+		}
 	})
+}
+
+func TestLoad_RateLimitTiers(t *testing.T) {
+	t.Run("custom_valid_limits", func(t *testing.T) {
+		baseEnv(t)
+		setEnv(t, "RATE_LIMIT_READ", "60")
+		setEnv(t, "RATE_LIMIT_DOWNLOAD", "20")
+		setEnv(t, "RATE_LIMIT_WRITE", "15")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.RateLimitRead != 60 {
+			t.Errorf("RateLimitRead = %d, want 60", cfg.RateLimitRead)
+		}
+		if cfg.RateLimitDownload != 20 {
+			t.Errorf("RateLimitDownload = %d, want 20", cfg.RateLimitDownload)
+		}
+		if cfg.RateLimitWrite != 15 {
+			t.Errorf("RateLimitWrite = %d, want 15", cfg.RateLimitWrite)
+		}
+	})
+
+	invalidCases := []struct {
+		envVar string
+		value  string
+	}{
+		{"RATE_LIMIT_READ", "invalid"},
+		{"RATE_LIMIT_READ", "0"},
+		{"RATE_LIMIT_READ", "-5"},
+		{"RATE_LIMIT_DOWNLOAD", "abc"},
+		{"RATE_LIMIT_DOWNLOAD", "0"},
+		{"RATE_LIMIT_DOWNLOAD", "-1"},
+		{"RATE_LIMIT_WRITE", "xyz"},
+		{"RATE_LIMIT_WRITE", "0"},
+		{"RATE_LIMIT_WRITE", "-10"},
+	}
+
+	for _, tc := range invalidCases {
+		t.Run("invalid_"+tc.envVar+"="+tc.value, func(t *testing.T) {
+			baseEnv(t)
+			setEnv(t, tc.envVar, tc.value)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("expected error for %s=%q, got nil", tc.envVar, tc.value)
+			}
+			if !strings.Contains(err.Error(), tc.envVar) {
+				t.Fatalf("expected error to contain %q, got %q", tc.envVar, err.Error())
+			}
+		})
+	}
 }

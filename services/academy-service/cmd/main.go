@@ -16,6 +16,7 @@ import (
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/config"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/handlers"
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/limiter"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 	"github.com/omarmaarouf18/wael-app/shared/infra/ratelimit"
@@ -49,6 +50,7 @@ func main() {
 
 	jwtutil.Init(cfg.JWTSecret)
 
+	var tierLimiter limiter.TierLimiter
 	if cfg.RedisURI != "" {
 		rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
 		if err != nil {
@@ -57,6 +59,7 @@ func main() {
 		defer func() { _ = rdb.Close() }()
 		jwtutil.SetRedisClient(rdb)
 		log.Printf("[ACADEMY] redis connected: %s", redact.RedactURI(cfg.RedisURI))
+		tierLimiter = limiter.NewRedisTierLimiter(rdb, cfg.RateLimitRead, cfg.RateLimitDownload, cfg.RateLimitWrite)
 	} else if !dev {
 		log.Fatalf("[ACADEMY] redis is required outside dev")
 	}
@@ -85,6 +88,7 @@ func main() {
 	log.Printf("[ACADEMY] levels seeded successfully")
 
 	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL, cfg.ExposePriceToStudents, cfg.SupportWhatsApp)
+	srv.Limiter = tierLimiter
 
 	// Build and start admin listener on internal network
 	adminRunner, err := buildServer(cfg, cfg.AdminListenAddr, srv.AdminHandler())

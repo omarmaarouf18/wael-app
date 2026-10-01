@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // Config holds all configuration required by academy-service.
@@ -27,6 +28,9 @@ type Config struct {
 	AdminListenAddr       string
 	ExposePriceToStudents bool
 	SupportWhatsApp       string
+	RateLimitRead         int
+	RateLimitDownload     int
+	RateLimitWrite        int
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -129,6 +133,33 @@ func Load() (*Config, error) {
 
 	exposePrice := os.Getenv("EXPOSE_PRICE_TO_STUDENTS") == "true" || os.Getenv("EXPOSE_PRICE_TO_STUDENTS") == "1"
 
+	rateLimitRead := 30
+	if v := os.Getenv("RATE_LIMIT_READ"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid RATE_LIMIT_READ %q: must be a positive integer", v)
+		}
+		rateLimitRead = n
+	}
+
+	rateLimitDownload := 10
+	if v := os.Getenv("RATE_LIMIT_DOWNLOAD"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid RATE_LIMIT_DOWNLOAD %q: must be a positive integer", v)
+		}
+		rateLimitDownload = n
+	}
+
+	rateLimitWrite := 5
+	if v := os.Getenv("RATE_LIMIT_WRITE"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid RATE_LIMIT_WRITE %q: must be a positive integer", v)
+		}
+		rateLimitWrite = n
+	}
+
 	return &Config{
 		Port:                  port,
 		AppEnv:                appEnv,
@@ -145,5 +176,8 @@ func Load() (*Config, error) {
 		AdminListenAddr:       adminListenAddr,
 		ExposePriceToStudents: exposePrice,
 		SupportWhatsApp:       supportWhatsApp,
+		RateLimitRead:         rateLimitRead,
+		RateLimitDownload:     rateLimitDownload,
+		RateLimitWrite:        rateLimitWrite,
 	}, nil
 }

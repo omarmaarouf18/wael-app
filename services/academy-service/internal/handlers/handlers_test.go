@@ -7,15 +7,19 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/limiter"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
+	"github.com/omarmaarouf18/wael-app/shared/infra/ratelimit"
 )
 
 func init() {
@@ -1615,5 +1619,296 @@ func TestPurchaseRequests_HandlerConcurrency(t *testing.T) {
 	}
 	if userReqs[0].ID != expectedID {
 		t.Errorf("stored ID %q != expected %q", userReqs[0].ID, expectedID)
+	}
+}
+
+func setupTestLimiter(t *testing.T, read, download, write int) (*miniredis.Miniredis, limiter.TierLimiter) {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb, err := ratelimit.NewRedisClient("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatalf("failed to connect to miniredis: %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
+	return mr, limiter.NewRedisTierLimiter(rdb, read, download, write)
+}
+
+func TestRateLimitTiers_ReadTierExhaustion(t *testing.T) {
+	s := newTestServer(false)
+	_, tl := setupTestLimiter(t, 30, 10, 5)
+	s.Limiter = tl
+
+	h := s.PublicHandler()
+	const userID = "student-read-rl"
+	tok := makeStudentToken(t, userID)
+
+	for i := 1; i <= 30; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("call %d: expected 200, got %d", i, rec.Code)
+		}
+	}
+
+	// 31st call must be rate limited (429)
+	req := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
+	req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("call 31: expected 429, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	retryAfterStr := rec.Header().Get("Retry-After")
+	if retryAfterStr == "" {
+		t.Fatal("expected Retry-After header on 429")
+	}
+	retryAfter, err := strconv.Atoi(retryAfterStr)
+	if err != nil || retryAfter <= 0 {
+		t.Fatalf("invalid Retry-After value: %q", retryAfterStr)
+	}
+
+	var errBody map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("invalid json response body: %v", err)
+	}
+	if errBody["code"] != "rate_limited" {
+		t.Errorf("expected code=rate_limited, got %v", errBody["code"])
+	}
+}
+
+func TestRateLimitTiers_WriteTierExhaustion(t *testing.T) {
+	s := newTestServer(false)
+	_, tl := setupTestLimiter(t, 30, 10, 5)
+	s.Limiter = tl
+
+	ctx := context.Background()
+	subj := &models.Subject{
+		ID:              "subj-rl-write",
+		LevelKey:        "bachelor-y1",
+		TitleAr:         "مدخل قانون",
+		Price:           100,
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(48 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj); err != nil {
+		t.Fatalf("CreateSubject failed: %v", err)
+	}
+
+	h := s.PublicHandler()
+	const userID = "student-write-rl"
+	tok := makeStudentToken(t, userID)
+
+	for i := 1; i <= 5; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-rl-write/access-request", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("call %d: expected 200, got %d (body: %s)", i, rec.Code, rec.Body.String())
+		}
+	}
+
+	// 6th call must be rate limited (429)
+	req := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-rl-write/access-request", nil)
+	req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("call 6: expected 429, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	retryAfterStr := rec.Header().Get("Retry-After")
+	if retryAfterStr == "" {
+		t.Fatal("expected Retry-After header on 429")
+	}
+	retryAfter, err := strconv.Atoi(retryAfterStr)
+	if err != nil || retryAfter <= 0 {
+		t.Fatalf("invalid Retry-After value: %q", retryAfterStr)
+	}
+}
+
+func TestRateLimitTiers_DownloadTier(t *testing.T) {
+	s := newTestServer(false)
+	_, tl := setupTestLimiter(t, 30, 10, 5)
+	s.Limiter = tl
+
+	const userID = "student-download-rl"
+	tok := makeStudentToken(t, userID)
+
+	dummyDownloadHandler := s.EnforceTier(limiter.TierDownload, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("pdf-content"))
+	})
+
+	for i := 1; i <= 10; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/s1/files/f1/download", nil)
+		claims, _ := jwtutil.ValidateToken(tok)
+		req = req.WithContext(context.WithValue(req.Context(), claimsContextKey, claims))
+		rec := httptest.NewRecorder()
+
+		dummyDownloadHandler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("call %d: expected 200, got %d", i, rec.Code)
+		}
+	}
+
+	// 11th call must be rate limited (429)
+	req := httptest.NewRequest(http.MethodGet, "/academy/subjects/s1/files/f1/download", nil)
+	claims, _ := jwtutil.ValidateToken(tok)
+	req = req.WithContext(context.WithValue(req.Context(), claimsContextKey, claims))
+	rec := httptest.NewRecorder()
+
+	dummyDownloadHandler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("call 11: expected 429, got %d", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After header on 429")
+	}
+}
+
+func TestRateLimitTiers_PerUserIsolation(t *testing.T) {
+	s := newTestServer(false)
+	_, tl := setupTestLimiter(t, 30, 10, 5)
+	s.Limiter = tl
+
+	ctx := context.Background()
+	subj := &models.Subject{
+		ID:              "subj-rl-iso",
+		LevelKey:        "bachelor-y1",
+		TitleAr:         "مدخل",
+		Price:           100,
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(48 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	_ = s.Store.CreateSubject(ctx, subj)
+
+	h := s.PublicHandler()
+	tokA := makeStudentToken(t, "user-rl-a")
+	tokB := makeStudentToken(t, "user-rl-b")
+
+	// Exhaust User A's write limit (5 calls)
+	for i := 1; i <= 5; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-rl-iso/access-request", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tokA)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("user A call %d: expected 200, got %d", i, rec.Code)
+		}
+	}
+
+	// User A call 6 is 429
+	reqA := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-rl-iso/access-request", nil)
+	reqA.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqA.Header.Set("Authorization", "Bearer "+tokA)
+	recA := httptest.NewRecorder()
+	h.ServeHTTP(recA, reqA)
+	if recA.Code != http.StatusTooManyRequests {
+		t.Fatalf("user A call 6: expected 429, got %d", recA.Code)
+	}
+
+	// User B is unaffected
+	reqB := httptest.NewRequest(http.MethodPost, "/academy/subjects/subj-rl-iso/access-request", nil)
+	reqB.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqB.Header.Set("Authorization", "Bearer "+tokB)
+	recB := httptest.NewRecorder()
+	h.ServeHTTP(recB, reqB)
+	if recB.Code != http.StatusOK {
+		t.Fatalf("user B call 1: expected 200, got %d", recB.Code)
+	}
+
+	// User A reading is unaffected (Read tier is separate)
+	reqARead := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
+	reqARead.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqARead.Header.Set("Authorization", "Bearer "+tokA)
+	recARead := httptest.NewRecorder()
+	h.ServeHTTP(recARead, reqARead)
+	if recARead.Code != http.StatusOK {
+		t.Fatalf("user A read call: expected 200, got %d", recARead.Code)
+	}
+}
+
+func TestRateLimitTiers_FailClosed_RedisDown(t *testing.T) {
+	s := newTestServer(false)
+	mr, tl := setupTestLimiter(t, 30, 10, 5)
+	s.Limiter = tl
+
+	h := s.PublicHandler()
+	tok := makeStudentToken(t, "user-redis-down")
+
+	// Close redis
+	mr.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
+	req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 fail-closed when Redis is down, got %d", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After on fail closed")
+	}
+}
+
+func TestRateLimitTiers_FailClosed_NilLimiterOutsideDev(t *testing.T) {
+	s := newTestServer(false)
+	s.AppEnv = "production"
+	s.Limiter = nil
+
+	h := s.PublicHandler()
+	tok := makeStudentToken(t, "user-nil-limiter")
+
+	req := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
+	req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 fail-closed when Limiter is nil in production, got %d", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After on fail closed")
+	}
+}
+
+func TestRateLimitTiers_NoClaimsFailClosed(t *testing.T) {
+	s := newTestServer(false)
+	_, tl := setupTestLimiter(t, 30, 10, 5)
+	s.Limiter = tl
+
+	handler := s.EnforceTier(limiter.TierRead, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/dummy", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 when claims are missing, got %d", rec.Code)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After on fail closed")
 	}
 }

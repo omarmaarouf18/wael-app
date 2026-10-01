@@ -104,6 +104,8 @@ SPEC Phase 3.2: R2 gating on `youtube_video_id` in `GET /academy/subjects/{id}`:
 
 SPEC Phase 3.3: `purchase_requests` model per SPEC Section 5; `Store` methods `CreateOrGetPendingRequest`, `GetPendingRequest`, `ListRequestsByUser` in MemoryStore and MongoStore; partial unique index on `(user_id, subject_id)` where `status = "pending"` enforcing at most one pending request per pair (R5), plus index on `status`; `POST /academy/subjects/{id}/access-request` student route returning `AccessRequestResponseDTO` with support WhatsApp link, idempotent on subsequent calls (returning existing pending request with same ID, 200 OK); D20 refusal returning generic 409 when `access_expires_at` is past; R1 refusal returning generic 409 when subject is already owned; `GET /academy/subjects/{id}` populates `request: {"status": "pending"}` when unowned and pending; concurrency test with 20 parallel requests produces exactly 1 pending row with all callers receiving the same ID across both stores under `-race`.
 
+SPEC Phase 3.4: rate-limit tiers per SPEC Section 2 (D13): `limiter.TierLimiter` interface with `RedisTierLimiter` backed by `shared/infra/ratelimit.RateLimiter` (defaults: Read 30/min, Download 10/min, Write 5/min, configurable via `RATE_LIMIT_READ`, `RATE_LIMIT_DOWNLOAD`, `RATE_LIMIT_WRITE`); keyed on JWT user ID; fail closed on Redis outage or unconfigured limiter; `Retry-After` header and structured error response on 429; `EnforceTier` middleware wrapping `/academy/levels` (Read), `/academy/subjects` (Read), `/academy/subjects/{id}` (Read), and `/academy/subjects/{id}/access-request` (Write); verified with unit and handler test suites under `-race` covering all tiers, per-user isolation, fail closed on Redis shutdown / nil limiter in production, and Retry-After header.
+
 Frontend F0: `scripts/frontend_composition_gate.sh` ratchet gate (baseline `scripts/frontend_gate_baseline.txt`, 83 entries at F0) runs in `.githooks/pre-push` and the CI `flutter-test` job; `docs/frontend/DESIGN_SYSTEM.md` and `docs/frontend/STATUS.md` added.
 
 Frontend F1 (token gaps): `AppTypography.uppercaseLabel`, semantic colours (success/warning/danger/info with Bg variants, WCAG AA verified by `frontend/test/theme_tokens_test.dart`) and glass/scrim tokens added to `theme.dart`; raw colours and `.toUpperCase()` removed from `lib/widgets/` and the non-catalog screens (catalog screens untouched); the composition gate no longer stops at a rule with zero matches (it was fail-open); baseline lowered from 83 entries (392 violations) to 68 (358).
@@ -133,7 +135,8 @@ Owner question: reminder notification before a subscription expires (SPEC Sectio
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-SPEC Phase 3.4: rate-limit tiers (D13).
+SPEC Phase 4.1: admin listener, verify client (fail closed), audit log.
+
 
 
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/limiter"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
@@ -30,6 +31,7 @@ type Server struct {
 	AuthURL         string
 	ExposePrice     bool
 	SupportWhatsApp string
+	Limiter         limiter.TierLimiter
 }
 
 // New creates a Server with dependencies.
@@ -432,10 +434,39 @@ func (s *Server) CreateAccessRequest(w http.ResponseWriter, r *http.Request, id 
 	handlerutil.WriteJSON(w, http.StatusOK, resp)
 }
 
+// EnforceTier wraps an HTTP handler with tiered rate limiting per SPEC Section 2 (D13).
+// Keyed on JWT user id; fails closed when Redis is unavailable or limiter is unconfigured.
+func (s *Server) EnforceTier(tier string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.Limiter == nil {
+			if s.AppEnv == "local" || s.AppEnv == "test" {
+				next(w, r)
+				return
+			}
+			limiter.WriteRateLimitedResponse(w, 30*time.Second)
+			return
+		}
+
+		claims := StudentClaims(r)
+		if claims == nil || claims.UserID == "" {
+			limiter.WriteRateLimitedResponse(w, 30*time.Second)
+			return
+		}
+
+		limited, retryAfter := s.Limiter.CheckAndRecord(tier, claims.UserID)
+		if limited {
+			limiter.WriteRateLimitedResponse(w, retryAfter)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
 // SubjectSubroute dispatches requests under /academy/subjects/.
 // Handles:
-// - GET /academy/subjects/{id} -> GetSubjectDetail
-// - POST /academy/subjects/{id}/access-request -> CreateAccessRequest
+// - GET /academy/subjects/{id} -> GetSubjectDetail (Read tier)
+// - POST /academy/subjects/{id}/access-request -> CreateAccessRequest (Write tier)
 func (s *Server) SubjectSubroute(w http.ResponseWriter, r *http.Request) {
 	subpath := strings.TrimPrefix(r.URL.Path, "/academy/subjects/")
 	subpath = strings.Trim(subpath, "/")
@@ -446,11 +477,15 @@ func (s *Server) SubjectSubroute(w http.ResponseWriter, r *http.Request) {
 
 	parts := strings.Split(subpath, "/")
 	if len(parts) == 1 && parts[0] != "" {
-		s.GetSubjectDetail(w, r, parts[0])
+		s.EnforceTier(limiter.TierRead, func(w http.ResponseWriter, r *http.Request) {
+			s.GetSubjectDetail(w, r, parts[0])
+		})(w, r)
 		return
 	}
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "access-request" {
-		s.CreateAccessRequest(w, r, parts[0])
+		s.EnforceTier(limiter.TierWrite, func(w http.ResponseWriter, r *http.Request) {
+			s.CreateAccessRequest(w, r, parts[0])
+		})(w, r)
 		return
 	}
 
@@ -461,8 +496,8 @@ func (s *Server) SubjectSubroute(w http.ResponseWriter, r *http.Request) {
 func (s *Server) PublicHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", Health)
-	mux.HandleFunc("/academy/levels", s.GetLevels)
-	mux.HandleFunc("/academy/subjects", s.ListSubjects)
+	mux.HandleFunc("/academy/levels", s.EnforceTier(limiter.TierRead, s.GetLevels))
+	mux.HandleFunc("/academy/subjects", s.EnforceTier(limiter.TierRead, s.ListSubjects))
 	mux.HandleFunc("/academy/subjects/", s.SubjectSubroute)
 
 	var h http.Handler = mux
