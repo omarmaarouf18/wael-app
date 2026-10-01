@@ -160,7 +160,13 @@ func TestGatewayChain(t *testing.T) {
 	}
 
 	runStage("signup", func(subT *testing.T) {
-		code, body := c.post(subT, "/api/v1/auth/signup", "", map[string]string{"email": email, "password": "password123"})
+		phone := fmt.Sprintf("+2010%08d", (time.Now().UnixNano() % 100000000))
+		code, body := c.post(subT, "/api/v1/auth/signup", "", map[string]string{
+			"full_name": "E2E Student",
+			"email":     email,
+			"phone":     phone,
+			"password":  "password123",
+		})
 		if code != http.StatusCreated {
 			subT.Fatalf("signup = %d (%v)", code, body)
 		}

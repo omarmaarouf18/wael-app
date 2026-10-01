@@ -12,7 +12,12 @@ import (
 // be redeemed more than once across 20 parallel requests.
 func TestRefresh_SingleUseUnderConcurrency(t *testing.T) {
 	s := testServer()
-	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{"email": "race@example.com", "password": "password123"}, "")
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Race User",
+		"email":     "race@example.com",
+		"phone":     "+201012345688",
+		"password":  "password123",
+	}, "")
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("signup = %d (%s)", rec.Code, rec.Body.String())
 	}

@@ -60,3 +60,11 @@ func (u *User) EffectiveStatus() UserStatus {
 	}
 	return u.Status
 }
+
+// BlocklistEntry represents a blocked email or phone hash.
+type BlocklistEntry struct {
+	Kind      string    `json:"kind" bson:"kind"`
+	Hash      string    `json:"hash" bson:"hash"`
+	Reason    string    `json:"reason,omitempty" bson:"reason,omitempty"`
+	CreatedAt time.Time `json:"created_at" bson:"created_at"`
+}

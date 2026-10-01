@@ -42,6 +42,7 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "TLS_CA_PATH", "/tmp/ca.pem")
 	setEnv(t, "RESEND_API_KEY", "re_test_12345")
 	setEnv(t, "RESEND_FROM_EMAIL", "noreply@example.com")
+	setEnv(t, "BLOCKLIST_HMAC_KEY", "test-blocklist-hmac-key")
 }
 
 func TestLoad_MinimalDev(t *testing.T) {
@@ -52,6 +53,9 @@ func TestLoad_MinimalDev(t *testing.T) {
 	}
 	if cfg.Port != "3002" {
 		t.Fatalf("port = %q", cfg.Port)
+	}
+	if cfg.DefaultPhoneRegion != "EG" {
+		t.Fatalf("defaultPhoneRegion = %q, want EG", cfg.DefaultPhoneRegion)
 	}
 	if cfg.TLSEnabled() {
 		t.Fatal("expected TLS disabled without cert paths")
@@ -127,6 +131,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"TLS_CA_PATH",
 		"RESEND_API_KEY",
 		"RESEND_FROM_EMAIL",
+		"BLOCKLIST_HMAC_KEY",
 	}
 
 	for _, v := range requiredVars {
@@ -157,7 +162,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 	})
 
 	t.Run("local_dev_with_only_secrets_succeeds_with_defaults", func(t *testing.T) {
-		for _, v := range []string{"MONGO_URI", "REDIS_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "RESEND_API_KEY", "RESEND_FROM_EMAIL"} {
+		for _, v := range []string{"MONGO_URI", "REDIS_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "RESEND_API_KEY", "RESEND_FROM_EMAIL", "BLOCKLIST_HMAC_KEY"} {
 			_ = os.Unsetenv(v)
 		}
 		setEnv(t, "APP_ENV", "local")
@@ -170,6 +175,9 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		}
 		if cfg.Port != "3002" {
 			t.Errorf("expected default Port 3002, got %q", cfg.Port)
+		}
+		if cfg.DefaultPhoneRegion != "EG" {
+			t.Errorf("expected default DefaultPhoneRegion EG, got %q", cfg.DefaultPhoneRegion)
 		}
 		if cfg.TLSEnabled() {
 			t.Error("expected TLS disabled by default in local dev")

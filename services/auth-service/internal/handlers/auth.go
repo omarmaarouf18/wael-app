@@ -5,13 +5,20 @@ package handlers
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/nyaruka/phonenumbers"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/mailer"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/notify"
@@ -22,21 +29,74 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const dbTimeout = 5 * time.Second
+
 // Server wires auth dependencies.
 type Server struct {
-	Store         store.Store
-	Codes         otp.Store
-	Lockout       Lockout
-	Sender        mailer.Sender
-	AppEnv        string
-	GatewaySecret string
-	NotifyURL     string
-	NotifyToken   string
+	Store              store.Store
+	Codes              otp.Store
+	Lockout            Lockout
+	Sender             mailer.Sender
+	AppEnv             string
+	GatewaySecret      string
+	BlocklistHMACKey   string
+	DefaultPhoneRegion string
+	NotifyURL          string
+	NotifyToken        string
 }
 
 // New creates a Server.
 func New(st store.Store, codes otp.Store, lockout Lockout, sender mailer.Sender, appEnv, gatewaySecret string) *Server {
-	return &Server{Store: st, Codes: codes, Lockout: lockout, Sender: sender, AppEnv: appEnv, GatewaySecret: gatewaySecret}
+	return &Server{
+		Store:              st,
+		Codes:              codes,
+		Lockout:            lockout,
+		Sender:             sender,
+		AppEnv:             appEnv,
+		GatewaySecret:      gatewaySecret,
+		DefaultPhoneRegion: "EG",
+	}
+}
+
+func (s *Server) blocklistKey() string {
+	if s.BlocklistHMACKey != "" {
+		return s.BlocklistHMACKey
+	}
+	if s.AppEnv == "local" || s.AppEnv == "test" {
+		return "local-dev-blocklist-hmac-key"
+	}
+	return ""
+}
+
+func (s *Server) defaultRegion() string {
+	if s.DefaultPhoneRegion != "" {
+		return s.DefaultPhoneRegion
+	}
+	return "EG"
+}
+
+func computeHMAC(key, data string) string {
+	mac := hmac.New(sha256.New, []byte(key))
+	mac.Write([]byte(data))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func normalizePhone(raw, defaultRegion string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", errors.New("phone number cannot be empty")
+	}
+	if defaultRegion == "" {
+		defaultRegion = "EG"
+	}
+	num, err := phonenumbers.Parse(raw, defaultRegion)
+	if err != nil {
+		return "", fmt.Errorf("invalid phone number: %w", err)
+	}
+	if !phonenumbers.IsValidNumber(num) {
+		return "", errors.New("invalid phone number")
+	}
+	return phonenumbers.Format(num, phonenumbers.E164), nil
 }
 
 // GatewayAuth requires the gateway secret on every non-health route.
@@ -94,19 +154,35 @@ func issuePair(userID string, role models.Role, email string) (access, refresh s
 }
 
 type signupRequest struct {
+	FullName string `json:"full_name"`
 	Email    string `json:"email"`
+	Phone    string `json:"phone"`
 	Password string `json:"password"`
 }
 
 // Signup registers a new unverified account and sends an email OTP.
-// Single role (ADR-0002): the request carries no role and new accounts are
-// always models.RoleUser. decodeJSON rejects unknown fields, so any body
-// containing `role` fails with 400.
+// Single role (ADR-0002): the request carries no role and new accounts are always models.RoleUser.
+// Refusals (duplicate email, duplicate phone, blocked email, blocked phone) return a generic
+// response (P-5) to avoid account or blocklist oracles.
 func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 	var req signupRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+
+	name := strings.TrimSpace(req.FullName)
+	nameRunes := utf8.RuneCountInString(name)
+	if nameRunes < 2 || nameRunes > 100 {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid full name: must be 2-100 characters", nil)
+		return
+	}
+
+	phone, err := normalizePhone(req.Phone, s.defaultRegion())
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid phone number", err)
+		return
+	}
+
 	email := normalizeEmail(req.Email)
 	if !validEmail(email) {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid email or password", nil)
@@ -116,12 +192,64 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid email or password", nil)
 		return
 	}
-	role := models.RoleUser
-	ctx := r.Context()
-	if existing, _ := s.Store.FindByEmail(ctx, email); existing != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "email already registered", nil)
+
+	const refusalMsg = "unable to complete registration"
+
+	// 1. Blocklist check on normalized email (R9, D15)
+	emailHash := computeHMAC(s.blocklistKey(), email)
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	emailBlocked, err := s.Store.IsBlocked(dbCtx, "email", emailHash)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
+	if emailBlocked {
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+		return
+	}
+
+	// 2. Blocklist check on normalized phone (R9, D15)
+	phoneHash := computeHMAC(s.blocklistKey(), phone)
+	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+	phoneBlocked, err := s.Store.IsBlocked(dbCtx, "phone", phoneHash)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if phoneBlocked {
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+		return
+	}
+
+	// 3. Existing account check by email (P-3, P-4)
+	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+	existingEmail, err := s.Store.FindByEmail(dbCtx, email)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if existingEmail != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+		return
+	}
+
+	// 4. Existing account check by phone (P-3, P-4, P-6)
+	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+	existingPhone, err := s.Store.FindByPhone(dbCtx, phone)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if existingPhone != nil && existingPhone.EffectiveStatus() != models.StatusDeleted {
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+		return
+	}
+
+	role := models.RoleUser
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
@@ -132,22 +260,48 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
-	u := &models.User{ID: id, Email: email, PasswordHash: string(hash), Role: role}
-	if err := s.Store.Create(ctx, u); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "email already registered", err)
+	u := &models.User{
+		ID:           id,
+		Email:        email,
+		PasswordHash: string(hash),
+		Role:         role,
+		FullName:     name,
+		Phone:        phone,
+		Status:       models.StatusActive,
+	}
+
+	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+	err = s.Store.Create(dbCtx, u)
+	cancel()
+	if err != nil {
+		if errors.Is(err, store.ErrDuplicate) {
+			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, err)
+			return
+		}
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
+
 	code, err := otp.GenerateNumericCode(6)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
-	if err := s.Codes.Set(ctx, "signup-otp:"+email, otp.HashToken(code), 10*time.Minute); err != nil {
+	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+	err = s.Codes.Set(dbCtx, "signup-otp:"+email, otp.HashToken(code), 10*time.Minute)
+	cancel()
+	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
-	_ = s.Sender.SendCode(ctx, email, code, "signup")
-	resp := map[string]any{"id": id, "email": email, "role": string(role)}
+	_ = s.Sender.SendCode(r.Context(), email, code, "signup")
+	resp := map[string]any{
+		"id":        id,
+		"email":     email,
+		"role":      string(role),
+		"full_name": name,
+		"phone":     phone,
+	}
 	if s.devOTPField() {
 		resp["dev_otp"] = code
 	}
@@ -176,13 +330,18 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
 		return
 	}
-	u, err := s.Store.FindByEmail(ctx, email)
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	u, err := s.Store.FindByEmail(dbCtx, email)
+	cancel()
 	if err != nil || u == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
 		return
 	}
 	u.EmailVerified = true
-	if err := s.Store.Update(ctx, u); err != nil {
+	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+	err = s.Store.Update(dbCtx, u)
+	cancel()
+	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
@@ -205,6 +364,7 @@ type loginRequest struct {
 }
 
 // Login authenticates with email+password, enforcing lockout with backoff.
+// Never discards store read errors (P-3): store outage returns 503, not 401.
 func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if !decodeJSON(w, r, &req) {
@@ -226,8 +386,15 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, retry later", "code": "locked_out"})
 		return
 	}
-	ctx := r.Context()
-	u, _ := s.Store.FindByEmail(ctx, email)
+
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	u, err := s.Store.FindByEmail(dbCtx, email)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
 	if u == nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
 		s.Lockout.RecordFailure(emailKey)
 		s.Lockout.RecordFailure(ipKey)
@@ -245,7 +412,7 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
-	if err := s.Codes.Set(ctx, "refresh:"+otp.HashToken(refresh), u.ID, 7*24*time.Hour); err != nil {
+	if err := s.Codes.Set(r.Context(), "refresh:"+otp.HashToken(refresh), u.ID, 7*24*time.Hour); err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
@@ -274,7 +441,9 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
 		return
 	}
-	u, err := s.Store.FindByID(ctx, userID)
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	u, err := s.Store.FindByID(dbCtx, userID)
+	cancel()
 	if err != nil || u == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
 		return
@@ -303,7 +472,10 @@ func (s *Server) RequestReset(w http.ResponseWriter, r *http.Request) {
 	}
 	email := normalizeEmail(req.Email)
 	ctx := r.Context()
-	if u, _ := s.Store.FindByEmail(ctx, email); u != nil {
+	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+	u, _ := s.Store.FindByEmail(dbCtx, email)
+	cancel()
+	if u != nil {
 		code, err := otp.GenerateNumericCode(6)
 		if err == nil {
 			_ = s.Codes.Set(ctx, "reset-code:"+email, otp.HashToken(code), 10*time.Minute)
@@ -374,7 +546,10 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.Codes.Delete(ctx, key)
-	u, err := s.Store.FindByEmail(ctx, email)
+
+	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+	u, err := s.Store.FindByEmail(dbCtx, email)
+	cancel()
 	if err != nil || u == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired reset token", nil)
 		return
@@ -385,7 +560,11 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.PasswordHash = string(hash)
-	if err := s.Store.Update(ctx, u); err != nil {
+
+	dbCtx, cancel = context.WithTimeout(ctx, dbTimeout)
+	err = s.Store.Update(dbCtx, u)
+	cancel()
+	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
@@ -405,7 +584,9 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 		return
 	}
-	u, err := s.Store.FindByID(r.Context(), claims.UserID)
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	u, err := s.Store.FindByID(dbCtx, claims.UserID)
+	cancel()
 	if err != nil || u == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 		return

@@ -133,6 +133,8 @@ services:
       TLS_CA_PATH: /app/certs/ca.crt
       RESEND_API_KEY: ${RESEND_API_KEY}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
+      BLOCKLIST_HMAC_KEY: ${BLOCKLIST_HMAC_KEY}
+      DEFAULT_PHONE_REGION: ${DEFAULT_PHONE_REGION:-EG}
     depends_on:
       mongo:
         condition: service_healthy

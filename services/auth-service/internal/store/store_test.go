@@ -23,6 +23,13 @@ func runUserStoreSuite(t *testing.T, s Store) {
 	if err := s.Create(ctx, u1); err != nil {
 		t.Fatalf("Create u1: %v", err)
 	}
+	if u1.Status != models.StatusActive {
+		t.Fatalf("expected Status %q after Create, got %q", models.StatusActive, u1.Status)
+	}
+	gotCreated, err := s.FindByID(ctx, "u-1")
+	if err != nil || gotCreated == nil || gotCreated.Status != models.StatusActive {
+		t.Fatalf("expected stored Status %q, got %+v (err: %v)", models.StatusActive, gotCreated, err)
+	}
 
 	// 2. Duplicate email on Create errors
 	uDup := &models.User{
@@ -106,13 +113,13 @@ func runUserStoreSuite(t *testing.T, s Store) {
 		t.Fatalf("Count: expected 2, got %d (err: %v)", n, err)
 	}
 
-	// 10. EffectiveStatus on a legacy doc without status
+	// 10. EffectiveStatus on newly created doc (Create stores active explicitly)
 	uLegacy := &models.User{
 		ID:           "u-legacy",
 		Email:        "legacy@example.com",
 		PasswordHash: "hash-legacy",
 		Role:         models.RoleUser,
-		// Status is deliberately omitted (empty)
+		// Status is omitted (empty)
 	}
 	if err := s.Create(ctx, uLegacy); err != nil {
 		t.Fatalf("Create uLegacy: %v", err)
@@ -121,13 +128,42 @@ func runUserStoreSuite(t *testing.T, s Store) {
 	if err != nil || gotLegacy == nil {
 		t.Fatalf("FindByID uLegacy: %v", err)
 	}
-	if gotLegacy.Status != "" {
-		t.Fatalf("expected empty status on legacy doc, got %q", gotLegacy.Status)
+	if gotLegacy.Status != models.StatusActive {
+		t.Fatalf("expected active status on created doc, got %q", gotLegacy.Status)
 	}
 	if gotLegacy.EffectiveStatus() != models.StatusActive {
-		t.Fatalf("expected EffectiveStatus active for legacy doc, got %q", gotLegacy.EffectiveStatus())
+		t.Fatalf("expected EffectiveStatus active for doc, got %q", gotLegacy.EffectiveStatus())
 	}
-	// Transition legacy doc (empty status) from active to suspended via SetStatus
+
+	// For MemoryStore, also test an unmigrated legacy doc with raw empty status field
+	if memStore, ok := s.(*MemoryStore); ok {
+		memStore.mu.Lock()
+		uRawLegacy := &models.User{
+			ID:           "u-raw-legacy",
+			Email:        "rawlegacy-mem@example.com",
+			PasswordHash: "hash-raw-legacy",
+			Role:         models.RoleUser,
+		}
+		memStore.byID[uRawLegacy.ID] = uRawLegacy
+		memStore.byMail[uRawLegacy.Email] = uRawLegacy
+		memStore.mu.Unlock()
+
+		gotRaw, err := s.FindByID(ctx, "u-raw-legacy")
+		if err != nil || gotRaw == nil {
+			t.Fatalf("FindByID raw legacy: %v", err)
+		}
+		if gotRaw.Status != "" {
+			t.Fatalf("expected empty status on raw legacy doc, got %q", gotRaw.Status)
+		}
+		if gotRaw.EffectiveStatus() != models.StatusActive {
+			t.Fatalf("expected EffectiveStatus active for raw legacy doc, got %q", gotRaw.EffectiveStatus())
+		}
+		if err := s.SetStatus(ctx, "u-raw-legacy", string(models.StatusActive), string(models.StatusSuspended), "raw legacy suspend", time.Now()); err != nil {
+			t.Fatalf("SetStatus raw legacy: %v", err)
+		}
+	}
+
+	// Transition legacy doc from active to suspended via SetStatus
 	legacySuspendAt := time.Now().Truncate(time.Millisecond)
 	if err := s.SetStatus(ctx, "u-legacy", string(models.StatusActive), string(models.StatusSuspended), "legacy migration suspend", legacySuspendAt); err != nil {
 		t.Fatalf("SetStatus legacy from active to suspended: %v", err)
@@ -214,14 +250,17 @@ func runUserStoreSuite(t *testing.T, s Store) {
 	if missingIDErr == nil {
 		t.Fatal("expected error on SetStatus for missing id, got nil")
 	}
-	if errors.Is(missingIDErr, ErrStatusConflict) {
-		t.Fatal("expected non-conflict error for missing id, got ErrStatusConflict")
-	}
-	if !errors.Is(missingIDErr, ErrUserNotFound) && missingIDErr.Error() != "store: user not found" {
-		t.Fatalf("expected user not found error for missing id, got %v", missingIDErr)
+	if !errors.Is(missingIDErr, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound for missing id, got %v", missingIDErr)
 	}
 
-	// 14. Additional transitions: reactivate (suspended -> active) and delete (active -> deleted)
+	// 14. SetStatus invalid target status returns ErrInvalidStatus in both stores
+	invalidTargetErr := s.SetStatus(ctx, "u-stale", string(models.StatusSuspended), "invalid-status-xyz", "test", time.Now())
+	if !errors.Is(invalidTargetErr, ErrInvalidStatus) {
+		t.Fatalf("expected ErrInvalidStatus for invalid status, got %v", invalidTargetErr)
+	}
+
+	// 15. Additional transitions: reactivate (suspended -> active) and delete (active -> deleted)
 	reactivateTime := time.Now().Truncate(time.Millisecond)
 	if err := s.SetStatus(ctx, "u-stale", string(models.StatusSuspended), string(models.StatusActive), "reinstated", reactivateTime); err != nil {
 		t.Fatalf("SetStatus reactivate: %v", err)
@@ -244,6 +283,82 @@ func runUserStoreSuite(t *testing.T, s Store) {
 	}
 	if !deletedUser.DeletedAt.Equal(deleteTime) {
 		t.Fatalf("expected DeletedAt %v, got %v", deleteTime, deletedUser.DeletedAt)
+	}
+
+	// 16. Phone unique partial index (P-6):
+	// - two users with empty phone do not collide
+	uEmpty1 := &models.User{
+		ID:           "u-empty-1",
+		Email:        "empty1@example.com",
+		PasswordHash: "h1",
+		Role:         models.RoleUser,
+		Phone:        "",
+	}
+	if err := s.Create(ctx, uEmpty1); err != nil {
+		t.Fatalf("Create user with empty phone 1: %v", err)
+	}
+	uEmpty2 := &models.User{
+		ID:           "u-empty-2",
+		Email:        "empty2@example.com",
+		PasswordHash: "h2",
+		Role:         models.RoleUser,
+		Phone:        "",
+	}
+	if err := s.Create(ctx, uEmpty2); err != nil {
+		t.Fatalf("Create user with empty phone 2: %v", err)
+	}
+
+	// - duplicate phone between two active users is refused
+	uPhone1 := &models.User{
+		ID:           "u-phone-1",
+		Email:        "phone1@example.com",
+		PasswordHash: "h1",
+		Role:         models.RoleUser,
+		Phone:        "+201012345678",
+	}
+	if err := s.Create(ctx, uPhone1); err != nil {
+		t.Fatalf("Create user with phone 1: %v", err)
+	}
+	uPhone2 := &models.User{
+		ID:           "u-phone-2",
+		Email:        "phone2@example.com",
+		PasswordHash: "h2",
+		Role:         models.RoleUser,
+		Phone:        "+201012345678",
+	}
+	if err := s.Create(ctx, uPhone2); err == nil {
+		t.Fatal("expected duplicate phone error on Create between two active users, got nil")
+	}
+
+	// - a deleted user's phone can be reused
+	if err := s.SetStatus(ctx, "u-phone-1", string(models.StatusActive), string(models.StatusDeleted), "deleted user", time.Now()); err != nil {
+		t.Fatalf("SetStatus delete u-phone-1: %v", err)
+	}
+	if err := s.Create(ctx, uPhone2); err != nil {
+		t.Fatalf("expected creating uPhone2 to succeed after uPhone1 was deleted, got: %v", err)
+	}
+
+	// 17. Blocklist
+	blocked, err := s.IsBlocked(ctx, "email", "hash-unblocked-identity")
+	if err != nil {
+		t.Fatalf("IsBlocked unblocked: %v", err)
+	}
+	if blocked {
+		t.Fatal("expected unblocked identity to return false")
+	}
+	if err := s.AddToBlocklist(ctx, "email", "hash-blocked-identity", "banned for abuse", time.Now()); err != nil {
+		t.Fatalf("AddToBlocklist: %v", err)
+	}
+	blocked, err = s.IsBlocked(ctx, "email", "hash-blocked-identity")
+	if err != nil {
+		t.Fatalf("IsBlocked after add: %v", err)
+	}
+	if !blocked {
+		t.Fatal("expected blocked identity to return true")
+	}
+	// Idempotent add: same kind and hash does not error
+	if err := s.AddToBlocklist(ctx, "email", "hash-blocked-identity", "duplicate ban", time.Now()); err != nil {
+		t.Fatalf("AddToBlocklist duplicate: %v", err)
 	}
 }
 

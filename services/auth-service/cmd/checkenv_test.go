@@ -20,6 +20,7 @@ func setAuthProdEnv(t *testing.T) {
 	t.Setenv("TLS_CA_PATH", "/tmp/ca.pem")
 	t.Setenv("RESEND_API_KEY", "re_test_12345")
 	t.Setenv("RESEND_FROM_EMAIL", "noreply@example.com")
+	t.Setenv("BLOCKLIST_HMAC_KEY", "test-blocklist-hmac-key")
 }
 
 func setAuthLocalEnv(t *testing.T) {
@@ -31,6 +32,7 @@ func setAuthLocalEnv(t *testing.T) {
 	for _, v := range []string{
 		"MONGO_URI", "REDIS_URI", "TLS_CERT_PATH", "TLS_KEY_PATH",
 		"TLS_CA_PATH", "RESEND_API_KEY", "RESEND_FROM_EMAIL",
+		"BLOCKLIST_HMAC_KEY",
 	} {
 		_ = os.Unsetenv(v)
 	}
@@ -62,6 +64,7 @@ func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 		"TLS_CA_PATH",
 		"RESEND_API_KEY",
 		"RESEND_FROM_EMAIL",
+		"BLOCKLIST_HMAC_KEY",
 	}
 	for _, v := range requiredVars {
 		t.Run("missing_"+v, func(t *testing.T) {

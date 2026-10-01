@@ -25,6 +25,8 @@ type Config struct {
 	TLSCAPath            string
 	ResendAPIKey         string
 	ResendFromEmail      string
+	BlocklistHMACKey     string
+	DefaultPhoneRegion   string
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -61,6 +63,11 @@ func Load() (*Config, error) {
 	tlsCAPath := os.Getenv("TLS_CA_PATH")
 	resendAPIKey := os.Getenv("RESEND_API_KEY")
 	resendFrom := os.Getenv("RESEND_FROM_EMAIL")
+	blocklistHMACKey := os.Getenv("BLOCKLIST_HMAC_KEY")
+	defaultPhoneRegion := os.Getenv("DEFAULT_PHONE_REGION")
+	if defaultPhoneRegion == "" {
+		defaultPhoneRegion = "EG"
+	}
 
 	if !dev {
 		if mongoURI == "" {
@@ -83,6 +90,9 @@ func Load() (*Config, error) {
 		}
 		if resendFrom == "" {
 			return nil, errors.New("config: required env var RESEND_FROM_EMAIL is empty")
+		}
+		if blocklistHMACKey == "" {
+			return nil, errors.New("config: required env var BLOCKLIST_HMAC_KEY is empty")
 		}
 	} else {
 		if resendAPIKey != "" && resendFrom == "" {
@@ -120,5 +130,7 @@ func Load() (*Config, error) {
 		TLSCAPath:            tlsCAPath,
 		ResendAPIKey:         resendAPIKey,
 		ResendFromEmail:      resendFrom,
+		BlocklistHMACKey:     blocklistHMACKey,
+		DefaultPhoneRegion:   defaultPhoneRegion,
 	}, nil
 }

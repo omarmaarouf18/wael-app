@@ -104,6 +104,8 @@ func main() {
 	}
 
 	srv := handlers.New(st, codes, lockout, sender, cfg.AppEnv, cfg.GatewaySecret)
+	srv.BlocklistHMACKey = cfg.BlocklistHMACKey
+	srv.DefaultPhoneRegion = cfg.DefaultPhoneRegion
 	srv.NotifyURL = cfg.NotificationURL
 	srv.NotifyToken = cfg.InternalServiceToken
 	mux := http.NewServeMux()
