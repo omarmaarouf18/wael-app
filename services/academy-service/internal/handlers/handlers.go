@@ -522,7 +522,7 @@ func (s *Server) VideoSubroute(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			videoID = parts[0]
 		}
-		s.EnforceTier(limiter.TierRead, func(w http.ResponseWriter, r *http.Request) {
+		s.EnforceTier(limiter.TierPlay, func(w http.ResponseWriter, r *http.Request) {
 			s.PlayVideo(w, r, videoID)
 		})(w, r)
 		return

@@ -1626,7 +1626,7 @@ func TestPurchaseRequests_HandlerConcurrency(t *testing.T) {
 	}
 }
 
-func setupTestLimiter(t *testing.T, read, download, write int) (*miniredis.Miniredis, limiter.TierLimiter) {
+func setupTestLimiter(t *testing.T, read, play, download, write int) (*miniredis.Miniredis, limiter.TierLimiter) {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb, err := ratelimit.NewRedisClient("redis://" + mr.Addr())
@@ -1634,12 +1634,12 @@ func setupTestLimiter(t *testing.T, read, download, write int) (*miniredis.Minir
 		t.Fatalf("failed to connect to miniredis: %v", err)
 	}
 	t.Cleanup(func() { _ = rdb.Close() })
-	return mr, limiter.NewRedisTierLimiter(rdb, read, download, write)
+	return mr, limiter.NewRedisTierLimiter(rdb, read, play, download, write)
 }
 
 func TestRateLimitTiers_ReadTierExhaustion(t *testing.T) {
 	s := newTestServer(false)
-	_, tl := setupTestLimiter(t, 30, 10, 5)
+	_, tl := setupTestLimiter(t, 30, 20, 10, 5)
 	s.Limiter = tl
 
 	h := s.PublicHandler()
@@ -1687,9 +1687,73 @@ func TestRateLimitTiers_ReadTierExhaustion(t *testing.T) {
 	}
 }
 
+func TestRateLimitTiers_PlayTierExhaustion(t *testing.T) {
+	s := newTestServer(false)
+	_, tl := setupTestLimiter(t, 120, 2, 10, 5) // play limit set to 2 for fast test
+	s.Limiter = tl
+
+	ctx := context.Background()
+	subj := &models.Subject{
+		ID:              "subj-rl-play",
+		LevelKey:        "bachelor-y1",
+		TitleAr:         "مدخل",
+		Price:           100,
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(48 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj); err != nil {
+		t.Fatal(err)
+	}
+	vPublished := &models.Video{
+		ID:             "vid-rl-play",
+		SubjectID:      "subj-rl-play",
+		TitleAr:        "درس",
+		Published:      true,
+		YouTubeVideoID: "12345678901",
+	}
+	if err := s.Store.CreateVideo(ctx, vPublished); err != nil {
+		t.Fatal(err)
+	}
+	const userID = "student-play-rl"
+	if err := s.Store.Grant(ctx, &models.Entitlement{UserID: userID, SubjectID: "subj-rl-play"}); err != nil {
+		t.Fatal(err)
+	}
+
+	h := s.PublicHandler()
+	tok := makeStudentToken(t, userID)
+
+	for i := 1; i <= 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-rl-play/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("call %d: expected 200, got %d (body: %s)", i, rec.Code, rec.Body.String())
+		}
+	}
+
+	// 3rd call must be rate limited (429)
+	req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-rl-play/play", nil)
+	req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("call 3: expected 429, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("expected Retry-After header on 429")
+	}
+}
+
 func TestRateLimitTiers_WriteTierExhaustion(t *testing.T) {
 	s := newTestServer(false)
-	_, tl := setupTestLimiter(t, 30, 10, 5)
+	_, tl := setupTestLimiter(t, 30, 20, 10, 5)
 	s.Limiter = tl
 
 	ctx := context.Background()
@@ -1746,7 +1810,7 @@ func TestRateLimitTiers_WriteTierExhaustion(t *testing.T) {
 
 func TestRateLimitTiers_DownloadTier(t *testing.T) {
 	s := newTestServer(false)
-	_, tl := setupTestLimiter(t, 30, 10, 5)
+	_, tl := setupTestLimiter(t, 30, 20, 10, 5)
 	s.Limiter = tl
 
 	const userID = "student-download-rl"
@@ -1786,7 +1850,7 @@ func TestRateLimitTiers_DownloadTier(t *testing.T) {
 
 func TestRateLimitTiers_PerUserIsolation(t *testing.T) {
 	s := newTestServer(false)
-	_, tl := setupTestLimiter(t, 30, 10, 5)
+	_, tl := setupTestLimiter(t, 30, 20, 10, 5)
 	s.Limiter = tl
 
 	ctx := context.Background()
@@ -1851,7 +1915,7 @@ func TestRateLimitTiers_PerUserIsolation(t *testing.T) {
 
 func TestRateLimitTiers_FailClosed_RedisDown(t *testing.T) {
 	s := newTestServer(false)
-	mr, tl := setupTestLimiter(t, 30, 10, 5)
+	mr, tl := setupTestLimiter(t, 30, 20, 10, 5)
 	s.Limiter = tl
 
 	h := s.PublicHandler()
@@ -1914,7 +1978,7 @@ func TestRateLimitTiers_FailClosed_NilLimiterOutsideDev(t *testing.T) {
 
 func TestRateLimitTiers_NoClaimsFailClosed(t *testing.T) {
 	s := newTestServer(false)
-	_, tl := setupTestLimiter(t, 30, 10, 5)
+	_, tl := setupTestLimiter(t, 30, 20, 10, 5)
 	s.Limiter = tl
 
 	handler := s.EnforceTier(limiter.TierRead, func(w http.ResponseWriter, r *http.Request) {
@@ -2376,9 +2440,9 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		}
 	})
 
-	// 13. Rate limiting tier: Read tier (30/min) enforced
-	t.Run("rate_limit_read_tier_enforced", func(t *testing.T) {
-		mr, tl := setupTestLimiter(t, 2, 10, 5) // set read limit to 2 for fast test
+	// 13. Rate limiting tier: Play tier (60/min) enforced
+	t.Run("rate_limit_play_tier_enforced", func(t *testing.T) {
+		mr, tl := setupTestLimiter(t, 30, 2, 10, 5) // set play limit to 2 for fast test
 		defer mr.Close()
 		sLimit := newTestServer(false)
 		sLimit.Limiter = tl

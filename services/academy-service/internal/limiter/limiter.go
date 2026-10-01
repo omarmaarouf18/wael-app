@@ -18,18 +18,20 @@ import (
 // Tier constants per SPEC Section 2 (D13).
 const (
 	TierRead     = "read"
+	TierPlay     = "play"
 	TierDownload = "download"
 	TierWrite    = "write"
 )
 
 // Default limits per minute per SPEC Section 2 (D13).
 const (
-	DefaultLimitRead     = 30
+	DefaultLimitRead     = 120
+	DefaultLimitPlay     = 60
 	DefaultLimitDownload = 10
 	DefaultLimitWrite    = 5
 )
 
-// TierLimiter manages rate limits across tiers (Read, Download, Write).
+// TierLimiter manages rate limits across tiers (Read, Play, Download, Write).
 // Returns (limited bool, retryAfter time.Duration, err error).
 // On backend failure (Redis down, nil client, etc.), err != nil.
 // When user exceeds limit, limited = true, retryAfter > 0, err = nil.
@@ -42,15 +44,19 @@ type TierLimiter interface {
 type RedisTierLimiter struct {
 	client   *redis.Client
 	read     *ratelimit.RateLimiter
+	play     *ratelimit.RateLimiter
 	download *ratelimit.RateLimiter
 	write    *ratelimit.RateLimiter
 }
 
 // NewRedisTierLimiter creates a Redis-backed TierLimiter with specified limits per minute.
 // If client is nil, it fails closed with error on all checks.
-func NewRedisTierLimiter(client *redis.Client, readLimit, downloadLimit, writeLimit int) *RedisTierLimiter {
+func NewRedisTierLimiter(client *redis.Client, readLimit, playLimit, downloadLimit, writeLimit int) *RedisTierLimiter {
 	if readLimit <= 0 {
 		readLimit = DefaultLimitRead
+	}
+	if playLimit <= 0 {
+		playLimit = DefaultLimitPlay
 	}
 	if downloadLimit <= 0 {
 		downloadLimit = DefaultLimitDownload
@@ -66,6 +72,7 @@ func NewRedisTierLimiter(client *redis.Client, readLimit, downloadLimit, writeLi
 	return &RedisTierLimiter{
 		client:   client,
 		read:     ratelimit.NewRateLimiter(client, readLimit, time.Minute, "academy:read"),
+		play:     ratelimit.NewRateLimiter(client, playLimit, time.Minute, "academy:play"),
 		download: ratelimit.NewRateLimiter(client, downloadLimit, time.Minute, "academy:download"),
 		write:    ratelimit.NewRateLimiter(client, writeLimit, time.Minute, "academy:write"),
 	}
@@ -83,6 +90,8 @@ func (r *RedisTierLimiter) CheckAndRecord(tier, key string) (bool, time.Duration
 	switch tier {
 	case TierRead:
 		l = r.read
+	case TierPlay:
+		l = r.play
 	case TierDownload:
 		l = r.download
 	case TierWrite:

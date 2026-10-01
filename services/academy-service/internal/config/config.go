@@ -29,6 +29,7 @@ type Config struct {
 	ExposePriceToStudents bool
 	SupportWhatsApp       string
 	RateLimitRead         int
+	RateLimitPlay         int
 	RateLimitDownload     int
 	RateLimitWrite        int
 }
@@ -133,13 +134,22 @@ func Load() (*Config, error) {
 
 	exposePrice := os.Getenv("EXPOSE_PRICE_TO_STUDENTS") == "true" || os.Getenv("EXPOSE_PRICE_TO_STUDENTS") == "1"
 
-	rateLimitRead := 30
+	rateLimitRead := 120
 	if v := os.Getenv("RATE_LIMIT_READ"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n <= 0 {
 			return nil, fmt.Errorf("config: invalid RATE_LIMIT_READ %q: must be a positive integer", v)
 		}
 		rateLimitRead = n
+	}
+
+	rateLimitPlay := 60
+	if v := os.Getenv("RATE_LIMIT_PLAY"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid RATE_LIMIT_PLAY %q: must be a positive integer", v)
+		}
+		rateLimitPlay = n
 	}
 
 	rateLimitDownload := 10
@@ -177,6 +187,7 @@ func Load() (*Config, error) {
 		ExposePriceToStudents: exposePrice,
 		SupportWhatsApp:       supportWhatsApp,
 		RateLimitRead:         rateLimitRead,
+		RateLimitPlay:         rateLimitPlay,
 		RateLimitDownload:     rateLimitDownload,
 		RateLimitWrite:        rateLimitWrite,
 	}, nil

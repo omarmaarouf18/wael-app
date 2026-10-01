@@ -21,7 +21,7 @@ func setupTestRedis(t *testing.T) (*miniredis.Miniredis, *RedisTierLimiter) {
 	}
 	t.Cleanup(func() { _ = rdb.Close() })
 
-	tl := NewRedisTierLimiter(rdb, DefaultLimitRead, DefaultLimitDownload, DefaultLimitWrite)
+	tl := NewRedisTierLimiter(rdb, DefaultLimitRead, DefaultLimitPlay, DefaultLimitDownload, DefaultLimitWrite)
 	return mr, tl
 }
 
@@ -39,13 +39,40 @@ func TestRedisTierLimiter_ReadTier(t *testing.T) {
 		}
 	}
 
-	// 31st call must be rate limited
+	// 121st call must be rate limited
 	limited, retryAfter, err := tl.CheckAndRecord(TierRead, userID)
 	if err != nil {
-		t.Fatalf("read call 31 unexpected error: %v", err)
+		t.Fatalf("read call 121 unexpected error: %v", err)
 	}
 	if !limited {
 		t.Fatalf("expected call %d to be rate limited", DefaultLimitRead+1)
+	}
+	if retryAfter <= 0 {
+		t.Fatalf("expected positive retryAfter, got %v", retryAfter)
+	}
+}
+
+func TestRedisTierLimiter_PlayTier(t *testing.T) {
+	_, tl := setupTestRedis(t)
+	const userID = "user-play-test"
+
+	for i := 1; i <= DefaultLimitPlay; i++ {
+		limited, retryAfter, err := tl.CheckAndRecord(TierPlay, userID)
+		if err != nil {
+			t.Fatalf("play call %d unexpected error: %v", i, err)
+		}
+		if limited {
+			t.Fatalf("play call %d unexpectedly rate limited (retryAfter=%v)", i, retryAfter)
+		}
+	}
+
+	// 61st call must be rate limited
+	limited, retryAfter, err := tl.CheckAndRecord(TierPlay, userID)
+	if err != nil {
+		t.Fatalf("play call 61 unexpected error: %v", err)
+	}
+	if !limited {
+		t.Fatalf("expected call %d to be rate limited", DefaultLimitPlay+1)
 	}
 	if retryAfter <= 0 {
 		t.Fatalf("expected positive retryAfter, got %v", retryAfter)
@@ -150,7 +177,7 @@ func TestRedisTierLimiter_CustomLimits(t *testing.T) {
 	}
 	defer func() { _ = rdb.Close() }()
 
-	customTL := NewRedisTierLimiter(rdb, 3, 2, 1)
+	customTL := NewRedisTierLimiter(rdb, 3, 2, 2, 1)
 
 	// Custom write: limit is 1
 	limited, _, err := customTL.CheckAndRecord(TierWrite, "user-custom")
@@ -170,9 +197,9 @@ func TestRedisTierLimiter_CustomLimits(t *testing.T) {
 }
 
 func TestRedisTierLimiter_FailClosed_NilRedis(t *testing.T) {
-	tl := NewRedisTierLimiter(nil, 30, 10, 5)
+	tl := NewRedisTierLimiter(nil, 30, 20, 10, 5)
 
-	for _, tier := range []string{TierRead, TierDownload, TierWrite, "unknown"} {
+	for _, tier := range []string{TierRead, TierPlay, TierDownload, TierWrite, "unknown"} {
 		_, _, err := tl.CheckAndRecord(tier, "user-fail-closed")
 		if err == nil {
 			t.Errorf("tier %s: expected error on nil Redis", tier)
@@ -187,7 +214,7 @@ func TestRedisTierLimiter_FailClosed_RedisDown(t *testing.T) {
 		t.Fatalf("failed to connect to miniredis: %v", err)
 	}
 
-	tl := NewRedisTierLimiter(rdb, 30, 10, 5)
+	tl := NewRedisTierLimiter(rdb, 30, 20, 10, 5)
 
 	// Close redis to simulate outage
 	_ = rdb.Close()

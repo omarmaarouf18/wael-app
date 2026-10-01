@@ -199,8 +199,11 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		if cfg.AuthServiceURL != "https://auth-service:3002" {
 			t.Errorf("expected default AuthServiceURL https://auth-service:3002, got %q", cfg.AuthServiceURL)
 		}
-		if cfg.RateLimitRead != 30 {
-			t.Errorf("expected default RateLimitRead 30, got %d", cfg.RateLimitRead)
+		if cfg.RateLimitRead != 120 {
+			t.Errorf("expected default RateLimitRead 120, got %d", cfg.RateLimitRead)
+		}
+		if cfg.RateLimitPlay != 60 {
+			t.Errorf("expected default RateLimitPlay 60, got %d", cfg.RateLimitPlay)
 		}
 		if cfg.RateLimitDownload != 10 {
 			t.Errorf("expected default RateLimitDownload 10, got %d", cfg.RateLimitDownload)
@@ -215,6 +218,7 @@ func TestLoad_RateLimitTiers(t *testing.T) {
 	t.Run("custom_valid_limits", func(t *testing.T) {
 		baseEnv(t)
 		setEnv(t, "RATE_LIMIT_READ", "60")
+		setEnv(t, "RATE_LIMIT_PLAY", "45")
 		setEnv(t, "RATE_LIMIT_DOWNLOAD", "20")
 		setEnv(t, "RATE_LIMIT_WRITE", "15")
 
@@ -224,6 +228,9 @@ func TestLoad_RateLimitTiers(t *testing.T) {
 		}
 		if cfg.RateLimitRead != 60 {
 			t.Errorf("RateLimitRead = %d, want 60", cfg.RateLimitRead)
+		}
+		if cfg.RateLimitPlay != 45 {
+			t.Errorf("RateLimitPlay = %d, want 45", cfg.RateLimitPlay)
 		}
 		if cfg.RateLimitDownload != 20 {
 			t.Errorf("RateLimitDownload = %d, want 20", cfg.RateLimitDownload)
@@ -240,6 +247,9 @@ func TestLoad_RateLimitTiers(t *testing.T) {
 		{"RATE_LIMIT_READ", "invalid"},
 		{"RATE_LIMIT_READ", "0"},
 		{"RATE_LIMIT_READ", "-5"},
+		{"RATE_LIMIT_PLAY", "invalid"},
+		{"RATE_LIMIT_PLAY", "0"},
+		{"RATE_LIMIT_PLAY", "-5"},
 		{"RATE_LIMIT_DOWNLOAD", "abc"},
 		{"RATE_LIMIT_DOWNLOAD", "0"},
 		{"RATE_LIMIT_DOWNLOAD", "-1"},

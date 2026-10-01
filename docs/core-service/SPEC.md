@@ -63,7 +63,7 @@ This is the build contract for the core of the application. It is written for im
 | D10 | Learning progress | Local to the device only; no server field. |
 | D11 | Video ordering | `position` integer, no unique index (reorder rewrites positions in one bulk write; code enforces contiguity). This replaces the unique compound index in ADR-0007 decision 12. |
 | D12 | Levels seed | Bachelor years 1-4 only until the diploma/vocational lists are provided. |
-| D13 | Rate-limit tiers (ADR-0016 in saas-core) | Read 30/min, download 10/min, access-request and admin writes 5/min, per user (or per admin). Configurable. |
+| D13 | Rate-limit tiers (ADR-0016 in saas-core) | Read 30/min, download 10/min, access-request and admin writes 5/min, per user (or per admin). Configurable. *(Amended 2026-10-01)*: Read default raised to 120/min; play video (`/academy/videos/{id}/play`) given its own tier Play with default 60/min (`RATE_LIMIT_PLAY`). Configurable via env (`RATE_LIMIT_READ`, `RATE_LIMIT_PLAY`, etc.); owner may change. |
 | D14 | Max PDF size | 50 MB (`MAX_PDF_BYTES`). |
 | D15 | Blocklist hashing | **Supersedes the hashing in D8.** Blocklist hashes use HMAC-SHA256 with a secret key from env (required in production), not plain SHA-256. |
 | D16 | Admin verify lockout IP | The lockout keys on a client IP derived from a trusted proxy header that only Caddy and admin-console can set; the trust chain is documented. *(2026-10-01, owner amendment)*: Trusted header is `X-Admin-Client-IP`. Trust chain: Caddy -> admin-console sets `X-Admin-Client-IP` (overwriting any client-supplied value) -> auth-service admin listener (`:9001`, internal network only). auth-service reads `X-Admin-Client-IP` ONLY on the admin listener and ONLY after `X-Internal-Token` is valid (constant-time); if absent, it falls back to the connection `RemoteAddr` host; it never reads `X-Forwarded-For` on the admin listener. No IP allowlist for now. |
@@ -71,7 +71,7 @@ This is the build contract for the core of the application. It is written for im
 | D18 | Suspension and SSE | Suspension also closes the account's open SSE streams. |
 | D19 | SSE auth migration | Once Q9 is settled, notification-service stops accepting `?token=` (the Flutter client already sends the `Authorization` header). |
 
-*D15, D17-D19 added 2026-09-30 (owner review); D16 amended 2026-10-01 (owner) and implemented in Phase 1.4.*
+*D15, D17-D19 added 2026-09-30 (owner review); D16 amended 2026-10-01 (owner) and implemented in Phase 1.4; D13 amended 2026-10-01 (owner, dated defaults for Read 120/min and Play 60/min).*
 
 
 | # | Topic | Default |
@@ -174,7 +174,7 @@ Student routes are served through the gateway as `/api/v1/academy/...` (the serv
 | `GET /academy/subjects?level=<key>&term=<t>` | Published subjects of a level | Each item has `owned` and `counts` (`videos`, `books`, `notes`) |
 | `GET /academy/subjects/{id}` | Subject detail | Shape below. 404 for unknown or unpublished |
 | `POST /academy/subjects/{id}/access-request` | Idempotent access request | Returns the existing pending request if there is one. Write tier |
-| `POST /academy/videos/{id}/play` | Play video | Returns `{"video_id", "youtube_video_id"}` with `Cache-Control: private, no-store`. 404 if unowned, expired, unpublished, or empty ID. Appends to `video_plays` (best-effort, fail-open for playback). Read tier |
+| `POST /academy/videos/{id}/play` | Play video | Returns `{"video_id", "youtube_video_id"}` with `Cache-Control: private, no-store`. 404 if unowned, expired, unpublished, or empty ID. Appends to `video_plays` (best-effort, fail-open for playback). Play tier |
 | `GET /academy/subjects/{id}/files/{fileId}/download` | Stream a PDF | 403 unless owned. Entitlement checked on every call. Download tier |
 | `GET /academy/me/entitlements` | Owned subject ids | |
 

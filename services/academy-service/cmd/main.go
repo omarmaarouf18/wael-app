@@ -59,7 +59,7 @@ func main() {
 		defer func() { _ = rdb.Close() }()
 		jwtutil.SetRedisClient(rdb)
 		log.Printf("[ACADEMY] redis connected: %s", redact.RedactURI(cfg.RedisURI))
-		tierLimiter = limiter.NewRedisTierLimiter(rdb, cfg.RateLimitRead, cfg.RateLimitDownload, cfg.RateLimitWrite)
+		tierLimiter = limiter.NewRedisTierLimiter(rdb, cfg.RateLimitRead, cfg.RateLimitPlay, cfg.RateLimitDownload, cfg.RateLimitWrite)
 	} else if !dev {
 		log.Fatalf("[ACADEMY] redis is required outside dev")
 	}

@@ -40,6 +40,59 @@ func TestRateLimit_BlocksAfterExhaustion(t *testing.T) {
 	}
 }
 
+func TestRateLimit_AuthenticatedRoutesBypassGatewayIPLimiter(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb, err := ratelimit.NewRedisClient("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rdb.Close() }()
+
+	// Gateway limit is 1 request per minute
+	rl := NewRateLimiter(ratelimit.NewRateLimiter(rdb, 1, time.Minute, "test-gw"), []string{"127.0.0.1"})
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RateLimit(rl)(okHandler)
+
+	clientIP := "192.168.1.50:5678"
+
+	// 1. Exhaust the IP limit via auth route
+	reqAuth1 := httptest.NewRequest(http.MethodPost, "http://x/api/v1/auth/login", nil)
+	reqAuth1.RemoteAddr = clientIP
+	recAuth1 := httptest.NewRecorder()
+	h.ServeHTTP(recAuth1, reqAuth1)
+	if recAuth1.Code != http.StatusOK {
+		t.Fatalf("auth call 1 status = %d, want 200", recAuth1.Code)
+	}
+
+	// 2. Second auth request from same IP is blocked (429)
+	reqAuth2 := httptest.NewRequest(http.MethodPost, "http://x/api/v1/auth/login", nil)
+	reqAuth2.RemoteAddr = clientIP
+	recAuth2 := httptest.NewRecorder()
+	h.ServeHTTP(recAuth2, reqAuth2)
+	if recAuth2.Code != http.StatusTooManyRequests {
+		t.Fatalf("auth call 2 status = %d, want 429", recAuth2.Code)
+	}
+
+	// 3. Authenticated routes from the EXACT SAME IP must bypass gateway per-IP limiter (CGNAT protection)
+	bypassRoutes := []string{
+		"http://x/api/v1/academy/videos/vid-1/play",
+		"http://x/api/v1/academy/subjects",
+		"http://x/api/v1/academy/levels",
+		"http://x/api/v1/notifications/stream",
+		"http://x/health",
+	}
+
+	for _, url := range bypassRoutes {
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.RemoteAddr = clientIP
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("route %s unexpectedly rate limited: status = %d (want 200)", url, rec.Code)
+		}
+	}
+}
+
 func TestLogging_HealthPassthrough(t *testing.T) {
 	h := Logging("http://localhost:3000")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
