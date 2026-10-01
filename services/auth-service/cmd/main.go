@@ -111,16 +111,14 @@ func main() {
 	srv.NotifyToken = cfg.InternalServiceToken
 	srv.InternalToken = cfg.InternalServiceToken
 
-	// Start admin listener on internal network
-	adminHandler := srv.AdminHandler()
-	adminSrv := &http.Server{
-		Addr:              cfg.AdminListenAddr,
-		Handler:           adminHandler,
-		ReadHeaderTimeout: 5 * time.Second,
+	// Build and start admin listener on internal network
+	adminRunner, err := buildServer(cfg, cfg.AdminListenAddr, srv.AdminHandler())
+	if err != nil {
+		log.Fatalf("[AUTH] admin listener: %v", err)
 	}
 	go func() {
-		fmt.Printf("auth-service admin listener on %s\n", cfg.AdminListenAddr)
-		if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		fmt.Printf("auth-service admin listener %s on %s\n", adminRunner.desc, cfg.AdminListenAddr)
+		if err := adminRunner.serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("[AUTH] admin listener: %v", err)
 		}
 	}()
@@ -141,19 +139,47 @@ func main() {
 	handler = handlerutil.MaxBytesMiddleware(1 << 20)(handler)
 
 	addr := ":" + cfg.Port
+	publicRunner, err := buildServer(cfg, addr, handler)
+	if err != nil {
+		log.Fatalf("[AUTH] %v", err)
+	}
+	fmt.Printf("auth-service listening %s on %s\n", publicRunner.desc, addr)
+	log.Fatal(publicRunner.serve())
+}
+
+type serverRunner struct {
+	server *http.Server
+	serve  func() error
+	desc   string
+}
+
+// buildServer constructs an http.Server and its serve function following the
+// TLS/mTLS policy:
+//   - Outside dev: HTTPS + mTLS with client CA verification is strictly required.
+//     TLS without client CA or plain HTTP returns an error (fail closed).
+//   - Dev/local: plain HTTP, TLS, or mTLS are accepted per configuration.
+func buildServer(cfg *config.Config, addr string, handler http.Handler) (*serverRunner, error) {
+	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
 	if cfg.TLSEnabled() {
 		if cfg.TLSCAPath != "" {
 			tlsCfg, err := tlsutil.LoadServerTLSConfig(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath)
 			if err != nil {
-				log.Fatalf("[AUTH] server mTLS: %v", err)
+				return nil, fmt.Errorf("server mTLS: %w", err)
 			}
-			httpSrv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, TLSConfig: tlsCfg}
-			fmt.Printf("auth-service listening HTTPS+mTLS on %s\n", addr)
-			log.Fatal(httpSrv.ListenAndServeTLS("", ""))
-			return
+			httpSrv := &http.Server{
+				Addr:              addr,
+				Handler:           handler,
+				ReadHeaderTimeout: 5 * time.Second,
+				TLSConfig:         tlsCfg,
+			}
+			return &serverRunner{
+				server: httpSrv,
+				serve:  func() error { return httpSrv.ListenAndServeTLS("", "") },
+				desc:   "HTTPS+mTLS",
+			}, nil
 		}
 		if !dev {
-			log.Fatalf("[AUTH] server TLS without client CA not permitted outside dev: TLS_CA_PATH is required")
+			return nil, errors.New("server TLS without client CA not permitted outside dev: TLS_CA_PATH is required")
 		}
 		httpSrv := &http.Server{
 			Addr:              addr,
@@ -161,14 +187,24 @@ func main() {
 			ReadHeaderTimeout: 5 * time.Second,
 			TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
 		}
-		fmt.Printf("auth-service listening HTTPS on %s\n", addr)
-		log.Fatal(httpSrv.ListenAndServeTLS(cfg.TLSCertPath, cfg.TLSKeyPath))
-		return
+		return &serverRunner{
+			server: httpSrv,
+			serve:  func() error { return httpSrv.ListenAndServeTLS(cfg.TLSCertPath, cfg.TLSKeyPath) },
+			desc:   "HTTPS",
+		}, nil
 	}
+
 	if !dev {
-		log.Fatalf("[AUTH] plain HTTP not permitted outside dev: TLS is required")
+		return nil, errors.New("plain HTTP not permitted outside dev: TLS is required")
 	}
-	httpSrv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
-	fmt.Printf("auth-service listening HTTP on %s\n", addr)
-	log.Fatal(httpSrv.ListenAndServe())
+	httpSrv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return &serverRunner{
+		server: httpSrv,
+		serve:  func() error { return httpSrv.ListenAndServe() },
+		desc:   "HTTP",
+	}, nil
 }

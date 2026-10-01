@@ -106,7 +106,7 @@ Owner question: reminder notification before a subscription expires (SPEC Sectio
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-SPEC Phase 2.1: `levels` and `subjects` collections, models, indexes, and queries.
+SPEC Phase 1.5: admin account endpoints (list/search, suspend, reactivate, delete with audit, student notification, RevokeAllUserTokens); Phase 1.6 (notification-service stream caps: per-account registration rate limit and concurrent stream cap) stays listed after it.
 
 
 
