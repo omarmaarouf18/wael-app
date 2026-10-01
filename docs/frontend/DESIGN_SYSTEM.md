@@ -199,6 +199,8 @@ headings) and Plus Jakarta Sans (body and labels); Arabic uses Cairo throughout.
 | `bodyMd` | Plus Jakarta Sans, 14, w400, 1.4, - | 13, w400, 1.45, - | `textSecondary` |
 | `bodySm` | Plus Jakarta Sans, 12, w400, 1.35, - | 11, w400, 1.4, - | `textMuted` |
 | `labelMd` | Plus Jakarta Sans, 13, w600, -, 0.8 | 12, w600, -, 0.5 | `textPrimary` |
+| `headerWordmark` | `headlineSm` (Syne 17 / Cairo 16) with weight w800, 2.0 | same | `textPrimary` |
+| `headerEyebrow` | `academyEyebrow` at 8 | same | `textMuted` |
 | `wordmarkTitle` | Syne, 32, w800, 1.15, 6.0, black shadow | (Arabic style at the same size and spacing) | `textPrimary` |
 | `wordmarkSubtitle` | Syne, 11, w700, -, 4.5, black shadow | Cairo 11, w700, -, 4.5 | `textPrimary` at 80% |
 | `labelSm` | Plus Jakarta Sans, 10, w700, -, 1.5 | 10, w700, -, 1.0 | `textSecondary` |
@@ -224,7 +226,7 @@ file for their exact values.
 | `StatusBadge` | `status_badge.dart` | Badge for a `PaymentStatus` (pending / approved / rejected) using the status colour tokens. |
 | `ThemedCard` | `themed_card.dart` | Bordered card surface with optional tap and glow. |
 | `ThemedTextField` | `themed_text_field.dart` | Themed form field with label, hint, validator and prefix/suffix. |
-| `AppShell` | `app_shell.dart` | `Scaffold` + `AppBar` from tokens: optional back button at the start edge, title, `actions` at the end edge, optional FAB and bottom bar. Mirrors in RTL. `safeArea: false` lets a full-bleed body (hero art) run under the status bar. Screens use it instead of their own `Scaffold(` / `AppBar(`. |
+| `AppShell` | `app_shell.dart` | `Scaffold` + `AppBar` from tokens: optional back button at the start edge, title, `actions` at the end edge, optional FAB and bottom bar. Mirrors in RTL. `titleWidget` replaces the title text (brand lockup). The body is wrapped in a `SafeArea` (top inset only when there is no header); `safeArea: false` lets a full-bleed body (hero art) run under the status bar. Screens use it instead of their own `Scaffold(` / `AppBar(`. |
 | `SecondaryButton` | `secondary_button.dart` | Low-emphasis bordered button; same sizing, loading state and icon slots as `PrimaryButton`. |
 | `ThemedPanel` (+ `PanelTone`) | `themed_panel.dart` | Static bordered surface (`base`, `raised`, `inset`), directional padding. Not tappable; use `ThemedCard` for interactive or elevated content. |
 | `ThemedErrorBanner` | `themed_error_banner.dart` | Persistent inline error (no auto-dismiss, live region) with an optional localised retry. |
