@@ -44,6 +44,7 @@ type Store interface {
 	GetSubjectByID(ctx context.Context, id string) (*models.Subject, error)
 	GetSubjectCounts(ctx context.Context, subjectID string) (models.SubjectCountsDTO, error)
 	CreateVideo(ctx context.Context, v *models.Video) error
+	GetVideoByID(ctx context.Context, id string) (*models.Video, error)
 	ListVideosBySubject(ctx context.Context, subjectID string, onlyPublished bool) ([]*models.Video, error)
 	CreateFile(ctx context.Context, f *models.SubjectFile) error
 	ListFilesBySubject(ctx context.Context, subjectID string) ([]*models.SubjectFile, error)
@@ -264,6 +265,19 @@ func (s *MemoryStore) CreateVideo(_ context.Context, v *models.Video) error {
 	cp := *v
 	s.videos[v.ID] = &cp
 	return nil
+}
+
+// GetVideoByID retrieves a single video by its ID.
+func (s *MemoryStore) GetVideoByID(_ context.Context, id string) (*models.Video, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	v, ok := s.videos[id]
+	if !ok {
+		return nil, nil
+	}
+	cp := *v
+	return &cp, nil
 }
 
 // ListVideosBySubject returns videos for a subject sorted by position.

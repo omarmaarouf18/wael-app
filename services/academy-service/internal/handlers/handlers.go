@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -499,6 +500,101 @@ func (s *Server) SubjectSubroute(w http.ResponseWriter, r *http.Request) {
 	handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
 }
 
+// VideoSubroute dispatches requests under /academy/videos/.
+// Handles:
+// - POST /academy/videos/{id}/play -> PlayVideo (Read tier)
+func (s *Server) VideoSubroute(w http.ResponseWriter, r *http.Request) {
+	subpath := strings.TrimPrefix(r.URL.Path, "/academy/videos/")
+	subpath = strings.Trim(subpath, "/")
+	if subpath == "" {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+		return
+	}
+
+	parts := strings.Split(subpath, "/")
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "play" {
+		if r.Method != http.MethodPost {
+			handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+			return
+		}
+		videoID, err := url.PathUnescape(parts[0])
+		if err != nil {
+			videoID = parts[0]
+		}
+		s.EnforceTier(limiter.TierRead, func(w http.ResponseWriter, r *http.Request) {
+			s.PlayVideo(w, r, videoID)
+		})(w, r)
+		return
+	}
+
+	handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+}
+
+// PlayVideo handles POST /academy/videos/{id}/play.
+// Authenticated with Bearer JWT (StudentAuth).
+// Returns 200 {"video_id": "...", "youtube_video_id": "..."} when the student
+// owns the subject containing the video, and the video and subject are published.
+// Returns a generic 404 for any refusal (unknown/unpublished video or subject, unowned or expired).
+// Fails closed with 503 on store errors.
+func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID string) {
+	claims := StudentClaims(r)
+	if claims == nil || claims.UserID == "" {
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+		return
+	}
+
+	// 1. Fetch video
+	vCtx, vCancel := context.WithTimeout(r.Context(), dbTimeout)
+	video, err := s.Store.GetVideoByID(vCtx, videoID)
+	vCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if video == nil || !video.Published {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+		return
+	}
+
+	// 2. Fetch parent subject
+	sCtx, sCancel := context.WithTimeout(r.Context(), dbTimeout)
+	subj, err := s.Store.GetSubjectByID(sCtx, video.SubjectID)
+	sCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if subj == nil || subj.Status != models.StatusPublished {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+		return
+	}
+
+	// 3. Subject access must not be expired
+	if !subj.AccessExpiresAt.IsZero() && time.Now().After(subj.AccessExpiresAt) {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+		return
+	}
+
+	// 4. Check active entitlement (ownership)
+	eCtx, eCancel := context.WithTimeout(r.Context(), dbTimeout)
+	owned, err := s.Store.HasActiveEntitlement(eCtx, claims.UserID, video.SubjectID)
+	eCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if !owned {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+		return
+	}
+
+	resp := models.VideoPlayResponseDTO{
+		VideoID:        video.ID,
+		YouTubeVideoID: video.YouTubeVideoID,
+	}
+	handlerutil.WriteJSON(w, http.StatusOK, resp)
+}
+
 // PublicHandler constructs the HTTP handler for the public listener.
 func (s *Server) PublicHandler() http.Handler {
 	mux := http.NewServeMux()
@@ -506,6 +602,7 @@ func (s *Server) PublicHandler() http.Handler {
 	mux.HandleFunc("/academy/levels", s.EnforceTier(limiter.TierRead, s.GetLevels))
 	mux.HandleFunc("/academy/subjects", s.EnforceTier(limiter.TierRead, s.ListSubjects))
 	mux.HandleFunc("/academy/subjects/", s.SubjectSubroute)
+	mux.HandleFunc("/academy/videos/", s.VideoSubroute)
 
 	var h http.Handler = mux
 	h = s.StudentAuth(h)

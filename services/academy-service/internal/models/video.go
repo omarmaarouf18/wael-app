@@ -17,21 +17,21 @@ type Video struct {
 	UpdatedAt      time.Time `bson:"updated_at" json:"updated_at"`
 }
 
-// VideoMetadataDTO is the student-facing video representation.
-// CRITICAL: youtube_video_id is gated by R2 and appears ONLY in GET /academy/subjects/{id}
-// when the student owns the subject (owned == true). It is never returned in lists, errors, or logs.
+// VideoMetadataDTO is the student-facing video representation in subject detail.
+// Each video indicates whether the student may play it via Playable.
+// The YouTube ID is NEVER included in metadata or subject detail;
+// it is obtained per-play via POST /academy/videos/{id}/play.
 type VideoMetadataDTO struct {
-	ID             string        `json:"id"`
-	Position       int           `json:"position"`
-	Title          LocalizedText `json:"title"`
-	Description    LocalizedText `json:"description"`
-	YouTubeVideoID string        `json:"youtube_video_id,omitempty"`
+	ID          string        `json:"id"`
+	Position    int           `json:"position"`
+	Title       LocalizedText `json:"title"`
+	Description LocalizedText `json:"description"`
+	Playable    bool          `json:"playable"`
 }
 
-// ToDTO converts a Video to student-safe metadata.
-// youtube_video_id is populated ONLY when includeYouTubeID is true (R2 gating).
-func (v *Video) ToDTO(includeYouTubeID bool) VideoMetadataDTO {
-	dto := VideoMetadataDTO{
+// ToDTO converts a Video to student-safe metadata with playback eligibility.
+func (v *Video) ToDTO(playable bool) VideoMetadataDTO {
+	return VideoMetadataDTO{
 		ID:       v.ID,
 		Position: v.Position,
 		Title: LocalizedText{
@@ -42,9 +42,12 @@ func (v *Video) ToDTO(includeYouTubeID bool) VideoMetadataDTO {
 			Ar: v.DescriptionAr,
 			En: v.DescriptionEn,
 		},
+		Playable: playable,
 	}
-	if includeYouTubeID {
-		dto.YouTubeVideoID = v.YouTubeVideoID
-	}
-	return dto
+}
+
+// VideoPlayResponseDTO is the response body for POST /academy/videos/{id}/play.
+type VideoPlayResponseDTO struct {
+	VideoID        string `json:"video_id"`
+	YouTubeVideoID string `json:"youtube_video_id"`
 }

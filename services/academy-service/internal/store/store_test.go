@@ -184,6 +184,29 @@ func runStoreSuite(t *testing.T, s Store) {
 		t.Fatalf("expected 2 videos total, got %d", len(vidsAll))
 	}
 
+	// GetVideoByID: found published, found draft, not found
+	gotV1, err := s.GetVideoByID(ctx, "v-1")
+	if err != nil {
+		t.Fatalf("GetVideoByID v-1 failed: %v", err)
+	}
+	if gotV1 == nil || gotV1.ID != "v-1" || gotV1.YouTubeVideoID != "yt_123456789" {
+		t.Fatalf("GetVideoByID v-1 unexpected: %+v", gotV1)
+	}
+	gotVDraft, err := s.GetVideoByID(ctx, "v-2")
+	if err != nil {
+		t.Fatalf("GetVideoByID v-2 failed: %v", err)
+	}
+	if gotVDraft == nil || gotVDraft.ID != "v-2" || gotVDraft.Published {
+		t.Fatalf("GetVideoByID v-2 unexpected: %+v", gotVDraft)
+	}
+	gotMissing, err := s.GetVideoByID(ctx, "v-nonexistent")
+	if err != nil {
+		t.Fatalf("GetVideoByID nonexistent failed: %v", err)
+	}
+	if gotMissing != nil {
+		t.Fatalf("expected nil for nonexistent video, got %+v", gotMissing)
+	}
+
 	// 9. Files: create and list
 	f1 := &models.SubjectFile{
 		ID:         "f-1",

@@ -342,6 +342,19 @@ func (s *MongoStore) CreateVideo(ctx context.Context, v *models.Video) error {
 	return nil
 }
 
+// GetVideoByID retrieves a single video by its ID.
+func (s *MongoStore) GetVideoByID(ctx context.Context, id string) (*models.Video, error) {
+	var v models.Video
+	err := s.db.Collection("videos").FindOne(ctx, bson.M{"_id": id}).Decode(&v)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find video by id: %w", err)
+	}
+	return &v, nil
+}
+
 // ListVideosBySubject returns videos for a subject sorted by position.
 func (s *MongoStore) ListVideosBySubject(ctx context.Context, subjectID string, onlyPublished bool) ([]*models.Video, error) {
 	filter := bson.M{"subject_id": subjectID}

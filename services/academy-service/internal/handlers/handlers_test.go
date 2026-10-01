@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -982,8 +983,8 @@ func TestR2Gating_SubjectDetailAndLeakTests(t *testing.T) {
 	// Wait for subj-gate-exp entitlement to expire
 	time.Sleep(70 * time.Millisecond)
 
-	// 1. Positive test: owned -> IDs present in position order
-	t.Run("positive_owned_ids_present_in_position_order", func(t *testing.T) {
+	// 1. Positive test: owned -> playable=true in position order, no YouTube IDs in detail
+	t.Run("positive_owned_playable_flags_present_in_position_order", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-gate-1", nil)
 		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
 		req.Header.Set("Authorization", "Bearer "+ownerToken)
@@ -1005,15 +1006,18 @@ func TestR2Gating_SubjectDetailAndLeakTests(t *testing.T) {
 		if len(detail.Videos) != 2 {
 			t.Fatalf("expected 2 published videos, got %d", len(detail.Videos))
 		}
-		if detail.Videos[0].Position != 1 || detail.Videos[0].YouTubeVideoID != videoIDPos1 {
-			t.Errorf("video[0] position=%d ytID=%q, want pos=1 ytID=%q", detail.Videos[0].Position, detail.Videos[0].YouTubeVideoID, videoIDPos1)
+		if detail.Videos[0].Position != 1 || !detail.Videos[0].Playable {
+			t.Errorf("video[0] position=%d playable=%v, want pos=1 playable=true", detail.Videos[0].Position, detail.Videos[0].Playable)
 		}
-		if detail.Videos[1].Position != 2 || detail.Videos[1].YouTubeVideoID != videoIDPos2 {
-			t.Errorf("video[1] position=%d ytID=%q, want pos=2 ytID=%q", detail.Videos[1].Position, detail.Videos[1].YouTubeVideoID, videoIDPos2)
+		if detail.Videos[1].Position != 2 || !detail.Videos[1].Playable {
+			t.Errorf("video[1] position=%d playable=%v, want pos=2 playable=true", detail.Videos[1].Position, detail.Videos[1].Playable)
 		}
-		// Confirm IDs appear in raw JSON
-		if !strings.Contains(rawBody, videoIDPos1) || !strings.Contains(rawBody, videoIDPos2) {
-			t.Errorf("raw JSON missing video IDs: %s", rawBody)
+		// Confirm IDs do NOT appear in subject detail raw JSON (video IDs only at play time)
+		if strings.Contains(rawBody, videoIDPos1) || strings.Contains(rawBody, videoIDPos2) {
+			t.Errorf("LEAK: raw JSON contains video IDs: %s", rawBody)
+		}
+		if strings.Contains(rawBody, "youtube_video_id") {
+			t.Errorf("LEAK: raw JSON contains youtube_video_id: %s", rawBody)
 		}
 		// Confirm unpublished video ID does not appear
 		if strings.Contains(rawBody, videoIDUnpublished) {
@@ -1935,4 +1939,413 @@ func TestRateLimitTiers_NoClaimsFailClosed(t *testing.T) {
 	if errBody["code"] != handlerutil.ErrCodeUnavailable {
 		t.Errorf("expected code=%s, got %v", handlerutil.ErrCodeUnavailable, errBody["code"])
 	}
+}
+
+func TestPlayVideoEndpoint(t *testing.T) {
+	s := newTestServer(false)
+	h := s.PublicHandler()
+	ctx := context.Background()
+
+	const (
+		ytID1 = "dQw4w9WgXcQ"
+		ytID2 = "jNQXAC9IVRw"
+	)
+
+	// Published subject
+	subj := &models.Subject{
+		ID:              "subj-play-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة التشغيل",
+		TitleEn:         "Playback Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj); err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+
+	// Draft subject
+	draftSubj := &models.Subject{
+		ID:              "subj-draft-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة مسودة",
+		TitleEn:         "Draft Subject",
+		Status:          models.StatusDraft,
+		AccessExpiresAt: time.Now().Add(24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, draftSubj); err != nil {
+		t.Fatalf("CreateSubject draft: %v", err)
+	}
+
+	// Expired subject
+	expiredSubj := &models.Subject{
+		ID:              "subj-expired-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة منتهية",
+		TitleEn:         "Expired Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(20 * time.Millisecond),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, expiredSubj); err != nil {
+		t.Fatalf("CreateSubject expired: %v", err)
+	}
+
+	// Videos
+	vPublished := &models.Video{
+		ID:             "vid-pub-1",
+		SubjectID:      "subj-play-1",
+		Position:       1,
+		TitleAr:        "فيديو 1",
+		TitleEn:        "Video 1",
+		YouTubeVideoID: ytID1,
+		Published:      true,
+		CreatedAt:      time.Now(),
+	}
+	vUnpublished := &models.Video{
+		ID:             "vid-unpub-1",
+		SubjectID:      "subj-play-1",
+		Position:       2,
+		TitleAr:        "فيديو غير منشور",
+		TitleEn:        "Unpublished Video",
+		YouTubeVideoID: ytID2,
+		Published:      false,
+		CreatedAt:      time.Now(),
+	}
+	vInDraft := &models.Video{
+		ID:             "vid-draft-1",
+		SubjectID:      "subj-draft-1",
+		Position:       1,
+		TitleAr:        "فيديو مادة مسودة",
+		TitleEn:        "Draft Subject Video",
+		YouTubeVideoID: ytID1,
+		Published:      true,
+		CreatedAt:      time.Now(),
+	}
+	vInExpired := &models.Video{
+		ID:             "vid-exp-1",
+		SubjectID:      "subj-expired-1",
+		Position:       1,
+		TitleAr:        "فيديو مادة منتهية",
+		TitleEn:        "Expired Video",
+		YouTubeVideoID: ytID1,
+		Published:      true,
+		CreatedAt:      time.Now(),
+	}
+	for _, v := range []*models.Video{vPublished, vUnpublished, vInDraft, vInExpired} {
+		if err := s.Store.CreateVideo(ctx, v); err != nil {
+			t.Fatalf("CreateVideo: %v", err)
+		}
+	}
+
+	ownerToken := makeStudentToken(t, "user-play-owner")
+	nonOwnerToken := makeStudentToken(t, "user-play-nonowner")
+	expiredUserToken := makeStudentToken(t, "user-play-exp")
+
+	// Grant subj-play-1 to owner
+	if err := s.Store.Grant(ctx, &models.Entitlement{UserID: "user-play-owner", SubjectID: "subj-play-1"}); err != nil {
+		t.Fatalf("Grant to owner: %v", err)
+	}
+	// Grant subj-draft-1 to owner
+	if err := s.Store.Grant(ctx, &models.Entitlement{UserID: "user-play-owner", SubjectID: "subj-draft-1"}); err != nil {
+		t.Fatalf("Grant to owner draft: %v", err)
+	}
+	// Grant subj-expired-1 to expiredUser
+	if err := s.Store.Grant(ctx, &models.Entitlement{UserID: "user-play-exp", SubjectID: "subj-expired-1"}); err != nil {
+		t.Fatalf("Grant to expired: %v", err)
+	}
+
+	// Wait for expired subject to pass
+	time.Sleep(40 * time.Millisecond)
+
+	// 1. Success: owner plays published video
+	t.Run("owner_play_published_video_200", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+		}
+
+		var resp models.VideoPlayResponseDTO
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+		if resp.VideoID != "vid-pub-1" {
+			t.Errorf("expected video_id vid-pub-1, got %q", resp.VideoID)
+		}
+		if resp.YouTubeVideoID != ytID1 {
+			t.Errorf("expected youtube_video_id %q, got %q", ytID1, resp.YouTubeVideoID)
+		}
+	})
+
+	// 2. Refusal: non-owner gets generic 404
+	t.Run("non_owner_play_published_video_404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+nonOwnerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), ytID1) {
+			t.Fatalf("LEAK: 404 body contains youtube id: %s", rec.Body.String())
+		}
+	})
+
+	// 3. Refusal: unpublished video returns generic 404 even to owner
+	t.Run("owner_play_unpublished_video_404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-unpub-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), ytID2) {
+			t.Fatalf("LEAK: 404 body contains unpublished youtube id: %s", rec.Body.String())
+		}
+	})
+
+	// 4. Refusal: video in draft subject returns generic 404 even if entitled
+	t.Run("owner_play_video_in_draft_subject_404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-draft-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// 5. Refusal: expired subject access returns generic 404
+	t.Run("expired_user_play_video_404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-exp-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+expiredUserToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// 6. Refusal: non-existent video ID returns generic 404
+	t.Run("play_nonexistent_video_404", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/does-not-exist/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// 7. Method refusal: GET on /play returns 405 Method Not Allowed
+	t.Run("get_play_405", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/videos/vid-pub-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// 8. Auth refusal: missing token returns 401
+	t.Run("missing_auth_token_401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// 9. Auth refusal: missing gateway secret returns 401
+	t.Run("missing_gateway_secret_401", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// 10. Rate limiting tier: Read tier (30/min) enforced
+	t.Run("rate_limit_read_tier_enforced", func(t *testing.T) {
+		mr, tl := setupTestLimiter(t, 2, 10, 5) // set read limit to 2 for fast test
+		defer mr.Close()
+		sLimit := newTestServer(false)
+		sLimit.Limiter = tl
+		hLimit := sLimit.PublicHandler()
+
+		rateUserToken := makeStudentToken(t, "user-play-rate")
+		if err := sLimit.Store.CreateSubject(ctx, subj); err != nil {
+			t.Fatal(err)
+		}
+		if err := sLimit.Store.CreateVideo(ctx, vPublished); err != nil {
+			t.Fatal(err)
+		}
+		if err := sLimit.Store.Grant(ctx, &models.Entitlement{UserID: "user-play-rate", SubjectID: "subj-play-1"}); err != nil {
+			t.Fatal(err)
+		}
+
+		// 1st request -> 200
+		req1 := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req1.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req1.Header.Set("Authorization", "Bearer "+rateUserToken)
+		rec1 := httptest.NewRecorder()
+		hLimit.ServeHTTP(rec1, req1)
+		if rec1.Code != http.StatusOK {
+			t.Fatalf("call 1: expected 200, got %d: %s", rec1.Code, rec1.Body.String())
+		}
+
+		// 2nd request -> 200
+		req2 := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req2.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req2.Header.Set("Authorization", "Bearer "+rateUserToken)
+		rec2 := httptest.NewRecorder()
+		hLimit.ServeHTTP(rec2, req2)
+		if rec2.Code != http.StatusOK {
+			t.Fatalf("call 2: expected 200, got %d: %s", rec2.Code, rec2.Body.String())
+		}
+
+		// 3rd request -> 429 Too Many Requests
+		req3 := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req3.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req3.Header.Set("Authorization", "Bearer "+rateUserToken)
+		rec3 := httptest.NewRecorder()
+		hLimit.ServeHTTP(rec3, req3)
+		if rec3.Code != http.StatusTooManyRequests {
+			t.Fatalf("call 3: expected 429, got %d: %s", rec3.Code, rec3.Body.String())
+		}
+		if rec3.Header().Get("Retry-After") == "" {
+			t.Error("expected Retry-After header on 429")
+		}
+	})
+}
+
+type errVideoStore struct {
+	store.Store
+	getVideoErr       error
+	getSubjectErr     error
+	hasEntitlementErr error
+}
+
+func (m *errVideoStore) GetVideoByID(ctx context.Context, id string) (*models.Video, error) {
+	if m.getVideoErr != nil {
+		return nil, m.getVideoErr
+	}
+	return m.Store.GetVideoByID(ctx, id)
+}
+
+func (m *errVideoStore) GetSubjectByID(ctx context.Context, id string) (*models.Subject, error) {
+	if m.getSubjectErr != nil {
+		return nil, m.getSubjectErr
+	}
+	return m.Store.GetSubjectByID(ctx, id)
+}
+
+func (m *errVideoStore) HasActiveEntitlement(ctx context.Context, userID, subjectID string) (bool, error) {
+	if m.hasEntitlementErr != nil {
+		return false, m.hasEntitlementErr
+	}
+	return m.Store.HasActiveEntitlement(ctx, userID, subjectID)
+}
+
+func TestPlayVideo_StoreErrorsFailClosed(t *testing.T) {
+	ctx := context.Background()
+	baseStore := store.NewMemoryStore()
+	subj := &models.Subject{
+		ID:              "subj-err-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(24 * time.Hour),
+	}
+	_ = baseStore.CreateSubject(ctx, subj)
+	vid := &models.Video{
+		ID:             "vid-err-1",
+		SubjectID:      "subj-err-1",
+		Published:      true,
+		YouTubeVideoID: "12345678901",
+	}
+	_ = baseStore.CreateVideo(ctx, vid)
+	_ = baseStore.Grant(ctx, &models.Entitlement{UserID: "u-err-1", SubjectID: "subj-err-1"})
+	tok := makeStudentToken(t, "u-err-1")
+
+	t.Run("get_video_error_503", func(t *testing.T) {
+		s := newTestServer(false)
+		s.Store = &errVideoStore{Store: baseStore, getVideoErr: errors.New("db error")}
+		h := s.PublicHandler()
+
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-err-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("get_subject_error_503", func(t *testing.T) {
+		s := newTestServer(false)
+		s.Store = &errVideoStore{Store: baseStore, getSubjectErr: errors.New("db error")}
+		h := s.PublicHandler()
+
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-err-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("has_entitlement_error_503", func(t *testing.T) {
+		s := newTestServer(false)
+		s.Store = &errVideoStore{Store: baseStore, hasEntitlementErr: errors.New("db error")}
+		h := s.PublicHandler()
+
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-err-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
 }
