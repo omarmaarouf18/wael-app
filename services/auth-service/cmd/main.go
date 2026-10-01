@@ -5,9 +5,12 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/config"
@@ -23,7 +26,22 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/tlsutil"
 )
 
+func runCheckEnv(stdout, stderr io.Writer) int {
+	if _, err := config.Load(); err != nil {
+		fmt.Fprintf(stderr, "check-env: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, "check-env: ok")
+	return 0
+}
+
 func main() {
+	checkEnv := flag.Bool("check-env", false, "validate environment variables and exit")
+	flag.Parse()
+	if *checkEnv {
+		os.Exit(runCheckEnv(os.Stdout, os.Stderr))
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("[AUTH] %v", err)
