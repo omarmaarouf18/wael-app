@@ -421,7 +421,7 @@ a captured-mail sink. Decide this in an ADR before building staging.
 | W-03 (done) | No SHA citation check in CI | P1 | Trust in docs |
 | W-04 (done) | No `--check-env` | P1 | CD pre-flight |
 | W-05 (done) | No real-DB tests | P1 | Academy Phase 1 |
-| W-06 | Empty contract/E2E suites report green | P2 | Release gate |
+| W-06 (done) | Empty contract/E2E suites report green | P2 | Release gate |
 | W-07 | Unpinned supply chain | P2 | First publish |
 | W-08 | Probe fallback to HTTP | P2 | First deploy |
 | W-09 | Redis password on command line | P2 | First deploy |
@@ -470,7 +470,7 @@ result; the last column is the target.
 | `govulncheck` and `gosec` | Yes | Yes | Yes |
 | Real contract tests | Yes | **No (skeleton)** | Yes |
 | E2E on a production-image stack | Yes | No | Yes |
-| Skips fail in CI | No | No | Yes |
+| Skips fail in CI | No | Yes for e2e | Yes |
 | Publish gated on CI and E2E | No | n/a (disabled) | Yes |
 | **Build** | | | |
 | Multi-stage, non-root, static binary | Yes | Yes | Yes |
@@ -521,7 +521,7 @@ done, because the academy service will copy whatever the existing services do.
 5. **W-05** (done) Service containers in CI, `REQUIRE_DB=1`, first Mongo store tests for auth
    (refresh single-redemption under `-race`). *Done when:* CI fails if Mongo is
    unreachable.
-6. **W-06** Real contract tests and `E2E_REQUIRED=1` in CI. *Done when:* CI shows a
+6. **W-06** (done) Real contract tests and `E2E_REQUIRED=1` in CI. *Done when:* CI shows a
    non-zero executed test count for `tests/contracts` and `tests/e2e`.
 7. **W-15** Ruleset, secret scanning push protection, Dependabot alerts (settings, not
    code; record the applied settings in `docs/adr/` or `docs/REPOSITORY-SETTINGS.md`).
@@ -795,7 +795,7 @@ Examined commit: `46c7997...`
 | W-03 | Fixed in 36033d7 | .github/workflows/ci.yml:37-54 | none |
 | W-04 | Fixed | `services/*/cmd/main.go`, `services/*/cmd/checkenv_test.go` | `--check-env` flag added to gateway, auth, and notification services; validates config via Load() and exits 0/1 without starting resources. |
 | W-05 | Fixed | `.github/workflows/ci.yml:105-121`, `services/auth-service/internal/{store,otp}/*_test.go`, `services/notification-service/internal/store/*_test.go` | Mongo and Redis service containers added to build-test job with health checks and `REQUIRE_DB=1`; dual-implementation store test suites run against MemoryStore and MongoStore/RedisStore. |
-| W-06 | Partial | `tests/contracts/contracts_test.go:20-159`, `tests/e2e/chain_test.go:113` | tests/contracts is no longer an empty skeleton: contracts_test.go executes 3 active contract tests (gateway token strip, error body shape, JWT claim set) which run and pass in the gate. However, tests/e2e/chain_test.go still skips when E2E_GATEWAY_URL is unset, reporting green while running 0 end-to-end tests. |
+| W-06 | Fixed (dev stack) | `tests/contracts/contracts_test.go:20-159`, `tests/e2e/chain_test.go`, `.github/workflows/ci.yml` | Contract tests active in build-test matrix; tests/e2e split into sequential t.Run stages with E2E_REQUIRED=1 fail-closed mode and executed against live compose stack in CI job "E2E (compose)". |
 | W-07 | Confirmed | `.github/workflows/ci.yml:19,24,146,189`, `.githooks/pre-push:125`, `services/*/Dockerfile:11,28,41` | none |
 | W-08 | Confirmed | `services/*/Dockerfile:50-51,45-46`, `infrastructure/docker-compose.yml:98` | none |
 | W-09 | Confirmed | `infrastructure/docker-compose.yml:24,45,50` | none |

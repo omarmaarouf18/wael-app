@@ -240,3 +240,54 @@ jobs:
       - name: Flutter Test
         working-directory: frontend
         run: flutter test
+
+  e2e-compose:
+    name: E2E (compose)
+    runs-on: ubuntu-latest
+    needs: build-test
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache: false
+
+      - name: Generate mTLS Certificates
+        run: ./infrastructure/certs/generate-certs.sh
+
+      - name: Build Environment File
+        run: |
+          ENV_FILE="${RUNNER_TEMP}/.env.local"
+          cp infrastructure/.env.example "$ENV_FILE"
+          sed -i "s|^APP_ENV=.*|APP_ENV=local|" "$ENV_FILE"
+          sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -hex 32)|" "$ENV_FILE"
+          sed -i "s|^GATEWAY_SECRET=.*|GATEWAY_SECRET=$(openssl rand -hex 32)|" "$ENV_FILE"
+          sed -i "s|^INTERNAL_SERVICE_TOKEN=.*|INTERNAL_SERVICE_TOKEN=$(openssl rand -hex 32)|" "$ENV_FILE"
+
+      - name: Start Compose Stack
+        run: |
+          docker compose --env-file "${RUNNER_TEMP}/.env.local" -f infrastructure/docker-compose.yml up -d --build --wait
+
+      - name: Run E2E Tests
+        env:
+          E2E_REQUIRED: "1"
+          E2E_GATEWAY_URL: "https://localhost:8080"
+          E2E_CA_CERT: "${{ github.workspace }}/infrastructure/certs/ca.crt"
+        working-directory: tests/e2e
+        run: go test -v -count=1 ./...
+
+      - name: Dump Compose Logs on Failure
+        if: failure()
+        run: |
+          docker compose --env-file "${RUNNER_TEMP}/.env.local" -f infrastructure/docker-compose.yml logs --tail 100
+
+      - name: Teardown Compose Stack
+        if: always()
+        run: |
+          docker compose --env-file "${RUNNER_TEMP}/.env.local" -f infrastructure/docker-compose.yml down -v
+
