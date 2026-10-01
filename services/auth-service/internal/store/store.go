@@ -30,6 +30,9 @@ var (
 	ErrAdminNotFound = errors.New("store: admin not found")
 )
 
+// FromActiveOrSuspended matches active (incl. legacy empty) or suspended.
+const FromActiveOrSuspended = "active|suspended"
+
 // UserFilter specifies filtering and pagination parameters for ListUsers.
 type UserFilter struct {
 	Search          string
@@ -225,7 +228,7 @@ func (s *MemoryStore) SetStatus(_ context.Context, userID, from, to, reason stri
 	}
 
 	currentStatus := string(existing.EffectiveStatus())
-	if from == "active|suspended" {
+	if from == FromActiveOrSuspended {
 		if currentStatus != string(models.StatusActive) && currentStatus != string(models.StatusSuspended) {
 			return ErrStatusConflict
 		}

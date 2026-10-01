@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -698,6 +699,94 @@ func TestAdmin_Accounts_ListAndSearch(t *testing.T) {
 	}
 }
 
+func TestAdmin_Accounts_SearchCap_Arabic_And_Regex(t *testing.T) {
+	s, validTok, _ := setupAdminTestEnv(t, nil)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Seed users: one with Arabic name, one with literal regex characters
+	uArabic := &models.User{
+		ID:        "usr-ar-1",
+		FullName:  "أحمد علي",
+		Email:     "ahmed.ali@example.com",
+		Phone:     "+201099112233",
+		Status:    models.StatusActive,
+		CreatedAt: now.Add(-2 * time.Minute),
+	}
+	uRegex := &models.User{
+		ID:        "usr-regex-literal",
+		FullName:  "User .* Literal",
+		Email:     "literal@example.com",
+		Phone:     "+201099445566",
+		Status:    models.StatusActive,
+		CreatedAt: now.Add(-1 * time.Minute),
+	}
+	for _, u := range []*models.User{uArabic, uRegex} {
+		if err := s.Store.Create(ctx, u); err != nil {
+			t.Fatalf("Create user %s: %v", u.ID, err)
+		}
+	}
+
+	// 1. Exactly 100 runes search -> OK (200)
+	query100 := strings.Repeat("a", 100)
+	rec100 := doAdminRequest(s, http.MethodGet, "/internal/admin/accounts?search="+query100, "internal-test-token", validTok, nil)
+	if rec100.Code != http.StatusOK {
+		t.Fatalf("expected 200 for 100-rune search, got %d (%s)", rec100.Code, rec100.Body.String())
+	}
+
+	// 2. 101 runes ASCII search -> 400 "search too long"
+	query101 := strings.Repeat("a", 101)
+	rec101 := doAdminRequest(s, http.MethodGet, "/internal/admin/accounts?search="+query101, "internal-test-token", validTok, nil)
+	if rec101.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for 101-rune search, got %d (%s)", rec101.Code, rec101.Body.String())
+	}
+	var errResp101 map[string]any
+	if err := json.Unmarshal(rec101.Body.Bytes(), &errResp101); err == nil {
+		if errResp101["error"] != "search too long" {
+			t.Fatalf("expected 'search too long' message, got %v", errResp101["error"])
+		}
+	}
+
+	// 3. 101 runes Arabic search -> 400 "search too long" (multibyte UTF-8 verification)
+	queryArabic101 := strings.Repeat("أ", 101)
+	recArabic101 := doAdminRequest(s, http.MethodGet, "/internal/admin/accounts?search="+url.QueryEscape(queryArabic101), "internal-test-token", validTok, nil)
+	if recArabic101.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for 101-rune arabic search, got %d (%s)", recArabic101.Code, recArabic101.Body.String())
+	}
+
+	// 4. Arabic name search works (e.g. "أحمد" finds "أحمد علي")
+	recSearchArabic := doAdminRequest(s, http.MethodGet, "/internal/admin/accounts?search="+url.QueryEscape("أحمد"), "internal-test-token", validTok, nil)
+	if recSearchArabic.Code != http.StatusOK {
+		t.Fatalf("expected 200 searching arabic name 'أحمد', got %d (%s)", recSearchArabic.Code, recSearchArabic.Body.String())
+	}
+	var resArabic struct {
+		Items []*models.UserDTO `json:"items"`
+		Total int               `json:"total"`
+	}
+	if err := json.Unmarshal(recSearchArabic.Body.Bytes(), &resArabic); err != nil {
+		t.Fatalf("unmarshal arabic search: %v", err)
+	}
+	if resArabic.Total != 1 || len(resArabic.Items) != 1 || resArabic.Items[0].FullName != "أحمد علي" {
+		t.Fatalf("expected to find 'أحمد علي', got total=%d items=%+v", resArabic.Total, resArabic.Items)
+	}
+
+	// 5. ".*" matches literally only (finds usr-regex-literal, does not match usr-ar-1)
+	recRegex := doAdminRequest(s, http.MethodGet, "/internal/admin/accounts?search="+url.QueryEscape(".*"), "internal-test-token", validTok, nil)
+	if recRegex.Code != http.StatusOK {
+		t.Fatalf("expected 200 searching regex literal, got %d (%s)", recRegex.Code, recRegex.Body.String())
+	}
+	var resRegex struct {
+		Items []*models.UserDTO `json:"items"`
+		Total int               `json:"total"`
+	}
+	if err := json.Unmarshal(recRegex.Body.Bytes(), &resRegex); err != nil {
+		t.Fatalf("unmarshal regex search: %v", err)
+	}
+	if resRegex.Total != 1 || len(resRegex.Items) != 1 || resRegex.Items[0].ID != "usr-regex-literal" {
+		t.Fatalf("expected '.*' to match only 'usr-regex-literal', got total=%d items=%+v", resRegex.Total, resRegex.Items)
+	}
+}
+
 func TestAdmin_Suspend_Flow_And_R7(t *testing.T) {
 	s, validTok, _ := setupAdminTestEnv(t, nil)
 	ctx := context.Background()
@@ -1005,6 +1094,60 @@ func TestAdmin_Delete_Flow_And_Blocklist_SignupRefusal(t *testing.T) {
 	publicHandler.ServeHTTP(recSignup2, reqSignup2)
 	if recSignup2.Code != http.StatusConflict {
 		t.Fatalf("expected 409 when registering with blocked phone, got %d (%s)", recSignup2.Code, recSignup2.Body.String())
+	}
+}
+
+func TestAdmin_Delete_EmailNormalization_BlocklistSignupRefusal(t *testing.T) {
+	s, validTok, _ := setupAdminTestEnv(t, nil)
+	ctx := context.Background()
+
+	// Create user with email " Ahmed@Mail.COM " via the store directly
+	rawUser := &models.User{
+		ID:        "u-raw-unnormalized",
+		FullName:  "Ahmed Unnormalized",
+		Email:     " Ahmed@Mail.COM ",
+		Phone:     "+201099887711",
+		Status:    models.StatusActive,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.Store.Create(ctx, rawUser); err != nil {
+		t.Fatalf("Create user with unnormalized email directly in store: %v", err)
+	}
+
+	// Setup public router for signup testing
+	publicMux := http.NewServeMux()
+	publicMux.HandleFunc("/auth/signup", s.Signup)
+	publicHandler := s.GatewayAuth(publicMux)
+
+	// Delete account via admin listener
+	delRec := doAdminRequest(s, http.MethodDelete, "/internal/admin/accounts/u-raw-unnormalized", "internal-test-token", validTok, map[string]string{
+		"reason": "testing unnormalized email deletion",
+	})
+	if delRec.Code != http.StatusOK {
+		t.Fatalf("delete user failed: %d (%s)", delRec.Code, delRec.Body.String())
+	}
+
+	// Attempt signup with "ahmed@mail.com" -> refused with generic refusal
+	signupPayload, _ := json.Marshal(map[string]string{
+		"full_name": "Ahmed New",
+		"email":     "ahmed@mail.com",
+		"phone":     "+201055443322",
+		"password":  "ValidPassword123!",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/auth/signup", bytes.NewReader(signupPayload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Gateway-Secret", "gw-secret")
+	rec := httptest.NewRecorder()
+	publicHandler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 conflict when signing up with ahmed@mail.com after deleting ' Ahmed@Mail.COM ', got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err == nil {
+		if resp["error"] != "unable to complete registration" {
+			t.Fatalf("expected generic refusal message 'unable to complete registration', got %v", resp["error"])
+		}
 	}
 }
 

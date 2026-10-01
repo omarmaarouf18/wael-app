@@ -235,7 +235,7 @@ func (s *MongoStore) SetStatus(ctx context.Context, userID, from, to, reason str
 	}
 
 	var filter bson.M
-	if from == "active|suspended" {
+	if from == FromActiveOrSuspended {
 		filter = bson.M{
 			"_id": userID,
 			"$or": []bson.M{

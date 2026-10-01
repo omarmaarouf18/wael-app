@@ -174,6 +174,10 @@ func (s *Server) Accounts(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	search := strings.TrimSpace(q.Get("search"))
+	if utf8.RuneCountInString(search) > 100 {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "bad_request", "search too long", nil)
+		return
+	}
 	statusFilter := strings.TrimSpace(q.Get("status"))
 
 	if statusFilter != "" {
@@ -515,7 +519,7 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, id string
 	now := time.Now().UTC()
 
 	// 1. Blocklist entries for normalized email and phone (HMAC, idempotent)
-	email := strings.TrimSpace(strings.ToLower(user.Email))
+	email := normalizeEmail(user.Email)
 	if email != "" {
 		emailHash := computeHMAC(bKey, email)
 		dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
@@ -545,7 +549,7 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, id string
 
 	// 3. SetStatus active|suspended -> deleted (CAS)
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
-	err = s.Store.SetStatus(dbCtx, id, "active|suspended", string(models.StatusDeleted), cleanReason, now)
+	err = s.Store.SetStatus(dbCtx, id, store.FromActiveOrSuspended, string(models.StatusDeleted), cleanReason, now)
 	cancel()
 	if err != nil {
 		if errors.Is(err, store.ErrStatusConflict) {

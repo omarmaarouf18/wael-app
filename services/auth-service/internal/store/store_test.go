@@ -597,13 +597,76 @@ func runPhase15StoreSuite(t *testing.T, s Store) {
 		t.Fatalf("expected match by id for u-search-1, got %d matches", totalID)
 	}
 
-	// 3. SetStatus CAS active|suspended -> deleted
-	if err := s.SetStatus(ctx, "u-search-1", "active|suspended", string(models.StatusDeleted), "deleted CAS test", now); err != nil {
+	// 3. SetStatus CAS FromActiveOrSuspended -> deleted
+	// Insert legacy-empty user (empty status field) to test legacy-empty -> deleted
+	if memStore, ok := s.(*MemoryStore); ok {
+		memStore.mu.Lock()
+		uEmpty := &models.User{
+			ID:           "u-legacy-empty-p15",
+			FullName:     "Legacy Empty User",
+			Email:        "legacy-empty@example.com",
+			PasswordHash: "h4",
+			Role:         models.RoleUser,
+			Status:       "",
+			CreatedAt:    now.Add(-4 * time.Minute),
+		}
+		memStore.byID[uEmpty.ID] = uEmpty
+		memStore.byMail[uEmpty.Email] = uEmpty
+		memStore.mu.Unlock()
+	} else if mongoStore, ok := s.(*MongoStore); ok {
+		_, err := mongoStore.coll.InsertOne(ctx, bson.M{
+			"_id":           "u-legacy-empty-p15",
+			"full_name":     "Legacy Empty User",
+			"email":         "legacy-empty@example.com",
+			"password_hash": "h4",
+			"role":          "user",
+			"created_at":    now.Add(-4 * time.Minute),
+			"updated_at":    now.Add(-4 * time.Minute),
+		})
+		if err != nil {
+			t.Fatalf("insert legacy empty in mongo: %v", err)
+		}
+	}
+
+	// 3a. Active -> deleted succeeds with FromActiveOrSuspended
+	if err := s.SetStatus(ctx, "u-search-1", FromActiveOrSuspended, string(models.StatusDeleted), "deleted CAS test", now); err != nil {
 		t.Fatalf("SetStatus active->deleted failed: %v", err)
 	}
-	// Try deleting again -> must fail with ErrStatusConflict (already deleted)
-	if err := s.SetStatus(ctx, "u-search-1", "active|suspended", string(models.StatusDeleted), "repeat delete", now); !errors.Is(err, ErrStatusConflict) {
-		t.Fatalf("expected ErrStatusConflict when deleting already deleted user, got: %v", err)
+	u1After, err := s.FindByID(ctx, "u-search-1")
+	if err != nil || u1After.EffectiveStatus() != models.StatusDeleted {
+		t.Fatalf("expected deleted status for u-search-1, got %v (%v)", u1After, err)
+	}
+
+	// 3b. Legacy-empty -> deleted succeeds with FromActiveOrSuspended
+	if err := s.SetStatus(ctx, "u-legacy-empty-p15", FromActiveOrSuspended, string(models.StatusDeleted), "legacy-empty delete", now); err != nil {
+		t.Fatalf("SetStatus legacy-empty->deleted failed: %v", err)
+	}
+	uEmptyAfter, err := s.FindByID(ctx, "u-legacy-empty-p15")
+	if err != nil || uEmptyAfter.EffectiveStatus() != models.StatusDeleted {
+		t.Fatalf("expected deleted status for u-legacy-empty-p15, got %v (%v)", uEmptyAfter, err)
+	}
+
+	// 3c. Suspended -> deleted succeeds with FromActiveOrSuspended
+	if err := s.SetStatus(ctx, "u-search-2", FromActiveOrSuspended, string(models.StatusDeleted), "suspended delete", now); err != nil {
+		t.Fatalf("SetStatus suspended->deleted failed: %v", err)
+	}
+	u2After, err := s.FindByID(ctx, "u-search-2")
+	if err != nil || u2After.EffectiveStatus() != models.StatusDeleted {
+		t.Fatalf("expected deleted status for u-search-2, got %v (%v)", u2After, err)
+	}
+
+	// 3d. Deleted -> deleted fails with ErrStatusConflict
+	// Already-deleted u-search-3:
+	if err := s.SetStatus(ctx, "u-search-3", FromActiveOrSuspended, string(models.StatusDeleted), "delete on deleted", now); !errors.Is(err, ErrStatusConflict) {
+		t.Fatalf("expected ErrStatusConflict when deleting already deleted user u-search-3, got: %v", err)
+	}
+	// Newly deleted u-search-1:
+	if err := s.SetStatus(ctx, "u-search-1", FromActiveOrSuspended, string(models.StatusDeleted), "repeat delete", now); !errors.Is(err, ErrStatusConflict) {
+		t.Fatalf("expected ErrStatusConflict when deleting already deleted user u-search-1, got: %v", err)
+	}
+	// Newly deleted legacy doc:
+	if err := s.SetStatus(ctx, "u-legacy-empty-p15", FromActiveOrSuspended, string(models.StatusDeleted), "repeat delete legacy", now); !errors.Is(err, ErrStatusConflict) {
+		t.Fatalf("expected ErrStatusConflict when deleting already deleted legacy user, got: %v", err)
 	}
 }
 
