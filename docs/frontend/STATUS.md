@@ -26,10 +26,10 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `notifications_screen.dart` | 189 | yes | 0 (0) | no |
 | `otp_screen.dart` | 111 | yes | 0 (0) | no |
 | `payment_screen.dart` | 672 | no | 8 (36) | yes |
-| `settings_screen.dart` | 660 | no | 5 (17) | no |
+| `settings_screen.dart` | 550 | yes | 0 (0) | no |
 | `signup_screen.dart` | 332 | yes | 0 (0) | no |
 | `splash_screen.dart` | 61 | yes | 0 (0) | no |
-| **Total** | 7664 | 6 of 13 | 43 (325) | 5 of 13 |
+| **Total** | 7554 | 7 of 13 | 38 (308) | 5 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.
@@ -40,7 +40,7 @@ The gate scans screens only, so widgets carry no baseline entries.
 
 | File | Lines | Used by screens |
 |------|------:|-----------------|
-| `app_shell.dart` | 116 | 6 screens |
+| `app_shell.dart` | 116 | 7 screens |
 | `confirm_action_dialog.dart` | 103 | none |
 | `hero_backdrop.dart` | 85 | login |
 | `language_toggle_chip.dart` | 58 | login |
@@ -54,7 +54,7 @@ The gate scans screens only, so widgets carry no baseline entries.
 | `themed_error_banner.dart` | 81 | 5 screens |
 | `themed_loading_indicator.dart` | 49 | none |
 | `themed_panel.dart` | 51 | otp |
-| `themed_section_header.dart` | 48 | none |
+| `themed_section_header.dart` | 48 | settings |
 | `themed_text_field.dart` | 104 | 6 screens |
 
 The F2 widgets are exercised by `test/widget_layer_test.dart` (English and Arabic) and

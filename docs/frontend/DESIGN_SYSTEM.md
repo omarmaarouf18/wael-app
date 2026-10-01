@@ -202,6 +202,7 @@ headings) and Plus Jakarta Sans (body and labels); Arabic uses Cairo throughout.
 | `caption` | `bodySm` at 10 | same | `textTertiary` |
 | `bodyXs` | `bodySm` at 11, height 1.4 | same | `textMuted` |
 | `actionSm` | `labelSm` at 11, spacing 1.0 | same | `textMuted` |
+| `footerEyebrow` | `academyEyebrow` at 9, spacing 2.0 (0 in Arabic) | same | `textTertiary` |
 | `headerWordmark` | `headlineSm` (Syne 17 / Cairo 16) with weight w800, 2.0 | same | `textPrimary` |
 | `headerEyebrow` | `academyEyebrow` at 8 | same | `textMuted` |
 | `wordmarkTitle` | Syne, 32, w800, 1.15, 6.0, black shadow | (Arabic style at the same size and spacing) | `textPrimary` |
@@ -240,6 +241,7 @@ file for their exact values.
 | `LanguageToggleChip` | `language_toggle_chip.dart` | Pill with a globe icon and the name of the language it switches to. |
 | `StatusDot` | `status_dot.dart` | Small filled circle (unread pip, live indicator) with an optional ring. |
 | `IconTile` | `icon_tile.dart` | Rounded square with a centred icon (list leading icons, setting rows). |
+| `ProfileAvatar` | `profile_avatar.dart` | Circular avatar with a hairline ring and a badge dot at the top end corner. |
 | `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |
 | `OtpPinInput` (+ `OtpDigitsFormatter`) | `otp_pin_input.dart` | N-digit code input (default 6) over one hidden text field: paste, SMS autofill, backspace. Always laid out left to right; maps Arabic-Indic and Persian digits to ASCII. |
 
