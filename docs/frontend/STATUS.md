@@ -24,12 +24,12 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `login_screen.dart` | 451 | no | 5 (9) | no |
 | `main_shell.dart` | 300 | no | 3 (10) | no |
 | `notifications_screen.dart` | 226 | no | 6 (10) | no |
-| `otp_screen.dart` | 115 | no | 5 (5) | no |
+| `otp_screen.dart` | 111 | yes | 0 (0) | no |
 | `payment_screen.dart` | 672 | no | 8 (36) | yes |
 | `settings_screen.dart` | 660 | no | 5 (17) | no |
 | `signup_screen.dart` | 349 | no | 5 (5) | no |
 | `splash_screen.dart` | 60 | yes | 0 (0) | no |
-| **Total** | 7827 | 1 of 13 | 67 (357) | 5 of 13 |
+| **Total** | 7823 | 2 of 13 | 62 (352) | 5 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.

@@ -42,11 +42,6 @@ frontend/lib/screens/notifications_screen.dart|font_size|3
 frontend/lib/screens/notifications_screen.dart|non_directional_insets|1
 frontend/lib/screens/notifications_screen.dart|scaffold|1
 frontend/lib/screens/notifications_screen.dart|text_style|1
-frontend/lib/screens/otp_screen.dart|appbar|1
-frontend/lib/screens/otp_screen.dart|box_decoration|1
-frontend/lib/screens/otp_screen.dart|non_directional_insets|1
-frontend/lib/screens/otp_screen.dart|scaffold|1
-frontend/lib/screens/otp_screen.dart|text_style|1
 frontend/lib/screens/payment_screen.dart|appbar|1
 frontend/lib/screens/payment_screen.dart|box_decoration|5
 frontend/lib/screens/payment_screen.dart|font_size|10
