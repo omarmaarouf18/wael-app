@@ -1,11 +1,3 @@
-frontend/lib/screens/course_detail_screen.dart|appbar|1
-frontend/lib/screens/course_detail_screen.dart|box_decoration|25
-frontend/lib/screens/course_detail_screen.dart|font_size|39
-frontend/lib/screens/course_detail_screen.dart|material_color|31
-frontend/lib/screens/course_detail_screen.dart|non_directional_insets|7
-frontend/lib/screens/course_detail_screen.dart|scaffold|1
-frontend/lib/screens/course_detail_screen.dart|text_style|19
-frontend/lib/screens/course_detail_screen.dart|to_upper_case|4
 frontend/lib/screens/ebook_screen.dart|box_decoration|7
 frontend/lib/screens/ebook_screen.dart|font_size|19
 frontend/lib/screens/ebook_screen.dart|material_color|6

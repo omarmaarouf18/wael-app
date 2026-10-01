@@ -342,6 +342,6 @@ The following backend issues were observed during live matrix verification. The 
 ## 5. Items Not Verified / Out of Scope
 
 1. **Academy & Course Endpoints**:
-   - The academy service is currently being implemented by the parallel agent. Academy content in the Flutter app remains mock-backed behind repository interfaces (`MockAcademyRepository`) as instructed.
+   - The academy service is currently being implemented by the parallel agent. Academy content in the Flutter app remains mock-backed behind repository interfaces (`MockAcademyRepository`) as instructed. *(Superseded 2026-10-01: home, courses and course detail now read the academy service through `AcademyRepository`; `MockAcademyRepository` is deleted. Ebooks and payment are still bundled mock data.)*
 2. **Third-party Email Delivery (Resend API)**:
    - Email dispatch was tested using dev OTPs (`s.devOTPField()` returning `dev_otp` in JSON response under `local` environment) rather than actual external SMTP/Resend delivery.

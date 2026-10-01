@@ -257,6 +257,11 @@ file for their exact values.
 | `OwnedSubjectTile` | `owned_subject_tile.dart` | Home row for an owned subject: icon tile, title, video / book counts, access end date or "Ready to Start". |
 | `CatalogLevelHeader` | `catalog_level_header.dart` | Summary card above the subject list: level, study type, subject count. |
 | `CatalogSubjectCard` | `catalog_subject_card.dart` | Subject card: term, title, director name, description, video / book / note counts, View subject / Continue. |
+| `SubjectHeroBanner` | `subject_hero_banner.dart` | 16:10 subject hero image fading into the canvas, with an optional term tag at the top start corner. |
+| `DirectorStrip` | `director_strip.dart` | Compact academy-director card: round portrait, name with a crimson dot, tagline. |
+| `CatalogVideoTile` | `catalog_video_tile.dart` | Lesson video row; shows a lock when `locked`. Reports taps only, never knows a URL. |
+| `CatalogFileTile` (+ `formatFileSize`) | `catalog_file_tile.dart` | PDF row (book or note): badges, size, title, lock when not owned. |
+| `showFileDetailsSheet` | `file_details_sheet.dart` | Bottom sheet for one PDF with the reason it cannot be opened yet. |
 | `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |
 | `OtpPinInput` (+ `OtpDigitsFormatter`) | `otp_pin_input.dart` | N-digit code input (default 6) over one hidden text field: paste, SMS autofill, backspace. Always laid out left to right; maps Arabic-Indic and Persian digits to ASCII. |
 

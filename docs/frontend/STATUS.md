@@ -16,7 +16,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 
 | File | Lines | Uses shared shell | Baseline entries (violations) | Catalog screen |
 |------|------:|-------------------|------------------------------:|----------------|
-| `course_detail_screen.dart` | 2039 | no | 8 (127) | yes |
+| `course_detail_screen.dart` | 493 | yes | 0 (0) | yes |
 | `courses_screen.dart` | 291 | yes | 0 (0) | yes |
 | `ebook_screen.dart` | 954 | no | 7 (60) | yes |
 | `forgot_password_screen.dart` | 165 | yes | 0 (0) | no |
@@ -29,7 +29,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `settings_screen.dart` | 550 | yes | 0 (0) | no |
 | `signup_screen.dart` | 332 | yes | 0 (0) | no |
 | `splash_screen.dart` | 61 | yes | 0 (0) | no |
-| **Total** | 6008 | 10 of 13 | 23 (223) | 5 of 13 |
+| **Total** | 4462 | 11 of 13 | 15 (96) | 5 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.
@@ -40,14 +40,18 @@ The gate scans screens only, so widgets carry no baseline entries.
 
 | File | Lines | Used by screens |
 |------|------:|-----------------|
-| `accent_title.dart` | 56 | courses, home |
-| `app_badge.dart` | 67 | none |
+| `accent_title.dart` | 56 | courses, home, subject content section |
+| `app_badge.dart` | 67 | subject content section |
 | `app_bottom_nav.dart` | 108 | main shell |
-| `app_shell.dart` | 116 | 10 screens |
+| `app_shell.dart` | 116 | 11 screens |
 | `brand_lockup.dart` | 44 | main shell |
+| `catalog_file_tile.dart` | 118 | subject content section |
 | `catalog_level_header.dart` | 76 | courses |
 | `catalog_subject_card.dart` | 179 | courses |
+| `catalog_video_tile.dart` | 84 | subject content section |
 | `confirm_action_dialog.dart` | 103 | none |
+| `director_strip.dart` | 78 | course detail body |
+| `file_details_sheet.dart` | 102 | subject content section |
 | `header_icon_button.dart` | 52 | main shell |
 | `hero_backdrop.dart` | 85 | login |
 | `home_hero_banner.dart` | 207 | home |
@@ -55,20 +59,21 @@ The gate scans screens only, so widgets carry no baseline entries.
 | `instructor_dossier_card.dart` | 163 | home |
 | `language_toggle_chip.dart` | 58 | login |
 | `otp_pin_input.dart` | 178 | forgot password, otp |
-| `owned_subject_tile.dart` | 83 | home |
+| `owned_subject_tile.dart` | 83 | course detail body, home |
 | `pill_filter_bar.dart` | 88 | ebook |
 | `primary_button.dart` | 89 | 8 screens |
 | `profile_avatar.dart` | 42 | settings |
 | `search_field.dart` | 75 | courses |
 | `secondary_button.dart` | 90 | home |
-| `selectable_chip.dart` | 125 | courses |
+| `selectable_chip.dart` | 125 | courses, subject content section |
 | `status_badge.dart` | 76 | payment |
 | `status_dot.dart` | 37 | notifications, settings |
+| `subject_hero_banner.dart` | 76 | course detail body |
 | `themed_card.dart` | 55 | 5 screens |
-| `themed_empty_state.dart` | 64 | courses, home, notifications |
-| `themed_error_banner.dart` | 81 | 7 screens |
-| `themed_loading_indicator.dart` | 49 | courses, home |
-| `themed_panel.dart` | 53 | courses, home, otp |
+| `themed_empty_state.dart` | 64 | 4 screens |
+| `themed_error_banner.dart` | 81 | 8 screens |
+| `themed_loading_indicator.dart` | 49 | course detail, courses, home |
+| `themed_panel.dart` | 53 | 5 screens |
 | `themed_section_header.dart` | 48 | settings |
 | `themed_text_field.dart` | 104 | 6 screens |
 
