@@ -81,6 +81,10 @@ func computeHMAC(key, data string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+func writeStatusRefusal(w http.ResponseWriter, r *http.Request) {
+	handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+}
+
 func normalizePhone(raw, defaultRegion string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -193,10 +197,16 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	bKey := s.blocklistKey()
+	if bKey == "" {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", errors.New("blocklist key not configured"))
+		return
+	}
+
 	const refusalMsg = "unable to complete registration"
 
 	// 1. Blocklist check on normalized email (R9, D15)
-	emailHash := computeHMAC(s.blocklistKey(), email)
+	emailHash := computeHMAC(bKey, email)
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	emailBlocked, err := s.Store.IsBlocked(dbCtx, "email", emailHash)
 	cancel()
@@ -210,7 +220,7 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Blocklist check on normalized phone (R9, D15)
-	phoneHash := computeHMAC(s.blocklistKey(), phone)
+	phoneHash := computeHMAC(bKey, phone)
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 	phoneBlocked, err := s.Store.IsBlocked(dbCtx, "phone", phoneHash)
 	cancel()
@@ -333,8 +343,16 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	u, err := s.Store.FindByEmail(dbCtx, email)
 	cancel()
-	if err != nil || u == nil {
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if u == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
+		return
+	}
+	if u.EffectiveStatus() != models.StatusActive {
+		writeStatusRefusal(w, r)
 		return
 	}
 	u.EmailVerified = true
@@ -342,7 +360,7 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	err = s.Store.Update(dbCtx, u)
 	cancel()
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 	access, refresh, err := issuePair(u.ID, u.Role, u.Email)
@@ -401,6 +419,10 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "invalid credentials", nil)
 		return
 	}
+	if u.EffectiveStatus() != models.StatusActive {
+		writeStatusRefusal(w, r)
+		return
+	}
 	if !u.EmailVerified {
 		handlerutil.WriteSafeError(w, r, http.StatusForbidden, handlerutil.ErrCodeUnauthorized, "email not verified", nil)
 		return
@@ -435,8 +457,8 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	key := "refresh:" + otp.HashToken(req.RefreshToken)
-	// Atomic take: exactly one concurrent redeemer wins; the rest get "".
-	userID, err := s.Codes.Take(ctx, key)
+	// Resolve the refresh key's user. The refresh entry is not deleted here.
+	userID, err := s.Codes.Get(ctx, key)
 	if err != nil || userID == "" {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
 		return
@@ -444,7 +466,21 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	u, err := s.Store.FindByID(dbCtx, userID)
 	cancel()
-	if err != nil || u == nil {
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if u == nil {
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
+		return
+	}
+	if u.EffectiveStatus() != models.StatusActive {
+		writeStatusRefusal(w, r)
+		return
+	}
+	// Atomic take: exactly one concurrent redeemer wins; the rest get "".
+	consumedID, err := s.Codes.Take(ctx, key)
+	if err != nil || consumedID == "" {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
 		return
 	}
@@ -587,7 +623,11 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	u, err := s.Store.FindByID(dbCtx, claims.UserID)
 	cancel()
-	if err != nil || u == nil {
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if u == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 		return
 	}

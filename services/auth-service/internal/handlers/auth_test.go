@@ -17,6 +17,9 @@ import (
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/otp"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func testServer() *Server {
@@ -496,5 +499,481 @@ func TestLogin_StoreDown_Returns503(t *testing.T) {
 	body := decodeBody(t, rec)
 	if body["code"] != "service_unavailable" {
 		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
+
+func TestRefresh_StoreDown_Returns503(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	fStore := &failingStore{err: errors.New("connection to mongodb timed out")}
+	codes := otp.NewMemoryStore()
+	_ = codes.Set(context.Background(), "refresh:"+otp.HashToken("rt-storedown"), "u-1", time.Hour)
+	s := New(fStore, codes, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{
+		"refresh_token": "rt-storedown",
+	}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("refresh store down status = %d, want 503 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "service_unavailable" {
+		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
+
+func TestVerifyOTP_StoreDown_Returns503(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	fStore := &failingStore{err: errors.New("connection to mongodb timed out")}
+	codes := otp.NewMemoryStore()
+	_ = codes.Set(context.Background(), "signup-otp:storedown@example.com", otp.HashToken("123456"), time.Hour)
+	s := New(fStore, codes, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "storedown@example.com",
+		"code":  "123456",
+	}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("verify-otp store down status = %d, want 503 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "service_unavailable" {
+		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
+
+func TestMe_StoreDown_Returns503(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	fStore := &failingStore{err: errors.New("connection to mongodb timed out")}
+	s := New(fStore, otp.NewMemoryStore(), NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+
+	tok, err := jwtutil.GenerateToken("u-1", "user", "storedown@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doRequest(t, s, http.MethodGet, "/auth/me", nil, tok)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("me store down status = %d, want 503 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "service_unavailable" {
+		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
+
+func TestSignup_EmptyBlocklistKey_OutsideLocal_Returns503(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	s := New(store.NewMemoryStore(), otp.NewMemoryStore(), NewMemoryLockout(), mailer.LogSender{}, "production", "gw-secret")
+	s.BlocklistHMACKey = "" // empty key outside local/test
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Test User",
+		"email":     "nokey@example.com",
+		"phone":     "+201012345602",
+		"password":  "Password123!",
+	}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 on empty blocklist key in production, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "service_unavailable" {
+		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
+
+type legacyStoreWrapper struct {
+	store.Store
+	legacyUsers map[string]*models.User
+}
+
+func (w *legacyStoreWrapper) FindByEmail(ctx context.Context, email string) (*models.User, error) {
+	if u, ok := w.legacyUsers[email]; ok {
+		cp := *u
+		return &cp, nil
+	}
+	return w.Store.FindByEmail(ctx, email)
+}
+
+func (w *legacyStoreWrapper) FindByID(ctx context.Context, id string) (*models.User, error) {
+	for _, u := range w.legacyUsers {
+		if u.ID == id {
+			cp := *u
+			return &cp, nil
+		}
+	}
+	return w.Store.FindByID(ctx, id)
+}
+
+func (w *legacyStoreWrapper) Update(ctx context.Context, u *models.User) error {
+	if existing, ok := w.legacyUsers[u.Email]; ok {
+		existing.EmailVerified = u.EmailVerified
+		existing.FullName = u.FullName
+		existing.Phone = u.Phone
+		existing.PasswordHash = u.PasswordHash
+		return nil
+	}
+	return w.Store.Update(ctx, u)
+}
+
+func runStatusGateSuite(t *testing.T, baseStore store.Store) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	ctx := context.Background()
+
+	pwHash, err := bcrypt.GenerateFromPassword([]byte("Password123!"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	legacyUsers := make(map[string]*models.User)
+	st := &legacyStoreWrapper{
+		Store:       baseStore,
+		legacyUsers: legacyUsers,
+	}
+
+	codes := otp.NewMemoryStore()
+	lockout := NewMemoryLockout()
+	s := New(st, codes, lockout, mailer.LogSender{}, "test", "gw-secret")
+	s.BlocklistHMACKey = "test-blocklist-hmac-key"
+	s.DefaultPhoneRegion = "EG"
+
+	type statusCase struct {
+		name          string
+		email         string
+		phone         string
+		status        string
+		expectSuccess bool
+	}
+
+	cases := []statusCase{
+		{
+			name:          "active",
+			email:         "status_active@example.com",
+			phone:         "+201099990001",
+			status:        string(models.StatusActive),
+			expectSuccess: true,
+		},
+		{
+			name:          "legacy-empty-status",
+			email:         "status_legacy@example.com",
+			phone:         "+201099990002",
+			status:        "",
+			expectSuccess: true,
+		},
+		{
+			name:          "suspended",
+			email:         "status_suspended@example.com",
+			phone:         "+201099990003",
+			status:        string(models.StatusSuspended),
+			expectSuccess: false,
+		},
+		{
+			name:          "deleted",
+			email:         "status_deleted@example.com",
+			phone:         "+201099990004",
+			status:        string(models.StatusDeleted),
+			expectSuccess: false,
+		},
+	}
+
+	// Pre-create the users
+	for _, tc := range cases {
+		userID := "uid-" + tc.name
+		u := &models.User{
+			ID:            userID,
+			FullName:      "Test " + tc.name,
+			Email:         tc.email,
+			Phone:         tc.phone,
+			PasswordHash:  string(pwHash),
+			Role:          models.RoleUser,
+			EmailVerified: true,
+		}
+		if tc.status == "" {
+			u.Status = ""
+			legacyUsers[tc.email] = u
+		} else {
+			if err := baseStore.Create(ctx, u); err != nil {
+				t.Fatalf("Create user %s: %v", tc.email, err)
+			}
+			if tc.status != string(models.StatusActive) {
+				if err := baseStore.SetStatus(ctx, u.ID, string(models.StatusActive), tc.status, "test status", time.Now()); err != nil {
+					t.Fatalf("SetStatus %s: %v", tc.status, err)
+				}
+			}
+		}
+	}
+
+	// 1. Table tests for Login path
+	t.Run("Login path", func(t *testing.T) {
+		var suspendedBody, deletedBody map[string]string
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				rec := doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+					"email":    tc.email,
+					"password": "Password123!",
+				}, "")
+				if tc.expectSuccess {
+					if rec.Code != http.StatusOK {
+						t.Fatalf("expected 200 for %s, got %d (%s)", tc.name, rec.Code, rec.Body.String())
+					}
+					body := decodeBody(t, rec)
+					if body["access_token"] == "" || body["refresh_token"] == "" {
+						t.Fatalf("expected access and refresh tokens, got %+v", body)
+					}
+				} else {
+					if rec.Code != http.StatusUnauthorized {
+						t.Fatalf("expected 401 for %s, got %d (%s)", tc.name, rec.Code, rec.Body.String())
+					}
+					body := decodeBody(t, rec)
+					if body["code"] != "unauthorized" || body["error"] != "unauthorized" {
+						t.Fatalf("expected generic unauthorized refusal, got %+v", body)
+					}
+					if tc.status == string(models.StatusSuspended) {
+						suspendedBody = body
+					} else if tc.status == string(models.StatusDeleted) {
+						deletedBody = body
+					}
+				}
+			})
+		}
+		// Verify identical body for suspended and deleted (no oracle)
+		if suspendedBody["code"] != deletedBody["code"] || suspendedBody["error"] != deletedBody["error"] {
+			t.Fatalf("suspended and deleted bodies differ: suspended=%+v, deleted=%+v", suspendedBody, deletedBody)
+		}
+
+		// Verify: wrong password on suspended account returns normal 401 and counts toward lockout
+		t.Run("wrong password on suspended account counts toward lockout", func(t *testing.T) {
+			rec := doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+				"email":    "status_suspended@example.com",
+				"password": "WrongPassword!",
+			}, "")
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("expected 401 on wrong password, got %d", rec.Code)
+			}
+			body := decodeBody(t, rec)
+			if body["code"] != "unauthorized" || body["error"] != "invalid credentials" {
+				t.Fatalf("expected invalid credentials on wrong password, got %+v", body)
+			}
+			lockout.mu.Lock()
+			f := lockout.data["login:email:status_suspended@example.com"]
+			var count int
+			if f != nil {
+				count = f.count
+			}
+			lockout.mu.Unlock()
+			if count != 1 {
+				t.Fatalf("expected failure count 1, got %d", count)
+			}
+		})
+	})
+
+	// 2. Table tests for Refresh path
+	t.Run("Refresh path", func(t *testing.T) {
+		var suspendedBody, deletedBody map[string]string
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				rfToken := "rf-" + tc.name
+				userID := "uid-" + tc.name
+				// Seed refresh token in Codes
+				if err := codes.Set(ctx, "refresh:"+otp.HashToken(rfToken), userID, 7*24*time.Hour); err != nil {
+					t.Fatalf("seed refresh token: %v", err)
+				}
+				rec := doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{
+					"refresh_token": rfToken,
+				}, "")
+				if tc.expectSuccess {
+					if rec.Code != http.StatusOK {
+						t.Fatalf("expected 200 for %s, got %d (%s)", tc.name, rec.Code, rec.Body.String())
+					}
+					body := decodeBody(t, rec)
+					if body["access_token"] == "" || body["refresh_token"] == "" {
+						t.Fatalf("expected tokens, got %+v", body)
+					}
+				} else {
+					if rec.Code != http.StatusUnauthorized {
+						t.Fatalf("expected 401 for %s, got %d (%s)", tc.name, rec.Code, rec.Body.String())
+					}
+					body := decodeBody(t, rec)
+					if body["code"] != "unauthorized" || body["error"] != "unauthorized" {
+						t.Fatalf("expected generic unauthorized refusal, got %+v", body)
+					}
+					// Ensure key in Codes was NOT deleted
+					val, err := codes.Get(ctx, "refresh:"+otp.HashToken(rfToken))
+					if err != nil || val != userID {
+						t.Fatalf("expected refresh key not deleted for %s, got val=%q err=%v", tc.name, val, err)
+					}
+					if tc.status == string(models.StatusSuspended) {
+						suspendedBody = body
+					} else if tc.status == string(models.StatusDeleted) {
+						deletedBody = body
+					}
+				}
+			})
+		}
+		// Verify identical body for suspended and deleted (no oracle)
+		if suspendedBody["code"] != deletedBody["code"] || suspendedBody["error"] != deletedBody["error"] {
+			t.Fatalf("suspended and deleted bodies differ: suspended=%+v, deleted=%+v", suspendedBody, deletedBody)
+		}
+	})
+
+	// 3. Table tests for VerifyOTP path
+	t.Run("VerifyOTP path", func(t *testing.T) {
+		var suspendedBody, deletedBody map[string]string
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				// Seed OTP code in Codes
+				if err := codes.Set(ctx, "signup-otp:"+tc.email, otp.HashToken("654321"), 10*time.Minute); err != nil {
+					t.Fatalf("seed signup otp: %v", err)
+				}
+				rec := doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+					"email": tc.email,
+					"code":  "654321",
+				}, "")
+				if tc.expectSuccess {
+					if rec.Code != http.StatusOK {
+						t.Fatalf("expected 200 for %s, got %d (%s)", tc.name, rec.Code, rec.Body.String())
+					}
+					body := decodeBody(t, rec)
+					if body["access_token"] == "" || body["refresh_token"] == "" {
+						t.Fatalf("expected tokens, got %+v", body)
+					}
+				} else {
+					if rec.Code != http.StatusUnauthorized {
+						t.Fatalf("expected 401 for %s, got %d (%s)", tc.name, rec.Code, rec.Body.String())
+					}
+					body := decodeBody(t, rec)
+					if body["code"] != "unauthorized" || body["error"] != "unauthorized" {
+						t.Fatalf("expected generic unauthorized refusal, got %+v", body)
+					}
+					if tc.status == string(models.StatusSuspended) {
+						suspendedBody = body
+					} else if tc.status == string(models.StatusDeleted) {
+						deletedBody = body
+					}
+				}
+			})
+		}
+		// Verify identical body for suspended and deleted (no oracle)
+		if suspendedBody["code"] != deletedBody["code"] || suspendedBody["error"] != deletedBody["error"] {
+			t.Fatalf("suspended and deleted bodies differ: suspended=%+v, deleted=%+v", suspendedBody, deletedBody)
+		}
+	})
+}
+
+func TestStatusGating_ThreePaths_MemoryStore(t *testing.T) {
+	st := store.NewMemoryStore()
+	runStatusGateSuite(t, st)
+}
+
+func TestStatusGating_ThreePaths_MongoStore(t *testing.T) {
+	mongoURI, _ := requireDB(t)
+	dbName := randomDBName("test_status_gate")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	s, err := store.NewMongoStore(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("NewMongoStore: %v", err)
+	}
+
+	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI))
+	if err != nil {
+		t.Fatalf("mongo.Connect: %v", err)
+	}
+	t.Cleanup(func() {
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dropCancel()
+		_ = client.Database(dbName).Drop(dropCtx)
+		_ = client.Disconnect(dropCtx)
+	})
+
+	runStatusGateSuite(t, s)
+}
+
+func TestRefresh_TokenIssuedBeforeSuspension_Refused(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	st := store.NewMemoryStore()
+	s := New(st, otp.NewMemoryStore(), NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+	s.BlocklistHMACKey = "test-blocklist-hmac-key"
+	s.DefaultPhoneRegion = "EG"
+
+	// 1. User signs up and verifies while active
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Presuspend User",
+		"email":     "presuspend@example.com",
+		"phone":     "+201012345601",
+		"password":  "Password123!",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup failed: %d (%s)", rec.Code, rec.Body.String())
+	}
+	signupBody := decodeBody(t, rec)
+	devOtp := signupBody["dev_otp"]
+
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "presuspend@example.com",
+		"code":  devOtp,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify-otp failed: %d (%s)", rec.Code, rec.Body.String())
+	}
+	tokens := decodeBody(t, rec)
+	refreshToken := tokens["refresh_token"]
+	if refreshToken == "" {
+		t.Fatal("expected refresh token")
+	}
+
+	// 2. Resolve user ID from store
+	ctx := context.Background()
+	u, err := st.FindByEmail(ctx, "presuspend@example.com")
+	if err != nil || u == nil {
+		t.Fatalf("FindByEmail failed: %v", err)
+	}
+
+	// 3. Admin suspends the user via SetStatus (CAS active -> suspended)
+	err = st.SetStatus(ctx, u.ID, string(models.StatusActive), string(models.StatusSuspended), "admin suspended account", time.Now())
+	if err != nil {
+		t.Fatalf("SetStatus to suspended failed: %v", err)
+	}
+
+	// 4. Calling /auth/refresh with the token issued before suspension is refused with 401
+	rec = doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{
+		"refresh_token": refreshToken,
+	}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on refresh of suspended user, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	refusalBody := decodeBody(t, rec)
+	if refusalBody["code"] != "unauthorized" || refusalBody["error"] != "unauthorized" {
+		t.Fatalf("expected generic unauthorized refusal, got %+v", refusalBody)
+	}
+
+	// 5. The refresh entry in s.Codes is NOT deleted
+	val, err := s.Codes.Get(ctx, "refresh:"+otp.HashToken(refreshToken))
+	if err != nil || val != u.ID {
+		t.Fatalf("expected refresh key to remain in Codes, got val=%q, err=%v", val, err)
+	}
+
+	// 6. If user is reactivated (suspended -> active), refresh with this same token now succeeds
+	err = st.SetStatus(ctx, u.ID, string(models.StatusSuspended), string(models.StatusActive), "admin reactivated", time.Now())
+	if err != nil {
+		t.Fatalf("SetStatus to active failed: %v", err)
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{
+		"refresh_token": refreshToken,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on refresh after reactivation, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	rotatedTokens := decodeBody(t, rec)
+	if rotatedTokens["access_token"] == "" || rotatedTokens["refresh_token"] == "" {
+		t.Fatalf("expected rotated tokens, got %+v", rotatedTokens)
+	}
+
+	// 7. A second refresh with the old token now fails (single redemption consumed it)
+	rec = doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{
+		"refresh_token": refreshToken,
+	}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on already-rotated token, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }

@@ -81,6 +81,7 @@ Hardening Phase A (W-05): real Mongo/Redis tests in CI via service containers (m
 Hardening Phase A / Core Phase 0.5 (W-06): split tests/e2e into sequential t.Run stages with E2E_REQUIRED fail-closed flag and requireOrSkip; added compose-backed CI job "E2E (compose)" executing full e2e chain with fresh ephemeral secrets.
 Core Phase 1.1: added full_name, phone, status (active/suspended/deleted), status_reason, suspended_at, reactivated_at, deleted_at to models.User with EffectiveStatus() helper; implemented compare-and-set SetStatus and non-status Update semantics across MemoryStore and MongoStore preventing lost-update bug P-1; verified with full unit and store test suites under -race.
 Core Phase 1.2: signup requires full_name (2-100 runes) and phone normalized to E.164 (github.com/nyaruka/phonenumbers v1.8.1 with DEFAULT_PHONE_REGION defaulting to EG); partial unique phone index on active/suspended accounts (P-6) across MongoStore and MemoryStore; HMAC-SHA256 blocklist checks on email and phone (R9, D15) with uniform generic refusal (P-5); fail-closed store error propagation returning 503 instead of 409/401 (P-3) and per-query timeouts on DB calls (P-4); BLOCKLIST_HMAC_KEY enforced outside dev in config.Load(), check-env, and .env.example; SetStatus rejects invalid target status with ErrInvalidStatus; Create explicitly stores active status.
+Core Phase 1.3: status gate on Login, Refresh, VerifyOTP refusing non-active accounts (suspended, deleted) with uniform 401 generic error ("unauthorized", code "unauthorized", no oracle); Login checks status only after password verification (wrong password counts toward lockout and returns normal 401); Refresh resolves user without deleting key prior to status check; fail-closed 503 on store errors across Refresh, VerifyOTP, and Me; blocklistKey outside local/test returns 503 when empty; table tests across all three paths for active, legacy-empty, suspended, and deleted across MemoryStore and MongoStore; refresh refusal for tokens issued before suspension verified.
 
 Owner decisions recorded (2026-10-01, docs only, nothing implemented): subscriptions expire per subject date set by the admin, copied per activation (D21) with re-purchase allowed and no activation of an already-expired subject (D20); every activation writes an append-only payment record at the subject's price; Android first, iOS deferred. SPEC Sections 1, 2, 3, 5, 7 and ADR-0007 amended.
 
@@ -103,6 +104,6 @@ Owner question: reminder notification before a subscription expires (SPEC Sectio
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-SPEC Phase 1.3: status gate on Login, Refresh, VerifyOTP with tests for each.
+SPEC Phase 1.4: `admins` collection, `onboard-admin` and `revoke-admin` CLIs, `POST /internal/admin/verify` with lockout, second listener.
 
 
