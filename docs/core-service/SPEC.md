@@ -41,6 +41,11 @@ This is the build contract for the core of the application. It is written for im
 16. The admin can: create and edit subjects and prices; add, edit, reorder, and delete videos and files; review and accept or reject access requests; suspend, reactivate, and delete accounts; send app-wide notifications; edit app UI text and images (the last one is a later phase, see Section 11).
 17. Admin endpoints are never reachable through the student gateway routes and never authenticated by a student JWT.
 
+*Amended 2026-10-01 (owner decisions; earlier text above unchanged):*
+18. **Subscriptions expire.** The admin sets an expiry date for a subject in the admin panel when creating it (typically about one week after the end of the term) and can change it later for the next run of the same subject. An expired subject is locked again for the student. The student may buy it again; the admin activates it normally. A request for an old term's subject from a student who has moved on is ignored by the admin (a human decision, no system rule).
+19. **Every activation is recorded financially, as history.** The recorded amount is the subject's price as set by the admin at the moment of activation; the admin does not type an amount. This applies to accepted requests and to manual grants.
+20. **Android first.** iOS is deferred (Section 3 question 8).
+
 ## 2. Defaults chosen by this spec (owner may override)
 
 | # | Topic | Default |
@@ -67,6 +72,13 @@ This is the build contract for the core of the application. It is written for im
 
 *D15-D19 added 2026-09-30 (owner review); not yet implemented.*
 
+| # | Topic | Default |
+|---|---|---|
+| D20 | Activation of an expired subject | The server refuses to accept a request or grant a subject while the subject's `access_expires_at` is in the past (409, generic message); the admin sets the new date first. No activation that is already expired, and no payment record for it, is ever created. The automatic access request of decision 9 is not created for such a subject. |
+| D21 | Expiry per activation | Each entitlement stores its own `expires_at`, copied from the subject's `access_expires_at` at activation. Moving the subject's date later does not revive expired entitlements; only a new paid activation gets the new date. |
+
+*D20-D21 added 2026-10-01 to implement owner decisions 18-19; owner may override.*
+
 ## 3. Open questions (do not implement)
 
 1. **[Resolved 2026-09-30]** The exact fixed lists of diplomas and vocational programmes (blocks the seed only). Closed by owner decisions: diplomas are admin-created under the fixed diploma study type; vocational training is one fixed seeded level; Phase 2.2 seed contains bachelor years 1-4 and the vocational level only. See Section 1 decision 2 amendment and ADR-0007 (2026-09-30 amendment).
@@ -76,17 +88,18 @@ This is the build contract for the core of the application. It is written for im
 5. Phone OTP (SMS or WhatsApp) and its provider.
 6. Hard delete after a soft-delete retention period.
 7. Payment flow (owner will specify).
-8. **iOS App Store review**: unlocking content after an outside payment can be rejected outside the US storefront. Decide between Android first, in-app purchase on iOS, or accepting the risk. Does not block the backend.
+8. **[Resolved 2026-10-01: Android first, iOS deferred; see Section 1 decision 20]** **iOS App Store review**: unlocking content after an outside payment can be rejected outside the US storefront. Decide between Android first, in-app purchase on iOS, or accepting the risk. Does not block the backend.
 9. SSE authentication (the stream currently takes the JWT in `?token=`); a short-lived one-time ticket is the leading option.
 10. Refresh-token reuse detection (revoking a session when an old refresh token is replayed).
 11. Whether "new lesson" notifications go to the subject's owners (needs the targeted-audience broadcast of Phase 7).
-12. A financial record per entitlement (amount paid, payment method, optional reference, `price_at_grant`), required for the client's per-subject financial reports. Payment flow stays out of scope; this is only the accounting record.
-13. Do subject subscriptions expire (per term or year)? `entitlements` currently have no `expires_at`.
+12. **[Resolved 2026-10-01: recorded as append-only history at the subject's price; see Section 1 decision 19 and `payment_records` in Section 5]** A financial record per entitlement (amount paid, payment method, optional reference, `price_at_grant`), required for the client's per-subject financial reports. Payment flow stays out of scope; this is only the accounting record.
+13. **[Resolved 2026-10-01: yes, expiry date set per subject by the admin, copied per activation; see Section 1 decision 18, D20-D21]** Do subject subscriptions expire (per term or year)? `entitlements` currently have no `expires_at`.
 14. Student self-service account deletion (store requirement, to verify against current Apple and Google rules) and how it differs from an admin ban (no blocklist for self-deletion).
 15. Student community group, external link or in-app.
 16. Should decision 9 keep creating an access request automatically when a student opens a locked subject (queue noise)?
 
 *Questions 12-16 added 2026-09-30 (owner review).*
+17. Reminder notification to the student before a subscription expires: yes or no, and how many days before. *(added 2026-10-01)*
 
 ## 4. Architecture
 
@@ -127,10 +140,12 @@ Field names are snake_case everywhere, including `youtube_video_id`.
 | `videos` | `_id`, `subject_id`, `position`, `title_ar`, `title_en`, `description_ar`, `description_en`, `youtube_video_id` | (`subject_id`, `position`) non-unique |
 | `subject_files` | `_id`, `subject_id`, `kind` (`book`/`note`), `title_ar`, `title_en`, `size_bytes`, `storage_key`, `created_at` | `subject_id` |
 | `entitlements` | `_id`, `user_id`, `subject_id`, `granted_at`, `source` (`request`/`admin_grant`), `granted_by`, `request_id` | **unique** (`user_id`, `subject_id`); `user_id` |
+| `payment_records` *(added 2026-10-01, decision 19)* | `_id`, `user_id`, `subject_id`, `entitlement_id`, `request_id` (optional), `amount` (integer EGP, equals `price_at_grant`), `price_at_grant`, `source` (`request`/`admin_grant`), `recorded_by`, `recorded_at`, `corrects_id` (optional) | (`subject_id`, `recorded_at`); (`user_id`, `recorded_at`) |
 | `purchase_requests` | `_id`, `user_id`, `subject_id`, `status` (`pending`/`accepted`/`rejected`), `created_at`, `decided_at`, `decided_by`, `reject_reason` | **partial unique** (`user_id`, `subject_id`) where `status = pending`; `status` |
 | `admin_audit_log` | `_id`, `actor_id`, `actor_name`, `action`, `target_type`, `target_id`, `detail`, `created_at` | (`actor_id`, `created_at`); (`target_type`, `target_id`) |
 
 Notes:
+- *Amended 2026-10-01 (decisions 18-19, D20-D21):* `subjects` gains `access_expires_at` (date-time, Africa/Cairo, required on create, editable). `entitlements` gains `expires_at` (copied from the subject at activation); the unique (`user_id`, `subject_id`) index above is replaced by a non-unique (`user_id`, `subject_id`, `expires_at`) index, and the store guarantees at most one unexpired entitlement per (`user_id`, `subject_id`). `payment_records` is append-only: rows are never edited or deleted; a correction is a new row with `corrects_id` plus an audit-log entry. Students never see `payment_records`.
 - `levels` is no longer purely seeded (amended 2026-09-30): bachelor years 1-4 and the vocational level are seeded, while diplomas are created, edited, and deleted by the admin (`study_type = diploma`, server-generated `key`). Deleting a diploma is blocked while it has subjects.
 - `storage_key` is a server-generated UUID. Never derive it from a user-supplied filename.
 - The audit log **does not store IP addresses** (saas-core removed IP persistence for privacy). Reasons must be length-capped (1-1000) and stripped of CR/LF before any log line.
@@ -202,6 +217,7 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 ## 7. Access rules (the heart)
 
 - **R1 Ownership.** A student owns a subject if and only if an `entitlements` row exists for (`user_id`, `subject_id`).
+  - *Amended 2026-10-01 (decision 18, D21):* a student owns a subject if and only if an `entitlements` row exists for (`user_id`, `subject_id`) whose `expires_at` is in the future. Checked on every request, never cached. After expiry the subject behaves exactly like an unowned subject (R2, R3, R6 apply), and the student can request it again.
 - **R2 Gating.** `youtube_video_id` is returned only when R1 holds. Never on listing endpoints, never in error bodies, never in logs.
 - **R3 Every download re-checks R1.** No cached decision, no public or signed URL that outlives the check.
 - **R4 Accept order (no Mongo transactions on a standalone node).** Upsert the entitlement first (idempotent), then compare-and-set the request from `pending` to `accepted`. If the second step fails, calling accept again is safe and completes it.

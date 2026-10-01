@@ -77,11 +77,14 @@ SPEC Section 12 rule 5 now points to CLAUDE.md Auto-push.
 Hardening Phase A (W-03): verified Markdown commit citations in CI and aligned pre-push hook to scan git-tracked markdown files with git ls-files.
 Hardening Phase A (W-01, W-02): fail-closed configuration outside local/test across api-gateway, auth-service, and notification-service (requiring Mongo, Redis, TLS triple, and Resend mail credentials in production; refusing memory stores, LogSender, plain HTTP, and TLS without client CA outside dev; table test coverage for all required vars; startup logs disclosing active sender and store types).
 
+Owner decisions recorded (2026-10-01, docs only, nothing implemented): subscriptions expire per subject date set by the admin, copied per activation (D21) with re-purchase allowed and no activation of an already-expired subject (D20); every activation writes an append-only payment record at the subject's price; Android first, iOS deferred. SPEC Sections 1, 2, 3, 5, 7 and ADR-0007 amended.
+
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy repo.
 RUNBOOK, DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
 rows in `docs/asset-provenance.md`.
 Hardening reference and backlog: docs/BOOTSTRAP-REFERENCE.md.
+Owner question: reminder notification before a subscription expires (SPEC Section 3 question 17).
 
 ## Decisions
 - [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)

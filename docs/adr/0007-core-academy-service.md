@@ -205,3 +205,15 @@ The owner decided the catalog hierarchy for diplomas and vocational training:
 3. **Open question 1 closed**: The seed in Phase 2.2 contains bachelor years
    1-4 and the vocational level only; individual diplomas are created by the
    admin. `levels` is no longer purely seeded.
+
+## Amendment (2026-10-01): expiry, payment history, Android first
+
+Owner decisions recorded in `docs/core-service/SPEC.md` (Section 1 decisions
+18-20, Section 2 D20-D21, Section 3 questions 8, 12, 13 resolved and 17 added,
+Section 5 `access_expires_at` / `expires_at` / `payment_records`, Section 7 R1
+amendment). In short: the admin sets a subject's expiry date when creating it;
+each activation copies that date and expires on it; an expired subject can be
+bought and activated again; every activation writes an append-only payment
+record at the subject's price; Android ships first and iOS is deferred.
+Earlier decisions in this ADR are unchanged except where SPEC Section 5
+replaces the unique (`user_id`, `subject_id`) entitlement index.
