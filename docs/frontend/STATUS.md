@@ -28,8 +28,8 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `payment_screen.dart` | 672 | no | 8 (36) | yes |
 | `settings_screen.dart` | 660 | no | 5 (17) | no |
 | `signup_screen.dart` | 349 | no | 5 (5) | no |
-| `splash_screen.dart` | 60 | yes | 0 (0) | no |
-| **Total** | 7825 | 3 of 13 | 59 (349) | 5 of 13 |
+| `splash_screen.dart` | 61 | yes | 0 (0) | no |
+| **Total** | 7826 | 3 of 13 | 59 (349) | 5 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.
@@ -40,21 +40,24 @@ The gate scans screens only, so widgets carry no baseline entries.
 
 | File | Lines | Used by screens |
 |------|------:|-----------------|
-| `app_shell.dart` | 102 | none (F2, migration is F3a) |
-| `confirm_action_dialog.dart` | 103 | none (F2) |
-| `otp_pin_input.dart` | 178 | none (F2) |
+| `app_shell.dart` | 109 | forgot password, otp, splash |
+| `confirm_action_dialog.dart` | 103 | none |
+| `hero_backdrop.dart` | 85 | none |
+| `language_toggle_chip.dart` | 58 | none |
+| `otp_pin_input.dart` | 178 | forgot password, otp |
 | `pill_filter_bar.dart` | 88 | ebook |
 | `primary_button.dart` | 89 | 8 screens |
-| `secondary_button.dart` | 90 | none (F2) |
+| `secondary_button.dart` | 90 | none |
 | `status_badge.dart` | 76 | payment |
 | `themed_card.dart` | 55 | 7 screens |
-| `themed_empty_state.dart` | 64 | none (F2) |
-| `themed_error_banner.dart` | 81 | none (F2) |
-| `themed_loading_indicator.dart` | 49 | none (F2) |
-| `themed_panel.dart` | 51 | none (F2) |
-| `themed_section_header.dart` | 48 | none (F2) |
-| `themed_text_field.dart` | 104 | 7 screens |
+| `themed_empty_state.dart` | 64 | none |
+| `themed_error_banner.dart` | 81 | forgot password, otp |
+| `themed_loading_indicator.dart` | 49 | none |
+| `themed_panel.dart` | 51 | otp |
+| `themed_section_header.dart` | 48 | none |
+| `themed_text_field.dart` | 104 | 6 screens |
 
 The F2 widgets are exercised by `test/widget_layer_test.dart` (English and Arabic) and
 shown in the debug-only component library (`lib/debug/component_library_screen.dart`,
-route `/components`, linked from the diagnostics screen). No screen uses them yet.
+route `/components`, linked from the diagnostics screen). "Used by screens" is computed
+from the imports in `lib/screens/`. Screens are migrated onto them one per commit (F3a).

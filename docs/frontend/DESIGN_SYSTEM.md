@@ -199,6 +199,8 @@ headings) and Plus Jakarta Sans (body and labels); Arabic uses Cairo throughout.
 | `bodyMd` | Plus Jakarta Sans, 14, w400, 1.4, - | 13, w400, 1.45, - | `textSecondary` |
 | `bodySm` | Plus Jakarta Sans, 12, w400, 1.35, - | 11, w400, 1.4, - | `textMuted` |
 | `labelMd` | Plus Jakarta Sans, 13, w600, -, 0.8 | 12, w600, -, 0.5 | `textPrimary` |
+| `wordmarkTitle` | Syne, 32, w800, 1.15, 6.0, black shadow | (Arabic style at the same size and spacing) | `textPrimary` |
+| `wordmarkSubtitle` | Syne, 11, w700, -, 4.5, black shadow | Cairo 11, w700, -, 4.5 | `textPrimary` at 80% |
 | `labelSm` | Plus Jakarta Sans, 10, w700, -, 1.5 | 10, w700, -, 1.0 | `textSecondary` |
 
 `AppTypography.uppercaseLabel(String text)` is not a style: it returns `text` upper-cased
@@ -222,13 +224,15 @@ file for their exact values.
 | `StatusBadge` | `status_badge.dart` | Badge for a `PaymentStatus` (pending / approved / rejected) using the status colour tokens. |
 | `ThemedCard` | `themed_card.dart` | Bordered card surface with optional tap and glow. |
 | `ThemedTextField` | `themed_text_field.dart` | Themed form field with label, hint, validator and prefix/suffix. |
-| `AppShell` | `app_shell.dart` | `Scaffold` + `AppBar` from tokens: optional back button at the start edge, title, `actions` at the end edge, optional FAB and bottom bar. Mirrors in RTL. Screens use it instead of their own `Scaffold(` / `AppBar(`. |
+| `AppShell` | `app_shell.dart` | `Scaffold` + `AppBar` from tokens: optional back button at the start edge, title, `actions` at the end edge, optional FAB and bottom bar. Mirrors in RTL. `safeArea: false` lets a full-bleed body (hero art) run under the status bar. Screens use it instead of their own `Scaffold(` / `AppBar(`. |
 | `SecondaryButton` | `secondary_button.dart` | Low-emphasis bordered button; same sizing, loading state and icon slots as `PrimaryButton`. |
 | `ThemedPanel` (+ `PanelTone`) | `themed_panel.dart` | Static bordered surface (`base`, `raised`, `inset`), directional padding. Not tappable; use `ThemedCard` for interactive or elevated content. |
 | `ThemedErrorBanner` | `themed_error_banner.dart` | Persistent inline error (no auto-dismiss, live region) with an optional localised retry. |
 | `ThemedEmptyState` | `themed_empty_state.dart` | Centered icon, optional title, message and optional action. |
 | `ThemedLoadingIndicator` | `themed_loading_indicator.dart` | Centered crimson spinner with a localised semantic label and optional visible label. |
 | `ThemedSectionHeader` | `themed_section_header.dart` | Eyebrow section title (upper-cased via `uppercaseLabel` for Latin, no letter spacing for Arabic) with an optional end-aligned action. |
+| `HeroBackdrop` | `hero_backdrop.dart` | Full-width hero art (fraction of screen height) dissolving into `voidCanvas` with a linear fade and radial vignette; image, then fallback image, then flat surface. Place under `PositionedDirectional` in a `Stack`. |
+| `LanguageToggleChip` | `language_toggle_chip.dart` | Pill with a globe icon and the name of the language it switches to. |
 | `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |
 | `OtpPinInput` (+ `OtpDigitsFormatter`) | `otp_pin_input.dart` | N-digit code input (default 6) over one hidden text field: paste, SMS autofill, backspace. Always laid out left to right; maps Arabic-Indic and Persian digits to ASCII. |
 
