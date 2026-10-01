@@ -21,7 +21,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `ebook_screen.dart` | 954 | no | 7 (60) | yes |
 | `forgot_password_screen.dart` | 165 | yes | 0 (0) | no |
 | `home_screen.dart` | 1083 | no | 6 (38) | yes |
-| `login_screen.dart` | 451 | no | 5 (9) | no |
+| `login_screen.dart` | 343 | yes | 0 (0) | no |
 | `main_shell.dart` | 300 | no | 3 (10) | no |
 | `notifications_screen.dart` | 226 | no | 6 (10) | no |
 | `otp_screen.dart` | 111 | yes | 0 (0) | no |
@@ -29,7 +29,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `settings_screen.dart` | 660 | no | 5 (17) | no |
 | `signup_screen.dart` | 349 | no | 5 (5) | no |
 | `splash_screen.dart` | 61 | yes | 0 (0) | no |
-| **Total** | 7826 | 3 of 13 | 59 (349) | 5 of 13 |
+| **Total** | 7718 | 4 of 13 | 54 (340) | 5 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.
@@ -40,10 +40,10 @@ The gate scans screens only, so widgets carry no baseline entries.
 
 | File | Lines | Used by screens |
 |------|------:|-----------------|
-| `app_shell.dart` | 109 | forgot password, otp, splash |
+| `app_shell.dart` | 109 | 4 screens |
 | `confirm_action_dialog.dart` | 103 | none |
-| `hero_backdrop.dart` | 85 | none |
-| `language_toggle_chip.dart` | 58 | none |
+| `hero_backdrop.dart` | 85 | login |
+| `language_toggle_chip.dart` | 58 | login |
 | `otp_pin_input.dart` | 178 | forgot password, otp |
 | `pill_filter_bar.dart` | 88 | ebook |
 | `primary_button.dart` | 89 | 8 screens |
@@ -51,7 +51,7 @@ The gate scans screens only, so widgets carry no baseline entries.
 | `status_badge.dart` | 76 | payment |
 | `themed_card.dart` | 55 | 7 screens |
 | `themed_empty_state.dart` | 64 | none |
-| `themed_error_banner.dart` | 81 | forgot password, otp |
+| `themed_error_banner.dart` | 81 | forgot password, login, otp |
 | `themed_loading_indicator.dart` | 49 | none |
 | `themed_panel.dart` | 51 | otp |
 | `themed_section_header.dart` | 48 | none |
