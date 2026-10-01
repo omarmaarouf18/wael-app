@@ -68,3 +68,24 @@ type BlocklistEntry struct {
 	Reason    string    `json:"reason,omitempty" bson:"reason,omitempty"`
 	CreatedAt time.Time `json:"created_at" bson:"created_at"`
 }
+
+// Admin represents an administrative operator identity (not an account).
+type Admin struct {
+	ID        string    `json:"id" bson:"_id"`
+	Name      string    `json:"name" bson:"name"`
+	TokenHash string    `json:"-" bson:"token_hash"`
+	CreatedAt time.Time `json:"created_at" bson:"created_at"`
+	ExpiresAt time.Time `json:"expires_at" bson:"expires_at"`
+	RevokedAt time.Time `json:"revoked_at,omitempty" bson:"revoked_at,omitempty"`
+}
+
+// IsActive reports whether the admin token is currently valid (unrevoked and unexpired).
+func (a *Admin) IsActive(now time.Time) bool {
+	if a == nil {
+		return false
+	}
+	if !a.RevokedAt.IsZero() {
+		return false
+	}
+	return a.ExpiresAt.After(now)
+}

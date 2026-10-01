@@ -362,9 +362,94 @@ func runUserStoreSuite(t *testing.T, s Store) {
 	}
 }
 
+func runAdminStoreSuite(t *testing.T, s Store) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	// 1. Create an admin
+	a1 := &models.Admin{
+		ID:        "adm-1",
+		Name:      "Operator Alice",
+		TokenHash: "hash-token-1",
+		CreatedAt: now,
+		ExpiresAt: now.Add(90 * 24 * time.Hour),
+	}
+	if err := s.CreateAdmin(ctx, a1); err != nil {
+		t.Fatalf("CreateAdmin a1: %v", err)
+	}
+
+	// 2. Duplicate token_hash errors
+	aDupToken := &models.Admin{
+		ID:        "adm-2",
+		Name:      "Operator Bob",
+		TokenHash: "hash-token-1",
+		CreatedAt: now,
+		ExpiresAt: now.Add(90 * 24 * time.Hour),
+	}
+	if err := s.CreateAdmin(ctx, aDupToken); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("expected ErrDuplicate for duplicate token_hash, got %v", err)
+	}
+
+	// 3. Duplicate ID errors
+	aDupID := &models.Admin{
+		ID:        "adm-1",
+		Name:      "Operator Charlie",
+		TokenHash: "hash-token-2",
+		CreatedAt: now,
+		ExpiresAt: now.Add(90 * 24 * time.Hour),
+	}
+	if err := s.CreateAdmin(ctx, aDupID); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("expected ErrDuplicate for duplicate ID, got %v", err)
+	}
+
+	// 4. FindAdminByTokenHash
+	gotByHash, err := s.FindAdminByTokenHash(ctx, "hash-token-1")
+	if err != nil || gotByHash == nil || gotByHash.ID != "adm-1" || gotByHash.Name != "Operator Alice" {
+		t.Fatalf("FindAdminByTokenHash(hash-token-1) = %+v, %v", gotByHash, err)
+	}
+	missingByHash, err := s.FindAdminByTokenHash(ctx, "nonexistent-hash")
+	if err != nil || missingByHash != nil {
+		t.Fatalf("expected nil, nil for missing token_hash, got %+v, %v", missingByHash, err)
+	}
+
+	// 5. FindAdminByID
+	gotByID, err := s.FindAdminByID(ctx, "adm-1")
+	if err != nil || gotByID == nil || gotByID.Name != "Operator Alice" {
+		t.Fatalf("FindAdminByID(adm-1) = %+v, %v", gotByID, err)
+	}
+	missingByID, err := s.FindAdminByID(ctx, "nonexistent-id")
+	if err != nil || missingByID != nil {
+		t.Fatalf("expected nil, nil for missing ID, got %+v, %v", missingByID, err)
+	}
+
+	// 6. RevokeAdmin
+	revokeTime := now.Add(time.Hour)
+	if err := s.RevokeAdmin(ctx, "adm-1", revokeTime); err != nil {
+		t.Fatalf("RevokeAdmin(adm-1): %v", err)
+	}
+	revoked, err := s.FindAdminByID(ctx, "adm-1")
+	if err != nil || revoked == nil || revoked.RevokedAt.IsZero() {
+		t.Fatalf("expected admin to have RevokedAt set, got %+v, %v", revoked, err)
+	}
+	if revoked.IsActive(now) {
+		t.Fatalf("revoked admin must not be active")
+	}
+
+	// 7. RevokeAdmin is idempotent
+	if err := s.RevokeAdmin(ctx, "adm-1", revokeTime.Add(time.Minute)); err != nil {
+		t.Fatalf("second RevokeAdmin call must succeed idempotently: %v", err)
+	}
+
+	// 8. RevokeAdmin on missing admin returns ErrAdminNotFound
+	if err := s.RevokeAdmin(ctx, "missing-adm", revokeTime); !errors.Is(err, ErrAdminNotFound) {
+		t.Fatalf("expected ErrAdminNotFound for missing admin, got %v", err)
+	}
+}
+
 func TestMemoryStore_CRUD(t *testing.T) {
 	s := NewMemoryStore()
 	runUserStoreSuite(t, s)
+	runAdminStoreSuite(t, s)
 }
 
 func TestMongoStore_CRUD(t *testing.T) {
@@ -384,6 +469,7 @@ func TestMongoStore_CRUD(t *testing.T) {
 	})
 
 	runUserStoreSuite(t, s)
+	runAdminStoreSuite(t, s)
 }
 
 func TestMongoStore_RawLegacyDocWithoutStatusField(t *testing.T) {

@@ -13,14 +13,15 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// MongoStore persists users in the "users" collection and blocklist entries in "blocklist".
+// MongoStore persists users in the "users" collection, blocklist entries in "blocklist", and admins in "admins".
 type MongoStore struct {
 	coll      *mongo.Collection
 	blockColl *mongo.Collection
+	adminColl *mongo.Collection
 }
 
 // NewMongoStore connects to MongoDB, ensures unique indexes on email, phone (partial for active/suspended),
-// and blocklist (kind, hash), and returns a Store shared by the server and ops CLI tools.
+// blocklist (kind, hash), and admins (token_hash), and returns a Store shared by the server and ops CLI tools.
 func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, error) {
 	if mongoURI == "" {
 		return nil, fmt.Errorf("store: MONGO_URI is empty")
@@ -76,7 +77,17 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		return nil, fmt.Errorf("store: ensure blocklist index: %w", err)
 	}
 
-	return &MongoStore{coll: coll, blockColl: blockColl}, nil
+	// Ensure unique index on admins (token_hash)
+	adminColl := db.Collection("admins")
+	_, err = adminColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "token_hash", Value: 1}},
+		Options: options.Index().SetUnique(true),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: ensure admin token_hash index: %w", err)
+	}
+
+	return &MongoStore{coll: coll, blockColl: blockColl, adminColl: adminColl}, nil
 }
 
 // Create inserts a new user. Status defaults to "active" explicitly for new users.
@@ -289,6 +300,59 @@ func (s *MongoStore) AddToBlocklist(ctx context.Context, kind, hash, reason stri
 			return nil
 		}
 		return fmt.Errorf("store: add to blocklist: %w", err)
+	}
+	return nil
+}
+
+// CreateAdmin inserts a new admin document. Returns ErrDuplicate on duplicate token_hash or _id.
+func (s *MongoStore) CreateAdmin(ctx context.Context, a *models.Admin) error {
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.adminColl.InsertOne(ctx, a)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert admin: %w", err)
+	}
+	return nil
+}
+
+// FindAdminByTokenHash retrieves an admin by SHA-256 token hash, or nil if absent.
+func (s *MongoStore) FindAdminByTokenHash(ctx context.Context, tokenHash string) (*models.Admin, error) {
+	var a models.Admin
+	err := s.adminColl.FindOne(ctx, bson.M{"token_hash": tokenHash}).Decode(&a)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find admin by hash: %w", err)
+	}
+	return &a, nil
+}
+
+// FindAdminByID retrieves an admin by _id, or nil if absent.
+func (s *MongoStore) FindAdminByID(ctx context.Context, id string) (*models.Admin, error) {
+	var a models.Admin
+	err := s.adminColl.FindOne(ctx, bson.M{"_id": id}).Decode(&a)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find admin by id: %w", err)
+	}
+	return &a, nil
+}
+
+// RevokeAdmin sets revoked_at for the admin with given id. Idempotent.
+func (s *MongoStore) RevokeAdmin(ctx context.Context, id string, at time.Time) error {
+	res, err := s.adminColl.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"revoked_at": at}})
+	if err != nil {
+		return fmt.Errorf("store: revoke admin: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return ErrAdminNotFound
 	}
 	return nil
 }

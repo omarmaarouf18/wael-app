@@ -135,6 +135,7 @@ services:
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
       BLOCKLIST_HMAC_KEY: ${BLOCKLIST_HMAC_KEY}
       DEFAULT_PHONE_REGION: ${DEFAULT_PHONE_REGION:-EG}
+      ADMIN_LISTEN_ADDR: ":9001"
     depends_on:
       mongo:
         condition: service_healthy

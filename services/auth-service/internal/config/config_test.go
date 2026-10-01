@@ -43,6 +43,7 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "RESEND_API_KEY", "re_test_12345")
 	setEnv(t, "RESEND_FROM_EMAIL", "noreply@example.com")
 	setEnv(t, "BLOCKLIST_HMAC_KEY", "test-blocklist-hmac-key")
+	setEnv(t, "ADMIN_LISTEN_ADDR", ":9001")
 }
 
 func TestLoad_MinimalDev(t *testing.T) {
@@ -132,6 +133,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"RESEND_API_KEY",
 		"RESEND_FROM_EMAIL",
 		"BLOCKLIST_HMAC_KEY",
+		"ADMIN_LISTEN_ADDR",
 	}
 
 	for _, v := range requiredVars {
@@ -184,6 +186,9 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		}
 		if cfg.MongoDatabase != "auth_db" {
 			t.Errorf("expected default MongoDatabase auth_db, got %q", cfg.MongoDatabase)
+		}
+		if cfg.AdminListenAddr != ":9001" {
+			t.Errorf("expected default AdminListenAddr :9001, got %q", cfg.AdminListenAddr)
 		}
 	})
 }

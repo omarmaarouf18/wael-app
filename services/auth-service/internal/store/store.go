@@ -23,6 +23,8 @@ var (
 	ErrInvalidStatus = errors.New("store: invalid status")
 	// ErrDuplicate is returned when a unique constraint (email or phone) is violated.
 	ErrDuplicate = errors.New("store: duplicate key")
+	// ErrAdminNotFound is returned when an operation references a non-existent admin.
+	ErrAdminNotFound = errors.New("store: admin not found")
 )
 
 // Store is the user persistence contract.
@@ -37,6 +39,11 @@ type Store interface {
 
 	IsBlocked(ctx context.Context, kind, hash string) (bool, error)
 	AddToBlocklist(ctx context.Context, kind, hash, reason string, at time.Time) error
+
+	CreateAdmin(ctx context.Context, a *models.Admin) error
+	FindAdminByTokenHash(ctx context.Context, tokenHash string) (*models.Admin, error)
+	FindAdminByID(ctx context.Context, id string) (*models.Admin, error)
+	RevokeAdmin(ctx context.Context, id string, at time.Time) error
 }
 
 type blockEntry struct {
@@ -48,18 +55,22 @@ type blockEntry struct {
 
 // MemoryStore is a concurrency-safe in-process Store.
 type MemoryStore struct {
-	mu        sync.RWMutex
-	byID      map[string]*models.User
-	byMail    map[string]*models.User
-	blocklist map[string]blockEntry
+	mu           sync.RWMutex
+	byID         map[string]*models.User
+	byMail       map[string]*models.User
+	blocklist    map[string]blockEntry
+	adminsByID   map[string]*models.Admin
+	adminsByHash map[string]*models.Admin
 }
 
 // NewMemoryStore creates an empty MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		byID:      map[string]*models.User{},
-		byMail:    map[string]*models.User{},
-		blocklist: map[string]blockEntry{},
+		byID:         map[string]*models.User{},
+		byMail:       map[string]*models.User{},
+		blocklist:    map[string]blockEntry{},
+		adminsByID:   map[string]*models.Admin{},
+		adminsByHash: map[string]*models.Admin{},
 	}
 }
 
@@ -269,5 +280,61 @@ func (s *MemoryStore) AddToBlocklist(_ context.Context, kind, hash, reason strin
 		reason:    reason,
 		createdAt: at,
 	}
+	return nil
+}
+
+func cloneAdmin(a *models.Admin) *models.Admin {
+	if a == nil {
+		return nil
+	}
+	cp := *a
+	return &cp
+}
+
+// CreateAdmin inserts a new admin identity; token_hash and id must be unique.
+func (s *MemoryStore) CreateAdmin(_ context.Context, a *models.Admin) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.adminsByHash[a.TokenHash]; exists {
+		return ErrDuplicate
+	}
+	if _, exists := s.adminsByID[a.ID]; exists {
+		return ErrDuplicate
+	}
+	now := time.Now().UTC()
+	if a.CreatedAt.IsZero() {
+		a.CreatedAt = now
+	}
+	cp := cloneAdmin(a)
+	s.adminsByID[a.ID] = cp
+	s.adminsByHash[a.TokenHash] = cp
+	return nil
+}
+
+// FindAdminByTokenHash looks up an admin by the SHA-256 hash of their token.
+func (s *MemoryStore) FindAdminByTokenHash(_ context.Context, tokenHash string) (*models.Admin, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneAdmin(s.adminsByHash[tokenHash]), nil
+}
+
+// FindAdminByID looks up an admin by id.
+func (s *MemoryStore) FindAdminByID(_ context.Context, id string) (*models.Admin, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneAdmin(s.adminsByID[id]), nil
+}
+
+// RevokeAdmin sets revoked_at timestamp for the admin. Idempotent.
+func (s *MemoryStore) RevokeAdmin(_ context.Context, id string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	adm, exists := s.adminsByID[id]
+	if !exists {
+		return ErrAdminNotFound
+	}
+	adm.RevokedAt = at
 	return nil
 }

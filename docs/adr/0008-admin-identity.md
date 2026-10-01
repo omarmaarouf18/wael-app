@@ -63,7 +63,7 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 3. **Response**: On successful validation, `auth-service` returns HTTP 200 with `{ "admin_id": "...", "name": "..." }`.
 4. **No Caching**: Calling services (such as `academy-service`) verify the admin token with `auth-service` on every request without caching, ensuring revocation takes effect immediately.
 5. **Fail Closed**: If `auth-service` is unreachable or unavailable, calling services fail closed with HTTP 503.
-6. **Lockout Protection**: `auth-service` locks out repeated bad verification attempts, keyed on client IP and token hash. The lockout threshold is unspecified in the spec and is not invented here. Internal listener ports are likewise unspecified in the spec and are not invented here.
+6. **Lockout Protection**: `auth-service` locks out repeated bad verification attempts, keyed on client IP and token hash. The lockout threshold is unspecified in the spec and is not invented here. Internal listener ports are likewise unspecified in the spec and are not invented here. *(Superseded by 2026-10-01 amendment below).*
 
 ### 7. Auditability, Privacy, and Safe Responses
 
@@ -72,7 +72,17 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 3. **Input Sanitization**: Operator-supplied reasons are length-capped (1–1000 characters) and stripped of CR/LF characters before writing to logs.
 4. **Safe Errors**: Responses use safe errors (`handlerutil.WriteSafeError`) and never reveal internal token hashes or stack traces.
 
+### 8. Amendment (2026-10-01, Owner Decisions for Phase 1.4)
+
+*Supersedes the sentences in Section 6 stating that lockout thresholds and listener ports are unspecified.*
+
+1. **Trusted header**: `X-Admin-Client-IP`. Set ONLY by `admin-console` (Phase 6), which overwrites any client-supplied value.
+2. **IP Extraction & Fallback**: `auth-service` reads `X-Admin-Client-IP` ONLY on the admin listener and ONLY after `X-Internal-Token` is valid (constant-time). If absent, fall back to the connection `RemoteAddr` host. Never read `X-Forwarded-For` on the admin listener. No IP allowlist for now.
+3. **Lockout**: Reuse the existing `Lockout` interface and thresholds, with separate key prefixes `"admin-verify-ip:"` and `"admin-verify-tok:<hash>"`.
+4. **Listener Ports & Compose Isolation**: `ADMIN_LISTEN_ADDR` default `":9001"` for `auth-service` (`academy-service` will use `":9002"` later). Required outside local/test. No `ports:` in compose.
+
 ## Consequences
+
 
 ### Positive
 

@@ -463,6 +463,14 @@ func (f *failingStore) IsBlocked(ctx context.Context, kind, hash string) (bool, 
 func (f *failingStore) AddToBlocklist(ctx context.Context, kind, hash, reason string, at time.Time) error {
 	return f.err
 }
+func (f *failingStore) CreateAdmin(ctx context.Context, a *models.Admin) error { return f.err }
+func (f *failingStore) FindAdminByTokenHash(ctx context.Context, tokenHash string) (*models.Admin, error) {
+	return nil, f.err
+}
+func (f *failingStore) FindAdminByID(ctx context.Context, id string) (*models.Admin, error) {
+	return nil, f.err
+}
+func (f *failingStore) RevokeAdmin(ctx context.Context, id string, at time.Time) error { return f.err }
 
 func TestSignup_StoreDown_Returns503(t *testing.T) {
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")

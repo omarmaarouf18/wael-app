@@ -27,6 +27,7 @@ type Config struct {
 	ResendFromEmail      string
 	BlocklistHMACKey     string
 	DefaultPhoneRegion   string
+	AdminListenAddr      string
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -94,10 +95,18 @@ func Load() (*Config, error) {
 		if blocklistHMACKey == "" {
 			return nil, errors.New("config: required env var BLOCKLIST_HMAC_KEY is empty")
 		}
+		if os.Getenv("ADMIN_LISTEN_ADDR") == "" {
+			return nil, errors.New("config: required env var ADMIN_LISTEN_ADDR is empty")
+		}
 	} else {
 		if resendAPIKey != "" && resendFrom == "" {
 			return nil, errors.New("config: RESEND_FROM_EMAIL is required when RESEND_API_KEY is set")
 		}
+	}
+
+	adminListenAddr := os.Getenv("ADMIN_LISTEN_ADDR")
+	if adminListenAddr == "" {
+		adminListenAddr = ":9001"
 	}
 
 	notificationURL := os.Getenv("NOTIFICATION_SERVICE_URL")
@@ -132,5 +141,6 @@ func Load() (*Config, error) {
 		ResendFromEmail:      resendFrom,
 		BlocklistHMACKey:     blocklistHMACKey,
 		DefaultPhoneRegion:   defaultPhoneRegion,
+		AdminListenAddr:      adminListenAddr,
 	}, nil
 }

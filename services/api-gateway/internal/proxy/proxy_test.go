@@ -84,3 +84,52 @@ func TestNew_DoesNotInjectInternalToken(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
 	}
 }
+
+func TestGateway_NoInternalRoute(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	mux := http.NewServeMux()
+	routes := []config.ServiceRoute{
+		{Prefix: "/api/v1/auth/", Target: backend.URL, StripPrefix: "/api/v1"},
+		{Prefix: "/api/v1/notifications/", Target: backend.URL, StripPrefix: "/api/v1"},
+	}
+	for _, route := range routes {
+		h, err := New(route, "gw-secret", nil, backend.Client().Transport)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mux.Handle(route.Prefix, h)
+	}
+
+	// Verify valid route succeeds
+	validReq := httptest.NewRequest(http.MethodGet, "http://gateway/api/v1/auth/health", nil)
+	validRec := httptest.NewRecorder()
+	mux.ServeHTTP(validRec, validReq)
+	if validRec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for valid route, got %d", validRec.Code)
+	}
+
+	// Internal paths must never be routed by the gateway and must return 404
+	internalPaths := []string{
+		"/internal",
+		"/internal/",
+		"/internal/admin/verify",
+		"/admin",
+		"/admin/",
+		"/admin/verify",
+		"/api/v1/internal",
+		"/api/v1/internal/admin/verify",
+	}
+
+	for _, path := range internalPaths {
+		req := httptest.NewRequest(http.MethodPost, "http://gateway"+path, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("expected 404 for unrouted internal path %s, got %d", path, rec.Code)
+		}
+	}
+}

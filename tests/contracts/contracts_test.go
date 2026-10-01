@@ -1,11 +1,14 @@
 package contracts
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -155,5 +158,89 @@ func TestContract_JWTClaimSet(t *testing.T) {
 		if _, ok := rawPayload[mc]; !ok {
 			t.Errorf("mandatory JWT claim %q missing from wire payload JSON: %v", mc, rawPayload)
 		}
+	}
+}
+
+// 4. Gateway internal route contract: verify gateway does not route /internal/ and returns 404.
+func TestContract_GatewayHasNoInternalRoute(t *testing.T) {
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^TestGateway_NoInternalRoute$", "github.com/omarmaarouf18/wael-app/api-gateway/internal/proxy")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("gateway no internal route contract verification failed: %v\nOutput:\n%s", err, string(out))
+	}
+	outStr := string(out)
+	if !strings.Contains(outStr, "PASS: TestGateway_NoInternalRoute") {
+		t.Errorf("contract verification missing TestGateway_NoInternalRoute pass:\n%s", outStr)
+	}
+}
+
+// 5. Admin port isolation contract: verify docker-compose.yml does not publish port 9001 under ports:
+// and that auth-service has no ports section (only expose / internal network).
+func TestContract_AdminPortNotPublishedInCompose(t *testing.T) {
+	candidates := []string{
+		"../../infrastructure/docker-compose.yml",
+		"../infrastructure/docker-compose.yml",
+		"infrastructure/docker-compose.yml",
+	}
+	var data []byte
+	var pathUsed string
+	for _, p := range candidates {
+		d, err := os.ReadFile(p)
+		if err == nil {
+			data = d
+			pathUsed = p
+			break
+		}
+	}
+	if data == nil {
+		t.Fatal("could not find infrastructure/docker-compose.yml in any candidate path")
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	currentService := ""
+	inPortsSection := false
+	authServiceHasPorts := false
+	port9001Published := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Detect top-level or service-level headers
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.HasSuffix(trimmed, ":") {
+			currentService = strings.TrimSuffix(trimmed, ":")
+			inPortsSection = false
+			continue
+		}
+
+		if strings.HasPrefix(line, "    ports:") {
+			inPortsSection = true
+			if currentService == "auth-service" {
+				authServiceHasPorts = true
+			}
+			continue
+		}
+
+		// If indentation drops back to 4 spaces and it's not a list item under ports
+		if inPortsSection {
+			if strings.HasPrefix(line, "      - ") {
+				if strings.Contains(line, "9001") {
+					port9001Published = true
+				}
+			} else if !strings.HasPrefix(line, "      ") && trimmed != "" {
+				inPortsSection = false
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("reading %s: %v", pathUsed, err)
+	}
+
+	if authServiceHasPorts {
+		t.Errorf("contract violation: auth-service in %s defines a ports section (must use internal network only, no ports published)", pathUsed)
+	}
+	if port9001Published {
+		t.Errorf("contract violation: port 9001 is published under ports: in %s (must not be publicly exposed)", pathUsed)
 	}
 }

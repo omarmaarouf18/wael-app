@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -108,6 +109,22 @@ func main() {
 	srv.DefaultPhoneRegion = cfg.DefaultPhoneRegion
 	srv.NotifyURL = cfg.NotificationURL
 	srv.NotifyToken = cfg.InternalServiceToken
+	srv.InternalToken = cfg.InternalServiceToken
+
+	// Start admin listener on internal network
+	adminHandler := srv.AdminHandler()
+	adminSrv := &http.Server{
+		Addr:              cfg.AdminListenAddr,
+		Handler:           adminHandler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		fmt.Printf("auth-service admin listener on %s\n", cfg.AdminListenAddr)
+		if err := adminSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("[AUTH] admin listener: %v", err)
+		}
+	}()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handlers.Health)
 	mux.HandleFunc("/auth/signup", srv.Signup)

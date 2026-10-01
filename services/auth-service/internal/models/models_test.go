@@ -1,6 +1,9 @@
 package models
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestUser_EffectiveStatus(t *testing.T) {
 	var nilUser *User
@@ -35,5 +38,39 @@ func TestValidRole(t *testing.T) {
 	}
 	if ValidRole("admin") {
 		t.Fatal("admin role must not be a client valid role in auth-service")
+	}
+}
+
+func TestAdmin_IsActive(t *testing.T) {
+	now := time.Now().UTC()
+
+	var nilAdmin *Admin
+	if nilAdmin.IsActive(now) {
+		t.Fatal("nil admin must not be active")
+	}
+
+	activeAdmin := &Admin{
+		ID:        "a1",
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if !activeAdmin.IsActive(now) {
+		t.Fatal("unrevoked admin with future expiry must be active")
+	}
+
+	expiredAdmin := &Admin{
+		ID:        "a2",
+		ExpiresAt: now.Add(-time.Hour),
+	}
+	if expiredAdmin.IsActive(now) {
+		t.Fatal("expired admin must not be active")
+	}
+
+	revokedAdmin := &Admin{
+		ID:        "a3",
+		ExpiresAt: now.Add(time.Hour),
+		RevokedAt: now.Add(-time.Minute),
+	}
+	if revokedAdmin.IsActive(now) {
+		t.Fatal("revoked admin must not be active")
 	}
 }

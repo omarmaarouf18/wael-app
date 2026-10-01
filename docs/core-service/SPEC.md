@@ -65,12 +65,13 @@ This is the build contract for the core of the application. It is written for im
 | D13 | Rate-limit tiers (ADR-0016 in saas-core) | Read 30/min, download 10/min, access-request and admin writes 5/min, per user (or per admin). Configurable. |
 | D14 | Max PDF size | 50 MB (`MAX_PDF_BYTES`). |
 | D15 | Blocklist hashing | **Supersedes the hashing in D8.** Blocklist hashes use HMAC-SHA256 with a secret key from env (required in production), not plain SHA-256. |
-| D16 | Admin verify lockout IP | The lockout keys on a client IP derived from a trusted proxy header that only Caddy and admin-console can set; the trust chain is documented. |
+| D16 | Admin verify lockout IP | The lockout keys on a client IP derived from a trusted proxy header that only Caddy and admin-console can set; the trust chain is documented. *(2026-10-01, owner amendment)*: Trusted header is `X-Admin-Client-IP`. Trust chain: Caddy -> admin-console sets `X-Admin-Client-IP` (overwriting any client-supplied value) -> auth-service admin listener (`:9001`, internal network only). auth-service reads `X-Admin-Client-IP` ONLY on the admin listener and ONLY after `X-Internal-Token` is valid (constant-time); if absent, it falls back to the connection `RemoteAddr` host; it never reads `X-Forwarded-For` on the admin listener. No IP allowlist for now. |
 | D17 | Admin-console delivery | Served with a strict `Content-Security-Policy` and no third-party scripts. |
 | D18 | Suspension and SSE | Suspension also closes the account's open SSE streams. |
 | D19 | SSE auth migration | Once Q9 is settled, notification-service stops accepting `?token=` (the Flutter client already sends the `Authorization` header). |
 
-*D15-D19 added 2026-09-30 (owner review); not yet implemented.*
+*D15, D17-D19 added 2026-09-30 (owner review); D16 amended 2026-10-01 (owner) and implemented in Phase 1.4.*
+
 
 | # | Topic | Default |
 |---|---|---|

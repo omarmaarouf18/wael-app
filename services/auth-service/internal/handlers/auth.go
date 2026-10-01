@@ -39,6 +39,7 @@ type Server struct {
 	Sender             mailer.Sender
 	AppEnv             string
 	GatewaySecret      string
+	InternalToken      string
 	BlocklistHMACKey   string
 	DefaultPhoneRegion string
 	NotifyURL          string
