@@ -92,6 +92,10 @@ SPEC Phase 2.1: `academy-service` skeleton (`github.com/omarmaarouf18/wael-app/a
 
 SPEC Phase 2.2: `levels` model, unique key index, and idempotent startup seed (bachelor years 1-4 and the vocational level only); `GET /academy/levels` student route behind `GatewayAuth` and `StudentAuth` (Bearer JWT validated with `jwtutil.ValidateToken` on every request against Redis revocation markers and denylist); levels with no published subjects are hidden; `LevelDTO` and `LevelsResponseDTO` response shape; `MemoryStore` and `MongoStore` implementations with `REQUIRE_DB` integration tests verifying seed idempotency, unique key index, and published subject filtering.
 
+SPEC Phase 2.3: `subjects` and `videos` models per SPEC Section 5 (including `access_expires_at` on subjects per decision 18, and `published` flags); student read endpoints `GET /academy/subjects` and `GET /academy/subjects/{id}` returning metadata only behind `GatewayAuth` and `StudentAuth`; strict leak tests ensuring `youtube_video_id` and raw video IDs never appear in student JSON responses (lists, detail, errors); price and currency hidden unless `EXPOSE_PRICE_TO_STUDENTS=true` (D3); unpublished subjects and videos hidden; pagination capped at 20 default and 100 max; compound indexes on `subjects(level_key, status)`, `videos(subject_id, position)`, and `subject_files(subject_id)` in MemoryStore and MongoStore.
+
+SPEC Phase 2.4: gateway route `/api/v1/academy/` with route test was already delivered in Phase 2.1 (commit 9ae2b082c389992cbac88012b47f93d3e3990ade).
+
 Owner decisions recorded (2026-10-01, docs only, nothing implemented): subscriptions expire per subject date set by the admin, copied per activation (D21) with re-purchase allowed and no activation of an already-expired subject (D20); every activation writes an append-only payment record at the subject's price; Android first, iOS deferred. SPEC Sections 1, 2, 3, 5, 7 and ADR-0007 amended.
 
 Frontend F0: `scripts/frontend_composition_gate.sh` ratchet gate (baseline `scripts/frontend_gate_baseline.txt`, 83 entries at F0) runs in `.githooks/pre-push` and the CI `flutter-test` job; `docs/frontend/DESIGN_SYSTEM.md` and `docs/frontend/STATUS.md` added.
@@ -119,7 +123,7 @@ Owner question: reminder notification before a subscription expires (SPEC Sectio
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-SPEC Phase 2.3: subjects and videos models per SPEC Section 5, and student read endpoints (metadata only, no video IDs yet).
+SPEC Phase 3.1: entitlements store and the owned computation.
 
 
 

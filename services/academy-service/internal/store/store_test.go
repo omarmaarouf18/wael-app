@@ -2,183 +2,251 @@ package store
 
 import (
 	"context"
-	"os"
 	"testing"
+	"time"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
-	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func TestMemoryStore_SeedLevels_Idempotent(t *testing.T) {
-	st := NewMemoryStore()
+func runStoreSuite(t *testing.T, s Store) {
 	ctx := context.Background()
-
-	// Run once
-	if err := st.SeedLevels(ctx); err != nil {
-		t.Fatalf("first seed failed: %v", err)
+	if err := s.Ping(ctx); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+	if err := s.EnsureIndexes(ctx); err != nil {
+		t.Fatalf("EnsureIndexes: %v", err)
 	}
 
-	levels, err := st.ListLevels(ctx, false)
+	// 1. Seed levels idempotently: first run
+	if err := s.SeedLevels(ctx); err != nil {
+		t.Fatalf("SeedLevels 1 failed: %v", err)
+	}
+
+	allLevels, err := s.ListLevels(ctx, false)
 	if err != nil {
-		t.Fatalf("list levels failed: %v", err)
+		t.Fatalf("ListLevels all failed: %v", err)
 	}
-	if len(levels) != 5 {
-		t.Fatalf("expected 5 seeded levels, got %d", len(levels))
-	}
-
-	// Run twice - changes nothing
-	if err := st.SeedLevels(ctx); err != nil {
-		t.Fatalf("second seed failed: %v", err)
+	if len(allLevels) != 5 {
+		t.Fatalf("expected 5 seeded levels, got %d", len(allLevels))
 	}
 
-	levels2, err := st.ListLevels(ctx, false)
-	if err != nil {
-		t.Fatalf("list levels after second seed failed: %v", err)
-	}
-	if len(levels2) != 5 {
-		t.Fatalf("expected 5 seeded levels after second seed, got %d", len(levels2))
-	}
-
-	// Verify order by position
-	for i := 0; i < len(levels2)-1; i++ {
-		if levels2[i].Position >= levels2[i+1].Position {
-			t.Errorf("levels not sorted by position: %d >= %d", levels2[i].Position, levels2[i+1].Position)
+	expectedKeys := []string{"bachelor-y1", "bachelor-y2", "bachelor-y3", "bachelor-y4", "vocational"}
+	for i, k := range expectedKeys {
+		if allLevels[i].Key != k {
+			t.Errorf("level[%d] key = %q, want %q", i, allLevels[i].Key, k)
+		}
+		if allLevels[i].Position != i+1 {
+			t.Errorf("level[%d] position = %d, want %d", i, allLevels[i].Position, i+1)
 		}
 	}
+
+	// 2. Running seed a second time changes nothing
+	if err := s.SeedLevels(ctx); err != nil {
+		t.Fatalf("SeedLevels 2 failed: %v", err)
+	}
+	allLevelsSecond, err := s.ListLevels(ctx, false)
+	if err != nil {
+		t.Fatalf("ListLevels after second seed failed: %v", err)
+	}
+	if len(allLevelsSecond) != 5 {
+		t.Fatalf("expected still 5 levels after second seed, got %d", len(allLevelsSecond))
+	}
+
+	// 3. Levels with no published subjects are hidden
+	publishedOnly, err := s.ListLevels(ctx, true)
+	if err != nil {
+		t.Fatalf("ListLevels publishedOnly failed: %v", err)
+	}
+	if len(publishedOnly) != 0 {
+		t.Fatalf("expected 0 levels when no published subjects exist, got %d", len(publishedOnly))
+	}
+
+	// 4. Draft subject does not reveal level
+	draftSubj := &models.Subject{
+		ID:              "subj-draft-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة مسودة",
+		TitleEn:         "Draft Subject",
+		Status:          models.StatusDraft,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.CreateSubject(ctx, draftSubj); err != nil {
+		t.Fatalf("CreateSubject draft failed: %v", err)
+	}
+
+	publishedOnly, err = s.ListLevels(ctx, true)
+	if err != nil {
+		t.Fatalf("ListLevels after draft subject failed: %v", err)
+	}
+	if len(publishedOnly) != 0 {
+		t.Fatalf("expected 0 levels with only draft subject, got %d", len(publishedOnly))
+	}
+
+	// 5. Published subject reveals the level
+	pubSubj := &models.Subject{
+		ID:              "subj-pub-1",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة منشورة",
+		TitleEn:         "Published Subject",
+		Status:          models.StatusPublished,
+		Price:           1200,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.CreateSubject(ctx, pubSubj); err != nil {
+		t.Fatalf("CreateSubject published failed: %v", err)
+	}
+
+	publishedOnly, err = s.ListLevels(ctx, true)
+	if err != nil {
+		t.Fatalf("ListLevels after published subject failed: %v", err)
+	}
+	if len(publishedOnly) != 1 {
+		t.Fatalf("expected 1 level with published subject, got %d", len(publishedOnly))
+	}
+	if publishedOnly[0].Key != "bachelor-y1" {
+		t.Errorf("published level key = %q, want bachelor-y1", publishedOnly[0].Key)
+	}
+
+	// 6. ListSubjects queries
+	subjs, total, err := s.ListSubjects(ctx, SubjectFilter{LevelKey: "bachelor-y1", Status: models.StatusPublished})
+	if err != nil {
+		t.Fatalf("ListSubjects failed: %v", err)
+	}
+	if total != 1 || len(subjs) != 1 {
+		t.Fatalf("ListSubjects total=%d items=%d, want 1", total, len(subjs))
+	}
+
+	// 7. GetSubjectByID
+	found, err := s.GetSubjectByID(ctx, "subj-pub-1")
+	if err != nil {
+		t.Fatalf("GetSubjectByID failed: %v", err)
+	}
+	if found == nil || found.TitleAr != "مادة منشورة" {
+		t.Fatalf("GetSubjectByID mismatch: %+v", found)
+	}
+
+	notFound, err := s.GetSubjectByID(ctx, "non-existent")
+	if err != nil {
+		t.Fatalf("GetSubjectByID non-existent failed: %v", err)
+	}
+	if notFound != nil {
+		t.Fatalf("expected nil for non-existent subject, got %+v", notFound)
+	}
+
+	// 8. Videos: create and list
+	vPub := &models.Video{
+		ID:             "v-1",
+		SubjectID:      "subj-pub-1",
+		Position:       1,
+		TitleAr:        "فيديو 1",
+		YouTubeVideoID: "yt_123456789",
+		Published:      true,
+		CreatedAt:      time.Now(),
+	}
+	vDraft := &models.Video{
+		ID:             "v-2",
+		SubjectID:      "subj-pub-1",
+		Position:       2,
+		TitleAr:        "فيديو غير منشور",
+		YouTubeVideoID: "yt_unpub_456",
+		Published:      false,
+		CreatedAt:      time.Now(),
+	}
+	if err := s.CreateVideo(ctx, vPub); err != nil {
+		t.Fatalf("CreateVideo pub failed: %v", err)
+	}
+	if err := s.CreateVideo(ctx, vDraft); err != nil {
+		t.Fatalf("CreateVideo draft failed: %v", err)
+	}
+
+	vidsPub, err := s.ListVideosBySubject(ctx, "subj-pub-1", true)
+	if err != nil {
+		t.Fatalf("ListVideosBySubject published failed: %v", err)
+	}
+	if len(vidsPub) != 1 || vidsPub[0].ID != "v-1" {
+		t.Fatalf("expected 1 published video, got %+v", vidsPub)
+	}
+
+	vidsAll, err := s.ListVideosBySubject(ctx, "subj-pub-1", false)
+	if err != nil {
+		t.Fatalf("ListVideosBySubject all failed: %v", err)
+	}
+	if len(vidsAll) != 2 {
+		t.Fatalf("expected 2 videos total, got %d", len(vidsAll))
+	}
+
+	// 9. Files: create and list
+	f1 := &models.SubjectFile{
+		ID:         "f-1",
+		SubjectID:  "subj-pub-1",
+		Kind:       "book",
+		TitleAr:    "كتاب 1",
+		SizeBytes:  5000,
+		StorageKey: "uuid-storage-1",
+		CreatedAt:  time.Now(),
+	}
+	f2 := &models.SubjectFile{
+		ID:         "f-2",
+		SubjectID:  "subj-pub-1",
+		Kind:       "note",
+		TitleAr:    "مذكرة 1",
+		SizeBytes:  2000,
+		StorageKey: "uuid-storage-2",
+		CreatedAt:  time.Now(),
+	}
+	if err := s.CreateFile(ctx, f1); err != nil {
+		t.Fatalf("CreateFile 1 failed: %v", err)
+	}
+	if err := s.CreateFile(ctx, f2); err != nil {
+		t.Fatalf("CreateFile 2 failed: %v", err)
+	}
+
+	files, err := s.ListFilesBySubject(ctx, "subj-pub-1")
+	if err != nil {
+		t.Fatalf("ListFilesBySubject failed: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected 2 files, got %d", len(files))
+	}
+
+	// 10. Counts verification
+	counts, err := s.GetSubjectCounts(ctx, "subj-pub-1")
+	if err != nil {
+		t.Fatalf("GetSubjectCounts failed: %v", err)
+	}
+	if counts.Videos != 1 || counts.Books != 1 || counts.Notes != 1 {
+		t.Fatalf("counts mismatch: got videos=%d books=%d notes=%d, want 1/1/1", counts.Videos, counts.Books, counts.Notes)
+	}
 }
 
-func TestMemoryStore_ListLevels_PublishedFilter(t *testing.T) {
-	st := NewMemoryStore()
-	ctx := context.Background()
-	_ = st.SeedLevels(ctx)
-
-	// Initially, with onlyWithPublished=true, 0 levels returned
-	published, err := st.ListLevels(ctx, true)
-	if err != nil {
-		t.Fatalf("list published levels: %v", err)
-	}
-	if len(published) != 0 {
-		t.Fatalf("expected 0 published levels initially, got %d", len(published))
-	}
-
-	// Mark bachelor-y1 as published
-	st.SetLevelPublished("bachelor-y1", true)
-
-	published, err = st.ListLevels(ctx, true)
-	if err != nil {
-		t.Fatalf("list published levels after publish: %v", err)
-	}
-	if len(published) != 1 || published[0].Key != "bachelor-y1" {
-		t.Fatalf("expected only bachelor-y1 published, got: %v", published)
-	}
+func TestMemoryStore(t *testing.T) {
+	s := NewMemoryStore()
+	defer func() { _ = s.Close(context.Background()) }()
+	runStoreSuite(t, s)
 }
 
-func TestMongoStore_Integration(t *testing.T) {
-	if os.Getenv("REQUIRE_DB") != "true" {
-		t.Skip("skipping MongoDB integration test: REQUIRE_DB != true")
-	}
+func TestMongoStore(t *testing.T) {
+	mongoURI := requireDB(t)
+	dbName := randomDBName("test_academy_store")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	mongoURI := os.Getenv("MONGO_URI")
-	if mongoURI == "" {
-		mongoURI = "mongodb://root:c1e0856070f52fe6f0f8746662a64d57e9d3133e081df682@localhost:27019/admin"
-	}
-
-	ctx := context.Background()
-	dbName := "academy_test_phase22"
-	st, err := NewMongoStore(ctx, mongoURI, dbName)
+	s, err := NewMongoStore(ctx, mongoURI, dbName)
 	if err != nil {
 		t.Fatalf("NewMongoStore failed: %v", err)
 	}
-	defer func() {
-		_ = st.db.Drop(ctx)
-		_ = st.Close(ctx)
-	}()
-
-	t.Run("seed_levels_idempotent", func(t *testing.T) {
-		// First seed
-		if err := st.SeedLevels(ctx); err != nil {
-			t.Fatalf("first seed failed: %v", err)
-		}
-
-		levels, err := st.ListLevels(ctx, false)
-		if err != nil {
-			t.Fatalf("list levels failed: %v", err)
-		}
-		if len(levels) != 5 {
-			t.Fatalf("expected 5 seeded levels, got %d", len(levels))
-		}
-
-		// Second seed
-		if err := st.SeedLevels(ctx); err != nil {
-			t.Fatalf("second seed failed: %v", err)
-		}
-
-		levels2, err := st.ListLevels(ctx, false)
-		if err != nil {
-			t.Fatalf("list levels after second seed failed: %v", err)
-		}
-		if len(levels2) != 5 {
-			t.Fatalf("expected 5 seeded levels, got %d", len(levels2))
-		}
+	t.Cleanup(func() {
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dropCancel()
+		_ = s.Database().Drop(dropCtx)
+		_ = s.Close(dropCtx)
 	})
 
-	t.Run("unique_level_key_index", func(t *testing.T) {
-		// Attempt to insert duplicate key into levels collection
-		dup := models.Level{
-			Key:       "bachelor-y1",
-			StudyType: models.StudyTypeBachelor,
-			TitleAr:   "مكرر",
-			TitleEn:   "Duplicate",
-			Position:  99,
-		}
-		_, err := st.db.Collection("levels").InsertOne(ctx, dup)
-		if err == nil {
-			t.Fatalf("expected duplicate key error for level key 'bachelor-y1', got nil")
-		}
-	})
-
-	t.Run("list_levels_published_filter", func(t *testing.T) {
-		// Before inserting any subjects, onlyWithPublished=true returns 0
-		published, err := st.ListLevels(ctx, true)
-		if err != nil {
-			t.Fatalf("list published levels: %v", err)
-		}
-		if len(published) != 0 {
-			t.Fatalf("expected 0 published levels before subjects, got %d", len(published))
-		}
-
-		// Insert a draft subject for bachelor-y1: should NOT reveal bachelor-y1
-		_, err = st.db.Collection("subjects").InsertOne(ctx, bson.M{
-			"level_key": "bachelor-y1",
-			"status":    "draft",
-		})
-		if err != nil {
-			t.Fatalf("insert draft subject: %v", err)
-		}
-
-		published, err = st.ListLevels(ctx, true)
-		if err != nil {
-			t.Fatalf("list published levels with draft subject: %v", err)
-		}
-		if len(published) != 0 {
-			t.Fatalf("expected 0 published levels with only draft subject, got %d", len(published))
-		}
-
-		// Insert a published subject for bachelor-y2: should reveal bachelor-y2
-		_, err = st.db.Collection("subjects").InsertOne(ctx, bson.M{
-			"level_key": "bachelor-y2",
-			"status":    "published",
-		})
-		if err != nil {
-			t.Fatalf("insert published subject: %v", err)
-		}
-
-		published, err = st.ListLevels(ctx, true)
-		if err != nil {
-			t.Fatalf("list published levels with published subject: %v", err)
-		}
-		if len(published) != 1 || published[0].Key != "bachelor-y2" {
-			t.Fatalf("expected 1 published level (bachelor-y2), got: %v", published)
-		}
-	})
+	runStoreSuite(t, s)
 }

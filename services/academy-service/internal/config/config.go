@@ -12,19 +12,20 @@ import (
 
 // Config holds all configuration required by academy-service.
 type Config struct {
-	Port                 string
-	AppEnv               string
-	MongoURI             string
-	MongoDatabase        string
-	GatewaySecret        string
-	InternalServiceToken string
-	AuthServiceURL       string
-	TLSCertPath          string
-	TLSKeyPath           string
-	TLSCAPath            string
-	AdminListenAddr      string
-	JWTSecret            string
-	RedisURI             string
+	Port                  string
+	AppEnv                string
+	MongoURI              string
+	MongoDatabase         string
+	RedisURI              string
+	JWTSecret             string
+	GatewaySecret         string
+	InternalServiceToken  string
+	AuthServiceURL        string
+	TLSCertPath           string
+	TLSKeyPath            string
+	TLSCAPath             string
+	AdminListenAddr       string
+	ExposePriceToStudents bool
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -58,8 +59,12 @@ func Load() (*Config, error) {
 	tlsCAPath := os.Getenv("TLS_CA_PATH")
 	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
 	adminListenAddr := os.Getenv("ADMIN_LISTEN_ADDR")
+
 	jwtSecret := os.Getenv("JWT_SECRET")
 	redisURI := os.Getenv("REDIS_URI")
+	if redisURI == "" {
+		redisURI = os.Getenv("REDIS_URL")
+	}
 
 	if !dev {
 		if mongoURI == "" {
@@ -88,16 +93,16 @@ func Load() (*Config, error) {
 		}
 	}
 
-	if jwtSecret == "" {
-		jwtSecret = "dev-jwt-secret-not-for-production"
-	}
-
 	if adminListenAddr == "" {
 		adminListenAddr = ":9002"
 	}
 
 	if authServiceURL == "" {
 		authServiceURL = "https://auth-service:3002"
+	}
+
+	if dev && jwtSecret == "" {
+		jwtSecret = "dev-secret-change-me-0123456789"
 	}
 
 	port := os.Getenv("PORT")
@@ -113,19 +118,22 @@ func Load() (*Config, error) {
 		dbName = "academy_db"
 	}
 
+	exposePrice := os.Getenv("EXPOSE_PRICE_TO_STUDENTS") == "true" || os.Getenv("EXPOSE_PRICE_TO_STUDENTS") == "1"
+
 	return &Config{
-		Port:                 port,
-		AppEnv:               appEnv,
-		MongoURI:             mongoURI,
-		MongoDatabase:        dbName,
-		GatewaySecret:        gatewaySecret,
-		InternalServiceToken: internalToken,
-		AuthServiceURL:       authServiceURL,
-		TLSCertPath:          tlsCertPath,
-		TLSKeyPath:           tlsKeyPath,
-		TLSCAPath:            tlsCAPath,
-		AdminListenAddr:      adminListenAddr,
-		JWTSecret:            jwtSecret,
-		RedisURI:             redisURI,
+		Port:                  port,
+		AppEnv:                appEnv,
+		MongoURI:              mongoURI,
+		MongoDatabase:         dbName,
+		RedisURI:              redisURI,
+		JWTSecret:             jwtSecret,
+		GatewaySecret:         gatewaySecret,
+		InternalServiceToken:  internalToken,
+		AuthServiceURL:        authServiceURL,
+		TLSCertPath:           tlsCertPath,
+		TLSKeyPath:            tlsKeyPath,
+		TLSCAPath:             tlsCAPath,
+		AdminListenAddr:       adminListenAddr,
+		ExposePriceToStudents: exposePrice,
 	}, nil
 }

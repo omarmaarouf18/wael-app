@@ -1,11 +1,13 @@
-// Package handlers implements HTTP request handling for academy-service.
+// Package handlers implements the academy-service HTTP API handlers and middleware.
 package handlers
 
 import (
 	"context"
 	"crypto/subtle"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
@@ -13,165 +15,328 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 )
 
+const dbTimeout = 5 * time.Second
+
 type contextKey string
 
-const (
-	studentUserKey contextKey = "student_user"
-)
+const claimsContextKey contextKey = "claims"
 
-// Server holds dependencies for HTTP handlers.
+// Server wires academy-service HTTP dependencies.
 type Server struct {
-	store          store.Store
-	appEnv         string
-	gatewaySecret  string
-	internalToken  string
-	authServiceURL string
+	Store         store.Store
+	AppEnv        string
+	GatewaySecret string
+	InternalToken string
+	AuthURL       string
+	ExposePrice   bool
 }
 
-// New creates a new Server instance.
-func New(store store.Store, appEnv, gatewaySecret, internalToken, authServiceURL string) *Server {
+// New creates a Server with dependencies.
+func New(st store.Store, appEnv, gatewaySecret, internalToken, authURL string, exposePrice bool) *Server {
 	return &Server{
-		store:          store,
-		appEnv:         appEnv,
-		gatewaySecret:  gatewaySecret,
-		internalToken:  internalToken,
-		authServiceURL: authServiceURL,
+		Store:         st,
+		AppEnv:        appEnv,
+		GatewaySecret: gatewaySecret,
+		InternalToken: internalToken,
+		AuthURL:       authURL,
+		ExposePrice:   exposePrice,
 	}
 }
 
-// GatewayAuth middleware rejects requests lacking the correct X-Gateway-Secret,
-// except /health which is permitted directly for stack healthchecks.
+// Health is the unauthenticated liveness probe on the public listener.
+func Health(w http.ResponseWriter, _ *http.Request) {
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// GatewayAuth requires X-Gateway-Secret on every non-health route on the public listener.
 func (s *Server) GatewayAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			next.ServeHTTP(w, r)
 			return
 		}
-		secret := r.Header.Get("X-Gateway-Secret")
-		if secret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(s.gatewaySecret)) != 1 {
-			handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		got := r.Header.Get("X-Gateway-Secret")
+		if s.GatewaySecret == "" || got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.GatewaySecret)) != 1 {
+			handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// InternalTokenAuth middleware verifies the internal service token on the admin listener.
+// StudentAuth verifies Bearer JWT using jwtutil.ValidateToken on every request.
+// This ensures suspension takes immediate effect and token revocation is checked against Redis.
+func (s *Server) StudentAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		token := handlerutil.BearerToken(r)
+		if token == "" {
+			handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+			return
+		}
+
+		claims, err := jwtutil.ValidateToken(token)
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", err)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), claimsContextKey, claims)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// StudentClaims retrieves validated claims from request context.
+func StudentClaims(r *http.Request) *jwtutil.Claims {
+	if c, ok := r.Context().Value(claimsContextKey).(*jwtutil.Claims); ok {
+		return c
+	}
+	return nil
+}
+
+// InternalTokenAuth requires X-Internal-Token on every admin route (constant-time compare).
+// Empty-secret guard ensures an empty configured token never authenticates.
 func (s *Server) InternalTokenAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("X-Internal-Token")
-		if token == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.internalToken)) != 1 {
-			handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		got := r.Header.Get("X-Internal-Token")
+		if s.InternalToken == "" || got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.InternalToken)) != 1 {
+			handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// StudentAuth middleware validates a student Bearer JWT on every request
-// (including Redis revocation marker and denylist checks via jwtutil.ValidateToken).
-func (s *Server) StudentAuth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		authHdr := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHdr, "Bearer ") {
-			handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing or malformed authorization header"})
-			return
-		}
-		tokenStr := strings.TrimPrefix(authHdr, "Bearer ")
-		claims, err := jwtutil.ValidateToken(tokenStr)
-		if err != nil {
-			handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid or expired token"})
-			return
-		}
-		ctx := context.WithValue(r.Context(), studentUserKey, claims)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	}
-}
-
-// Health reports service liveness.
-func Health(w http.ResponseWriter, _ *http.Request) {
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-// GetLevels serves GET /academy/levels: returns the tree of academic study types and levels.
-// Per SPEC Section 1 Decision 2 amendment, levels with no published subjects are hidden.
+// GetLevels serves GET /academy/levels.
+// Returns the list of academic levels, hiding levels that have no published subjects.
 func (s *Server) GetLevels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		handlerutil.WriteJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
 		return
 	}
 
-	ctx := r.Context()
-	levels, err := s.store.ListLevels(ctx, true)
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	levels, err := s.Store.ListLevels(ctx, true)
+	cancel()
 	if err != nil {
-		handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 
-	levelDTOs := make([]models.LevelDTO, 0, len(levels))
+	dtos := make([]models.LevelDTO, len(levels))
+	for i, l := range levels {
+		dtos[i] = l.ToDTO()
+	}
+	if dtos == nil {
+		dtos = []models.LevelDTO{}
+	}
+
+	studyTypesMap := make(map[string]*models.StudyTypeDTO)
+	var studyTypeOrder []string
+
 	for _, l := range levels {
-		levelDTOs = append(levelDTOs, l.ToDTO())
+		stKey := l.StudyType
+		st, exists := studyTypesMap[stKey]
+		if !exists {
+			var title models.LocalizedText
+			switch stKey {
+			case models.StudyTypeBachelor:
+				title = models.LocalizedText{Ar: "ليسانس الحقوق", En: "LL.B. (Bachelor)"}
+			case models.StudyTypeDiploma:
+				title = models.LocalizedText{Ar: "دبلومات الدراسات العليا", En: "Postgraduate Diplomas"}
+			case models.StudyTypeVocational:
+				title = models.LocalizedText{Ar: "التدريب المهني والعملي", En: "Vocational Training"}
+			default:
+				title = models.LocalizedText{Ar: stKey, En: stKey}
+			}
+			st = &models.StudyTypeDTO{
+				Key:    stKey,
+				Title:  title,
+				Levels: []models.LevelDTO{},
+			}
+			studyTypesMap[stKey] = st
+			studyTypeOrder = append(studyTypeOrder, stKey)
+		}
+		st.Levels = append(st.Levels, l.ToDTO())
 	}
 
-	// Group by study type for catalog tree navigation
-	typeMap := make(map[string][]models.LevelDTO)
-	for _, l := range levelDTOs {
-		typeMap[l.StudyType] = append(typeMap[l.StudyType], l)
+	var studyTypes []models.StudyTypeDTO
+	for _, k := range studyTypeOrder {
+		studyTypes = append(studyTypes, *studyTypesMap[k])
+	}
+	if studyTypes == nil {
+		studyTypes = []models.StudyTypeDTO{}
 	}
 
-	studyTypes := make([]models.StudyTypeDTO, 0)
-	typeDefs := []struct {
-		Key string
-		Ar  string
-		En  string
-	}{
-		{models.StudyTypeBachelor, "الليسانس", "Bachelor"},
-		{models.StudyTypeDiploma, "الدبلومات", "Diplomas"},
-		{models.StudyTypeVocational, "التدريب المهني", "Vocational Training"},
+	handlerutil.WriteJSON(w, http.StatusOK, models.LevelsResponseDTO{
+		Levels:     dtos,
+		StudyTypes: studyTypes,
+	})
+}
+
+// ListSubjects serves GET /academy/subjects?level=<key>&term=<t>&page=<p>&limit=<l>.
+// Returns published subjects with item counts. Unpublished subjects never appear.
+func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+		return
 	}
 
-	for _, td := range typeDefs {
-		if lvls, ok := typeMap[td.Key]; ok && len(lvls) > 0 {
-			studyTypes = append(studyTypes, models.StudyTypeDTO{
-				Key: td.Key,
-				Title: models.LocalizedText{
-					Ar: td.Ar,
-					En: td.En,
-				},
-				Levels: lvls,
-			})
+	query := r.URL.Query()
+	levelKey := strings.TrimSpace(query.Get("level"))
+	term := strings.TrimSpace(query.Get("term"))
+
+	page := 1
+	if pStr := strings.TrimSpace(query.Get("page")); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil && p > 0 {
+			page = p
 		}
 	}
 
-	resp := models.LevelsResponseDTO{
-		Levels:     levelDTOs,
-		StudyTypes: studyTypes,
+	limit := 20
+	if lStr := strings.TrimSpace(query.Get("limit")); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil {
+			if l <= 0 {
+				limit = 20
+			} else if l > 100 {
+				limit = 100
+			} else {
+				limit = l
+			}
+		}
 	}
 
-	handlerutil.WriteJSON(w, http.StatusOK, resp)
-}
+	filter := store.SubjectFilter{
+		LevelKey: levelKey,
+		Term:     term,
+		Status:   models.StatusPublished,
+		Page:     page,
+		Limit:    limit,
+	}
 
-// AdminHandler returns an http.Handler for the internal admin listener.
-// In Phase 2, the admin surface is not yet implemented, returning 404 for all paths.
-func (s *Server) AdminHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/internal/admin/", func(w http.ResponseWriter, r *http.Request) {
-		handlerutil.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	subjects, total, err := s.Store.ListSubjects(ctx, filter)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
+	items := make([]models.SubjectListItemDTO, len(subjects))
+	for i, subj := range subjects {
+		countCtx, countCancel := context.WithTimeout(r.Context(), dbTimeout)
+		counts, _ := s.Store.GetSubjectCounts(countCtx, subj.ID)
+		countCancel()
+
+		items[i] = subj.ToListItemDTO(counts, false, s.ExposePrice)
+	}
+	if items == nil {
+		items = []models.SubjectListItemDTO{}
+	}
+
+	handlerutil.WriteJSON(w, http.StatusOK, models.SubjectListResponseDTO{
+		Items: items,
+		Total: total,
+		Page:  page,
+		Limit: limit,
 	})
-	var handler http.Handler = mux
-	handler = s.InternalTokenAuth(handler)
-	handler = handlerutil.MaxBytesMiddleware(1 << 20)(handler)
-	return handler
 }
 
-// PublicHandler returns an http.Handler for the public listener routing student requests.
+// GetSubjectDetail serves GET /academy/subjects/{id}.
+// Returns subject metadata, published video titles/descriptions (NEVER youtube_video_id),
+// and attached file metadata. Returns 404 for unknown or unpublished subjects.
+func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/academy/subjects/")
+	id = strings.TrimSpace(id)
+	if id == "" || strings.Contains(id, "/") {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "subject not found", nil)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	subj, err := s.Store.GetSubjectByID(ctx, id)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if subj == nil || subj.Status != models.StatusPublished {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "subject not found", nil)
+		return
+	}
+
+	countsCtx, countsCancel := context.WithTimeout(r.Context(), dbTimeout)
+	counts, err := s.Store.GetSubjectCounts(countsCtx, id)
+	countsCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
+	vCtx, vCancel := context.WithTimeout(r.Context(), dbTimeout)
+	videos, err := s.Store.ListVideosBySubject(vCtx, id, true) // only published videos
+	vCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
+	fCtx, fCancel := context.WithTimeout(r.Context(), dbTimeout)
+	files, err := s.Store.ListFilesBySubject(fCtx, id)
+	fCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
+	videoDTOs := make([]models.VideoMetadataDTO, len(videos))
+	for i, v := range videos {
+		videoDTOs[i] = v.ToDTO()
+	}
+
+	fileDTOs := make([]models.FileMetadataDTO, len(files))
+	for i, f := range files {
+		fileDTOs[i] = f.ToDTO()
+	}
+
+	dto := subj.ToDetailDTO(counts, videoDTOs, fileDTOs, false, s.ExposePrice)
+	handlerutil.WriteJSON(w, http.StatusOK, dto)
+}
+
+// PublicHandler constructs the HTTP handler for the public listener.
 func (s *Server) PublicHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", Health)
-	mux.HandleFunc("/academy/levels", s.StudentAuth(s.GetLevels))
+	mux.HandleFunc("/academy/levels", s.GetLevels)
+	mux.HandleFunc("/academy/subjects", s.ListSubjects)
+	mux.HandleFunc("/academy/subjects/", s.GetSubjectDetail)
 
-	var handler http.Handler = mux
-	handler = s.GatewayAuth(handler)
-	handler = handlerutil.MaxBytesMiddleware(1 << 20)(handler)
-	return handler
+	var h http.Handler = mux
+	h = s.StudentAuth(h)
+	h = s.GatewayAuth(h)
+	h = handlerutil.MaxBytesMiddleware(1 << 20)(h)
+	return h
+}
+
+// AdminHandler constructs the HTTP handler for the internal admin listener.
+// It serves ONLY /internal/admin/* routes (empty for Phase 2.1-2.3, 404) behind
+// X-Internal-Token and 404s on all public routes.
+func (s *Server) AdminHandler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/internal/admin/", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+
+	var h http.Handler = mux
+	h = s.InternalTokenAuth(h)
+	h = handlerutil.MaxBytesMiddleware(1 << 20)(h)
+	return h
 }

@@ -1,5 +1,5 @@
-// Command academy-service is the core learning platform service: catalog,
-// entitlements, access requests, video metadata, and PDF storage.
+// academy-service provides course catalog, level management, subject metadata,
+// entitlements, access requests, and administrative operations for wael-app.
 package main
 
 import (
@@ -24,17 +24,19 @@ import (
 )
 
 func runCheckEnv(stdout, stderr io.Writer) int {
-	if _, err := config.Load(); err != nil {
-		fmt.Fprintf(stderr, "check-env: %v\n", err)
+	_, err := config.Load()
+	if err != nil {
+		fmt.Fprintf(stderr, "check-env: failed to validate configuration: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, "check-env: ok")
+	fmt.Fprintf(stdout, "check-env: ok\n")
 	return 0
 }
 
 func main() {
-	checkEnv := flag.Bool("check-env", false, "validate environment variables and exit")
+	checkEnv := flag.Bool("check-env", false, "Validate environment configuration and exit")
 	flag.Parse()
+
 	if *checkEnv {
 		os.Exit(runCheckEnv(os.Stdout, os.Stderr))
 	}
@@ -82,7 +84,7 @@ func main() {
 	}
 	log.Printf("[ACADEMY] levels seeded successfully")
 
-	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL)
+	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL, cfg.ExposePriceToStudents)
 
 	// Build and start admin listener on internal network
 	adminRunner, err := buildServer(cfg, cfg.AdminListenAddr, srv.AdminHandler())

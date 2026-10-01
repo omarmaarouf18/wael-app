@@ -25,6 +25,8 @@ func baseEnv(t *testing.T) {
 	_ = os.Unsetenv("TLS_CA_PATH")
 	_ = os.Unsetenv("AUTH_SERVICE_URL")
 	_ = os.Unsetenv("ADMIN_LISTEN_ADDR")
+	_ = os.Unsetenv("JWT_SECRET")
+	_ = os.Unsetenv("REDIS_URI")
 }
 
 func fullProdEnv(t *testing.T) {
@@ -164,7 +166,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 	})
 
 	t.Run("local_dev_with_only_secrets_succeeds_with_defaults", func(t *testing.T) {
-		for _, v := range []string{"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "AUTH_SERVICE_URL", "ADMIN_LISTEN_ADDR"} {
+		for _, v := range []string{"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "AUTH_SERVICE_URL", "ADMIN_LISTEN_ADDR", "JWT_SECRET", "REDIS_URI"} {
 			_ = os.Unsetenv(v)
 		}
 		setEnv(t, "APP_ENV", "local")

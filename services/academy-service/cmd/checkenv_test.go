@@ -30,6 +30,7 @@ func setAcademyLocalEnv(t *testing.T) {
 	for _, v := range []string{
 		"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH",
 		"TLS_CA_PATH", "AUTH_SERVICE_URL", "ADMIN_LISTEN_ADDR",
+		"JWT_SECRET", "REDIS_URI",
 	} {
 		_ = os.Unsetenv(v)
 	}
@@ -59,6 +60,8 @@ func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 		"TLS_CA_PATH",
 		"AUTH_SERVICE_URL",
 		"ADMIN_LISTEN_ADDR",
+		"JWT_SECRET",
+		"REDIS_URI",
 	}
 	for _, v := range requiredVars {
 		t.Run("missing_"+v, func(t *testing.T) {
