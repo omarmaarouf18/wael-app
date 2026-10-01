@@ -125,6 +125,13 @@ func TestSignupVerifyLoginMeRefresh(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("me status = %d (%s)", rec.Code, rec.Body.String())
 	}
+	var meProfile map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &meProfile); err != nil {
+		t.Fatalf("decode /auth/me: %v", err)
+	}
+	if meProfile["full_name"] != "Test User" || meProfile["phone"] != "+201012345678" {
+		t.Fatalf("unexpected full_name or phone in /auth/me: %v", meProfile)
+	}
 
 	rec = doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": tokens["refresh_token"]}, "")
 	if rec.Code != http.StatusOK {
@@ -575,6 +582,165 @@ func TestMe_StoreDown_Returns503(t *testing.T) {
 	body := decodeBody(t, rec)
 	if body["code"] != "service_unavailable" {
 		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
+
+func TestMe_ProfileFields_NewAndLegacy(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	s := New(memStore, otp.NewMemoryStore(), NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+	ctx := context.Background()
+
+	// 1. New user (with full_name and normalized E.164 phone)
+	newUser := &models.User{
+		ID:            "u-new-1",
+		Email:         "new@example.com",
+		Role:          models.RoleUser,
+		EmailVerified: true,
+		FullName:      "Ahmed Mahmud",
+		Phone:         "+201098765432",
+		Status:        models.StatusActive,
+	}
+	if err := memStore.Create(ctx, newUser); err != nil {
+		t.Fatalf("create new user: %v", err)
+	}
+
+	tokNew, err := jwtutil.GenerateToken(newUser.ID, string(newUser.Role), newUser.Email)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recNew := doRequest(t, s, http.MethodGet, "/auth/me", nil, tokNew)
+	if recNew.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", recNew.Code, recNew.Body.String())
+	}
+	var newProfile map[string]any
+	if err := json.Unmarshal(recNew.Body.Bytes(), &newProfile); err != nil {
+		t.Fatal(err)
+	}
+
+	if newProfile["full_name"] != "Ahmed Mahmud" {
+		t.Errorf("full_name = %v, want 'Ahmed Mahmud'", newProfile["full_name"])
+	}
+	if newProfile["phone"] != "+201098765432" {
+		t.Errorf("phone = %v, want '+201098765432'", newProfile["phone"])
+	}
+	if newProfile["email"] != "new@example.com" {
+		t.Errorf("email = %v, want 'new@example.com'", newProfile["email"])
+	}
+	if newProfile["role"] != "user" {
+		t.Errorf("role = %v, want 'user'", newProfile["role"])
+	}
+	if newProfile["email_verified"] != true {
+		t.Errorf("email_verified = %v, want true", newProfile["email_verified"])
+	}
+	if newProfile["id"] != "u-new-1" {
+		t.Errorf("id = %v, want 'u-new-1'", newProfile["id"])
+	}
+
+	// Assert NO status or admin fields are leaked
+	for _, forbidden := range []string{
+		"status", "status_reason", "suspended_at", "reactivated_at", "deleted_at",
+		"password_hash", "otp_hash", "reset_token_hash", "admin", "is_admin",
+	} {
+		if _, exists := newProfile[forbidden]; exists {
+			t.Errorf("LEAK: /auth/me leaked forbidden field %q: %v", forbidden, newProfile[forbidden])
+		}
+	}
+
+	// 2. Legacy user without full_name or phone
+	legacyUser := &models.User{
+		ID:            "u-legacy-1",
+		Email:         "legacy@example.com",
+		Role:          models.RoleUser,
+		EmailVerified: true,
+		FullName:      "",
+		Phone:         "",
+		Status:        models.StatusActive,
+	}
+	if err := memStore.Create(ctx, legacyUser); err != nil {
+		t.Fatalf("create legacy user: %v", err)
+	}
+
+	tokLegacy, err := jwtutil.GenerateToken(legacyUser.ID, string(legacyUser.Role), legacyUser.Email)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recLegacy := doRequest(t, s, http.MethodGet, "/auth/me", nil, tokLegacy)
+	if recLegacy.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", recLegacy.Code, recLegacy.Body.String())
+	}
+	var legacyProfile map[string]any
+	if err := json.Unmarshal(recLegacy.Body.Bytes(), &legacyProfile); err != nil {
+		t.Fatal(err)
+	}
+
+	if legacyProfile["full_name"] != "" {
+		t.Errorf("expected empty full_name for legacy user, got %v", legacyProfile["full_name"])
+	}
+	if legacyProfile["phone"] != "" {
+		t.Errorf("expected empty phone for legacy user, got %v", legacyProfile["phone"])
+	}
+	if legacyProfile["id"] != "u-legacy-1" {
+		t.Errorf("id = %v, want 'u-legacy-1'", legacyProfile["id"])
+	}
+	if legacyProfile["email"] != "legacy@example.com" {
+		t.Errorf("email = %v, want 'legacy@example.com'", legacyProfile["email"])
+	}
+}
+
+func TestMe_ContractShape(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	s := New(memStore, otp.NewMemoryStore(), NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+	ctx := context.Background()
+
+	u := &models.User{
+		ID:            "u-contract-1",
+		Email:         "contract@example.com",
+		Role:          models.RoleUser,
+		EmailVerified: true,
+		FullName:      "Contract Student",
+		Phone:         "+201055556666",
+		Status:        models.StatusActive,
+	}
+	if err := memStore.Create(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	tok, err := jwtutil.GenerateToken(u.ID, string(u.Role), u.Email)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := doRequest(t, s, http.MethodGet, "/auth/me", nil, tok)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedKeys := map[string]bool{
+		"id":             true,
+		"email":          true,
+		"role":           true,
+		"email_verified": true,
+		"full_name":      true,
+		"phone":          true,
+	}
+	for k := range raw {
+		if !expectedKeys[k] {
+			t.Errorf("unexpected key in /auth/me contract response: %q", k)
+		}
+	}
+	for k := range expectedKeys {
+		if _, ok := raw[k]; !ok {
+			t.Errorf("missing expected key in /auth/me contract response: %q", k)
+		}
 	}
 }
 

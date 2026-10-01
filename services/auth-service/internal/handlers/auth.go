@@ -633,7 +633,12 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"id": u.ID, "email": u.Email, "role": string(u.Role), "email_verified": u.EmailVerified,
+		"id":             u.ID,
+		"email":          u.Email,
+		"role":           string(u.Role),
+		"email_verified": u.EmailVerified,
+		"full_name":      u.FullName,
+		"phone":          u.Phone,
 	})
 }
 

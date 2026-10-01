@@ -265,3 +265,17 @@ func TestContract_AdminPortNotPublishedInCompose(t *testing.T) {
 		t.Errorf("contract violation: admin port (9001/9002) is published under ports: in %s (must not be publicly exposed)", pathUsed)
 	}
 }
+
+// 6. Auth /auth/me profile contract: verify response shape contains exactly
+// id, email, role, email_verified, full_name, phone; and never status or admin fields.
+func TestContract_AuthMeResponseShape(t *testing.T) {
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^TestMe_ContractShape$", "github.com/omarmaarouf18/wael-app/auth-service/internal/handlers")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("auth/me contract verification failed: %v\nOutput:\n%s", err, string(out))
+	}
+	outStr := string(out)
+	if !strings.Contains(outStr, "PASS: TestMe_ContractShape") {
+		t.Errorf("contract verification missing TestMe_ContractShape pass:\n%s", outStr)
+	}
+}

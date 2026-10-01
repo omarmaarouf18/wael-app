@@ -140,6 +140,7 @@ func TestGatewayChain(t *testing.T) {
 
 	email := fmt.Sprintf("e2e-%d@example.com", time.Now().UnixNano())
 	var (
+		phone       string
 		otp         string
 		access      string
 		refresh     string
@@ -160,7 +161,7 @@ func TestGatewayChain(t *testing.T) {
 	}
 
 	runStage("signup", func(subT *testing.T) {
-		phone := fmt.Sprintf("+2010%08d", (time.Now().UnixNano() % 100000000))
+		phone = fmt.Sprintf("+2010%08d", (time.Now().UnixNano() % 100000000))
 		code, body := c.post(subT, "/api/v1/auth/signup", "", map[string]string{
 			"full_name": "E2E Student",
 			"email":     email,
@@ -258,6 +259,12 @@ func TestGatewayChain(t *testing.T) {
 		userID, _ := me["id"].(string)
 		if userID == "" {
 			subT.Fatal("auth/me returned no user id")
+		}
+		if me["full_name"] != "E2E Student" {
+			subT.Errorf("auth/me full_name = %v, want 'E2E Student'", me["full_name"])
+		}
+		if me["phone"] != phone {
+			subT.Errorf("auth/me phone = %v, want %q", me["phone"], phone)
 		}
 
 		// Open the SSE stream first (query-token auth; may change later), then

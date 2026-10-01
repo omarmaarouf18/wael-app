@@ -81,10 +81,9 @@ player surface, so it stays above everything, including in full screen and on th
 "ended" cover. With no name or phone it falls back to the email; with nothing at
 all the player refuses to start.
 
-**Backend ask:** `GET /auth/me` returns only `id`, `email`, `role`,
-`email_verified`. It must also return `full_name` and `phone` for the watermark to
-show them after a restart (until then they are known only in the session that
-signed up). The app already reads both fields when present.
+`GET /auth/me` returns `id`, `email`, `role`, `email_verified`, `full_name`, and
+`phone` (the last two provide the watermark identity after a restart, falling
+back to the email if empty). The app reads both fields.
 
 ## Manual check on a phone (Android)
 
