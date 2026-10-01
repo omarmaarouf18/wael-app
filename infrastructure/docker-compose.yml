@@ -217,12 +217,16 @@ services:
       GATEWAY_SECRET: ${GATEWAY_SECRET}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
+      REDIS_URI: ${REDIS_URI}
+      JWT_SECRET: ${JWT_SECRET}
       TLS_CERT_PATH: /app/certs/academy-service.crt
       TLS_KEY_PATH: /app/certs/academy-service.key
       TLS_CA_PATH: /app/certs/ca.crt
       ADMIN_LISTEN_ADDR: ":9002"
     depends_on:
       mongo:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       # academy-service enforces mTLS (client cert required), so the probe presents one.

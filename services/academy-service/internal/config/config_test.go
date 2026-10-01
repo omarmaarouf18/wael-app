@@ -38,6 +38,8 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "TLS_CA_PATH", "/tmp/ca.pem")
 	setEnv(t, "AUTH_SERVICE_URL", "https://auth-service:3002")
 	setEnv(t, "ADMIN_LISTEN_ADDR", ":9002")
+	setEnv(t, "JWT_SECRET", "test-jwt-secret")
+	setEnv(t, "REDIS_URI", "redis://localhost:6379")
 }
 
 func TestLoad_MinimalDev(t *testing.T) {
@@ -130,6 +132,8 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"TLS_CA_PATH",
 		"ADMIN_LISTEN_ADDR",
 		"AUTH_SERVICE_URL",
+		"JWT_SECRET",
+		"REDIS_URI",
 	}
 
 	for _, v := range requiredVars {

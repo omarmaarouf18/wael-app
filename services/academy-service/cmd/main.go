@@ -17,7 +17,8 @@ import (
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/config"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/handlers"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
-	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
+	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
+	"github.com/omarmaarouf18/wael-app/shared/infra/ratelimit"
 	"github.com/omarmaarouf18/wael-app/shared/infra/redact"
 	"github.com/omarmaarouf18/wael-app/shared/infra/tlsutil"
 )
@@ -44,6 +45,20 @@ func main() {
 	}
 	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
 
+	jwtutil.Init(cfg.JWTSecret)
+
+	if cfg.RedisURI != "" {
+		rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
+		if err != nil {
+			log.Fatalf("[ACADEMY] redis (%s): %v", redact.RedactURI(cfg.RedisURI), err)
+		}
+		defer func() { _ = rdb.Close() }()
+		jwtutil.SetRedisClient(rdb)
+		log.Printf("[ACADEMY] redis connected: %s", redact.RedactURI(cfg.RedisURI))
+	} else if !dev {
+		log.Fatalf("[ACADEMY] redis is required outside dev")
+	}
+
 	ctx := context.Background()
 	var st store.Store
 	if cfg.MongoURI != "" {
@@ -61,6 +76,12 @@ func main() {
 		log.Printf("[ACADEMY] active store: in-process memory (localhost dev only)")
 	}
 
+	// Idempotently seed levels at startup
+	if err := st.SeedLevels(ctx); err != nil {
+		log.Fatalf("[ACADEMY] seed levels: %v", err)
+	}
+	log.Printf("[ACADEMY] levels seeded successfully")
+
 	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL)
 
 	// Build and start admin listener on internal network
@@ -75,15 +96,8 @@ func main() {
 		}
 	}()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", handlers.Health)
-
-	var handler http.Handler = mux
-	handler = srv.GatewayAuth(handler)
-	handler = handlerutil.MaxBytesMiddleware(1 << 20)(handler)
-
 	addr := ":" + cfg.Port
-	publicRunner, err := buildServer(cfg, addr, handler)
+	publicRunner, err := buildServer(cfg, addr, srv.PublicHandler())
 	if err != nil {
 		log.Fatalf("[ACADEMY] %v", err)
 	}

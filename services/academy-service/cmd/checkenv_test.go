@@ -18,6 +18,8 @@ func setAcademyProdEnv(t *testing.T) {
 	t.Setenv("TLS_CA_PATH", "/tmp/ca.pem")
 	t.Setenv("AUTH_SERVICE_URL", "https://auth-service:3002")
 	t.Setenv("ADMIN_LISTEN_ADDR", ":9002")
+	t.Setenv("JWT_SECRET", "test-jwt-secret")
+	t.Setenv("REDIS_URI", "redis://localhost:6379")
 }
 
 func setAcademyLocalEnv(t *testing.T) {

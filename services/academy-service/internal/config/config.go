@@ -23,6 +23,8 @@ type Config struct {
 	TLSKeyPath           string
 	TLSCAPath            string
 	AdminListenAddr      string
+	JWTSecret            string
+	RedisURI             string
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -56,6 +58,8 @@ func Load() (*Config, error) {
 	tlsCAPath := os.Getenv("TLS_CA_PATH")
 	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
 	adminListenAddr := os.Getenv("ADMIN_LISTEN_ADDR")
+	jwtSecret := os.Getenv("JWT_SECRET")
+	redisURI := os.Getenv("REDIS_URI")
 
 	if !dev {
 		if mongoURI == "" {
@@ -76,6 +80,16 @@ func Load() (*Config, error) {
 		if authServiceURL == "" {
 			return nil, errors.New("config: required env var AUTH_SERVICE_URL is empty")
 		}
+		if jwtSecret == "" {
+			return nil, errors.New("config: required env var JWT_SECRET is empty")
+		}
+		if redisURI == "" {
+			return nil, errors.New("config: required env var REDIS_URI is empty")
+		}
+	}
+
+	if jwtSecret == "" {
+		jwtSecret = "dev-jwt-secret-not-for-production"
 	}
 
 	if adminListenAddr == "" {
@@ -111,5 +125,7 @@ func Load() (*Config, error) {
 		TLSKeyPath:           tlsKeyPath,
 		TLSCAPath:            tlsCAPath,
 		AdminListenAddr:      adminListenAddr,
+		JWTSecret:            jwtSecret,
+		RedisURI:             redisURI,
 	}, nil
 }
