@@ -19,7 +19,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `course_detail_screen.dart` | 2039 | no | 8 (127) | yes |
 | `courses_screen.dart` | 755 | no | 6 (37) | yes |
 | `ebook_screen.dart` | 954 | no | 7 (60) | yes |
-| `forgot_password_screen.dart` | 163 | no | 3 (3) | no |
+| `forgot_password_screen.dart` | 165 | yes | 0 (0) | no |
 | `home_screen.dart` | 1083 | no | 6 (38) | yes |
 | `login_screen.dart` | 451 | no | 5 (9) | no |
 | `main_shell.dart` | 300 | no | 3 (10) | no |
@@ -29,7 +29,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `settings_screen.dart` | 660 | no | 5 (17) | no |
 | `signup_screen.dart` | 349 | no | 5 (5) | no |
 | `splash_screen.dart` | 60 | yes | 0 (0) | no |
-| **Total** | 7823 | 2 of 13 | 62 (352) | 5 of 13 |
+| **Total** | 7825 | 3 of 13 | 59 (349) | 5 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.

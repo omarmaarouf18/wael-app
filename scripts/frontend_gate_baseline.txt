@@ -19,9 +19,6 @@ frontend/lib/screens/ebook_screen.dart|non_directional_insets|3
 frontend/lib/screens/ebook_screen.dart|scaffold|1
 frontend/lib/screens/ebook_screen.dart|text_style|16
 frontend/lib/screens/ebook_screen.dart|to_upper_case|8
-frontend/lib/screens/forgot_password_screen.dart|appbar|1
-frontend/lib/screens/forgot_password_screen.dart|scaffold|1
-frontend/lib/screens/forgot_password_screen.dart|text_style|1
 frontend/lib/screens/home_screen.dart|box_decoration|10
 frontend/lib/screens/home_screen.dart|font_size|19
 frontend/lib/screens/home_screen.dart|material_color|5
