@@ -77,6 +77,7 @@ SPEC Section 12 rule 5 now points to CLAUDE.md Auto-push.
 Hardening Phase A (W-03): verified Markdown commit citations in CI and aligned pre-push hook to scan git-tracked markdown files with git ls-files.
 Hardening Phase A (W-01, W-02): fail-closed configuration outside local/test across api-gateway, auth-service, and notification-service (requiring Mongo, Redis, TLS triple, and Resend mail credentials in production; refusing memory stores, LogSender, plain HTTP, and TLS without client CA outside dev; table test coverage for all required vars; startup logs disclosing active sender and store types).
 Hardening Phase A (W-04): added --check-env flag to api-gateway, auth-service, and notification-service (validates configuration via config.Load() and exits 0/1 without starting resources; test coverage under cmd/checkenv_test.go in each service).
+Hardening Phase A (W-05): real Mongo/Redis tests in CI via service containers (mongo:7, redis:7-alpine) and dual-implementation store test suites (MemoryStore and MongoStore for auth and notification services, atomic single-redemption for auth OTP with RedisStore and MemoryStore under -race, requireDB helper enforcing REQUIRE_DB=1 in CI).
 
 Owner decisions recorded (2026-10-01, docs only, nothing implemented): subscriptions expire per subject date set by the admin, copied per activation (D21) with re-purchase allowed and no activation of an already-expired subject (D20); every activation writes an append-only payment record at the subject's price; Android first, iOS deferred. SPEC Sections 1, 2, 3, 5, 7 and ADR-0007 amended.
 
@@ -99,4 +100,4 @@ Owner question: reminder notification before a subscription expires (SPEC Sectio
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 
 ## Next task
-W-05: service containers in CI, REQUIRE_DB=1, first Mongo store tests for auth (refresh single-redemption under -race).
+Phase 0.5 + W-06 (Brief E): split e2e test into sequential stages with required mode, and add compose-backed CI job.

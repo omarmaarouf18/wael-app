@@ -2,8 +2,14 @@ package otp
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 func TestMemoryStore_ConsumeSingleUse(t *testing.T) {
@@ -47,4 +53,77 @@ func TestGenerateNumericCode_Length(t *testing.T) {
 			t.Fatalf("non-digit in %q", code)
 		}
 	}
+}
+
+func testSingleRedemption(t *testing.T, s Store) {
+	t.Helper()
+	ctx := context.Background()
+	key := fmt.Sprintf("race-key-%d", time.Now().UnixNano())
+	code := "123456"
+	hash := HashToken(code)
+
+	if err := s.Set(ctx, key, hash, time.Minute); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	var winners atomic.Int32
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			ok, err := s.Consume(ctx, key, hash)
+			if err != nil {
+				t.Errorf("Consume error: %v", err)
+				return
+			}
+			if ok {
+				winners.Add(1)
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	if got := winners.Load(); got != 1 {
+		t.Fatalf("expected exactly 1 winner, got %d", got)
+	}
+
+	ok, _ := s.Consume(ctx, key, hash)
+	if ok {
+		t.Fatal("second Consume succeeded, expected false (single-use)")
+	}
+}
+
+func TestMemoryStore_SingleRedemption(t *testing.T) {
+	s := NewMemoryStore()
+	testSingleRedemption(t, s)
+}
+
+func TestRedisStore_SingleRedemption(t *testing.T) {
+	_, redisURI := requireDB(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_otp_%d", time.Now().UnixNano())
+	s := NewRedisStore(client, prefix)
+	testSingleRedemption(t, s)
 }

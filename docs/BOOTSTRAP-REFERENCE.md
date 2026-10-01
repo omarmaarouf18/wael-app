@@ -420,7 +420,7 @@ a captured-mail sink. Decide this in an ADR before building staging.
 | W-02 (done) | OTP codes in logs without real sender | P1 | Any deploy |
 | W-03 (done) | No SHA citation check in CI | P1 | Trust in docs |
 | W-04 (done) | No `--check-env` | P1 | CD pre-flight |
-| W-05 | No real-DB tests | P1 | Academy Phase 1 |
+| W-05 (done) | No real-DB tests | P1 | Academy Phase 1 |
 | W-06 | Empty contract/E2E suites report green | P2 | Release gate |
 | W-07 | Unpinned supply chain | P2 | First publish |
 | W-08 | Probe fallback to HTTP | P2 | First deploy |
@@ -466,7 +466,7 @@ result; the last column is the target.
 | Least-privilege `permissions:` | No | Yes | Yes |
 | Actions pinned by SHA | No | No | Yes |
 | Per-module matrix build/vet/test | Yes | Yes | Yes |
-| Mongo and Redis service containers | Yes | **No** | Yes |
+| Mongo and Redis service containers | Yes | Yes | Yes |
 | `govulncheck` and `gosec` | Yes | Yes | Yes |
 | Real contract tests | Yes | **No (skeleton)** | Yes |
 | E2E on a production-image stack | Yes | No | Yes |
@@ -518,7 +518,7 @@ done, because the academy service will copy whatever the existing services do.
    *Done when:* both refusals have tests.
 4. **W-04** (done) `--check-env` in all three services (and in every new service by template).
    *Done when:* each exits 1 on a missing required variable and 0 on a valid environment.
-5. **W-05** Service containers in CI, `REQUIRE_DB=1`, first Mongo store tests for auth
+5. **W-05** (done) Service containers in CI, `REQUIRE_DB=1`, first Mongo store tests for auth
    (refresh single-redemption under `-race`). *Done when:* CI fails if Mongo is
    unreachable.
 6. **W-06** Real contract tests and `E2E_REQUIRED=1` in CI. *Done when:* CI shows a
@@ -794,7 +794,7 @@ Examined commit: `46c7997...`
 | W-02 | Fixed in 0f6c02b | `services/auth-service/internal/config/config.go`, `services/auth-service/cmd/main.go` | RESEND_API_KEY and RESEND_FROM_EMAIL are required outside local/test; LogSender only in local/test. The local-with-telemetry guard is not applicable: the repo has no telemetry variable. |
 | W-03 | Fixed in 36033d7 | .github/workflows/ci.yml:37-54 | none |
 | W-04 | Fixed | `services/*/cmd/main.go`, `services/*/cmd/checkenv_test.go` | `--check-env` flag added to gateway, auth, and notification services; validates config via Load() and exits 0/1 without starting resources. |
-| W-05 | Confirmed | `grep -rn "MONGO_URI" services/*/*_test.go shared/*/*_test.go` (0 matches), `.github/workflows/ci.yml:84-120` (no service containers) | none |
+| W-05 | Fixed | `.github/workflows/ci.yml:105-121`, `services/auth-service/internal/{store,otp}/*_test.go`, `services/notification-service/internal/store/*_test.go` | Mongo and Redis service containers added to build-test job with health checks and `REQUIRE_DB=1`; dual-implementation store test suites run against MemoryStore and MongoStore/RedisStore. |
 | W-06 | Partial | `tests/contracts/contracts_test.go:20-159`, `tests/e2e/chain_test.go:113` | tests/contracts is no longer an empty skeleton: contracts_test.go executes 3 active contract tests (gateway token strip, error body shape, JWT claim set) which run and pass in the gate. However, tests/e2e/chain_test.go still skips when E2E_GATEWAY_URL is unset, reporting green while running 0 end-to-end tests. |
 | W-07 | Confirmed | `.github/workflows/ci.yml:19,24,146,189`, `.githooks/pre-push:125`, `services/*/Dockerfile:11,28,41` | none |
 | W-08 | Confirmed | `services/*/Dockerfile:50-51,45-46`, `infrastructure/docker-compose.yml:98` | none |
