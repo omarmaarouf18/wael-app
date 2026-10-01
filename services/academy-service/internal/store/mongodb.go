@@ -158,6 +158,29 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 		return fmt.Errorf("store: ensure purchase_requests status index: %w", err)
 	}
 
+	// Indexes on video_plays: (user_id, played_at) and (video_id, played_at)
+	_, err = s.db.Collection("video_plays").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "played_at", Value: 1},
+		},
+		Options: options.Index().SetName("idx_video_plays_user_played"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure video_plays user_played index: %w", err)
+	}
+
+	_, err = s.db.Collection("video_plays").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "video_id", Value: 1},
+			{Key: "played_at", Value: 1},
+		},
+		Options: options.Index().SetName("idx_video_plays_video_played"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure video_plays video_played index: %w", err)
+	}
+
 	return nil
 }
 
@@ -634,4 +657,60 @@ func (s *MongoStore) ListRequestsByUser(ctx context.Context, userID string) ([]*
 		results = []*models.PurchaseRequest{}
 	}
 	return results, nil
+}
+
+// RecordVideoPlay writes an append-only video playback event log.
+// Deliberately contains no IP address.
+func (s *MongoStore) RecordVideoPlay(ctx context.Context, play *models.VideoPlay) error {
+	if play.ID == "" {
+		play.ID = generateID()
+	}
+	if play.PlayedAt.IsZero() {
+		play.PlayedAt = time.Now().UTC()
+	}
+	_, err := s.db.Collection("video_plays").InsertOne(ctx, play)
+	if err != nil {
+		return fmt.Errorf("store: record video play: %w", err)
+	}
+	return nil
+}
+
+// ListVideoPlaysByVideo lists playback events for a video.
+func (s *MongoStore) ListVideoPlaysByVideo(ctx context.Context, videoID string) ([]*models.VideoPlay, error) {
+	filter := bson.M{"video_id": videoID}
+	opts := options.Find().SetSort(bson.D{{Key: "played_at", Value: -1}})
+	cursor, err := s.db.Collection("video_plays").Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: list video plays by video: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var plays []*models.VideoPlay
+	if err := cursor.All(ctx, &plays); err != nil {
+		return nil, fmt.Errorf("store: decode video plays: %w", err)
+	}
+	if plays == nil {
+		plays = []*models.VideoPlay{}
+	}
+	return plays, nil
+}
+
+// ListVideoPlaysByUser lists playback events for a user.
+func (s *MongoStore) ListVideoPlaysByUser(ctx context.Context, userID string) ([]*models.VideoPlay, error) {
+	filter := bson.M{"user_id": userID}
+	opts := options.Find().SetSort(bson.D{{Key: "played_at", Value: -1}})
+	cursor, err := s.db.Collection("video_plays").Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: list video plays by user: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var plays []*models.VideoPlay
+	if err := cursor.All(ctx, &plays); err != nil {
+		return nil, fmt.Errorf("store: decode video plays: %w", err)
+	}
+	if plays == nil {
+		plays = []*models.VideoPlay{}
+	}
+	return plays, nil
 }

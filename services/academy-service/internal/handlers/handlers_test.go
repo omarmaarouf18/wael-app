@@ -2077,6 +2077,9 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("expected Cache-Control: private, no-store on 200, got %q", rec.Header().Get("Cache-Control"))
+		}
 
 		var resp models.VideoPlayResponseDTO
 		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -2087,6 +2090,21 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		}
 		if resp.YouTubeVideoID != ytID1 {
 			t.Errorf("expected youtube_video_id %q, got %q", ytID1, resp.YouTubeVideoID)
+		}
+
+		// Verify video_plays append-only log in store
+		plays, err := s.Store.ListVideoPlaysByVideo(ctx, "vid-pub-1")
+		if err != nil {
+			t.Fatalf("ListVideoPlaysByVideo failed: %v", err)
+		}
+		if len(plays) != 1 {
+			t.Fatalf("expected exactly 1 video_plays record, got %d", len(plays))
+		}
+		if plays[0].UserID != "user-play-owner" || plays[0].VideoID != "vid-pub-1" || plays[0].SubjectID != "subj-play-1" {
+			t.Errorf("unexpected play record fields: %+v", plays[0])
+		}
+		if plays[0].PlayedAt.IsZero() {
+			t.Error("expected non-zero played_at in video_plays record")
 		}
 	})
 
@@ -2100,6 +2118,9 @@ func TestPlayVideoEndpoint(t *testing.T) {
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("expected Cache-Control: private, no-store on 404, got %q", rec.Header().Get("Cache-Control"))
 		}
 		if strings.Contains(rec.Body.String(), ytID1) {
 			t.Fatalf("LEAK: 404 body contains youtube id: %s", rec.Body.String())
@@ -2117,6 +2138,9 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
 		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("expected Cache-Control: private, no-store on 404, got %q", rec.Header().Get("Cache-Control"))
+		}
 		if strings.Contains(rec.Body.String(), ytID2) {
 			t.Fatalf("LEAK: 404 body contains unpublished youtube id: %s", rec.Body.String())
 		}
@@ -2133,6 +2157,9 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
 		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("expected Cache-Control: private, no-store on 404, got %q", rec.Header().Get("Cache-Control"))
+		}
 	})
 
 	// 5. Refusal: expired subject access returns generic 404
@@ -2145,6 +2172,9 @@ func TestPlayVideoEndpoint(t *testing.T) {
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("expected Cache-Control: private, no-store on 404, got %q", rec.Header().Get("Cache-Control"))
 		}
 	})
 
@@ -2159,9 +2189,157 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
 		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("expected Cache-Control: private, no-store on 404, got %q", rec.Header().Get("Cache-Control"))
+		}
 	})
 
-	// 7. Method refusal: GET on /play returns 405 Method Not Allowed
+	// 7. Refusal: published video with empty youtube_video_id -> playable=false in detail and 404 on /play
+	t.Run("published_video_empty_youtube_id_playable_false_and_play_404", func(t *testing.T) {
+		vEmpty := &models.Video{
+			ID:             "vid-empty-yt",
+			SubjectID:      "subj-play-1",
+			Position:       10,
+			TitleAr:        "فيديو بدون يوتيوب",
+			TitleEn:        "No YT Video",
+			YouTubeVideoID: "",
+			Published:      true,
+		}
+		if err := s.Store.CreateVideo(ctx, vEmpty); err != nil {
+			t.Fatal(err)
+		}
+
+		// Subject detail: playable must be false even though owned=true and published=true
+		getReq := httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-play-1", nil)
+		getReq.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		getReq.Header.Set("Authorization", "Bearer "+ownerToken)
+		getRec := httptest.NewRecorder()
+		h.ServeHTTP(getRec, getReq)
+		if getRec.Code != http.StatusOK {
+			t.Fatalf("expected 200 from get subject, got %d", getRec.Code)
+		}
+		var detail models.SubjectDetailDTO
+		if err := json.Unmarshal(getRec.Body.Bytes(), &detail); err != nil {
+			t.Fatal(err)
+		}
+		var foundEmpty *models.VideoMetadataDTO
+		for _, v := range detail.Videos {
+			if v.ID == "vid-empty-yt" {
+				vCopy := v
+				foundEmpty = &vCopy
+				break
+			}
+		}
+		if foundEmpty == nil {
+			t.Fatal("expected vid-empty-yt in subject detail videos")
+		}
+		if foundEmpty.Playable {
+			t.Errorf("expected playable=false for video with empty youtube_video_id, got true")
+		}
+
+		// /play request: must return 404 with Cache-Control: private, no-store
+		playReq := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-empty-yt/play", nil)
+		playReq.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		playReq.Header.Set("Authorization", "Bearer "+ownerToken)
+		playRec := httptest.NewRecorder()
+		h.ServeHTTP(playRec, playReq)
+		if playRec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", playRec.Code, playRec.Body.String())
+		}
+		if playRec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("expected Cache-Control: private, no-store, got %q", playRec.Header().Get("Cache-Control"))
+		}
+	})
+
+	// 8. Resilience: video_plays write failure is logged with IDs only and NEVER blocks playback
+	t.Run("video_play_log_failure_never_blocks_playback", func(t *testing.T) {
+		sFailLog := newTestServer(false)
+		sFailLog.Store = &errPlayLogStore{Store: s.Store, recordErr: errors.New("disk full write error")}
+		hFailLog := sFailLog.PublicHandler()
+
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		hFailLog.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 even when log fails, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Errorf("expected Cache-Control: private, no-store, got %q", rec.Header().Get("Cache-Control"))
+		}
+		var resp models.VideoPlayResponseDTO
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+		if resp.VideoID != "vid-pub-1" || resp.YouTubeVideoID != ytID1 {
+			t.Errorf("unexpected play response: %+v", resp)
+		}
+	})
+
+	// 9. Captured-logger test: /play (200 and 404) never logs the youtube id
+	t.Run("captured_logger_never_logs_youtube_id", func(t *testing.T) {
+		canaryYT := "YT_CANARY_SECRET_ID_7777"
+		canaryVideo := &models.Video{
+			ID:             "vid-canary-1",
+			SubjectID:      "subj-play-1",
+			Position:       20,
+			TitleAr:        "فيديو كناري",
+			TitleEn:        "Canary Video",
+			YouTubeVideoID: canaryYT,
+			Published:      true,
+		}
+		if err := s.Store.CreateVideo(ctx, canaryVideo); err != nil {
+			t.Fatal(err)
+		}
+
+		var logBuf bytes.Buffer
+		origOutput := log.Writer()
+		log.SetOutput(&logBuf)
+		defer log.SetOutput(origOutput)
+
+		// 1. Success 200 call
+		req200 := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-canary-1/play", nil)
+		req200.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req200.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec200 := httptest.NewRecorder()
+		h.ServeHTTP(rec200, req200)
+		if rec200.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec200.Code, rec200.Body.String())
+		}
+
+		// 2. Refusal 404 call (non-owner)
+		req404 := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-canary-1/play", nil)
+		req404.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req404.Header.Set("Authorization", "Bearer "+nonOwnerToken)
+		rec404 := httptest.NewRecorder()
+		h.ServeHTTP(rec404, req404)
+		if rec404.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rec404.Code, rec404.Body.String())
+		}
+
+		// 3. Log failure path (error logging)
+		sFailLog := newTestServer(false)
+		sFailLog.Store = &errPlayLogStore{Store: s.Store, recordErr: errors.New("simulated log db error")}
+		hFailLog := sFailLog.PublicHandler()
+
+		reqErr := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-canary-1/play", nil)
+		reqErr.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		reqErr.Header.Set("Authorization", "Bearer "+ownerToken)
+		recErr := httptest.NewRecorder()
+		hFailLog.ServeHTTP(recErr, reqErr)
+		if recErr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", recErr.Code, recErr.Body.String())
+		}
+
+		capturedLogs := logBuf.String()
+		if strings.Contains(capturedLogs, canaryYT) {
+			t.Fatalf("SECURITY VIOLATION: captured logger contains youtube id %q:\n%s", canaryYT, capturedLogs)
+		}
+	})
+
+	// 10. Method refusal: GET on /play returns 405 Method Not Allowed
 	t.Run("get_play_405", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/academy/videos/vid-pub-1/play", nil)
 		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
@@ -2174,7 +2352,7 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		}
 	})
 
-	// 8. Auth refusal: missing token returns 401
+	// 11. Auth refusal: missing token returns 401
 	t.Run("missing_auth_token_401", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
 		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
@@ -2186,7 +2364,7 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		}
 	})
 
-	// 9. Auth refusal: missing gateway secret returns 401
+	// 12. Auth refusal: missing gateway secret returns 401
 	t.Run("missing_gateway_secret_401", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
 		req.Header.Set("Authorization", "Bearer "+ownerToken)
@@ -2198,7 +2376,7 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		}
 	})
 
-	// 10. Rate limiting tier: Read tier (30/min) enforced
+	// 13. Rate limiting tier: Read tier (30/min) enforced
 	t.Run("rate_limit_read_tier_enforced", func(t *testing.T) {
 		mr, tl := setupTestLimiter(t, 2, 10, 5) // set read limit to 2 for fast test
 		defer mr.Close()
@@ -2250,6 +2428,18 @@ func TestPlayVideoEndpoint(t *testing.T) {
 			t.Error("expected Retry-After header on 429")
 		}
 	})
+}
+
+type errPlayLogStore struct {
+	store.Store
+	recordErr error
+}
+
+func (m *errPlayLogStore) RecordVideoPlay(ctx context.Context, play *models.VideoPlay) error {
+	if m.recordErr != nil {
+		return m.recordErr
+	}
+	return m.Store.RecordVideoPlay(ctx, play)
 }
 
 type errVideoStore struct {

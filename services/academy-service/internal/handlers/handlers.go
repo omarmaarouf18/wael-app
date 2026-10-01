@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -532,15 +533,23 @@ func (s *Server) VideoSubroute(w http.ResponseWriter, r *http.Request) {
 
 // PlayVideo handles POST /academy/videos/{id}/play.
 // Authenticated with Bearer JWT (StudentAuth).
-// Returns 200 {"video_id": "...", "youtube_video_id": "..."} when the student
-// owns the subject containing the video, and the video and subject are published.
-// Returns a generic 404 for any refusal (unknown/unpublished video or subject, unowned or expired).
+// Returns 200 {"video_id": "...", "youtube_video_id": "..."} with Cache-Control: private, no-store
+// when the student owns the subject containing the video, the video and subject are published,
+// and the video has a non-empty youtube_video_id.
+// Returns a generic 404 with Cache-Control: private, no-store for any refusal
+// (unknown/unpublished video or subject, unowned, expired, or empty youtube_video_id).
+// Logs successful playback to video_plays; write failure is logged with IDs only and never blocks playback.
 // Fails closed with 503 on store errors.
 func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID string) {
 	claims := StudentClaims(r)
 	if claims == nil || claims.UserID == "" {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 		return
+	}
+
+	writeNotFound := func() {
+		w.Header().Set("Cache-Control", "private, no-store")
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
 	}
 
 	// 1. Fetch video
@@ -551,8 +560,8 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	if video == nil || !video.Published {
-		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+	if video == nil || !video.Published || strings.TrimSpace(video.YouTubeVideoID) == "" {
+		writeNotFound()
 		return
 	}
 
@@ -565,13 +574,13 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 		return
 	}
 	if subj == nil || subj.Status != models.StatusPublished {
-		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+		writeNotFound()
 		return
 	}
 
 	// 3. Subject access must not be expired
 	if !subj.AccessExpiresAt.IsZero() && time.Now().After(subj.AccessExpiresAt) {
-		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+		writeNotFound()
 		return
 	}
 
@@ -584,10 +593,28 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 		return
 	}
 	if !owned {
-		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
+		writeNotFound()
 		return
 	}
 
+	// 5. Append-only video_plays log (no IP; write failure logged with IDs only, never blocks playback)
+	playLog := &models.VideoPlay{
+		UserID:    claims.UserID,
+		VideoID:   video.ID,
+		SubjectID: video.SubjectID,
+		PlayedAt:  time.Now().UTC(),
+	}
+	pCtx, pCancel := context.WithTimeout(context.Background(), dbTimeout)
+	if logErr := s.Store.RecordVideoPlay(pCtx, playLog); logErr != nil {
+		cleanUID := strings.ReplaceAll(strings.ReplaceAll(claims.UserID, "\r", ""), "\n", "")
+		cleanVID := strings.ReplaceAll(strings.ReplaceAll(video.ID, "\r", ""), "\n", "")
+		cleanSID := strings.ReplaceAll(strings.ReplaceAll(video.SubjectID, "\r", ""), "\n", "")
+		// #nosec G706 -- clean IDs sanitized of CR/LF
+		log.Printf("[ERROR] video_play_log_failed user_id=%s video_id=%s subject_id=%s: %v", cleanUID, cleanVID, cleanSID, logErr)
+	}
+	pCancel()
+
+	w.Header().Set("Cache-Control", "private, no-store")
 	resp := models.VideoPlayResponseDTO{
 		VideoID:        video.ID,
 		YouTubeVideoID: video.YouTubeVideoID,

@@ -217,3 +217,17 @@ bought and activated again; every activation writes an append-only payment
 record at the subject's price; Android ships first and iOS is deferred.
 Earlier decisions in this ADR are unchanged except where SPEC Section 5
 replaces the unique (`user_id`, `subject_id`) entitlement index.
+
+## Amendment (2026-10-01): video IDs only at play time, video_plays audit
+
+Owner decisions recorded in `docs/core-service/SPEC.md` (Section 1 decision 21,
+Section 5 `video_plays`, Section 6 `POST /academy/videos/{id}/play`, Section 7 R2
+amendment). YouTube video IDs are never returned in subject or catalog metadata;
+subject detail returns `playable: bool` (`owned now AND video published AND
+youtube_video_id non-empty`). The YouTube ID is released only by
+`POST /academy/videos/{id}/play` at play time with `Cache-Control: private, no-store`
+(also set on 404). Target audience is ordinary students; protected host is a later
+option. Every successful play writes an append-only `video_plays` record
+(`user_id`, `video_id`, `subject_id`, `played_at`, no IP); write failure is logged
+with IDs only and never blocks playback.
+

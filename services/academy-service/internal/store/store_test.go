@@ -545,6 +545,54 @@ func runStoreSuite(t *testing.T, s Store) {
 	if nonePending != nil {
 		t.Errorf("expected nil for nonexistent user, got %v", nonePending)
 	}
+
+	// Test RecordVideoPlay and queries (Phase 3.5 fix)
+	playUser := "play-user-1"
+	playVid := "play-vid-1"
+	playSubj := "play-subj-1"
+	playNow := time.Now().UTC().Truncate(time.Millisecond)
+
+	err = s.RecordVideoPlay(ctx, &models.VideoPlay{
+		UserID:    playUser,
+		VideoID:   playVid,
+		SubjectID: playSubj,
+		PlayedAt:  playNow,
+	})
+	if err != nil {
+		t.Fatalf("RecordVideoPlay failed: %v", err)
+	}
+
+	// Record second play for same video by another user
+	err = s.RecordVideoPlay(ctx, &models.VideoPlay{
+		UserID:    "play-user-2",
+		VideoID:   playVid,
+		SubjectID: playSubj,
+		PlayedAt:  playNow.Add(1 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("second RecordVideoPlay failed: %v", err)
+	}
+
+	// List by video
+	byVid, err := s.ListVideoPlaysByVideo(ctx, playVid)
+	if err != nil {
+		t.Fatalf("ListVideoPlaysByVideo failed: %v", err)
+	}
+	if len(byVid) != 2 {
+		t.Fatalf("expected 2 plays for video, got %d", len(byVid))
+	}
+
+	// List by user
+	byUser, err := s.ListVideoPlaysByUser(ctx, playUser)
+	if err != nil {
+		t.Fatalf("ListVideoPlaysByUser failed: %v", err)
+	}
+	if len(byUser) != 1 {
+		t.Fatalf("expected 1 play for user, got %d", len(byUser))
+	}
+	if byUser[0].VideoID != playVid || byUser[0].SubjectID != playSubj {
+		t.Errorf("unexpected play record content: %+v", byUser[0])
+	}
 }
 
 func TestMemoryStore(t *testing.T) {

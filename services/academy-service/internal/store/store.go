@@ -59,6 +59,11 @@ type Store interface {
 	CreateOrGetPendingRequest(ctx context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error)
 	GetPendingRequest(ctx context.Context, userID, subjectID string) (*models.PurchaseRequest, error)
 	ListRequestsByUser(ctx context.Context, userID string) ([]*models.PurchaseRequest, error)
+
+	// Video Plays (Phase 3.5 fix)
+	RecordVideoPlay(ctx context.Context, play *models.VideoPlay) error
+	ListVideoPlaysByVideo(ctx context.Context, videoID string) ([]*models.VideoPlay, error)
+	ListVideoPlaysByUser(ctx context.Context, userID string) ([]*models.VideoPlay, error)
 }
 
 // MemoryStore is an in-memory Store for local dev and unit testing.
@@ -70,6 +75,7 @@ type MemoryStore struct {
 	files            map[string]*models.SubjectFile
 	entitlements     []*models.Entitlement
 	purchaseRequests []*models.PurchaseRequest
+	videoPlays       []*models.VideoPlay
 }
 
 // NewMemoryStore creates an empty MemoryStore.
@@ -81,6 +87,7 @@ func NewMemoryStore() *MemoryStore {
 		files:            make(map[string]*models.SubjectFile),
 		entitlements:     make([]*models.Entitlement, 0),
 		purchaseRequests: make([]*models.PurchaseRequest, 0),
+		videoPlays:       make([]*models.VideoPlay, 0),
 	}
 }
 
@@ -494,5 +501,53 @@ func (s *MemoryStore) ListRequestsByUser(_ context.Context, userID string) ([]*m
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.Before(result[j].CreatedAt)
 	})
+	return result, nil
+}
+
+// RecordVideoPlay appends a video playback event to the in-memory log.
+// Deliberately contains no IP address.
+func (s *MemoryStore) RecordVideoPlay(_ context.Context, play *models.VideoPlay) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if play.ID == "" {
+		play.ID = generateID()
+	}
+	if play.PlayedAt.IsZero() {
+		play.PlayedAt = time.Now().UTC()
+	}
+
+	cp := *play
+	s.videoPlays = append(s.videoPlays, &cp)
+	return nil
+}
+
+// ListVideoPlaysByVideo lists playback events for a video.
+func (s *MemoryStore) ListVideoPlaysByVideo(_ context.Context, videoID string) ([]*models.VideoPlay, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.VideoPlay
+	for _, p := range s.videoPlays {
+		if p.VideoID == videoID {
+			cp := *p
+			result = append(result, &cp)
+		}
+	}
+	return result, nil
+}
+
+// ListVideoPlaysByUser lists playback events for a user.
+func (s *MemoryStore) ListVideoPlaysByUser(_ context.Context, userID string) ([]*models.VideoPlay, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.VideoPlay
+	for _, p := range s.videoPlays {
+		if p.UserID == userID {
+			cp := *p
+			result = append(result, &cp)
+		}
+	}
 	return result, nil
 }

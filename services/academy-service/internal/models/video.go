@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Video represents an unlisted YouTube lesson video reference inside a subject.
 type Video struct {
@@ -30,7 +33,9 @@ type VideoMetadataDTO struct {
 }
 
 // ToDTO converts a Video to student-safe metadata with playback eligibility.
-func (v *Video) ToDTO(playable bool) VideoMetadataDTO {
+// playable = owned now AND video published AND youtube_video_id non-empty.
+func (v *Video) ToDTO(owned bool) VideoMetadataDTO {
+	isPlayable := owned && v.Published && strings.TrimSpace(v.YouTubeVideoID) != ""
 	return VideoMetadataDTO{
 		ID:       v.ID,
 		Position: v.Position,
@@ -42,7 +47,7 @@ func (v *Video) ToDTO(playable bool) VideoMetadataDTO {
 			Ar: v.DescriptionAr,
 			En: v.DescriptionEn,
 		},
-		Playable: playable,
+		Playable: isPlayable,
 	}
 }
 
@@ -50,4 +55,14 @@ func (v *Video) ToDTO(playable bool) VideoMetadataDTO {
 type VideoPlayResponseDTO struct {
 	VideoID        string `json:"video_id"`
 	YouTubeVideoID string `json:"youtube_video_id"`
+}
+
+// VideoPlay represents an append-only log entry of a video playback event.
+// Deliberately contains no IP address.
+type VideoPlay struct {
+	ID        string    `bson:"_id" json:"id"`
+	UserID    string    `bson:"user_id" json:"user_id"`
+	VideoID   string    `bson:"video_id" json:"video_id"`
+	SubjectID string    `bson:"subject_id" json:"subject_id"`
+	PlayedAt  time.Time `bson:"played_at" json:"played_at"`
 }
