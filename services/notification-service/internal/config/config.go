@@ -95,12 +95,6 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("config: invalid STREAM_MAX_CONCURRENT %q: must be a positive integer", v)
 		}
 		streamMaxConcurrent = n
-	} else if v := os.Getenv("NOTIFICATION_STREAM_MAX_CONCURRENT"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 {
-			return nil, fmt.Errorf("config: invalid NOTIFICATION_STREAM_MAX_CONCURRENT %q: must be a positive integer", v)
-		}
-		streamMaxConcurrent = n
 	}
 
 	streamOpenRateLimit := 10
@@ -108,12 +102,6 @@ func Load() (*Config, error) {
 		n, err := strconv.Atoi(v)
 		if err != nil || n <= 0 {
 			return nil, fmt.Errorf("config: invalid STREAM_OPEN_RATE_LIMIT %q: must be a positive integer", v)
-		}
-		streamOpenRateLimit = n
-	} else if v := os.Getenv("NOTIFICATION_STREAM_OPEN_RATE_LIMIT"); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil || n <= 0 {
-			return nil, fmt.Errorf("config: invalid NOTIFICATION_STREAM_OPEN_RATE_LIMIT %q: must be a positive integer", v)
 		}
 		streamOpenRateLimit = n
 	}

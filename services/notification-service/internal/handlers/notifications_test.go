@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/notification-service/internal/bus"
+	"github.com/omarmaarouf18/wael-app/notification-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/notification-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 )
@@ -260,7 +262,7 @@ func TestStream_Unauthenticated(t *testing.T) {
 	}
 }
 
-func TestStream_ConcurrentCap_Exceeded(t *testing.T) {
+func TestStream_ConcurrentCap_NewestWinsOldestEvicted(t *testing.T) {
 	s := testServer()
 	s.Limiter = NewStreamLimiter(2, 50, time.Minute)
 
@@ -299,21 +301,33 @@ func TestStream_ConcurrentCap_Exceeded(t *testing.T) {
 		t.Fatalf("expected 2 active slots for alice, got %d", s.Limiter.ActiveSlots("alice"))
 	}
 
-	// Alice stream 3 (cap+1) -> 429
-	req3 := httptest.NewRequest(http.MethodGet, "/notifications/stream", nil)
+	// Alice stream 3 (cap+1) -> under "newest wins", evicts stream 1, accepts stream 3
+	ctx3, cancel3 := context.WithCancel(context.Background())
+	defer cancel3()
+	req3 := httptest.NewRequest(http.MethodGet, "/notifications/stream", nil).WithContext(ctx3)
 	req3.Header.Set("X-Gateway-Secret", "gw-secret")
 	req3.Header.Set("Authorization", "Bearer "+tokenAlice)
 	rec3 := newSyncRecorder()
-	s.GatewayAuth(http.HandlerFunc(s.Stream)).ServeHTTP(rec3, req3)
+	done3 := make(chan struct{})
+	go func() {
+		defer close(done3)
+		s.GatewayAuth(http.HandlerFunc(s.Stream)).ServeHTTP(rec3, req3)
+	}()
 
-	if rec3.Code() != http.StatusTooManyRequests {
-		t.Fatalf("expected 429 for stream cap+1, got %d (%s)", rec3.Code(), rec3.String())
+	// 1. Oldest stream's handler (done1) returns due to eviction
+	select {
+	case <-done1:
+		// Stream 1 returned!
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected oldest stream 1 handler to return upon eviction")
 	}
-	var errBody map[string]any
-	if err := json.Unmarshal([]byte(rec3.String()), &errBody); err == nil {
-		if errBody["code"] != "stream_cap_exceeded" {
-			t.Errorf("expected code stream_cap_exceeded, got %v", errBody["code"])
-		}
+
+	// 2. Stream 3 connects successfully
+	waitForBody(t, rec3, ": connected")
+
+	// 3. Slot count remains at cap (2), release after eviction does not double free
+	if s.Limiter.ActiveSlots("alice") != 2 {
+		t.Fatalf("expected active slots for alice to equal cap (2), got %d", s.Limiter.ActiveSlots("alice"))
 	}
 
 	// Bob stream 1 -> succeeds (per-account isolation)
@@ -333,32 +347,11 @@ func TestStream_ConcurrentCap_Exceeded(t *testing.T) {
 		t.Fatalf("expected 1 active slot for bob, got %d", s.Limiter.ActiveSlots("bob"))
 	}
 
-	// Release Alice stream 1 -> slot freed
-	cancel1()
-	<-done1
-	if s.Limiter.ActiveSlots("alice") != 1 {
-		t.Fatalf("expected 1 active slot for alice after disconnect, got %d", s.Limiter.ActiveSlots("alice"))
-	}
-
-	// Alice can now open another stream -> succeeds
-	ctx4, cancel4 := context.WithCancel(context.Background())
-	defer cancel4()
-	req4 := httptest.NewRequest(http.MethodGet, "/notifications/stream", nil).WithContext(ctx4)
-	req4.Header.Set("X-Gateway-Secret", "gw-secret")
-	req4.Header.Set("Authorization", "Bearer "+tokenAlice)
-	rec4 := newSyncRecorder()
-	done4 := make(chan struct{})
-	go func() {
-		defer close(done4)
-		s.GatewayAuth(http.HandlerFunc(s.Stream)).ServeHTTP(rec4, req4)
-	}()
-	waitForBody(t, rec4, ": connected")
-
-	// Disconnect all
+	// Disconnect all remaining active streams
 	cancel2()
 	<-done2
-	cancel4()
-	<-done4
+	cancel3()
+	<-done3
 	cancelBob()
 	<-doneBob
 
@@ -531,18 +524,132 @@ func TestStreamLimiter_DeterministicSlidingWindow(t *testing.T) {
 		t.Fatal("expected attempt at t=61s to be allowed as first attempt expired")
 	}
 
-	// 5. Test double-release safety on acquireStreamSlot
-	release1, ok := limiter.acquireStreamSlot("user1")
-	if !ok {
-		t.Fatal("expected slot acquisition to succeed")
-	}
+	// 5. Test newest-wins eviction and double-release safety on acquireStreamSlot
+	ctx1, release1 := limiter.acquireStreamSlot(context.Background(), "user1")
 	if limiter.ActiveSlots("user1") != 1 {
 		t.Fatalf("expected 1 active slot, got %d", limiter.ActiveSlots("user1"))
 	}
-	// Calling release twice must not decrement below 0 (sync.Once protection)
+	_, release2 := limiter.acquireStreamSlot(context.Background(), "user1")
+	if limiter.ActiveSlots("user1") != 2 {
+		t.Fatalf("expected 2 active slots, got %d", limiter.ActiveSlots("user1"))
+	}
+	// 3rd stream for user1 (cap is 2) -> evicts stream 1
+	_, release3 := limiter.acquireStreamSlot(context.Background(), "user1")
+	if limiter.ActiveSlots("user1") != 2 {
+		t.Fatalf("expected slot count to remain at cap (2), got %d", limiter.ActiveSlots("user1"))
+	}
+	select {
+	case <-ctx1.Done():
+		// Stream 1 context canceled by eviction
+	default:
+		t.Fatal("expected evicted stream 1 context to be canceled")
+	}
+
+	// Calling release on evicted stream must not double free
 	release1()
 	release1()
+	if limiter.ActiveSlots("user1") != 2 {
+		t.Fatalf("expected slot count to remain 2 after calling release on evicted stream, got %d", limiter.ActiveSlots("user1"))
+	}
+
+	// Releasing active streams decrements to 0
+	release2()
+	release3()
 	if limiter.ActiveSlots("user1") != 0 {
 		t.Fatalf("expected 0 active slots, got %d", limiter.ActiveSlots("user1"))
+	}
+}
+
+type failResponseWriter struct {
+	mu         sync.Mutex
+	header     http.Header
+	failOnCall int
+	callCount  int
+}
+
+func newFailResponseWriter(failOnCall int) *failResponseWriter {
+	return &failResponseWriter{
+		header:     make(http.Header),
+		failOnCall: failOnCall,
+	}
+}
+
+func (w *failResponseWriter) Header() http.Header {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.header
+}
+
+func (w *failResponseWriter) WriteHeader(statusCode int) {}
+
+func (w *failResponseWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.callCount++
+	if w.failOnCall > 0 && w.callCount >= w.failOnCall {
+		return 0, errors.New("simulated broken pipe")
+	}
+	return len(b), nil
+}
+
+func (w *failResponseWriter) Flush() {}
+
+func TestStream_WriteError_ReturnsAndReleasesSlot(t *testing.T) {
+	s := testServer()
+	token := userToken(t, "user-write-fail")
+
+	// 1. Initial write failure (fail on call 1 = ": connected\n\n")
+	w1 := newFailResponseWriter(1)
+	req1 := httptest.NewRequest(http.MethodGet, "/notifications/stream", nil)
+	req1.Header.Set("X-Gateway-Secret", "gw-secret")
+	req1.Header.Set("Authorization", "Bearer "+token)
+
+	s.GatewayAuth(http.HandlerFunc(s.Stream)).ServeHTTP(w1, req1)
+	if s.Limiter.ActiveSlots("user-write-fail") != 0 {
+		t.Fatalf("expected 0 active slots after initial write error, got %d", s.Limiter.ActiveSlots("user-write-fail"))
+	}
+
+	// 2. Subsequent write failure during event push (fail on call 2 = data event)
+	w2 := newFailResponseWriter(2)
+	req2 := httptest.NewRequest(http.MethodGet, "/notifications/stream", nil)
+	req2.Header.Set("X-Gateway-Secret", "gw-secret")
+	req2.Header.Set("Authorization", "Bearer "+token)
+
+	done2 := make(chan struct{})
+	go func() {
+		defer close(done2)
+		s.GatewayAuth(http.HandlerFunc(s.Stream)).ServeHTTP(w2, req2)
+	}()
+
+	// Wait for slot to be acquired
+	for i := 0; i < 50; i++ {
+		if s.Limiter.ActiveSlots("user-write-fail") == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if s.Limiter.ActiveSlots("user-write-fail") != 1 {
+		t.Fatalf("expected 1 active slot, got %d", s.Limiter.ActiveSlots("user-write-fail"))
+	}
+
+	// Push an event; write call 2 fails with error
+	_ = s.Bus.Publish(context.Background(), &models.Notification{
+		ID:        "n1",
+		UserID:    "user-write-fail",
+		Type:      "test",
+		Title:     "test",
+		Body:      "test",
+		CreatedAt: time.Now(),
+	})
+
+	select {
+	case <-done2:
+		// Handler returned on write error
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not return after event write error")
+	}
+
+	if s.Limiter.ActiveSlots("user-write-fail") != 0 {
+		t.Fatalf("expected 0 active slots after event write error, got %d", s.Limiter.ActiveSlots("user-write-fail"))
 	}
 }

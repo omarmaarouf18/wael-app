@@ -5,9 +5,12 @@
 package handlers
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,13 +24,21 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 )
 
+// streamSlot tracks an individual active stream for a user.
+type streamSlot struct {
+	id     uint64
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
 // StreamLimiter manages per-account concurrent stream slots and connection open rate limits.
 type StreamLimiter struct {
 	mu            sync.Mutex
 	maxConcurrent int
 	rateLimit     int
 	window        time.Duration
-	activeSlots   map[string]int
+	nextID        uint64
+	userStreams   map[string][]*streamSlot
 	openAttempts  map[string][]time.Time
 }
 
@@ -46,34 +57,62 @@ func NewStreamLimiter(maxConcurrent, rateLimit int, window time.Duration) *Strea
 		maxConcurrent: maxConcurrent,
 		rateLimit:     rateLimit,
 		window:        window,
-		activeSlots:   make(map[string]int),
+		userStreams:   make(map[string][]*streamSlot),
 		openAttempts:  make(map[string][]time.Time),
 	}
 }
 
 // acquireStreamSlot attempts to reserve a concurrent stream slot for userID.
-// Returns a release function and true if acquired; nil and false if cap is exceeded.
-func (sl *StreamLimiter) acquireStreamSlot(userID string) (func(), bool) {
+// Under the "newest wins" policy, if the user has reached maxConcurrent, the oldest
+// active stream(s) are evicted by cancelling their context(s) so their handlers return
+// and release their slots. The new stream is always accepted.
+// Eviction and release are idempotent (sync.Once).
+func (sl *StreamLimiter) acquireStreamSlot(parent context.Context, userID string) (context.Context, func()) {
+	streamCtx, cancel := context.WithCancel(parent)
+
 	sl.mu.Lock()
-	defer sl.mu.Unlock()
-
-	if sl.activeSlots[userID] >= sl.maxConcurrent {
-		return nil, false
+	sl.nextID++
+	slot := &streamSlot{
+		id:     sl.nextID,
+		cancel: cancel,
 	}
-	sl.activeSlots[userID]++
 
-	var once sync.Once
+	var toEvict []*streamSlot
+	for len(sl.userStreams[userID]) >= sl.maxConcurrent {
+		oldest := sl.userStreams[userID][0]
+		sl.userStreams[userID] = sl.userStreams[userID][1:]
+		toEvict = append(toEvict, oldest)
+	}
+
+	sl.userStreams[userID] = append(sl.userStreams[userID], slot)
+	sl.mu.Unlock()
+
+	// Cancel evicted streams outside lock
+	for _, e := range toEvict {
+		e.once.Do(func() {
+			e.cancel()
+		})
+	}
+
 	release := func() {
-		once.Do(func() {
+		slot.once.Do(func() {
+			slot.cancel()
 			sl.mu.Lock()
 			defer sl.mu.Unlock()
-			sl.activeSlots[userID]--
-			if sl.activeSlots[userID] <= 0 {
-				delete(sl.activeSlots, userID)
+			streams := sl.userStreams[userID]
+			for i, s := range streams {
+				if s.id == slot.id {
+					sl.userStreams[userID] = append(streams[:i], streams[i+1:]...)
+					break
+				}
+			}
+			if len(sl.userStreams[userID]) == 0 {
+				delete(sl.userStreams, userID)
 			}
 		})
 	}
-	return release, true
+
+	return streamCtx, release
 }
 
 // allowStreamOpen checks if a new stream open attempt is permitted under the rate limit.
@@ -117,7 +156,7 @@ func (sl *StreamLimiter) allowStreamOpenAt(userID string, now time.Time) (bool, 
 func (sl *StreamLimiter) ActiveSlots(userID string) int {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
-	return sl.activeSlots[userID]
+	return len(sl.userStreams[userID])
 }
 
 // TotalActiveSlots returns the total active slots across all accounts.
@@ -125,8 +164,8 @@ func (sl *StreamLimiter) TotalActiveSlots() int {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	total := 0
-	for _, count := range sl.activeSlots {
-		total += count
+	for _, slots := range sl.userStreams {
+		total += len(slots)
 	}
 	return total
 }
@@ -148,6 +187,28 @@ func New(st store.Store, b bus.Bus, gatewaySecret, internalToken string) *Server
 		GatewaySecret: gatewaySecret,
 		InternalToken: internalToken,
 		Limiter:       NewStreamLimiter(3, 10, time.Minute),
+	}
+}
+
+var logWriteDeadlineUnsupported sync.Once
+
+func (s *Server) setWriteDeadline(w http.ResponseWriter, deadline time.Time) {
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(deadline); err != nil {
+		if errors.Is(err, http.ErrNotSupported) {
+			logWriteDeadlineUnsupported.Do(func() {
+				log.Printf("[NOTIF] ResponseController.SetWriteDeadline not supported")
+			})
+		}
+	}
+}
+
+func (s *Server) clearWriteDeadline(w http.ResponseWriter) {
+	rc := http.NewResponseController(w)
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+		if errors.Is(err, http.ErrNotSupported) {
+			return
+		}
 	}
 }
 
@@ -212,6 +273,7 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	streamCtx := r.Context()
 	if s.Limiter != nil {
 		if allowed, retryAfter := s.Limiter.allowStreamOpen(claims.UserID); !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
@@ -219,14 +281,11 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		release, ok := s.Limiter.acquireStreamSlot(claims.UserID)
-		if !ok {
-			handlerutil.WriteSafeError(w, r, http.StatusTooManyRequests, "stream_cap_exceeded", "concurrent stream cap exceeded", nil)
-			return
-		}
+		var release func()
+		streamCtx, release = s.Limiter.acquireStreamSlot(r.Context(), claims.UserID)
 		defer release()
 	}
-	ch, unsub, err := s.Bus.Subscribe(r.Context(), claims.UserID)
+	ch, unsub, err := s.Bus.Subscribe(streamCtx, claims.UserID)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
@@ -238,14 +297,19 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintf(w, ": connected\n\n")
+
+	s.setWriteDeadline(w, time.Now().Add(10*time.Second))
+	if _, err := fmt.Fprintf(w, ": connected\n\n"); err != nil {
+		return
+	}
 	flusher.Flush()
+	s.clearWriteDeadline(w)
 
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-streamCtx.Done():
 			return
 		case n, ok := <-ch:
 			if !ok {
@@ -255,11 +319,19 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+			s.setWriteDeadline(w, time.Now().Add(10*time.Second))
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+				return
+			}
 			flusher.Flush()
+			s.clearWriteDeadline(w)
 		case <-heartbeat.C:
-			_, _ = fmt.Fprintf(w, ": ping\n\n")
+			s.setWriteDeadline(w, time.Now().Add(10*time.Second))
+			if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
+			s.clearWriteDeadline(w)
 		}
 	}
 }

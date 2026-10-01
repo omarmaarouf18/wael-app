@@ -166,8 +166,6 @@ func TestLoad_StreamCapsConfig(t *testing.T) {
 		t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
 		_ = os.Unsetenv("STREAM_MAX_CONCURRENT")
 		_ = os.Unsetenv("STREAM_OPEN_RATE_LIMIT")
-		_ = os.Unsetenv("NOTIFICATION_STREAM_MAX_CONCURRENT")
-		_ = os.Unsetenv("NOTIFICATION_STREAM_OPEN_RATE_LIMIT")
 	}
 
 	t.Run("defaults", func(t *testing.T) {
@@ -197,22 +195,6 @@ func TestLoad_StreamCapsConfig(t *testing.T) {
 		}
 		if cfg.StreamOpenRateLimit != 25 {
 			t.Errorf("StreamOpenRateLimit = %d, want 25", cfg.StreamOpenRateLimit)
-		}
-	})
-
-	t.Run("custom_via_NOTIFICATION_STREAM_vars", func(t *testing.T) {
-		setBaseDev(t)
-		t.Setenv("NOTIFICATION_STREAM_MAX_CONCURRENT", "7")
-		t.Setenv("NOTIFICATION_STREAM_OPEN_RATE_LIMIT", "30")
-		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("Load: %v", err)
-		}
-		if cfg.StreamMaxConcurrent != 7 {
-			t.Errorf("StreamMaxConcurrent = %d, want 7", cfg.StreamMaxConcurrent)
-		}
-		if cfg.StreamOpenRateLimit != 30 {
-			t.Errorf("StreamOpenRateLimit = %d, want 30", cfg.StreamOpenRateLimit)
 		}
 	})
 
