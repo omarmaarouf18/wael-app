@@ -252,6 +252,11 @@ file for their exact values.
 | `SelectableChip` (+ `ChipVariant`) | `selectable_chip.dart` | Selectable chip: `filled` pill (crimson when selected, optional count) or `outlined` rounded chip with icon and glow. |
 | `AccentTitle` | `accent_title.dart` | Section title with a crimson bar at the start edge and an optional trailing widget. |
 | `SearchField` | `search_field.dart` | Rounded search box; the clear button appears once there is text. |
+| `HomeHeroBanner` | `home_hero_banner.dart` | Home hero: art at the end edge fading in from its start side, text and Explore button at the start edge; directional gradients. |
+| `InstructorDossierCard` | `instructor_dossier_card.dart` | Academy director card: portrait, founder tag, title, credential chips, expandable biography. |
+| `OwnedSubjectTile` | `owned_subject_tile.dart` | Home row for an owned subject: icon tile, title, video / book counts, access end date or "Ready to Start". |
+| `CatalogLevelHeader` | `catalog_level_header.dart` | Summary card above the subject list: level, study type, subject count. |
+| `CatalogSubjectCard` | `catalog_subject_card.dart` | Subject card: term, title, director name, description, video / book / note counts, View subject / Continue. |
 | `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |
 | `OtpPinInput` (+ `OtpDigitsFormatter`) | `otp_pin_input.dart` | N-digit code input (default 6) over one hidden text field: paste, SMS autofill, backspace. Always laid out left to right; maps Arabic-Indic and Persian digits to ASCII. |
 
