@@ -88,6 +88,8 @@ async function signInOk() {
 // The real page tags these in index.html; the fake document is not parsed from it.
 $('sign-out').dataset.i18n = 'top.signOut';
 $('lang-toggle').dataset.i18n = 'top.language';
+$('audit-note').dataset.i18n = 'audit.academyNote';
+$('panel-audit').append($('audit-note'));
 
 const app = main(doc, win);
 
@@ -365,6 +367,7 @@ test('the audit tab loads newest first with localized labels and falls back to t
   assert.ok(rows[0].textContent.includes('spam'));
   assert.ok(rows[1].textContent.includes('something_new'));
   assert.ok(rows[1].textContent.includes('widget'));
+  assert.ok($('panel-audit').textContent.includes(MESSAGES.ar['audit.academyNote']));
 });
 
 test('hidden tabs cannot be activated', () => {
@@ -382,10 +385,12 @@ test('the language toggle flips direction and keeps the choice in the URL hash o
   assert.equal(doc.documentElement.dir, 'ltr');
   assert.equal(win.location.hash, '#en');
   assert.equal($('sign-out').textContent, MESSAGES.en['top.signOut']);
+  assert.ok($('panel-audit').textContent.includes(MESSAGES.en['audit.academyNote']));
   $('lang-toggle').click();
   assert.equal(doc.documentElement.dir, 'rtl');
   assert.equal(win.location.hash, '#ar');
   assert.equal($('sign-out').textContent, MESSAGES.ar['top.signOut']);
+  assert.ok($('panel-audit').textContent.includes(MESSAGES.ar['audit.academyNote']));
 });
 
 test('sign out clears the token and everything on screen', async () => {

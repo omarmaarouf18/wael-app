@@ -88,6 +88,7 @@ export const MESSAGES = Object.freeze({
 
     'audit.title': 'سجل العمليات',
     'audit.hint': 'الأحدث أولًا.',
+    'audit.academyNote': 'تظهر إجراءات الأكاديمية بعد المرحلة 4.1.',
     'audit.col.time': 'الوقت',
     'audit.col.actor': 'المشرف',
     'audit.col.action': 'الإجراء',
@@ -182,6 +183,7 @@ export const MESSAGES = Object.freeze({
 
     'audit.title': 'Audit log',
     'audit.hint': 'Newest first.',
+    'audit.academyNote': 'Academy actions appear after Phase 4.1.',
     'audit.col.time': 'Time',
     'audit.col.actor': 'Admin',
     'audit.col.action': 'Action',
