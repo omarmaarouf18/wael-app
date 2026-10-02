@@ -257,8 +257,7 @@ func (s *Server) CreateAdminSubject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, "subject_create", "subject", subj.ID, subj.TitleAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "subject_create", subj.ID, err)
 	}
 
 	handlerutil.WriteJSON(w, http.StatusCreated, toSubjectAdminDTO(subj, 0))
@@ -451,8 +450,7 @@ func (s *Server) PatchAdminSubject(w http.ResponseWriter, r *http.Request, id st
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, "subject_update", "subject", subj.ID, subj.TitleAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "subject_update", subj.ID, err)
 	}
 
 	n, err := s.subjectVideoCount(dbCtx, subj.ID)
@@ -515,8 +513,7 @@ func (s *Server) setSubjectStatus(w http.ResponseWriter, r *http.Request, id, st
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, action, "subject", subj.ID, subj.TitleAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, action, subj.ID, err)
 	}
 
 	n, err := s.subjectVideoCount(dbCtx, subj.ID)

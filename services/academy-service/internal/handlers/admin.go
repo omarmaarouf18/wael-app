@@ -20,7 +20,8 @@
 // ADR-0008 Sections 7 and 9).
 //
 // Every mutating admin call writes one admin_audit_log entry in the same
-// operation flow; if the audit write fails, the call fails (503).
+// operation flow; like auth-service, an audit write failure is logged at
+// error level and does not fail the call.
 package handlers
 
 import (
@@ -28,6 +29,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -183,7 +185,7 @@ func sanitizeDetail(s string) string {
 
 // writeAdminAudit writes one admin_audit_log entry for a mutating call.
 // The detail carries no secrets; no IP address is persisted (SPEC Section 5,
-// ADR-0008 Sections 7 and 9). A write error fails the call (fail closed).
+// ADR-0008 Sections 7 and 9).
 func (s *Server) writeAdminAudit(ctx context.Context, adm *AdminIdentity, action, targetType, targetID, detail string) error {
 	id, _ := jwtutil.GenerateUUID()
 	entry := &models.AuditLog{
@@ -199,6 +201,15 @@ func (s *Server) writeAdminAudit(ctx context.Context, adm *AdminIdentity, action
 	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 	return s.Store.CreateAuditLog(dbCtx, entry)
+}
+
+// logAuditFailure records an audit write failure at error level with the
+// action and target id only (no secrets). Like auth-service account actions,
+// an audit failure never fails the admin call itself.
+func logAuditFailure(adm *AdminIdentity, action, targetID string, err error) {
+	cleanTarget := strings.ReplaceAll(strings.ReplaceAll(targetID, "\r", ""), "\n", "")
+	// #nosec G706 -- cleanTarget sanitized of CR/LF
+	log.Printf("[ERROR] admin audit log write failed for action %s actor_id=%s target_id=%s: %v", action, adm.ID, cleanTarget, err)
 }
 
 // AuditLogs handles GET /internal/admin/audit-log?page=&limit=.

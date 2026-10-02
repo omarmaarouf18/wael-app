@@ -198,8 +198,7 @@ func (s *Server) CreateAdminLevel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, "level_create", "level", lvl.Key, nameAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "level_create", lvl.Key, err)
 	}
 
 	dto := s.adminLevelDTO(dbCtx, lvl)
@@ -312,8 +311,7 @@ func (s *Server) PatchAdminLevel(w http.ResponseWriter, r *http.Request, id stri
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, "level_update", "level", lvl.Key, lvl.TitleAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "level_update", lvl.Key, err)
 	}
 
 	handlerutil.WriteJSON(w, http.StatusOK, s.adminLevelDTO(dbCtx, lvl))
@@ -365,8 +363,7 @@ func (s *Server) DeleteAdminLevel(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, "level_delete", "level", id, lvl.TitleAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "level_delete", id, err)
 	}
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})

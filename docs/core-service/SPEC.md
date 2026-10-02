@@ -218,7 +218,7 @@ The access-request response carries the request status and the support link (`wh
 
 ### Admin (academy-service, `/internal/admin/...` on the admin listener)
 
-Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is verified through auth-service (`POST {AUTH_ADMIN_URL}/internal/admin/verify` over mTLS, 3 s timeout, no caching so revocation is immediate). **If auth-service is unreachable, fail closed (503).** Every mutation writes one `admin_audit_log` entry in the same operation flow; if the audit write fails, the call fails (503). Audit entries follow the Section 5 schema and store no IP addresses. Levels carry a `published` flag: students see published levels only (seeded levels are published; admin diplomas start unpublished).
+Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is verified through auth-service (`POST {AUTH_ADMIN_URL}/internal/admin/verify` over mTLS, 3 s timeout, no caching so revocation is immediate). **If auth-service is unreachable, fail closed (503).** Every mutation writes one `admin_audit_log` entry in the same operation flow; an audit write failure is logged at error level and does not fail the call (same as auth-service). Audit entries follow the Section 5 schema and store no IP addresses. Levels carry a `published` flag: students see published levels only (seeded levels are published; admin diplomas start unpublished).
 
 | Method and path | Purpose |
 |---|---|

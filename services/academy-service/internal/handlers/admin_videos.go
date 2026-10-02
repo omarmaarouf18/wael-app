@@ -171,8 +171,7 @@ func (s *Server) CreateAdminVideo(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, "video_create", "video", video.ID, video.TitleAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "video_create", video.ID, err)
 	}
 
 	handlerutil.WriteJSON(w, http.StatusCreated, video.ToAdminDTO())
@@ -245,8 +244,7 @@ func (s *Server) PatchAdminVideo(w http.ResponseWriter, r *http.Request, id stri
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, "video_update", "video", video.ID, video.TitleAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "video_update", video.ID, err)
 	}
 
 	handlerutil.WriteJSON(w, http.StatusOK, video.ToAdminDTO())
@@ -326,8 +324,7 @@ func (s *Server) ReorderAdminVideos(w http.ResponseWriter, r *http.Request, id s
 	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Position < ordered[j].Position })
 
 	if err := s.writeAdminAudit(r.Context(), adm, "video_reorder", "subject", id, strings.Join(req.VideoIDs, ",")); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "video_reorder", id, err)
 	}
 
 	dtos := make([]models.VideoAdminDTO, 0, len(ordered))
@@ -399,8 +396,7 @@ func (s *Server) DeleteAdminVideo(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	if err := s.writeAdminAudit(r.Context(), adm, "video_delete", "video", video.ID, video.TitleAr); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		logAuditFailure(adm, "video_delete", video.ID, err)
 	}
 
 	if lastOfPublished && force {
@@ -411,8 +407,7 @@ func (s *Server) DeleteAdminVideo(w http.ResponseWriter, r *http.Request, id str
 			return
 		}
 		if err := s.writeAdminAudit(r.Context(), adm, "subject_unpublish", "subject", subj.ID, subj.TitleAr); err != nil {
-			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-			return
+			logAuditFailure(adm, "subject_unpublish", subj.ID, err)
 		}
 	}
 

@@ -294,12 +294,39 @@ func (f *failingAuditStore) CreateAuditLog(_ context.Context, _ *models.AuditLog
 	return errors.New("audit log write failure")
 }
 
-func TestAdminAudit_WriteFailureFailsCall(t *testing.T) {
+func TestAdminAudit_WriteFailureBestEffort(t *testing.T) {
 	mem := store.NewMemoryStore()
 	s := New(&failingAuditStore{Store: mem}, "test", "test-gateway-secret", "test-internal-token", "http://auth-service:3002", false, "+201000000000")
 	adm := &AdminIdentity{ID: "adm-1", Name: "Test Operator"}
+	// The helper still reports the failure to its caller.
 	if err := s.writeAdminAudit(context.Background(), adm, "level_create", "level", "diploma-x", "detail"); err == nil {
-		t.Fatal("expected audit write failure to fail the call, got nil")
+		t.Fatal("expected writeAdminAudit to report the store failure, got nil")
+	}
+
+	// But the admin call itself succeeds: the mutation is applied and the
+	// failure is logged, mirroring auth-service account actions.
+	srv, _ := newAdminTestServer(t, okVerify)
+	srv.Store = &failingAuditStore{Store: srv.Store}
+	rec := doAdminJSON(t, srv, http.MethodPost, "/internal/admin/levels", map[string]any{
+		"study_type": "diploma", "name_ar": "دبلومة رغم تعطل السجل", "order": 6,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 despite audit failure, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var dto LevelAdminDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	got, err := srv.Store.GetLevelByKey(context.Background(), dto.Key)
+	if err != nil || got == nil {
+		t.Fatalf("expected the diploma to be created despite audit failure, got %+v err=%v", got, err)
+	}
+	logs, total, err := srv.Store.ListAuditLogs(context.Background(), 1, 10)
+	if err != nil {
+		t.Fatalf("ListAuditLogs: %v", err)
+	}
+	if total != 0 || len(logs) != 0 {
+		t.Fatalf("expected no audit rows after write failure, got total=%d", total)
 	}
 
 	var okCount int
@@ -308,18 +335,18 @@ func TestAdminAudit_WriteFailureFailsCall(t *testing.T) {
 	if err := s2.writeAdminAudit(context.Background(), adm, "level_create", "level", "diploma-x", "line1\r\nline2"); err != nil {
 		t.Fatalf("writeAdminAudit: %v", err)
 	}
-	logs, total, err := okStore.ListAuditLogs(context.Background(), 1, 10)
-	if err != nil || total != 1 {
-		t.Fatalf("expected 1 audit row, got total=%d err=%v", total, err)
+	logs2, total2, err := okStore.ListAuditLogs(context.Background(), 1, 10)
+	if err != nil || total2 != 1 {
+		t.Fatalf("expected 1 audit row, got total=%d err=%v", total2, err)
 	}
-	okCount = len(logs)
+	okCount = len(logs2)
 	if okCount != 1 {
 		t.Fatalf("expected 1 audit row, got %d", okCount)
 	}
-	if logs[0].ActorID != "adm-1" || logs[0].ActorName != "Test Operator" {
-		t.Fatalf("audit actor = %+v", logs[0])
+	if logs2[0].ActorID != "adm-1" || logs2[0].ActorName != "Test Operator" {
+		t.Fatalf("audit actor = %+v", logs2[0])
 	}
-	if strings.Contains(logs[0].Detail, "\r") || strings.Contains(logs[0].Detail, "\n") {
-		t.Fatalf("audit detail must strip CR/LF, got %q", logs[0].Detail)
+	if strings.Contains(logs2[0].Detail, "\r") || strings.Contains(logs2[0].Detail, "\n") {
+		t.Fatalf("audit detail must strip CR/LF, got %q", logs2[0].Detail)
 	}
 }

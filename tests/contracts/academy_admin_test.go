@@ -34,7 +34,7 @@ func requirePass(t *testing.T, out string, names ...string) {
 // 8. Admin auth chain: two-token middleware, verify failure mapping, and the
 // audit-log shape (same {items,total,page,limit} as auth, newest first).
 func TestContract_AcademyAdminAuth(t *testing.T) {
-	out := runAcademyAdminTests(t, "^(TestAdminAuth_MiddlewareMatrix|TestAdminAuth_BadAdminToken401|TestAdminAuth_LockedOut429|TestAdminAuth_AuthDown503|TestAdminAuth_ForwardsTokensAndClientIP|TestAdminAuth_NoCaching|TestAdminVerify_mTLSRealPath|TestAdminVerify_mTLSForeignClientCertRejected|TestAdminVerify_mTLSServerNameVerified|TestAdminAuditLog_PaginationAndShape|TestAdminAudit_WriteFailureFailsCall|TestAdminHandler_UnknownPaths404|TestRouteIsolation)$")
+	out := runAcademyAdminTests(t, "^(TestAdminAuth_MiddlewareMatrix|TestAdminAuth_BadAdminToken401|TestAdminAuth_LockedOut429|TestAdminAuth_AuthDown503|TestAdminAuth_ForwardsTokensAndClientIP|TestAdminAuth_NoCaching|TestAdminVerify_mTLSRealPath|TestAdminVerify_mTLSForeignClientCertRejected|TestAdminVerify_mTLSServerNameVerified|TestAdminAuditLog_PaginationAndShape|TestAdminAudit_WriteFailureBestEffort|TestAdminHandler_UnknownPaths404|TestRouteIsolation)$")
 	requirePass(t, out,
 		"TestAdminAuth_MiddlewareMatrix",
 		"TestAdminAuth_BadAdminToken401",
@@ -46,7 +46,7 @@ func TestContract_AcademyAdminAuth(t *testing.T) {
 		"TestAdminVerify_mTLSForeignClientCertRejected",
 		"TestAdminVerify_mTLSServerNameVerified",
 		"TestAdminAuditLog_PaginationAndShape",
-		"TestAdminAudit_WriteFailureFailsCall",
+		"TestAdminAudit_WriteFailureBestEffort",
 		"TestAdminHandler_UnknownPaths404",
 		"TestRouteIsolation",
 	)
