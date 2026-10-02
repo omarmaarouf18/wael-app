@@ -336,8 +336,12 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	ok, err := s.Codes.Consume(ctx, "signup-otp:"+email, otp.HashToken(strings.TrimSpace(req.Code)))
-	if err != nil || !ok {
+	ok, err := s.Codes.ConsumeWithAttempts(ctx, "signup-otp:"+email, otp.HashToken(strings.TrimSpace(req.Code)), 5, 10*time.Minute)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if !ok {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
 		return
 	}
@@ -543,7 +547,11 @@ func (s *Server) VerifyResetCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	ok, _ := s.Codes.Consume(ctx, "reset-code:"+email, otp.HashToken(strings.TrimSpace(req.Code)))
+	ok, err := s.Codes.ConsumeWithAttempts(ctx, "reset-code:"+email, otp.HashToken(strings.TrimSpace(req.Code)), 5, 10*time.Minute)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
 	if !ok {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
 		return

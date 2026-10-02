@@ -105,6 +105,114 @@ func TestMemoryStore_SingleRedemption(t *testing.T) {
 	testSingleRedemption(t, s)
 }
 
+func testConsumeWithAttempts(t *testing.T, s Store) {
+	t.Helper()
+	ctx := context.Background()
+	key := fmt.Sprintf("attempt-key-%d", time.Now().UnixNano())
+	code := "123456"
+	hash := HashToken(code)
+
+	if err := s.Set(ctx, key, hash, time.Minute); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	// 5 wrong attempts -> all refused
+	for i := 1; i <= 5; i++ {
+		ok, err := s.ConsumeWithAttempts(ctx, key, HashToken("000000"), 5, time.Minute)
+		if err != nil {
+			t.Fatalf("wrong attempt %d error: %v", i, err)
+		}
+		if ok {
+			t.Fatalf("wrong attempt %d succeeded, want false", i)
+		}
+	}
+
+	// 6th attempt with the RIGHT code is refused (code was deleted after 5 wrong attempts)
+	ok, err := s.ConsumeWithAttempts(ctx, key, hash, 5, time.Minute)
+	if err != nil {
+		t.Fatalf("6th attempt error: %v", err)
+	}
+	if ok {
+		t.Fatal("6th attempt with RIGHT code succeeded, want refused")
+	}
+
+	// Code was deleted from store
+	val, err := s.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("Get error: %v", err)
+	}
+	if val != "" {
+		t.Fatalf("code still exists after 5 wrong attempts: %q", val)
+	}
+
+	// New code works
+	newCode := "654321"
+	newHash := HashToken(newCode)
+	if err := s.Set(ctx, key, newHash, time.Minute); err != nil {
+		t.Fatalf("Set new code failed: %v", err)
+	}
+	ok, err = s.ConsumeWithAttempts(ctx, key, newHash, 5, time.Minute)
+	if err != nil {
+		t.Fatalf("new code attempt error: %v", err)
+	}
+	if !ok {
+		t.Fatal("new code with RIGHT code failed, want succeeded")
+	}
+
+	// Counter resets on success:
+	// Set code, do 2 wrong attempts, then 3rd is RIGHT code -> succeeds.
+	resetKey := fmt.Sprintf("reset-counter-%d", time.Now().UnixNano())
+	code2 := "111111"
+	if err := s.Set(ctx, resetKey, HashToken(code2), time.Minute); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	for i := 1; i <= 2; i++ {
+		ok, err := s.ConsumeWithAttempts(ctx, resetKey, HashToken("000000"), 5, time.Minute)
+		if err != nil {
+			t.Fatalf("wrong attempt %d error: %v", i, err)
+		}
+		if ok {
+			t.Fatalf("wrong attempt %d succeeded, want false", i)
+		}
+	}
+	// 3rd attempt with right code succeeds and resets attempts
+	ok, err = s.ConsumeWithAttempts(ctx, resetKey, HashToken(code2), 5, time.Minute)
+	if err != nil {
+		t.Fatalf("3rd attempt error: %v", err)
+	}
+	if !ok {
+		t.Fatal("3rd attempt with right code failed, want succeeded")
+	}
+
+	// Set another code on same key: 4 wrong attempts, 5th is right code -> succeeds
+	// (proving prior 2 wrong attempts were cleared on success).
+	code3 := "222222"
+	if err := s.Set(ctx, resetKey, HashToken(code3), time.Minute); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	for i := 1; i <= 4; i++ {
+		ok, err := s.ConsumeWithAttempts(ctx, resetKey, HashToken("000000"), 5, time.Minute)
+		if err != nil {
+			t.Fatalf("wrong attempt %d error: %v", i, err)
+		}
+		if ok {
+			t.Fatalf("wrong attempt %d succeeded, want false", i)
+		}
+	}
+	ok, err = s.ConsumeWithAttempts(ctx, resetKey, HashToken(code3), 5, time.Minute)
+	if err != nil {
+		t.Fatalf("5th attempt with right code error: %v", err)
+	}
+	if !ok {
+		t.Fatal("5th attempt with right code failed, want succeeded")
+	}
+}
+
+func TestMemoryStore_ConsumeWithAttempts(t *testing.T) {
+	s := NewMemoryStore()
+	testConsumeWithAttempts(t, s)
+}
+
 func TestRedisStore_SingleRedemption(t *testing.T) {
 	_, redisURI := requireDB(t)
 	opts, err := redis.ParseURL(redisURI)
@@ -126,4 +234,27 @@ func TestRedisStore_SingleRedemption(t *testing.T) {
 	prefix := fmt.Sprintf("test_otp_%d", time.Now().UnixNano())
 	s := NewRedisStore(client, prefix)
 	testSingleRedemption(t, s)
+}
+
+func TestRedisStore_ConsumeWithAttempts(t *testing.T) {
+	_, redisURI := requireDB(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_otp_attempts_%d", time.Now().UnixNano())
+	s := NewRedisStore(client, prefix)
+	testConsumeWithAttempts(t, s)
 }

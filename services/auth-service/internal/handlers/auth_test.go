@@ -1160,3 +1160,280 @@ func TestRefresh_TokenIssuedBeforeSuspension_Refused(t *testing.T) {
 		t.Fatalf("expected 401 on already-rotated token, got %d (%s)", rec.Code, rec.Body.String())
 	}
 }
+
+type failingCodesStore struct {
+	otp.Store
+	consumeErr error
+}
+
+func (f *failingCodesStore) ConsumeWithAttempts(ctx context.Context, key, hash string, maxAttempts int, ttl time.Duration) (bool, error) {
+	if f.consumeErr != nil {
+		return false, f.consumeErr
+	}
+	return f.Store.ConsumeWithAttempts(ctx, key, hash, maxAttempts, ttl)
+}
+
+func TestVerifyOTP_AttemptLimit(t *testing.T) {
+	s := testServer()
+
+	// 1. Signup to receive initial code
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Attempt User",
+		"email":     "attempt_otp@example.com",
+		"phone":     "+201099998888",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var signupBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &signupBody); err != nil {
+		t.Fatal(err)
+	}
+	devOTP := signupBody["dev_otp"].(string)
+
+	// 2. 5 wrong attempts -> all return 401 invalid_token
+	for i := 1; i <= 5; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+			"email": "attempt_otp@example.com",
+			"code":  "000000",
+		}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("wrong attempt %d status = %d, want 401 (%s)", i, rec.Code, rec.Body.String())
+		}
+		body := decodeBody(t, rec)
+		if body["code"] != "invalid_token" {
+			t.Fatalf("wrong attempt %d code = %q, want invalid_token", i, body["code"])
+		}
+	}
+
+	// 3. 6th attempt with the RIGHT code is refused with 401
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "attempt_otp@example.com",
+		"code":  devOTP,
+	}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("6th attempt with right code status = %d, want 401 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "invalid_token" {
+		t.Fatalf("6th attempt code = %q, want invalid_token", body["code"])
+	}
+
+	// 4. User requests a new code -> new code works
+	newCode := "654321"
+	if err := s.Codes.Set(context.Background(), "signup-otp:attempt_otp@example.com", otp.HashToken(newCode), 10*time.Minute); err != nil {
+		t.Fatalf("set new code failed: %v", err)
+	}
+
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "attempt_otp@example.com",
+		"code":  newCode,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify new code status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	tokens := decodeBody(t, rec)
+	if tokens["access_token"] == "" || tokens["refresh_token"] == "" {
+		t.Fatalf("expected valid tokens, got %+v", tokens)
+	}
+
+	// 5. Counter resets on success:
+	// Register another user, do 2 wrong attempts, then 3rd is right code -> succeeds
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Counter Reset User",
+		"email":     "reset_counter_otp@example.com",
+		"phone":     "+201099998889",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var signupBody3 map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &signupBody3); err != nil {
+		t.Fatal(err)
+	}
+	devOTP3 := signupBody3["dev_otp"].(string)
+
+	for i := 1; i <= 2; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+			"email": "reset_counter_otp@example.com",
+			"code":  "000000",
+		}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401 (%s)", i, rec.Code, rec.Body.String())
+		}
+	}
+
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "reset_counter_otp@example.com",
+		"code":  devOTP3,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("3rd attempt with right code status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestVerifyResetCode_AttemptLimit(t *testing.T) {
+	s := testServer()
+
+	// 1. Create active user
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Reset User",
+		"email":     "reset_user@example.com",
+		"phone":     "+201011112222",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var signupBody map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &signupBody); err != nil {
+		t.Fatal(err)
+	}
+	otpCode := signupBody["dev_otp"].(string)
+	doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "reset_user@example.com",
+		"code":  otpCode,
+	}, "")
+
+	// 2. Request password reset
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{
+		"email": "reset_user@example.com",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	resetBody := decodeBody(t, rec)
+	resetOTP := resetBody["dev_otp"]
+	if resetOTP == "" {
+		t.Fatal("expected dev_otp in reset request response")
+	}
+
+	// 3. 5 wrong attempts -> all return 401 invalid_token
+	for i := 1; i <= 5; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{
+			"email": "reset_user@example.com",
+			"code":  "000000",
+		}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("wrong attempt %d status = %d, want 401 (%s)", i, rec.Code, rec.Body.String())
+		}
+		body := decodeBody(t, rec)
+		if body["code"] != "invalid_token" {
+			t.Fatalf("wrong attempt %d code = %q, want invalid_token", i, body["code"])
+		}
+	}
+
+	// 4. 6th attempt with the RIGHT code is refused with 401
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{
+		"email": "reset_user@example.com",
+		"code":  resetOTP,
+	}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("6th attempt with right code status = %d, want 401 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "invalid_token" {
+		t.Fatalf("6th attempt code = %q, want invalid_token", body["code"])
+	}
+
+	// 5. Request new reset code -> new code works
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{
+		"email": "reset_user@example.com",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("new reset request status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	resetBody2 := decodeBody(t, rec)
+	resetOTP2 := resetBody2["dev_otp"]
+
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{
+		"email": "reset_user@example.com",
+		"code":  resetOTP2,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify new reset code status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	resVerBody := decodeBody(t, rec)
+	if resVerBody["reset_token"] == "" {
+		t.Fatalf("expected reset_token, got %+v", resVerBody)
+	}
+
+	// 6. Counter resets on success:
+	// Request reset code, do 2 wrong attempts, then 3rd is right code -> succeeds
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{
+		"email": "reset_user@example.com",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	resetBody3 := decodeBody(t, rec)
+	resetOTP3 := resetBody3["dev_otp"]
+
+	for i := 1; i <= 2; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{
+			"email": "reset_user@example.com",
+			"code":  "000000",
+		}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401 (%s)", i, rec.Code, rec.Body.String())
+		}
+	}
+
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{
+		"email": "reset_user@example.com",
+		"code":  resetOTP3,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("3rd attempt with right reset code status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	resVerBody3 := decodeBody(t, rec)
+	if resVerBody3["reset_token"] == "" {
+		t.Fatalf("expected reset_token, got %+v", resVerBody3)
+	}
+}
+
+func TestVerifyOTP_RedisDown_Returns503(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	fCodes := &failingCodesStore{
+		Store:      otp.NewMemoryStore(),
+		consumeErr: errors.New("redis connection refused"),
+	}
+	s := New(memStore, fCodes, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "redisdown@example.com",
+		"code":  "123456",
+	}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("verify-otp redis down status = %d, want 503 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "service_unavailable" {
+		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
+
+func TestVerifyResetCode_RedisDown_Returns503(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	fCodes := &failingCodesStore{
+		Store:      otp.NewMemoryStore(),
+		consumeErr: errors.New("redis connection refused"),
+	}
+	s := New(memStore, fCodes, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{
+		"email": "redisdown@example.com",
+		"code":  "123456",
+	}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("reset/verify redis down status = %d, want 503 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "service_unavailable" {
+		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
