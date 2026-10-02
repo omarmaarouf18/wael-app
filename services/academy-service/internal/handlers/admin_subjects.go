@@ -347,6 +347,18 @@ func (s *Server) AdminSubjectSubroute(w http.ResponseWriter, r *http.Request) {
 		s.PatchAdminSubject(w, r, id)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "videos" {
+		s.AdminSubjectVideos(w, r, id)
+		return
+	}
+	if len(parts) == 3 && parts[1] == "videos" && parts[2] == "reorder" {
+		if r.Method != http.MethodPost {
+			handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+			return
+		}
+		s.ReorderAdminVideos(w, r, id)
+		return
+	}
 	if len(parts) == 2 && r.Method == http.MethodPost {
 		switch parts[1] {
 		case "publish":

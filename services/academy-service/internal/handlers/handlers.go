@@ -586,7 +586,7 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	if video == nil || !video.Published || strings.TrimSpace(video.YouTubeVideoID) == "" {
+	if video == nil || video.Deleted || !video.Published || strings.TrimSpace(video.YouTubeVideoID) == "" {
 		writeNotFound()
 		return
 	}

@@ -6,18 +6,23 @@ import (
 )
 
 // Video represents an unlisted YouTube lesson video reference inside a subject.
+// Deleted implements soft delete: deleted videos are hidden from students,
+// from counts, and from /play. They are never hard-deleted.
 type Video struct {
-	ID             string    `bson:"_id" json:"id"`
-	SubjectID      string    `bson:"subject_id" json:"subject_id"`
-	Position       int       `bson:"position" json:"position"`
-	TitleAr        string    `bson:"title_ar" json:"title_ar"`
-	TitleEn        string    `bson:"title_en" json:"title_en"`
-	DescriptionAr  string    `bson:"description_ar" json:"description_ar"`
-	DescriptionEn  string    `bson:"description_en" json:"description_en"`
-	YouTubeVideoID string    `bson:"youtube_video_id" json:"youtube_video_id"`
-	Published      bool      `bson:"published" json:"published"`
-	CreatedAt      time.Time `bson:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `bson:"updated_at" json:"updated_at"`
+	ID              string    `bson:"_id" json:"id"`
+	SubjectID       string    `bson:"subject_id" json:"subject_id"`
+	Position        int       `bson:"position" json:"position"`
+	TitleAr         string    `bson:"title_ar" json:"title_ar"`
+	TitleEn         string    `bson:"title_en" json:"title_en"`
+	DescriptionAr   string    `bson:"description_ar" json:"description_ar"`
+	DescriptionEn   string    `bson:"description_en" json:"description_en"`
+	YouTubeVideoID  string    `bson:"youtube_video_id" json:"youtube_video_id"`
+	DurationSeconds int       `bson:"duration_seconds" json:"duration_seconds"`
+	Published       bool      `bson:"published" json:"published"`
+	Deleted         bool      `bson:"deleted" json:"-"`
+	DeletedAt       time.Time `bson:"deleted_at,omitempty" json:"-"`
+	CreatedAt       time.Time `bson:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `bson:"updated_at" json:"updated_at"`
 }
 
 // VideoMetadataDTO is the student-facing video representation in subject detail.
@@ -55,6 +60,35 @@ func (v *Video) ToDTO(owned bool) VideoMetadataDTO {
 type VideoPlayResponseDTO struct {
 	VideoID        string `json:"video_id"`
 	YouTubeVideoID string `json:"youtube_video_id"`
+}
+
+// VideoAdminDTO is the admin view of a video. Unlike the student DTOs it
+// includes the YouTube id.
+type VideoAdminDTO struct {
+	ID              string    `json:"id"`
+	SubjectID       string    `json:"subject_id"`
+	TitleAr         string    `json:"title_ar"`
+	YouTubeVideoID  string    `json:"youtube_video_id"`
+	Order           int       `json:"order"`
+	DurationSeconds int       `json:"duration_seconds"`
+	Published       bool      `json:"published"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+// ToAdminDTO converts a Video to its admin representation.
+func (v *Video) ToAdminDTO() VideoAdminDTO {
+	return VideoAdminDTO{
+		ID:              v.ID,
+		SubjectID:       v.SubjectID,
+		TitleAr:         v.TitleAr,
+		YouTubeVideoID:  v.YouTubeVideoID,
+		Order:           v.Position,
+		DurationSeconds: v.DurationSeconds,
+		Published:       v.Published,
+		CreatedAt:       v.CreatedAt,
+		UpdatedAt:       v.UpdatedAt,
+	}
 }
 
 // VideoPlay represents an append-only log entry of a video playback event.

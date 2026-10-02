@@ -218,18 +218,28 @@ The access-request response carries the request status and the support link (`wh
 
 ### Admin (academy-service, `/internal/admin/...` on the admin listener)
 
-Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is verified through auth-service (`POST /internal/admin/verify`, no caching so revocation is immediate). **If auth-service is unreachable, fail closed (503).** Every mutation writes one `admin_audit_log` entry.
+Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is verified through auth-service (`POST {AUTH_ADMIN_URL}/internal/admin/verify` over mTLS, 3 s timeout, no caching so revocation is immediate). **If auth-service is unreachable, fail closed (503).** Every mutation writes one `admin_audit_log` entry in the same operation flow; if the audit write fails, the call fails (503). Audit entries follow the Section 5 schema and store no IP addresses. Levels carry a `published` flag: students see published levels only (seeded levels are published; admin diplomas start unpublished).
 
 | Method and path | Purpose |
 |---|---|
-| `POST /subjects`, `PATCH /subjects/{id}`, `DELETE /subjects/{id}` | Subject CRUD. Delete is blocked while entitlements exist |
-| `POST /subjects/{id}/publish`, `.../unpublish` | Status change |
-| `POST /subjects/{id}/videos`, `PATCH/DELETE /videos/{id}`, `PUT /subjects/{id}/videos/order` | Videos. Input accepts a YouTube URL or an 11-character ID; only the ID is stored |
+| `GET /levels` | All levels including unpublished, with subject counts |
+| `POST /levels` | Create a diploma only (`study_type` must be `diploma`); server-generated key; `published` defaults to false |
+| `PATCH /levels/{id}` | Rename, reorder, (un)publish. Seeded levels editable, never deleted; `study_type` immutable |
+| `DELETE /levels/{id}` | Only an empty diploma. Seeded levels return 409 `level_not_deletable`; non-empty diplomas 409 `level_has_subjects` |
+| `GET /subjects?level_id=&published=&page=&limit=` | Filtered subject list including drafts (limit at most 100) |
+| `POST /subjects` | Create a draft (level must exist; price integer EGP >= 0; `access_expires_at` future RFC3339; `term` first/second/empty). `published: true` is refused with 409 `subject_has_no_videos` (a new subject has no videos yet) |
+| `PATCH /subjects/{id}` | Same fields, all optional. A draft-to-published change requires at least one video |
+| `POST /subjects/{id}/publish`, `.../unpublish` | Status change. Publishing requires at least one video (409 `subject_has_no_videos`). No hard delete: unpublish hides the subject |
+| `GET /subjects/{id}/videos` | Admin video list including the YouTube id, in order |
+| `POST /subjects/{id}/videos` | Add a video (`title_ar`; `youtube` URL or bare id; `order` defaults to append; optional `duration_seconds`). Only the validated 11-char id is stored (400 `invalid_youtube_id`) |
+| `PATCH /videos/{id}` | Edit `title_ar`, `youtube`, `order`, `duration_seconds` |
+| `POST /subjects/{id}/videos/reorder` | Body is the full ordered video-id list; missing/extra/foreign/duplicate ids return 400 `invalid_video_order` |
+| `DELETE /videos/{id}` | Soft delete (hidden from students and `/play`). Deleting the last video of a published subject needs `?force=true` (409 `last_video_of_published_subject`), which also unpublishes the subject |
 | `POST /subjects/{id}/files` (multipart), `PATCH/DELETE /files/{id}` | PDF files |
 | `GET /requests?status=&page=&limit=` | Review queue (limit at most 100) |
 | `POST /requests/{id}/accept`, `POST /requests/{id}/reject` | Reject requires a reason (1-1000). Both notify the student |
 | `POST /entitlements` (grant), `DELETE /entitlements/{id}` (revoke, reason required) | Manual grant and revoke |
-| `GET /audit-log?page=&limit=` | Audit trail |
+| `GET /audit-log?page=&limit=` | Audit trail (same `{items,total,page,limit}` shape as auth-service, newest first, limit at most 100) |
 
 ### Admin (auth-service, `/internal/admin/...`)
 

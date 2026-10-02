@@ -763,6 +763,58 @@ func runStoreSuite(t *testing.T, s Store) {
 	if err != nil || gotOrdered == nil || gotOrdered.Order != 2 {
 		t.Fatalf("expected persisted order 2, got %+v err=%v", gotOrdered, err)
 	}
+
+	// Video admin update and soft delete (Phase 4.4).
+	vidAdmin := &models.Video{
+		ID: "vid-admin-1", SubjectID: "subj-order-b", Position: 1,
+		TitleAr: "محاضرة", YouTubeVideoID: "dQw4w9WgXcQ", Published: true,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := s.CreateVideo(ctx, vidAdmin); err != nil {
+		t.Fatalf("CreateVideo admin fixture failed: %v", err)
+	}
+	vidAdmin.TitleAr = "محاضرة محدثة"
+	vidAdmin.DurationSeconds = 600
+	if err := s.UpdateVideo(ctx, vidAdmin); err != nil {
+		t.Fatalf("UpdateVideo failed: %v", err)
+	}
+	gotVid, err := s.GetVideoByID(ctx, "vid-admin-1")
+	if err != nil || gotVid == nil {
+		t.Fatalf("GetVideoByID after update failed: %v", err)
+	}
+	if gotVid.TitleAr != "محاضرة محدثة" || gotVid.DurationSeconds != 600 {
+		t.Fatalf("update not applied: %+v", gotVid)
+	}
+	if err := s.UpdateVideo(ctx, &models.Video{ID: "vid-missing"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound updating missing video, got %v", err)
+	}
+
+	// Soft delete hides the video from listings and counts but GetVideoByID
+	// still returns it (handlers treat deleted as not found).
+	gotVid.Deleted = true
+	if err := s.UpdateVideo(ctx, gotVid); err != nil {
+		t.Fatalf("UpdateVideo soft delete failed: %v", err)
+	}
+	visible, err := s.ListVideosBySubject(ctx, "subj-order-b", false)
+	if err != nil {
+		t.Fatalf("ListVideosBySubject failed: %v", err)
+	}
+	for _, v := range visible {
+		if v.ID == "vid-admin-1" {
+			t.Fatalf("soft-deleted video must be hidden from listings")
+		}
+	}
+	countsAfterDelete, err := s.GetSubjectCounts(ctx, "subj-order-b")
+	if err != nil {
+		t.Fatalf("GetSubjectCounts failed: %v", err)
+	}
+	if countsAfterDelete.Videos != 0 {
+		t.Fatalf("expected 0 videos counted after soft delete, got %+v", countsAfterDelete)
+	}
+	stillThere, err := s.GetVideoByID(ctx, "vid-admin-1")
+	if err != nil || stillThere == nil || !stillThere.Deleted {
+		t.Fatalf("expected GetVideoByID to return the soft-deleted video, got %+v err=%v", stillThere, err)
+	}
 }
 
 func TestMemoryStore(t *testing.T) {

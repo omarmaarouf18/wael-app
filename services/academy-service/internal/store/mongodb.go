@@ -427,7 +427,7 @@ func (s *MongoStore) GetSubjectByID(ctx context.Context, id string) (*models.Sub
 func (s *MongoStore) GetSubjectCounts(ctx context.Context, subjectID string) (models.SubjectCountsDTO, error) {
 	var counts models.SubjectCountsDTO
 
-	vCount, err := s.db.Collection("videos").CountDocuments(ctx, bson.M{"subject_id": subjectID, "published": true})
+	vCount, err := s.db.Collection("videos").CountDocuments(ctx, bson.M{"subject_id": subjectID, "published": true, "deleted": bson.M{"$ne": true}})
 	if err != nil {
 		return counts, fmt.Errorf("store: count videos: %w", err)
 	}
@@ -473,9 +473,21 @@ func (s *MongoStore) GetVideoByID(ctx context.Context, id string) (*models.Video
 	return &v, nil
 }
 
-// ListVideosBySubject returns videos for a subject sorted by position.
+// UpdateVideo replaces an existing video. Missing ids return ErrNotFound.
+func (s *MongoStore) UpdateVideo(ctx context.Context, v *models.Video) error {
+	res, err := s.db.Collection("videos").ReplaceOne(ctx, bson.M{"_id": v.ID}, v)
+	if err != nil {
+		return fmt.Errorf("store: update video: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListVideosBySubject returns non-deleted videos for a subject sorted by position.
 func (s *MongoStore) ListVideosBySubject(ctx context.Context, subjectID string, onlyPublished bool) ([]*models.Video, error) {
-	filter := bson.M{"subject_id": subjectID}
+	filter := bson.M{"subject_id": subjectID, "deleted": bson.M{"$ne": true}}
 	if onlyPublished {
 		filter["published"] = true
 	}

@@ -49,6 +49,7 @@ type Store interface {
 	GetSubjectByID(ctx context.Context, id string) (*models.Subject, error)
 	GetSubjectCounts(ctx context.Context, subjectID string) (models.SubjectCountsDTO, error)
 	CreateVideo(ctx context.Context, v *models.Video) error
+	UpdateVideo(ctx context.Context, v *models.Video) error
 	GetVideoByID(ctx context.Context, id string) (*models.Video, error)
 	ListVideosBySubject(ctx context.Context, subjectID string, onlyPublished bool) ([]*models.Video, error)
 	CreateFile(ctx context.Context, f *models.SubjectFile) error
@@ -345,7 +346,7 @@ func (s *MemoryStore) GetSubjectCounts(_ context.Context, subjectID string) (mod
 
 	var counts models.SubjectCountsDTO
 	for _, v := range s.videos {
-		if v.SubjectID == subjectID && v.Published {
+		if v.SubjectID == subjectID && v.Published && !v.Deleted {
 			counts.Videos++
 		}
 	}
@@ -374,6 +375,19 @@ func (s *MemoryStore) CreateVideo(_ context.Context, v *models.Video) error {
 	return nil
 }
 
+// UpdateVideo replaces an existing video. Missing ids return ErrNotFound.
+func (s *MemoryStore) UpdateVideo(_ context.Context, v *models.Video) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.videos[v.ID]; !exists {
+		return ErrNotFound
+	}
+	cp := *v
+	s.videos[v.ID] = &cp
+	return nil
+}
+
 // GetVideoByID retrieves a single video by its ID.
 func (s *MemoryStore) GetVideoByID(_ context.Context, id string) (*models.Video, error) {
 	s.mu.RLock()
@@ -387,7 +401,7 @@ func (s *MemoryStore) GetVideoByID(_ context.Context, id string) (*models.Video,
 	return &cp, nil
 }
 
-// ListVideosBySubject returns videos for a subject sorted by position.
+// ListVideosBySubject returns non-deleted videos for a subject sorted by position.
 func (s *MemoryStore) ListVideosBySubject(_ context.Context, subjectID string, onlyPublished bool) ([]*models.Video, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -395,6 +409,9 @@ func (s *MemoryStore) ListVideosBySubject(_ context.Context, subjectID string, o
 	var result []*models.Video
 	for _, v := range s.videos {
 		if v.SubjectID == subjectID {
+			if v.Deleted {
+				continue
+			}
 			if onlyPublished && !v.Published {
 				continue
 			}
