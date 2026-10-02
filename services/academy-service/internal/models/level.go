@@ -7,6 +7,25 @@ const (
 	StudyTypeVocational = "vocational"
 )
 
+// StudyTypeOrder is the fixed order in which GET /academy/levels returns the
+// three study types. All three are always present (SPEC Section 1 decision 2,
+// amended 2026-10-02), whether or not they have levels or published subjects.
+var StudyTypeOrder = []string{StudyTypeBachelor, StudyTypeDiploma, StudyTypeVocational}
+
+// StudyTypeTitle returns the bilingual title of a study type.
+func StudyTypeTitle(key string) LocalizedText {
+	switch key {
+	case StudyTypeBachelor:
+		return LocalizedText{Ar: "ليسانس الحقوق", En: "LL.B. (Bachelor)"}
+	case StudyTypeDiploma:
+		return LocalizedText{Ar: "دبلومات الدراسات العليا", En: "Postgraduate Diplomas"}
+	case StudyTypeVocational:
+		return LocalizedText{Ar: "التدريب المهني والعملي", En: "Vocational Training"}
+	default:
+		return LocalizedText{Ar: key, En: key}
+	}
+}
+
 // Level represents an academic year or diploma/programme tier.
 type Level struct {
 	Key       string `bson:"key" json:"key"`

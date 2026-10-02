@@ -223,7 +223,7 @@ func (s *MongoStore) ListLevels(ctx context.Context, onlyWithPublished bool) ([]
 		filter = bson.M{}
 	}
 
-	opts := options.Find().SetSort(bson.D{{Key: "position", Value: 1}})
+	opts := options.Find().SetSort(bson.D{{Key: "position", Value: 1}, {Key: "key", Value: 1}})
 	cursor, err := s.db.Collection("levels").Find(ctx, filter, opts)
 	if err != nil {
 		return nil, fmt.Errorf("store: find levels: %w", err)

@@ -21,6 +21,7 @@ This is the build contract for the core of the application. It is written for im
 1. A single-teacher learning platform. Students only receive content; they upload nothing.
 2. Catalog tree: **study type -> level/programme -> subject**. Study types and levels are **fixed** (seeded, never admin-edited): bachelor (four years), diplomas, vocational training. Each type has different subjects.
    - *Amended 2026-09-30 (owner decision)*: Study types stay fixed. The bachelor levels (years 1-4) and the vocational level stay seeded. Under the diploma study type, the admin creates, edits, and deletes individual diplomas (example: a criminal-law diploma). Each diploma is a row in `levels` with `study_type = diploma` and a server-generated `key`. Inside a diploma the admin creates subjects (each with term first or second), then videos and files, exactly as for bachelor subjects. Deleting a diploma is blocked while it has subjects. Levels with no published subjects are hidden from `GET /academy/levels`. Vocational training is one fixed level with subjects that have an empty `term`; the frontend hides the term filter for this study type.
+   - *Amended 2026-10-02 (owner decision)*: The catalog axes are always visible. `GET /academy/levels` returns all three study types in the fixed order bachelor, diploma, vocational, each with all of its levels (bachelor years 1-4, every admin-created diploma, the vocational level), whether or not they have published subjects. The diploma study type is present with an empty `levels` list when no diploma exists. This replaces the sentence "Levels with no published subjects are hidden from `GET /academy/levels`" in the 2026-09-30 amendment above (kept visible). Subject lists and subject details still hide unpublished subjects. The app always shows the three study-type tabs; a study type or level with nothing in it shows an honest empty state ("No diplomas yet" for the diploma tab, "No subjects yet" for a level).
 3. The admin creates **subjects** inside a level. A subject has an admin-set price, a description, and a term (first or second) where applicable.
 4. A subject contains **videos** (unlisted YouTube references, each with a title and a description) and **PDF files** (books and study notes).
 5. **Owning a subject grants all its videos and PDFs automatically.** PDFs are not sold separately. PDFs can be downloaded to the student's device from inside the app.
@@ -195,6 +196,8 @@ Student routes are served through the gateway as `/api/v1/auth/...` and `/api/v1
 | `GET /academy/subjects/{id}/files/{fileId}/download` | Stream a PDF | 403 unless owned. Entitlement checked on every call. Download tier |
 | `GET /academy/me/entitlements` | Owned subject ids | |
 
+*Amended 2026-10-02 (owner decision, Section 1 decision 2):* `GET /academy/levels` always returns the three study types, `bachelor`, `diploma`, `vocational`, in that order, each as `{"key", "title": {"ar","en"}, "levels": [...]}` with all of its levels ordered by `position`, then `key`; `levels` is an empty array (never `null`) for a study type with none. The flat `levels` list holds the same levels in that tree order. A level appears whether or not it has published subjects; the table's earlier "Fixed tree" wording stands. The response carries no subject, count, price or ownership data. Subject lists and details are unchanged (published subjects only).
+
 Subject detail, owned:
 
 ```json
@@ -306,7 +309,7 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 
 **Phase 2 - academy-service read path**
 - 2.1 Skeleton: config, `--check-env`, health, `Store` interface with Memory and Mongo, both listeners.
-- 2.2 `levels` seed (bachelor years 1-4 and the vocational level only) and `GET /academy/levels` (levels with no published subjects are hidden).
+- 2.2 `levels` seed (bachelor years 1-4 and the vocational level only) and `GET /academy/levels` (levels with no published subjects are hidden). *(Amended 2026-10-02: all levels are returned, with or without published subjects; see Section 1 decision 2.)*
 - 2.3 Subjects and videos models with student read endpoints (metadata only, no video IDs yet).
 - 2.4 Gateway route `/api/v1/academy/` with a route test.
 

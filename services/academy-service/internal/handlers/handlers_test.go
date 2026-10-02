@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -226,27 +227,131 @@ func TestGetLevels(t *testing.T) {
 		}
 	})
 
-	t.Run("empty_levels_when_no_published_subjects", func(t *testing.T) {
+	getLevels := func(t *testing.T, s *Server) (models.LevelsResponseDTO, string) {
+		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
 		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
 		req.Header.Set("Authorization", "Bearer "+tok)
 		rec := httptest.NewRecorder()
-		publicHandler.ServeHTTP(rec, req)
-
+		s.PublicHandler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rec.Code)
 		}
-
+		raw := rec.Body.String()
 		var resp models.LevelsResponseDTO
-		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		if err := json.Unmarshal([]byte(raw), &resp); err != nil {
 			t.Fatalf("decode JSON: %v", err)
 		}
-		if len(resp.Levels) != 0 {
-			t.Fatalf("expected 0 levels when no published subjects, got %d", len(resp.Levels))
+		return resp, raw
+	}
+	keysOf := func(levels []models.LevelDTO) []string {
+		out := make([]string, len(levels))
+		for i, l := range levels {
+			out[i] = l.Key
+		}
+		return out
+	}
+	sameKeys := func(got, want []string) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	t.Run("empty_catalog_returns_three_study_types_with_4_0_1_levels", func(t *testing.T) {
+		fresh := newTestServer(false)
+		resp, raw := getLevels(t, fresh)
+
+		if len(resp.StudyTypes) != 3 {
+			t.Fatalf("expected 3 study types, got %d", len(resp.StudyTypes))
+		}
+		wantOrder := []string{models.StudyTypeBachelor, models.StudyTypeDiploma, models.StudyTypeVocational}
+		wantLevels := []int{4, 0, 1}
+		for i, st := range resp.StudyTypes {
+			if st.Key != wantOrder[i] {
+				t.Errorf("study type[%d] = %q, want %q", i, st.Key, wantOrder[i])
+			}
+			if len(st.Levels) != wantLevels[i] {
+				t.Errorf("study type %q has %d levels, want %d", st.Key, len(st.Levels), wantLevels[i])
+			}
+			if st.Title.Ar == "" || st.Title.En == "" {
+				t.Errorf("study type %q has an empty title: %+v", st.Key, st.Title)
+			}
+		}
+		if !sameKeys(keysOf(resp.StudyTypes[0].Levels), []string{"bachelor-y1", "bachelor-y2", "bachelor-y3", "bachelor-y4"}) {
+			t.Errorf("bachelor levels = %v", keysOf(resp.StudyTypes[0].Levels))
+		}
+		if !sameKeys(keysOf(resp.StudyTypes[2].Levels), []string{"vocational"}) {
+			t.Errorf("vocational levels = %v", keysOf(resp.StudyTypes[2].Levels))
+		}
+		if len(resp.Levels) != 5 {
+			t.Errorf("flat levels = %d, want 5", len(resp.Levels))
+		}
+		// The empty diploma list is a JSON array, never null.
+		if !strings.Contains(raw, `"key":"diploma"`) || strings.Contains(raw, `"levels":null`) {
+			t.Errorf("diploma must be present with an empty array, never null: %s", raw)
+		}
+		if !strings.Contains(raw, `"levels":[]`) {
+			t.Errorf("expected an empty diploma levels array in: %s", raw)
 		}
 	})
 
-	t.Run("draft_subject_does_not_reveal_level", func(t *testing.T) {
+	t.Run("a_diploma_without_subjects_is_listed", func(t *testing.T) {
+		fresh := newTestServer(false)
+		st := fresh.Store.(*store.MemoryStore)
+		st.PutLevel(models.Level{Key: "diploma-criminal-law", StudyType: models.StudyTypeDiploma, TitleAr: "دبلومة القانون الجنائي", TitleEn: "Criminal Law Diploma", Position: 6})
+
+		resp, _ := getLevels(t, fresh)
+		diploma := resp.StudyTypes[1]
+		if diploma.Key != models.StudyTypeDiploma || len(diploma.Levels) != 1 {
+			t.Fatalf("diploma study type = %+v", diploma)
+		}
+		if diploma.Levels[0].Key != "diploma-criminal-law" || diploma.Levels[0].Title.En != "Criminal Law Diploma" {
+			t.Errorf("diploma level = %+v", diploma.Levels[0])
+		}
+		// Tree order in the flat list: bachelor, diploma, vocational, even
+		// though the diploma's position is after the vocational level's.
+		want := []string{"bachelor-y1", "bachelor-y2", "bachelor-y3", "bachelor-y4", "diploma-criminal-law", "vocational"}
+		if !sameKeys(keysOf(resp.Levels), want) {
+			t.Errorf("flat levels = %v, want %v", keysOf(resp.Levels), want)
+		}
+	})
+
+	t.Run("diplomas_are_ordered_by_position_then_key", func(t *testing.T) {
+		fresh := newTestServer(false)
+		st := fresh.Store.(*store.MemoryStore)
+		st.PutLevel(models.Level{Key: "diploma-b", StudyType: models.StudyTypeDiploma, TitleAr: "ب", TitleEn: "B", Position: 7})
+		st.PutLevel(models.Level{Key: "diploma-c", StudyType: models.StudyTypeDiploma, TitleAr: "ج", TitleEn: "C", Position: 6})
+		st.PutLevel(models.Level{Key: "diploma-a", StudyType: models.StudyTypeDiploma, TitleAr: "أ", TitleEn: "A", Position: 7})
+
+		resp, _ := getLevels(t, fresh)
+		got := keysOf(resp.StudyTypes[1].Levels)
+		if !sameKeys(got, []string{"diploma-c", "diploma-a", "diploma-b"}) {
+			t.Errorf("diploma order = %v", got)
+		}
+	})
+
+	t.Run("a_level_with_an_unknown_study_type_comes_after_the_fixed_three", func(t *testing.T) {
+		fresh := newTestServer(false)
+		fresh.Store.(*store.MemoryStore).PutLevel(models.Level{Key: "odd-1", StudyType: "legacy", TitleAr: "قديم", TitleEn: "Legacy", Position: 9})
+
+		resp, _ := getLevels(t, fresh)
+		if len(resp.StudyTypes) != 4 || resp.StudyTypes[3].Key != "legacy" {
+			t.Fatalf("study types = %+v", resp.StudyTypes)
+		}
+		for i, key := range []string{"bachelor", "diploma", "vocational"} {
+			if resp.StudyTypes[i].Key != key {
+				t.Errorf("study type[%d] = %q, want %q", i, resp.StudyTypes[i].Key, key)
+			}
+		}
+	})
+
+	t.Run("an_unpublished_subject_is_hidden_but_its_level_stays_listed", func(t *testing.T) {
 		draft := &models.Subject{
 			ID:              "subj-draft-1",
 			LevelKey:        "bachelor-y1",
@@ -260,26 +365,35 @@ func TestGetLevels(t *testing.T) {
 		}
 		_ = s.Store.CreateSubject(context.Background(), draft)
 
-		req := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
+		resp, _ := getLevels(t, s)
+		if len(resp.Levels) != 5 || len(resp.StudyTypes) != 3 {
+			t.Fatalf("levels = %d, study types = %d; want 5 and 3", len(resp.Levels), len(resp.StudyTypes))
+		}
+
+		// The subject list and the detail still hide it.
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects?level=bachelor-y1", nil)
 		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
 		req.Header.Set("Authorization", "Bearer "+tok)
 		rec := httptest.NewRecorder()
 		publicHandler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rec.Code)
+		var list models.SubjectListResponseDTO
+		if err := json.NewDecoder(rec.Body).Decode(&list); err != nil {
+			t.Fatalf("decode subjects: %v", err)
 		}
-
-		var resp models.LevelsResponseDTO
-		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-			t.Fatalf("decode JSON: %v", err)
+		if len(list.Items) != 0 || list.Total != 0 {
+			t.Fatalf("a draft subject must not be listed: %+v", list)
 		}
-		if len(resp.Levels) != 0 {
-			t.Fatalf("expected 0 levels with draft subject, got %d", len(resp.Levels))
+		req = httptest.NewRequest(http.MethodGet, "/academy/subjects/subj-draft-1", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec = httptest.NewRecorder()
+		publicHandler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("a draft subject's detail must be 404, got %d", rec.Code)
 		}
 	})
 
-	t.Run("published_subject_reveals_level_with_DTO_shape", func(t *testing.T) {
+	t.Run("a_published_subject_is_listed_and_the_level_dto_shape_holds", func(t *testing.T) {
 		published := &models.Subject{
 			ID:              "subj-pub-1",
 			LevelKey:        "bachelor-y1",
@@ -293,22 +407,10 @@ func TestGetLevels(t *testing.T) {
 		}
 		_ = s.Store.CreateSubject(context.Background(), published)
 
-		req := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
-		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
-		req.Header.Set("Authorization", "Bearer "+tok)
-		rec := httptest.NewRecorder()
-		publicHandler.ServeHTTP(rec, req)
-
-		if rec.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rec.Code)
-		}
-
-		var resp models.LevelsResponseDTO
-		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-			t.Fatalf("decode JSON: %v", err)
-		}
-		if len(resp.Levels) != 1 {
-			t.Fatalf("expected 1 level, got %d", len(resp.Levels))
+		resp, _ := getLevels(t, s)
+		// Publishing a subject adds nothing to the axes: still 5 levels.
+		if len(resp.Levels) != 5 {
+			t.Fatalf("expected 5 levels, got %d", len(resp.Levels))
 		}
 
 		lvl := resp.Levels[0]
@@ -327,19 +429,82 @@ func TestGetLevels(t *testing.T) {
 		if lvl.Position != 1 {
 			t.Errorf("position = %d, want 1", lvl.Position)
 		}
-
-		// Also check tree representation
-		if len(resp.StudyTypes) != 1 {
-			t.Fatalf("expected 1 study type, got %d", len(resp.StudyTypes))
-		}
-		st := resp.StudyTypes[0]
-		if st.Key != models.StudyTypeBachelor {
-			t.Errorf("study type key = %q, want bachelor", st.Key)
-		}
-		if len(st.Levels) != 1 || st.Levels[0].Key != "bachelor-y1" {
-			t.Errorf("study type levels mismatch: %+v", st.Levels)
+		if len(resp.StudyTypes) != 3 || resp.StudyTypes[0].Key != models.StudyTypeBachelor {
+			t.Fatalf("study types = %+v", resp.StudyTypes)
 		}
 	})
+}
+
+// TestLevels_ContractShape pins the JSON shape of GET /academy/levels. The
+// contract suite (tests/contracts) runs it by name.
+func TestLevels_ContractShape(t *testing.T) {
+	s := newTestServer(false)
+	tok := makeStudentToken(t, "student-123")
+	req := httptest.NewRequest(http.MethodGet, "/academy/levels", nil)
+	req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	s.PublicHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	assertKeys := func(what string, raw map[string]json.RawMessage, want ...string) {
+		t.Helper()
+		if len(raw) != len(want) {
+			t.Errorf("%s has keys %v, want exactly %v", what, mapKeys(raw), want)
+		}
+		for _, k := range want {
+			if _, ok := raw[k]; !ok {
+				t.Errorf("%s is missing %q", what, k)
+			}
+		}
+	}
+	assertKeys("response", body, "levels", "study_types")
+
+	var studyTypes []map[string]json.RawMessage
+	if err := json.Unmarshal(body["study_types"], &studyTypes); err != nil {
+		t.Fatalf("study_types: %v", err)
+	}
+	if len(studyTypes) != 3 {
+		t.Fatalf("study_types = %d, want 3", len(studyTypes))
+	}
+	for _, st := range studyTypes {
+		assertKeys("study type", st, "key", "title", "levels")
+		var title map[string]json.RawMessage
+		_ = json.Unmarshal(st["title"], &title)
+		assertKeys("study type title", title, "ar", "en")
+		var levels []map[string]json.RawMessage
+		if err := json.Unmarshal(st["levels"], &levels); err != nil || levels == nil {
+			t.Fatalf("study type levels must be a JSON array, never null: %s", st["levels"])
+		}
+		for _, l := range levels {
+			assertKeys("level", l, "key", "study_type", "title", "position")
+		}
+	}
+	var flat []map[string]json.RawMessage
+	if err := json.Unmarshal(body["levels"], &flat); err != nil || len(flat) != 5 {
+		t.Fatalf("flat levels = %d (%v), want 5", len(flat), err)
+	}
+	// Never any subject, count or price information on the axes.
+	for _, banned := range []string{"price", "count", "subject", "owned"} {
+		if strings.Contains(strings.ToLower(rec.Body.String()), banned) {
+			t.Errorf("levels response must not carry %q: %s", banned, rec.Body.String())
+		}
+	}
+}
+
+func mapKeys(m map[string]json.RawMessage) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func TestSubjectsAndVideosReadEndpoints(t *testing.T) {

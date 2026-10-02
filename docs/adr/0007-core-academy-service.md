@@ -231,3 +231,21 @@ option. Every successful play writes an append-only `video_plays` record
 (`user_id`, `video_id`, `subject_id`, `played_at`, no IP); write failure is logged
 with IDs only and never blocks playback.
 
+## Amendment (2026-10-02): the catalog axes are always visible
+
+Owner decision. The 2026-09-30 amendment above says levels with no published
+subjects are hidden from `GET /academy/levels`; that is replaced (the earlier
+text is kept above):
+
+1. `GET /academy/levels` returns all three study types in the fixed order
+   `bachelor`, `diploma`, `vocational`, each with all of its levels (bachelor
+   years 1-4, every admin-created diploma, the vocational level), whether or
+   not they have published subjects. The `diploma` study type is present with
+   an empty `levels` array when no diploma exists. The response shape is
+   unchanged otherwise (titles `ar`/`en`; no subject, count or price data).
+2. Subject lists and subject details still hide unpublished subjects (R8).
+3. The app shows the three study-type tabs always, "No diplomas yet" in an
+   empty diploma tab, and "No subjects yet" for a level with no subjects.
+4. Consequence: a student can see a level before anything is published in it;
+   nothing about unpublished content is exposed, only that the level exists.
+

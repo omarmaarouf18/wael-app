@@ -279,3 +279,27 @@ func TestContract_AuthMeResponseShape(t *testing.T) {
 		t.Errorf("contract verification missing TestMe_ContractShape pass:\n%s", outStr)
 	}
 }
+
+// 7. Academy catalog axes contract: GET /academy/levels always returns the
+// three study types in fixed order (bachelor, diploma, vocational), each with
+// all of its levels and an array (never null) even when empty; the response
+// carries no subject, count, price or ownership data (SPEC Section 1
+// decision 2, amended 2026-10-02).
+func TestContract_AcademyLevelsShape(t *testing.T) {
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestLevels_ContractShape|TestGetLevels)$", "github.com/omarmaarouf18/wael-app/academy-service/internal/handlers")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("academy levels contract verification failed: %v\nOutput:\n%s", err, string(out))
+	}
+	outStr := string(out)
+	for _, name := range []string{
+		"TestLevels_ContractShape",
+		"TestGetLevels/empty_catalog_returns_three_study_types_with_4_0_1_levels",
+		"TestGetLevels/a_diploma_without_subjects_is_listed",
+		"TestGetLevels/an_unpublished_subject_is_hidden_but_its_level_stays_listed",
+	} {
+		if !strings.Contains(outStr, "PASS: "+name) {
+			t.Errorf("contract verification missing %s pass:\n%s", name, outStr)
+		}
+	}
+}

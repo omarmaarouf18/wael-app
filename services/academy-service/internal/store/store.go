@@ -122,8 +122,9 @@ func (s *MemoryStore) SeedLevels(_ context.Context) error {
 	return nil
 }
 
-// ListLevels returns levels sorted by position. If onlyWithPublished is true,
-// levels with no published subjects are omitted.
+// ListLevels returns levels sorted by position, then key. If onlyWithPublished
+// is true, levels with no published subjects are omitted (GET /academy/levels
+// passes false: the catalog axes are always visible).
 func (s *MemoryStore) ListLevels(_ context.Context, onlyWithPublished bool) ([]*models.Level, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -147,10 +148,22 @@ func (s *MemoryStore) ListLevels(_ context.Context, onlyWithPublished bool) ([]*
 	}
 
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].Position < result[j].Position
+		if result[i].Position != result[j].Position {
+			return result[i].Position < result[j].Position
+		}
+		return result[i].Key < result[j].Key
 	})
 
 	return result, nil
+}
+
+// PutLevel stores or replaces one level. It is for tests and for the later
+// admin diploma endpoints; the seeded levels come from SeedLevels.
+func (s *MemoryStore) PutLevel(lvl models.Level) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := lvl
+	s.levels[lvl.Key] = &cp
 }
 
 // CreateSubject stores a subject in memory.

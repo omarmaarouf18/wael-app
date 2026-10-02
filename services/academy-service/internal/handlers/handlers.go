@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -118,7 +119,15 @@ func (s *Server) InternalTokenAuth(next http.Handler) http.Handler {
 }
 
 // GetLevels serves GET /academy/levels.
-// Returns the list of academic levels, hiding levels that have no published subjects.
+//
+// It returns the whole catalog tree: all three study types in the fixed order
+// bachelor, diploma, vocational, each with all of its levels, whether or not
+// they have published subjects (SPEC Section 1 decision 2, amended
+// 2026-10-02). The diploma study type is present with an empty levels list
+// when no diploma exists. Subject lists and details still hide unpublished
+// subjects; only the axes are always visible. Within a study type levels are
+// ordered by position, then key. The flat `levels` list is the same levels in
+// tree order.
 func (s *Server) GetLevels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
@@ -126,62 +135,62 @@ func (s *Server) GetLevels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
-	levels, err := s.Store.ListLevels(ctx, true)
+	levels, err := s.Store.ListLevels(ctx, false)
 	cancel()
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 
-	dtos := make([]models.LevelDTO, len(levels))
-	for i, l := range levels {
-		dtos[i] = l.ToDTO()
-	}
-	if dtos == nil {
-		dtos = []models.LevelDTO{}
-	}
-
-	studyTypesMap := make(map[string]*models.StudyTypeDTO)
-	var studyTypeOrder []string
-
+	byType := make(map[string][]*models.Level)
+	var unknownOrder []string
 	for _, l := range levels {
-		stKey := l.StudyType
-		st, exists := studyTypesMap[stKey]
-		if !exists {
-			var title models.LocalizedText
-			switch stKey {
-			case models.StudyTypeBachelor:
-				title = models.LocalizedText{Ar: "ليسانس الحقوق", En: "LL.B. (Bachelor)"}
-			case models.StudyTypeDiploma:
-				title = models.LocalizedText{Ar: "دبلومات الدراسات العليا", En: "Postgraduate Diplomas"}
-			case models.StudyTypeVocational:
-				title = models.LocalizedText{Ar: "التدريب المهني والعملي", En: "Vocational Training"}
-			default:
-				title = models.LocalizedText{Ar: stKey, En: stKey}
-			}
-			st = &models.StudyTypeDTO{
-				Key:    stKey,
-				Title:  title,
-				Levels: []models.LevelDTO{},
-			}
-			studyTypesMap[stKey] = st
-			studyTypeOrder = append(studyTypeOrder, stKey)
+		if _, known := byType[l.StudyType]; !known && !isFixedStudyType(l.StudyType) {
+			unknownOrder = append(unknownOrder, l.StudyType)
 		}
-		st.Levels = append(st.Levels, l.ToDTO())
+		byType[l.StudyType] = append(byType[l.StudyType], l)
 	}
 
-	var studyTypes []models.StudyTypeDTO
-	for _, k := range studyTypeOrder {
-		studyTypes = append(studyTypes, *studyTypesMap[k])
-	}
-	if studyTypes == nil {
-		studyTypes = []models.StudyTypeDTO{}
+	// The three fixed study types always come first, in order; a level whose
+	// study type is none of them (bad data) is still returned after them.
+	order := append(append([]string{}, models.StudyTypeOrder...), unknownOrder...)
+
+	studyTypes := make([]models.StudyTypeDTO, 0, len(order))
+	dtos := make([]models.LevelDTO, 0, len(levels))
+	for _, key := range order {
+		group := byType[key]
+		sort.SliceStable(group, func(i, j int) bool {
+			if group[i].Position != group[j].Position {
+				return group[i].Position < group[j].Position
+			}
+			return group[i].Key < group[j].Key
+		})
+		st := models.StudyTypeDTO{
+			Key:    key,
+			Title:  models.StudyTypeTitle(key),
+			Levels: make([]models.LevelDTO, 0, len(group)),
+		}
+		for _, l := range group {
+			dto := l.ToDTO()
+			st.Levels = append(st.Levels, dto)
+			dtos = append(dtos, dto)
+		}
+		studyTypes = append(studyTypes, st)
 	}
 
 	handlerutil.WriteJSON(w, http.StatusOK, models.LevelsResponseDTO{
 		Levels:     dtos,
 		StudyTypes: studyTypes,
 	})
+}
+
+func isFixedStudyType(key string) bool {
+	for _, k := range models.StudyTypeOrder {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // ListSubjects serves GET /academy/subjects?level=<key>&term=<t>&page=<p>&limit=<l>.
