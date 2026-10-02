@@ -1,58 +1,123 @@
-name: Build and Publish Docker Images
+name: Build and Publish
 
-# DISABLED until image publishing is confirmed. The whole job is gated by
-# `if: false`; flip it to run on main only when GHCR publishing is wanted.
-# There is intentionally no deploy-repo sync job: wael-app-deploy does not
-# exist yet. Secrets to create later (do NOT commit): none yet — GHCR uses
-# the built-in GITHUB_TOKEN.
+# Publishes images only after "CI Gate" succeeded for a push to main
+# (never in parallel with it: saas-core S-01), then mirrors
+# infrastructure/deploy/ into wael-app-deploy with the new IMAGE_TAG.
+# OFF until the repository variable PUBLISH_ENABLED is "true". Keep it off
+# until a release gate (E2E) exists and is added as a second condition.
+# No workflow_dispatch on purpose: publishing happens only from main.
+# Note: workflow_run triggers use the workflow file on the default branch.
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["CI Gate"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-main
+  cancel-in-progress: false
 
 jobs:
-  build-and-publish:
+  publish:
     name: Build & Publish GHCR Images
-    if: false
+    if: >-
+      vars.PUBLISH_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     strategy:
+      fail-fast: true
       matrix:
         service:
           - api-gateway
           - auth-service
           - notification-service
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout the commit CI verified
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/wael-app-${{ matrix.service }}
-          tags: |
-            type=raw,value=${{ github.sha }}
-            type=raw,value=latest
-
-      - name: Build and push production Docker image
-        uses: docker/build-push-action@v5
+      - name: Build and push (immutable commit-sha tag only)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ./services/${{ matrix.service }}/Dockerfile
           target: prod
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ghcr.io/${{ github.repository_owner }}/wael-app-${{ matrix.service }}:${{ github.event.workflow_run.head_sha }}
+
+  sync-deploy-repo:
+    name: Mirror deploy files to wael-app-deploy
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout wael-app at the published commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          path: src
+          persist-credentials: false
+
+      - name: GitHub App token (wael-app-deploy only)
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: wael-app-deploy
+
+      - name: Checkout wael-app-deploy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ github.repository_owner }}/wael-app-deploy
+          token: ${{ steps.app-token.outputs.token }}
+          ref: main
+          path: deploy
+
+      - name: Mirror infrastructure/deploy and write release.env
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          rsync -a --delete --exclude '.git/' src/infrastructure/deploy/ deploy/
+          printf '# Written by wael-app build-and-publish.yml\nIMAGE_TAG=%s\n' "$HEAD_SHA" > deploy/release.env
+
+      - name: Validate compose renders
+        working-directory: deploy
+        run: |
+          tmp="$(mktemp -d)"
+          sed 's/PASTE_[A-Z_0-9]*/x/g' env.production.example > "$tmp/env"
+          WAEL_HOME="$tmp" docker compose --env-file "$tmp/env" --env-file release.env -f docker-compose.yml config --quiet
+
+      - name: Commit and push
+        working-directory: deploy
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "deploy: release ${HEAD_SHA}"
+          git push origin main

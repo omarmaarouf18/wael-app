@@ -1,0 +1,30 @@
+# wael-app edge proxy. Public TLS comes from Let's Encrypt for API_DOMAIN;
+# DNS for API_DOMAIN must point at this host before the first deploy.
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	# Caddy -> gateway is TLS verified against the local CA (SPEC Section 8
+	# item 5). Never use tls_insecure_skip_verify here.
+	reverse_proxy https://api-gateway:8080 {
+		transport http {
+			tls_trusted_ca_certs /certs/ca.crt
+			tls_server_name api-gateway
+		}
+		# SSE: never buffer responses (notification stream).
+		flush_interval -1
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+	}
+
+	# No access log on purpose: the SSE stream still carries the JWT in
+	# ?token= (SPEC Q9) and SPEC Section 8 item 8 forbids logging query
+	# strings. The gateway logs requests without query strings.
+}
+
+# admin.<domain> (admin-console) is added in SPEC Phase 6 (ADR-0008).

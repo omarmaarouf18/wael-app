@@ -1,0 +1,61 @@
+name: Sync Mobile Frontend
+
+# Mirrors frontend/ into the private repo wael-app-mobile (git subtree
+# split), only after "CI Gate" succeeded for a push to main. The mobile repo
+# then builds the APK with frontend/.github/workflows/build-apk.yml.
+# wael-app-mobile is a pure mirror: every sync force-pushes its main.
+# Never commit to wael-app-mobile directly.
+# OFF until the repository variable MOBILE_SYNC_ENABLED is "true".
+on:
+  workflow_run:
+    workflows: ["CI Gate"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-mobile
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Sync frontend/ to wael-app-mobile
+    if: >-
+      vars.MOBILE_SYNC_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the commit CI verified (full history)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Subtree split
+        id: split
+        run: |
+          git subtree --help >/dev/null 2>&1 || { echo "::error::git subtree is not available on this runner"; exit 1; }
+          sha="$(git subtree split --prefix=frontend HEAD)"
+          [ -n "$sha" ] || { echo "::error::subtree split returned nothing"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: GitHub App token (wael-app-mobile only)
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: wael-app-mobile
+
+      - name: Push to wael-app-mobile main
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          SPLIT_SHA: ${{ steps.split.outputs.sha }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          git push --force "https://x-access-token:${APP_TOKEN}@github.com/${OWNER}/wael-app-mobile.git" "${SPLIT_SHA}:refs/heads/main"
