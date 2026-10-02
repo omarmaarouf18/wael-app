@@ -181,6 +181,30 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 		return fmt.Errorf("store: ensure video_plays video_played index: %w", err)
 	}
 
+	// Indexes on admin_audit_log (Phase 4.1, per-service ownership per
+	// ADR-0008 Section 9): (actor_id, created_at) and (target_type, target_id).
+	_, err = s.db.Collection("admin_audit_log").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "actor_id", Value: 1},
+			{Key: "created_at", Value: -1},
+		},
+		Options: options.Index().SetName("idx_admin_audit_log_actor_created"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure admin_audit_log actor_created index: %w", err)
+	}
+
+	_, err = s.db.Collection("admin_audit_log").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "target_type", Value: 1},
+			{Key: "target_id", Value: 1},
+		},
+		Options: options.Index().SetName("idx_admin_audit_log_target"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure admin_audit_log target index: %w", err)
+	}
+
 	return nil
 }
 
@@ -760,4 +784,57 @@ func (s *MongoStore) ListVideoPlaysByUser(ctx context.Context, userID string) ([
 		plays = []*models.VideoPlay{}
 	}
 	return plays, nil
+}
+
+// CreateAuditLog records an admin action in admin_audit_log.
+func (s *MongoStore) CreateAuditLog(ctx context.Context, entry *models.AuditLog) error {
+	if entry.ID == "" {
+		entry.ID = generateID()
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
+	_, err := s.db.Collection("admin_audit_log").InsertOne(ctx, entry)
+	if err != nil {
+		return fmt.Errorf("store: insert audit log: %w", err)
+	}
+	return nil
+}
+
+// ListAuditLogs returns paginated audit log entries, newest first.
+func (s *MongoStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	total, err := s.db.Collection("admin_audit_log").CountDocuments(ctx, bson.M{})
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: count audit logs: %w", err)
+	}
+
+	skip := int64((page - 1) * limit)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(limit))
+
+	cursor, err := s.db.Collection("admin_audit_log").Find(ctx, bson.M{}, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: find audit logs: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var result []*models.AuditLog
+	if err := cursor.All(ctx, &result); err != nil {
+		return nil, 0, fmt.Errorf("store: decode audit logs: %w", err)
+	}
+	if result == nil {
+		result = []*models.AuditLog{}
+	}
+	return result, int(total), nil
 }

@@ -622,6 +622,44 @@ func runStoreSuite(t *testing.T, s Store) {
 	if byUser[0].VideoID != playVid || byUser[0].SubjectID != playSubj {
 		t.Errorf("unexpected play record content: %+v", byUser[0])
 	}
+
+	// Admin audit log (Phase 4.1): write three entries, read newest first.
+	auditBase := time.Now().UTC()
+	auditEntries := []*models.AuditLog{
+		{ActorID: "adm-1", ActorName: "Op", Action: "level_create", TargetType: "level", TargetID: "diploma-x", CreatedAt: auditBase.Add(-2 * time.Hour)},
+		{ActorID: "adm-1", ActorName: "Op", Action: "subject_publish", TargetType: "subject", TargetID: "subj-1", CreatedAt: auditBase.Add(-1 * time.Hour)},
+		{ActorID: "adm-1", ActorName: "Op", Action: "video_delete", TargetType: "video", TargetID: "vid-1", CreatedAt: auditBase},
+	}
+	for i, e := range auditEntries {
+		if err := s.CreateAuditLog(ctx, e); err != nil {
+			t.Fatalf("CreateAuditLog %d failed: %v", i, err)
+		}
+		if e.ID == "" {
+			t.Fatalf("CreateAuditLog %d did not assign an id", i)
+		}
+		if e.CreatedAt.IsZero() {
+			t.Fatalf("CreateAuditLog %d did not assign created_at", i)
+		}
+	}
+
+	logs, total, err := s.ListAuditLogs(ctx, 1, 2)
+	if err != nil {
+		t.Fatalf("ListAuditLogs failed: %v", err)
+	}
+	if total != 3 || len(logs) != 2 {
+		t.Fatalf("expected total=3 items=2, got total=%d items=%d", total, len(logs))
+	}
+	if logs[0].Action != "video_delete" || logs[1].Action != "subject_publish" {
+		t.Fatalf("expected newest-first order, got %s then %s", logs[0].Action, logs[1].Action)
+	}
+
+	logsPage2, _, err := s.ListAuditLogs(ctx, 2, 2)
+	if err != nil {
+		t.Fatalf("ListAuditLogs page 2 failed: %v", err)
+	}
+	if len(logsPage2) != 1 || logsPage2[0].Action != "level_create" {
+		t.Fatalf("expected page 2 to hold level_create, got %+v", logsPage2)
+	}
 }
 
 func TestMemoryStore(t *testing.T) {

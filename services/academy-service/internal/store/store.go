@@ -66,6 +66,11 @@ type Store interface {
 	RecordVideoPlay(ctx context.Context, play *models.VideoPlay) error
 	ListVideoPlaysByVideo(ctx context.Context, videoID string) ([]*models.VideoPlay, error)
 	ListVideoPlaysByUser(ctx context.Context, userID string) ([]*models.VideoPlay, error)
+
+	// Admin audit log (Phase 4.1, per-service ownership per ADR-0008 Section 9).
+	// Same shape as auth-service's admin_audit_log; newest first.
+	CreateAuditLog(ctx context.Context, entry *models.AuditLog) error
+	ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error)
 }
 
 // MemoryStore is an in-memory Store for local dev and unit testing.
@@ -78,6 +83,7 @@ type MemoryStore struct {
 	entitlements     []*models.Entitlement
 	purchaseRequests []*models.PurchaseRequest
 	videoPlays       []*models.VideoPlay
+	auditLogs        []*models.AuditLog
 }
 
 // NewMemoryStore creates an empty MemoryStore.
@@ -90,6 +96,7 @@ func NewMemoryStore() *MemoryStore {
 		entitlements:     make([]*models.Entitlement, 0),
 		purchaseRequests: make([]*models.PurchaseRequest, 0),
 		videoPlays:       make([]*models.VideoPlay, 0),
+		auditLogs:        make([]*models.AuditLog, 0),
 	}
 }
 
@@ -596,4 +603,58 @@ func (s *MemoryStore) ListVideoPlaysByUser(_ context.Context, userID string) ([]
 		}
 	}
 	return result, nil
+}
+
+// CreateAuditLog records an admin action in admin_audit_log.
+// Mirrors auth-service semantics: assigns an id and timestamp when empty.
+func (s *MemoryStore) CreateAuditLog(_ context.Context, entry *models.AuditLog) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if entry.ID == "" {
+		entry.ID = generateID()
+	}
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now().UTC()
+	}
+	cp := *entry
+	s.auditLogs = append(s.auditLogs, &cp)
+	return nil
+}
+
+// ListAuditLogs returns paginated audit log entries, newest first.
+func (s *MemoryStore) ListAuditLogs(_ context.Context, page, limit int) ([]*models.AuditLog, int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	logs := make([]*models.AuditLog, len(s.auditLogs))
+	for i, l := range s.auditLogs {
+		cp := *l
+		logs[i] = &cp
+	}
+
+	sort.Slice(logs, func(i, j int) bool {
+		return logs[i].CreatedAt.After(logs[j].CreatedAt)
+	})
+
+	total := len(logs)
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	start := (page - 1) * limit
+	if start >= total {
+		return []*models.AuditLog{}, total, nil
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	return logs[start:end], total, nil
 }

@@ -22,6 +22,7 @@ type Config struct {
 	GatewaySecret         string
 	InternalServiceToken  string
 	AuthServiceURL        string
+	AuthAdminURL          string
 	TLSCertPath           string
 	TLSKeyPath            string
 	TLSCAPath             string
@@ -64,6 +65,7 @@ func Load() (*Config, error) {
 	tlsKeyPath := os.Getenv("TLS_KEY_PATH")
 	tlsCAPath := os.Getenv("TLS_CA_PATH")
 	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	authAdminURL := os.Getenv("AUTH_ADMIN_URL")
 	adminListenAddr := os.Getenv("ADMIN_LISTEN_ADDR")
 
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -91,6 +93,9 @@ func Load() (*Config, error) {
 		if authServiceURL == "" {
 			return nil, errors.New("config: required env var AUTH_SERVICE_URL is empty")
 		}
+		if authAdminURL == "" {
+			return nil, errors.New("config: required env var AUTH_ADMIN_URL is empty")
+		}
 		if jwtSecret == "" {
 			return nil, errors.New("config: required env var JWT_SECRET is empty")
 		}
@@ -113,6 +118,10 @@ func Load() (*Config, error) {
 
 	if authServiceURL == "" {
 		authServiceURL = "https://auth-service:3002"
+	}
+
+	if authAdminURL == "" {
+		authAdminURL = "https://auth-service:9001"
 	}
 
 	if dev && jwtSecret == "" {
@@ -180,6 +189,7 @@ func Load() (*Config, error) {
 		GatewaySecret:         gatewaySecret,
 		InternalServiceToken:  internalToken,
 		AuthServiceURL:        authServiceURL,
+		AuthAdminURL:          authAdminURL,
 		TLSCertPath:           tlsCertPath,
 		TLSKeyPath:            tlsKeyPath,
 		TLSCAPath:             tlsCAPath,

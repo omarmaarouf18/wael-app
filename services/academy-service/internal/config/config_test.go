@@ -24,6 +24,7 @@ func baseEnv(t *testing.T) {
 	_ = os.Unsetenv("TLS_KEY_PATH")
 	_ = os.Unsetenv("TLS_CA_PATH")
 	_ = os.Unsetenv("AUTH_SERVICE_URL")
+	_ = os.Unsetenv("AUTH_ADMIN_URL")
 	_ = os.Unsetenv("ADMIN_LISTEN_ADDR")
 	_ = os.Unsetenv("JWT_SECRET")
 	_ = os.Unsetenv("REDIS_URI")
@@ -39,6 +40,7 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "TLS_KEY_PATH", "/tmp/key.pem")
 	setEnv(t, "TLS_CA_PATH", "/tmp/ca.pem")
 	setEnv(t, "AUTH_SERVICE_URL", "https://auth-service:3002")
+	setEnv(t, "AUTH_ADMIN_URL", "https://auth-service:9001")
 	setEnv(t, "ADMIN_LISTEN_ADDR", ":9002")
 	setEnv(t, "JWT_SECRET", "test-jwt-secret")
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
@@ -59,6 +61,9 @@ func TestLoad_MinimalDev(t *testing.T) {
 	}
 	if cfg.AuthServiceURL != "https://auth-service:3002" {
 		t.Fatalf("authServiceURL = %q, want https://auth-service:3002", cfg.AuthServiceURL)
+	}
+	if cfg.AuthAdminURL != "https://auth-service:9001" {
+		t.Fatalf("authAdminURL = %q, want https://auth-service:9001", cfg.AuthAdminURL)
 	}
 	if cfg.MongoDatabase != "academy_db" {
 		t.Fatalf("mongoDatabase = %q, want academy_db", cfg.MongoDatabase)
@@ -138,6 +143,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"TLS_CA_PATH",
 		"ADMIN_LISTEN_ADDR",
 		"AUTH_SERVICE_URL",
+		"AUTH_ADMIN_URL",
 		"JWT_SECRET",
 		"REDIS_URI",
 		"SUPPORT_WHATSAPP",
@@ -171,7 +177,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 	})
 
 	t.Run("local_dev_with_only_secrets_succeeds_with_defaults", func(t *testing.T) {
-		for _, v := range []string{"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "AUTH_SERVICE_URL", "ADMIN_LISTEN_ADDR", "JWT_SECRET", "REDIS_URI", "SUPPORT_WHATSAPP"} {
+		for _, v := range []string{"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "AUTH_SERVICE_URL", "AUTH_ADMIN_URL", "ADMIN_LISTEN_ADDR", "JWT_SECRET", "REDIS_URI", "SUPPORT_WHATSAPP"} {
 			_ = os.Unsetenv(v)
 		}
 		setEnv(t, "APP_ENV", "local")
@@ -198,6 +204,9 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		}
 		if cfg.AuthServiceURL != "https://auth-service:3002" {
 			t.Errorf("expected default AuthServiceURL https://auth-service:3002, got %q", cfg.AuthServiceURL)
+		}
+		if cfg.AuthAdminURL != "https://auth-service:9001" {
+			t.Errorf("expected default AuthAdminURL https://auth-service:9001, got %q", cfg.AuthAdminURL)
 		}
 		if cfg.RateLimitRead != 120 {
 			t.Errorf("expected default RateLimitRead 120, got %d", cfg.RateLimitRead)

@@ -89,6 +89,16 @@ func main() {
 
 	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL, cfg.ExposePriceToStudents, cfg.SupportWhatsApp)
 	srv.Limiter = tierLimiter
+	srv.AuthAdminURL = cfg.AuthAdminURL
+
+	// Verify client for admin tokens (POST {AUTH_ADMIN_URL}/internal/admin/verify):
+	// mTLS when client certs are configured, plain client with the 3 s handler
+	// timeout in dev. Outside dev TLS is already required, so this fails closed.
+	verifyClient, err := buildVerifyClient(cfg)
+	if err != nil {
+		log.Fatalf("[ACADEMY] admin verify client: %v", err)
+	}
+	srv.VerifyClient = verifyClient
 
 	// Build and start admin listener on internal network
 	adminRunner, err := buildServer(cfg, cfg.AdminListenAddr, srv.AdminHandler())
@@ -115,6 +125,28 @@ type serverRunner struct {
 	server *http.Server
 	serve  func() error
 	desc   string
+}
+
+// buildVerifyClient constructs the outgoing mTLS client used to verify admin
+// tokens against auth-service POST /internal/admin/verify (3 s timeout, no
+// caching so revocation is immediate). Outside dev, client certs are required
+// (fail closed); in dev a plain client is accepted per configuration.
+func buildVerifyClient(cfg *config.Config) (*http.Client, error) {
+	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
+	if cfg.TLSCertPath != "" && cfg.TLSKeyPath != "" && cfg.TLSCAPath != "" {
+		tlsCfg, err := tlsutil.LoadClientTLSConfig(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath)
+		if err != nil {
+			return nil, fmt.Errorf("verify mTLS: %w", err)
+		}
+		return &http.Client{
+			Timeout:   3 * time.Second,
+			Transport: &http.Transport{TLSClientConfig: tlsCfg},
+		}, nil
+	}
+	if !dev {
+		return nil, errors.New("verify client requires mTLS outside dev: TLS_CERT_PATH, TLS_KEY_PATH and TLS_CA_PATH are required")
+	}
+	return &http.Client{Timeout: 3 * time.Second}, nil
 }
 
 // buildServer constructs an http.Server and its serve function following the

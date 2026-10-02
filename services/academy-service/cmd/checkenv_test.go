@@ -17,6 +17,7 @@ func setAcademyProdEnv(t *testing.T) {
 	t.Setenv("TLS_KEY_PATH", "/tmp/key.pem")
 	t.Setenv("TLS_CA_PATH", "/tmp/ca.pem")
 	t.Setenv("AUTH_SERVICE_URL", "https://auth-service:3002")
+	t.Setenv("AUTH_ADMIN_URL", "https://auth-service:9001")
 	t.Setenv("ADMIN_LISTEN_ADDR", ":9002")
 	t.Setenv("JWT_SECRET", "test-jwt-secret")
 	t.Setenv("REDIS_URI", "redis://localhost:6379")
@@ -30,7 +31,7 @@ func setAcademyLocalEnv(t *testing.T) {
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
 	for _, v := range []string{
 		"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH",
-		"TLS_CA_PATH", "AUTH_SERVICE_URL", "ADMIN_LISTEN_ADDR",
+		"TLS_CA_PATH", "AUTH_SERVICE_URL", "AUTH_ADMIN_URL", "ADMIN_LISTEN_ADDR",
 		"JWT_SECRET", "REDIS_URI", "SUPPORT_WHATSAPP",
 	} {
 		_ = os.Unsetenv(v)
@@ -60,6 +61,7 @@ func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 		"TLS_KEY_PATH",
 		"TLS_CA_PATH",
 		"AUTH_SERVICE_URL",
+		"AUTH_ADMIN_URL",
 		"ADMIN_LISTEN_ADDR",
 		"JWT_SECRET",
 		"REDIS_URI",

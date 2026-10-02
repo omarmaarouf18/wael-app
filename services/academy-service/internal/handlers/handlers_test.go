@@ -148,29 +148,31 @@ func TestInternalTokenAuth(t *testing.T) {
 	})
 }
 
-func TestAdminHandler_EmptyInPhase2(t *testing.T) {
-	s := newTestServer(false)
+func TestAdminHandler_UnknownPaths404(t *testing.T) {
+	s, _ := newAdminTestServer(t, okVerify)
 	handler := s.AdminHandler()
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/admin/anything", nil)
 	req.Header.Set("X-Internal-Token", "test-internal-token")
+	req.Header.Set("X-Admin-Token", "some-admin-token")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for empty admin surface in Phase 2, got %d", rec.Code)
+		t.Fatalf("expected 404 for unknown admin path, got %d", rec.Code)
 	}
 }
 
 func TestRouteIsolation(t *testing.T) {
-	s := newTestServer(false)
+	s, _ := newAdminTestServer(t, okVerify)
 	adminHandler := s.AdminHandler()
 
 	for _, path := range []string{"/health", "/academy/levels", "/academy/subjects"} {
 		t.Run("admin_rejects_"+path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			req.Header.Set("X-Internal-Token", "test-internal-token")
+			req.Header.Set("X-Admin-Token", "some-admin-token")
 			rec := httptest.NewRecorder()
 			adminHandler.ServeHTTP(rec, req)
 			if rec.Code != http.StatusNotFound {

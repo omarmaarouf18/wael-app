@@ -33,6 +33,8 @@ type Server struct {
 	GatewaySecret   string
 	InternalToken   string
 	AuthURL         string
+	AuthAdminURL    string
+	VerifyClient    *http.Client
 	ExposePrice     bool
 	SupportWhatsApp string
 	Limiter         limiter.TierLimiter
@@ -658,17 +660,6 @@ func (s *Server) PublicHandler() http.Handler {
 	return h
 }
 
-// AdminHandler constructs the HTTP handler for the internal admin listener.
-// It serves ONLY /internal/admin/* routes (empty for Phase 2.1-2.3, 404) behind
-// X-Internal-Token and 404s on all public routes.
-func (s *Server) AdminHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/internal/admin/", func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	})
-
-	var h http.Handler = mux
-	h = s.InternalTokenAuth(h)
-	h = handlerutil.MaxBytesMiddleware(1 << 20)(h)
-	return h
-}
+// AdminHandler lives in admin.go: the internal admin listener serves ONLY
+// /internal/admin/* routes behind X-Internal-Token + X-Admin-Token
+// (verified via auth-service) and 404s on all public routes.
