@@ -1,12 +1,15 @@
 # wael-app
 
-Go monorepo (api-gateway, auth-service, notification-service), shared Go
-libraries, and a Flutter app with real gateway auth.
+Go monorepo (api-gateway, auth-service, notification-service,
+academy-service, admin-console), shared Go libraries, and a Flutter app with
+real gateway auth.
 
 - Services: `services/api-gateway`, `services/auth-service`
   (signup/login/OTP/JWT refresh, single `user` role),
   `services/notification-service` (SSE stream, list, mark-read, internal
-  push).
+  push), `services/academy-service` (catalog, entitlements, access
+  requests), `services/admin-console` (thin admin proxy and static pages,
+  Go plus Node tests, see its README).
 - Shared: `shared/infra` (`jwtutil, ratelimit, handlerutil, redact,
   resilience, tlsutil`).
 - Tests: `tests/contracts`, `tests/e2e` (env-gated gateway chain, see

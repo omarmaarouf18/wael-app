@@ -296,7 +296,7 @@ scaffolded but switched off (ADR-0011, `infrastructure/deploy/`); they are not l
 
 Staging stack, release-gate workflow, DEPLOYMENT,
 changelog, real `tools/docgen`, real contract tests, academy service (SPEC phases 0 to 7),
-admin console and CLI identity tooling (ADR-0008 accepted, not implemented),
+the admin console's academy pages (requests, catalog, files; the console itself exists since SPEC Phase 6.1 and the CLI identity tooling since Phase 1.4),
 `shared/infra/storage` (removed, scheduled to be restored in Phase 0.4).
 
 ---

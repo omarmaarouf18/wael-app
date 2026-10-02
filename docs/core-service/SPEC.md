@@ -333,9 +333,9 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 - 5.3 Delete (removes the stored object).
 
 **Phase 6 - admin console and deployment**
-- 6.1 `services/admin-console` skeleton: static shell, proxy that adds the internal token, no authorization logic.
+- 6.1 `services/admin-console` skeleton: static shell, proxy that adds the internal token, no authorization logic. *(Done 2026-10-02, held from `main` pending owner confirmation (rule 6 of Section 12). Built as the owner directed: Go standard library plus static pages modelled on the reviewer console, see ADR-0008 Section 10. It already serves the Accounts and Audit pages; the compose service, Caddy admin host, preflight checks and memory limit that Section 6.2 lists were added with it, and 6.2 is otherwise not reviewed.)*
 - 6.2 Compose: Caddy with a persistent certificate volume, `api.` and `admin.` hosts, `--check-env` preflight, memory limits sized for the small host, Mongo cache size set.
-- 6.3 Console pages (separate spec).
+- 6.3 Console pages (separate spec). *(2026-10-02: the Accounts and Audit pages were built with 6.1 at the owner's direction; Requests, Catalog and Files remain, hidden in the console until their APIs exist.)*
 
 **Phase 7 - broadcast (write a short ADR first)**
 - Admin creates a broadcast with audience `all` or `subject:<id>`. Fan-out pages through target user ids and pushes per user in bounded batches, idempotent per (broadcast, user). Failures are logged and retryable. Per-user rows are kept, because the existing list, read, and SSE path serves per-user rows.

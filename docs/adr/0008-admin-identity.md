@@ -88,6 +88,23 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 3. **Endpoint**: Each service exposes `GET /internal/admin/audit-log?page=&limit=` on its admin listener (`ADMIN_LISTEN_ADDR`), authenticated via `X-Internal-Token` and `X-Admin-Token` (validated via `auth-service`).
 4. **Console Merging**: The admin console (Phase 6) queries both services and merges entries ordered by `created_at` descending. No shared database and no cross-service database writes.
 
+### 10. Note (2026-10-02, Owner Decision on the Console Implementation, SPEC Phase 6.1)
+
+*Records how Section 4 is implemented. It changes none of the decisions above.*
+
+1. **Shape**: the admin console is a Go service (`services/admin-console`) serving static pages. The pages are plain HTML, CSS and vanilla JavaScript ES modules embedded with `go:embed`, served by the Go standard library: no framework, no Node build step, no CDN. It is modelled on the owner's existing reviewer console (`kyc-reviewer-console`), not copied from it.
+2. **Differences from that console**:
+   1. The admin token is kept in a JavaScript module variable only (Section 4.5). The reviewer console used `sessionStorage`; here a reload means signing in again.
+   2. Strict security headers on every response (CSP `default-src 'self'` with no inline script or style, `nosniff`, `Referrer-Policy: no-referrer`, `no-store` on `/api/*`). The reviewer console sent none.
+   3. An upstream failure or timeout becomes a safe `503` after 10 seconds (the reviewer console returned `502` after 30 seconds).
+   4. The client's `X-Internal-Token` and `X-Admin-Client-IP` never reach an upstream: the upstream request is built from scratch, `X-Internal-Token` comes from the environment, and `X-Admin-Client-IP` is set from the real client address. `X-Forwarded-For` is read only when the peer is in `TRUSTED_PROXY_IPS` (Caddy), as Section 8 requires.
+   5. It lives in this monorepo, is built and released by the same pipeline, and runs behind Caddy on the admin subdomain.
+   6. The JavaScript is split into small modules per tab (the reviewer console is one file of about 2,100 lines).
+   7. Arabic first and right-to-left, with an English toggle, using the EL METR dark and crimson tokens.
+3. **Routes are an explicit allowlist**, each forwarding to exactly one `/internal/admin/*` endpoint of auth-service: whoami (`verify`), accounts list, suspend, reactivate, delete, and the audit log. There is no generic pass-through and no route under `/internal/`.
+4. **Audit log merge (Section 9.4)**: until the academy-service admin endpoints exist (SPEC Phase 4.1), the console serves auth-service's audit log only. Merging both logs by `created_at` descending is added with Phase 4.1; the academy routes (requests, catalog, files) are added as Phase 4 lands. Their tabs exist in the code and stay hidden until then.
+5. **Held from `main`**: this is an admin-authorization surface (SPEC Section 12, rule 6). It stays off `main` until the owner confirms.
+
 ## Consequences
 
 

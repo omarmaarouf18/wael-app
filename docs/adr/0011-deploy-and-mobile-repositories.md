@@ -53,6 +53,8 @@ publishing and deploying kept off until the prerequisites exist.
 - This starts parts of SPEC Phase 6.2 (compose, Caddy, `--check-env`
   pre-flight) before Phases 1-5, as scaffolding that is switched off. The
   academy-service and admin-console entries are added in their phases.
+  *(2026-10-02: both entries are now in the stack; admin-console arrived with
+  SPEC Phase 6.1.)*
 - Rollback covers images only; database changes are not rolled back until a
   migration framework exists.
 - Release APKs are debug-signed until the owner provides an upload keystore;
