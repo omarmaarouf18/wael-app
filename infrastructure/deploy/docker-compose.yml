@@ -36,7 +36,7 @@ x-app: &app
 
 services:
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
     restart: unless-stopped
     logging: *logging
     ports:
@@ -246,7 +246,7 @@ services:
       start_period: 15s
 
   mongo:
-    image: mongo:7
+    image: mongo:7@sha256:1f995ad6fdb93244a1addab1b58f934a0bc2f5643c38e02f5e9d7f0c7d227a7b  # mongod 7.0.43 (prod 2026-10-02)
     restart: unless-stopped
     logging: *logging
     # No published port: reachable only inside wael-net.
@@ -275,7 +275,7 @@ services:
       - wael-net
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     restart: unless-stopped
     logging: *logging
     # Password lives in redis.conf (requirepass), never on the command line (W-09).

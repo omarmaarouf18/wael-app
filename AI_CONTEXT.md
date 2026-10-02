@@ -143,11 +143,11 @@ SPEC Phase 6.1 admin-console (owner decision 2026-10-02: Go plus static pages mo
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy/mobile pipeline live on production with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true` (ADR-0011).
-RUNBOOK (at `infrastructure/deploy/RUNBOOK.md`), DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
+RUNBOOK (at `infrastructure/deploy/RUNBOOK.md`, now the short day-2 checklist) and SERVER-MANUAL (same folder, full install/run/operate manual, 2026-10-02), DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
 rows in `docs/asset-provenance.md`.
 Hardening reference and backlog: docs/BOOTSTRAP-REFERENCE.md.
 Owner question: reminder notification before a subscription expires (SPEC Section 3 question 17).
-Pipeline hardening & required checks decisions (owner 2026-10-02): (1) E2E as release gate is sufficient: E2E (compose) and Prod Image Build inside CI Gate run on main before publish; (2) required checks: replace per-job ruleset list with single aggregate job 'CI OK' in ci.yml covering all jobs, sole required check on main and develop; (3) publishing and deploy are ON and live since 557f367; (4) admin tooling shipped in auth-service image and verified on live server with sudo docker exec wael-auth-service-1 /bin/onboard-admin --name "<name>" --ttl 2160h; (5) rollback correctness: last-good compose/Caddyfile preservation, --remove-orphans, and failed-releases guard.
+Pipeline hardening & required checks decisions (owner 2026-10-02): (1) E2E as release gate is sufficient: E2E (compose) and Prod Image Build inside CI Gate run on main before publish; (2) required checks: replace per-job ruleset list with single aggregate job 'CI OK' in ci.yml covering all jobs, sole required check on main and develop; (3) publishing and deploy are ON and live since 557f367; (4) admin tooling shipped in auth-service image and verified on live server with sudo docker exec wael-auth-service-1 /bin/onboard-admin --name "<name>" --ttl 2160h; (5) rollback correctness: last-good compose/Caddyfile preservation, --remove-orphans, and failed-releases guard; (6) supply chain: third-party images in infrastructure/deploy/docker-compose.yml (caddy:2-alpine, mongo:7, redis:7-alpine) pinned by multi-arch index digest with weekly Dependabot updates (W-07 resolved).
 
 ## Decisions
 - [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)

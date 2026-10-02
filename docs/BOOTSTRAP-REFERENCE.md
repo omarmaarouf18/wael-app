@@ -378,6 +378,7 @@ SBOM (2026-10-02: publishing is live, so the last three are still pre-work).
 *Fix:* pin actions by commit SHA with a version comment, pin `govulncheck`, add
 `.github/dependabot.yml` (gomod per module, github-actions, docker, pub), add CODEOWNERS
 for `.github/`, `infrastructure/`, `shared/infra/`, `docs/adr/`, `services/auth-service/`.
+*(Resolved 2026-10-02): Third-party images in `infrastructure/deploy/docker-compose.yml` (`caddy:2-alpine`, `mongo:7`, `redis:7-alpine`) pinned by multi-arch index digests matching production; Dependabot configured for `/infrastructure/deploy` weekly docker updates.*
 
 **W-08 `P2` Container health probes still fall back to plain HTTP.**
 The prod `HEALTHCHECK` in `services/auth-service/Dockerfile` ends with
@@ -464,7 +465,7 @@ a captured-mail sink. Decide this in an ADR before building staging.
 | W-04 (done) | No `--check-env` | P1 | CD pre-flight |
 | W-05 (done) | No real-DB tests | P1 | Academy Phase 1 |
 | W-06 (done) | Empty contract/E2E suites report green | P2 | Release gate |
-| W-07 | Unpinned supply chain | P2 | First publish |
+| W-07 (done) | Unpinned supply chain | P2 | First publish |
 | W-08 | Probe fallback to HTTP | P2 | First deploy |
 | W-09 | Redis password on command line | P2 | First deploy |
 | W-10 | Cert permissions and lifetime | P2 | First deploy |
@@ -843,7 +844,7 @@ Examined commit: `46c7997...`
 | W-04 | Fixed | `services/*/cmd/main.go`, `services/*/cmd/checkenv_test.go`, `services/admin-console/main.go` | `--check-env` flag added to all five services (api-gateway, auth-service, notification-service, academy-service, admin-console); validates config via Load() and exits 0/1 without starting resources. |
 | W-05 | Fixed | `.github/workflows/ci.yml:105-121`, `services/auth-service/internal/{store,otp}/*_test.go`, `services/notification-service/internal/store/*_test.go` | Mongo and Redis service containers added to build-test job with health checks and `REQUIRE_DB=1`; dual-implementation store test suites run against MemoryStore and MongoStore/RedisStore. |
 | W-06 | Fixed (dev stack) | `tests/contracts/contracts_test.go:20-159`, `tests/e2e/chain_test.go`, `.github/workflows/ci.yml` | Contract tests active in build-test matrix; tests/e2e split into sequential t.Run stages with E2E_REQUIRED=1 fail-closed mode and executed against live compose stack in CI job "E2E (compose)". |
-| W-07 | Confirmed | `.github/workflows/ci.yml:19,24,146,189`, `.githooks/pre-push:125`, `services/*/Dockerfile:11,28,41` | none |
+| W-07 | Fixed (2026-10-02) | `infrastructure/deploy/docker-compose.yml`, `.github/dependabot.yml` | Third-party images (`caddy:2-alpine`, `mongo:7`, `redis:7-alpine`) pinned by multi-arch index digests matching production; Dependabot configured for `/infrastructure/deploy` weekly docker updates. |
 | W-08 | Confirmed | `services/*/Dockerfile:50-51,45-46`, `infrastructure/docker-compose.yml:98` | none |
 | W-09 | Confirmed | `infrastructure/docker-compose.yml:24,45,50` | none |
 | W-10 | Confirmed | `infrastructure/certs/generate-certs.sh:11,31,37,39,40` | none |
