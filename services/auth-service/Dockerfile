@@ -47,7 +47,7 @@ COPY --from=build /bin/revoke-admin /bin/revoke-admin
 EXPOSE 3002
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f -s -k --cert /app/certs/auth-service.crt --key /app/certs/auth-service.key https://localhost:3002/health || curl -f -s -k https://localhost:3002/health || curl -f -s http://localhost:3002/health || exit 1
+  CMD curl -fsS --cacert /app/certs/ca.crt --cert /app/certs/auth-service.crt --key /app/certs/auth-service.key https://localhost:3002/health || exit 1
 
 USER appuser
 

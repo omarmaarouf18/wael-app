@@ -48,7 +48,7 @@ COPY --from=build /bin/service /bin/service
 EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f -s -k --cert /app/certs/api-gateway.crt --key /app/certs/api-gateway.key https://localhost:8080/health || curl -f -s -k https://localhost:8080/health || curl -f -s http://localhost:8080/health || exit 1
+  CMD curl -fsS --cacert /app/certs/ca.crt https://localhost:8080/health || exit 1
 
 USER appuser
 
