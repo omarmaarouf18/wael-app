@@ -28,7 +28,8 @@ check "IMAGE_TAG is a full commit sha" grep -qE '^[0-9a-f]{40}$' <<<"$tag"
 # 3. Required values present and not placeholders or dev defaults
 required=(API_DOMAIN ACME_EMAIL ALLOWED_ORIGIN JWT_SECRET GATEWAY_SECRET
 	INTERNAL_SERVICE_TOKEN MONGO_ROOT_USERNAME AUTH_MONGO_URI
-	NOTIFICATION_MONGO_URI REDIS_URI RESEND_API_KEY RESEND_FROM_EMAIL)
+	NOTIFICATION_MONGO_URI ACADEMY_MONGO_URI REDIS_URI RESEND_API_KEY
+	RESEND_FROM_EMAIL BLOCKLIST_HMAC_KEY SUPPORT_WHATSAPP)
 for name in "${required[@]}"; do
 	value="$(read_var "$ENV_FILE" "$name")"
 	check "$name is set" test -n "$value"
@@ -37,7 +38,7 @@ for name in "${required[@]}"; do
 		errors=$((errors + 1))
 	fi
 done
-for name in JWT_SECRET GATEWAY_SECRET INTERNAL_SERVICE_TOKEN; do
+for name in JWT_SECRET GATEWAY_SECRET INTERNAL_SERVICE_TOKEN BLOCKLIST_HMAC_KEY; do
 	value="$(read_var "$ENV_FILE" "$name")"
 	check "$name is at least 32 characters" test "${#value}" -ge 32
 done
@@ -47,11 +48,11 @@ if grep -q '^APP_ENV=' "$ENV_FILE"; then
 fi
 
 # 4. Certificates: present and not expiring within 14 days
-for crt in ca api-gateway auth-service notification-service; do
+for crt in ca api-gateway auth-service notification-service academy-service; do
 	check "cert $crt.crt valid for 14+ days" \
 		openssl x509 -checkend $((14 * 86400)) -noout -in "$WAEL_HOME/certs/$crt.crt"
 done
-for key in api-gateway auth-service notification-service; do
+for key in api-gateway auth-service notification-service academy-service; do
 	check "key $key.key exists" test -s "$WAEL_HOME/certs/$key.key"
 done
 [ "$errors" -eq 0 ] || fail "$errors check(s) failed; nothing was changed"
@@ -60,10 +61,27 @@ done
 check "compose config renders" compose config --quiet
 [ "$errors" -eq 0 ] || fail "compose config failed; nothing was changed"
 
-# 6. Pull the new images (does not affect running containers)
-log "pulling images for $tag"
-compose pull --quiet api-gateway auth-service notification-service mongo redis caddy \
-	|| fail "image pull failed; nothing was changed"
+# 6. Get the new images (does not affect running containers).
+#    SKIP_PULL=1 is for a manual trial deploy where the app images were
+#    loaded with `docker load` instead of coming from GHCR (RUNBOOK.md,
+#    "Manual trial deploy"). It skips the pull of the four app images only:
+#    they must already be present locally under this exact tag. mongo, redis
+#    and caddy are still pulled from Docker Hub. Shell only: the deploy
+#    workflow never sets it, so the normal path always pulls.
+image_loaded() { docker image inspect "$1" >/dev/null 2>&1; }
+if [ "${SKIP_PULL:-0}" = 1 ]; then
+	log "SKIP_PULL=1: not pulling app images for $tag; checking they are loaded locally"
+	while read -r image; do
+		check "image $image is loaded locally" image_loaded "$image"
+	done < <(compose config --images | grep '/wael-app-')
+	[ "$errors" -eq 0 ] || fail "app images are not loaded locally; nothing was changed"
+	compose pull --quiet mongo redis caddy \
+		|| fail "base image pull failed; nothing was changed"
+else
+	log "pulling images for $tag"
+	compose pull --quiet "${APP_SERVICES[@]}" mongo redis caddy \
+		|| fail "image pull failed; nothing was changed"
+fi
 
 # 7. Each new image validates its own config with --check-env (W-04).
 #    One-off containers only; running services are untouched.

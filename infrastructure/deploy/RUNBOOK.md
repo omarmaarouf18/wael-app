@@ -49,19 +49,29 @@ Run as a sudo-capable admin unless stated otherwise.
    chmod 644 "$WAEL_HOME"/secrets/*   # readable inside the containers; the 700 dir blocks other host users
    ```
    Put the same Redis password into `REDIS_URI`.
-6. **Per-service Mongo users** (after the first successful start of mongo):
+6. **Per-service Mongo users** (once, before the first deploy). The three
+   database-backed services cannot start until their users exist, so start
+   only mongo first. From the deploy checkout, with the step 5 files in place
+   and a `release.env` (the compose file needs `IMAGE_TAG` to render):
    ```bash
-   docker compose -p wael exec mongo mongosh -u wael_root -p "$(cat $WAEL_HOME/secrets/mongo_root_password)" --authenticationDatabase admin --eval '
+   export WAEL_HOME=/home/deploybot/wael
+   source scripts/lib.sh        # defines the `compose` helper used by the scripts
+   compose up -d --wait mongo
+   compose exec -T mongo mongosh -u wael_root -p "$(cat "$WAEL_HOME/secrets/mongo_root_password")" --authenticationDatabase admin --eval '
      db.getSiblingDB("auth_db").createUser({user:"auth_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"auth_db"}]});
-     db.getSiblingDB("notification_db").createUser({user:"notif_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"notification_db"}]});'
+     db.getSiblingDB("notification_db").createUser({user:"notif_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"notification_db"}]});
+     db.getSiblingDB("academy_db").createUser({user:"academy_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"academy_db"}]});'
    ```
-   The passwords go into `AUTH_MONGO_URI` and `NOTIFICATION_MONGO_URI`.
-7. **Internal mTLS certificates.** Generate with the wael-app script on an
-   admin machine, copy `ca.crt` and each service `.crt/.key` into
-   `$WAEL_HOME/certs/` (never `ca.key`: keep it offline). Until W-10 (fixed
+   Use a different `openssl rand -hex 24` for each `<pw>` (hex needs no URL
+   escaping). The passwords go into `AUTH_MONGO_URI`, `NOTIFICATION_MONGO_URI`
+   and `ACADEMY_MONGO_URI`.
+7. **Internal mTLS certificates.** Generate with the wael-app script
+   (`infrastructure/certs/generate-certs.sh`) on an admin machine, copy
+   `ca.crt` and the `.crt/.key` of `api-gateway`, `auth-service`,
+   `notification-service` and `academy-service` into `$WAEL_HOME/certs/` (never `ca.key`: keep it offline). Until W-10 (fixed
    container UID) lands, key files must be `644`; the `700` certs directory
    keeps other host users out.
-8. **DNS.** Create an A (and AAAA if used) record for `api.<domain>` pointing
+8. **DNS.** Create an A (and AAAA if used) record for `api.elmetracademy.app` pointing
    at the server. Caddy obtains the public certificate on first start; the
    deploy's public health check fails until DNS resolves.
 9. **GHCR login** (as deploybot), with a fine-grained token that has only
@@ -79,7 +89,7 @@ Run as a sudo-capable admin unless stated otherwise.
 | wael-app variables | `PUBLISH_ENABLED`, `MOBILE_SYNC_ENABLED` |
 | wael-app-deploy variables | `DEPLOY_ENABLED`, optional `WAEL_HOME` |
 | wael-app-deploy environment | `production` (add required reviewers if your plan allows it on private repos) |
-| wael-app-mobile variables | `API_BASE_URL` (for example `https://api.<domain>`) |
+| wael-app-mobile variables | `API_BASE_URL` (`https://api.elmetracademy.app`) |
 | wael-app-mobile secrets (optional) | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` |
 
 ## Turning it on (order matters)
@@ -93,6 +103,87 @@ Run as a sudo-capable admin unless stated otherwise.
    and the deploy-repo commit appear.
 4. Set `DEPLOY_ENABLED=true` in wael-app-deploy and re-run the Deploy
    workflow.
+
+## Memory profiles
+
+The defaults in `docker-compose.yml` fit a 2 GB host (container limits add up
+to about 1.7 GB). For a 1 GB host, uncomment the "1 GB host" block at the end
+of `env.production.example` in `$WAEL_HOME/.env.production`:
+
+| Service | 2 GB default | 1 GB host |
+|---|---|---|
+| mongo (`MONGO_MEM_LIMIT`, WiredTiger cache `MONGO_CACHE_GB`) | 768m, 0.25 GB | 420m, 0.25 GB |
+| redis (`REDIS_MEM_LIMIT`) | 128m | 64m |
+| api-gateway (`GATEWAY_MEM_LIMIT`) | 128m | 96m |
+| auth-service (`AUTH_MEM_LIMIT`) | 192m | 96m |
+| notification-service (`NOTIFICATION_MEM_LIMIT`) | 192m | 96m |
+| academy-service (`ACADEMY_MEM_LIMIT`) | 192m | 96m |
+| caddy (`CADDY_MEM_LIMIT`) | 128m | 64m |
+
+The 1 GB limits total about 930 MB, which leaves very little for the
+operating system and the Docker daemon. Add swap to the host first (for
+example a 1 GB swap file), run nothing else on it, and watch
+`docker stats --no-stream` and `docker inspect -f '{{.State.OOMKilled}}' <container>`
+after the first deploy: a container that is OOM-killed needs a higher limit
+or a bigger host. This profile has not been tried.
+
+## Manual trial deploy (no GHCR)
+
+Use this to run the stack on the server before publishing is switched on, or
+without GHCR at all. The publish and deploy workflows stay off; you build the
+images yourself and load them on the host. Nothing here has been run yet.
+
+Prerequisites: server setup steps 1 to 8 are done (GHCR login and the
+runner, steps 9 and 10, are not needed), `$WAEL_HOME/.env.production` is
+filled, the certificates are in place and the DNS record resolves (the last
+check goes through Caddy and needs a public certificate, so ports 80 and 443
+must be reachable; otherwise the deploy fails). The admin machine needs
+Docker and a checkout of the commit to deploy. Build on the same CPU
+architecture as the host, or add `--platform linux/amd64` (or the host's).
+
+1. **Build each production image from the repo root** (the Dockerfiles expect
+   the repo root as build context):
+   ```bash
+   SHA="$(git rev-parse HEAD)"          # full 40-character commit sha
+   for svc in api-gateway auth-service notification-service academy-service; do
+     docker build -f services/$svc/Dockerfile --target prod \
+       -t ghcr.io/omarmaarouf18/wael-app-$svc:$SHA .
+   done
+   ```
+2. **Send the images to the host:**
+   ```bash
+   docker save $(for svc in api-gateway auth-service notification-service academy-service; do
+       echo ghcr.io/omarmaarouf18/wael-app-$svc:$SHA; done) \
+     | gzip | ssh deploybot@<host> 'gunzip | docker load'
+   ```
+3. **Send the deploy files** (they are the same files the publish workflow
+   mirrors): `rsync -a --delete --exclude '.git/' infrastructure/deploy/ deploybot@<host>:wael-deploy/`
+4. **On the host, write `release.env` by hand** (the publish workflow does
+   this normally):
+   ```bash
+   cd ~/wael-deploy
+   printf 'IMAGE_TAG=%s\n' "<the same 40-character sha>" > release.env
+   ```
+5. **First time only:** create the Mongo users (server setup step 6).
+6. **Pre-flight, then deploy:**
+   ```bash
+   export WAEL_HOME=/home/deploybot/wael
+   SKIP_PULL=1 ./scripts/preflight.sh      # read every line
+   SKIP_PULL=1 ./scripts/deploy.sh
+   ```
+
+`SKIP_PULL=1` is a shell-only switch (the deploy workflow never sets it). Without it, `preflight.sh`
+runs `docker compose pull` on the four app images, which fails for images
+that exist only on the host. With it, preflight skips that pull, checks that
+all four images are already loaded under the exact `IMAGE_TAG`, and still
+pulls mongo, redis and caddy from Docker Hub. `deploy.sh` and
+`rollback.sh` pull nothing themselves, so they need no switch.
+
+To deploy a newer build, repeat steps 1 to 4 with the new sha. Keep the
+previously loaded images: rollback needs the last good release's images on
+the host, so do not `docker image prune` between deploys. The first deploy
+has no last good release to roll back to; if it fails, read
+`docker compose -p wael logs --tail 100 <service>` and fix the cause.
 
 ## Operations
 
@@ -108,4 +199,4 @@ Run as a sudo-capable admin unless stated otherwise.
 - `REDIS_URI` and Mongo URIs carry passwords in container env (`docker inspect`).
 - Base images are pinned by tag, not digest (W-07).
 - No certificate rotation job; preflight only refuses certs expiring within 14 days.
-- academy-service and admin-console are not in the stack yet.
+- admin-console is not in the stack yet (SPEC Phase 6). The admin listeners of auth-service (:9001) and academy-service (:9002) run inside their containers and are not published.

@@ -10,7 +10,9 @@
 #   --env-file $WAEL_HOME/.env.production --env-file release.env
 #
 # Host layout ($WAEL_HOME, default /home/deploybot/wael): see RUNBOOK.md.
-# Not yet in this stack: academy-service and admin-console (SPEC Phase 2 and 6).
+# Not yet in this stack: admin-console (SPEC Phase 6). The admin listeners of
+# auth-service (:9001) and academy-service (:9002) are bound inside their
+# containers and never published.
 # =============================================================================
 
 name: wael
@@ -78,6 +80,8 @@ services:
       GATEWAY_SECRET: ${GATEWAY_SECRET:?GATEWAY_SECRET is required}
       AUTH_SERVICE_URL: https://auth-service:3002
       NOTIFICATION_SERVICE_URL: https://notification-service:3004
+      # Must be https: the gateway refuses an http target when mTLS is active.
+      ACADEMY_SERVICE_URL: https://academy-service:3003
       TRUSTED_PROXY_IPS: 172.30.0.10
       TLS_CERT_PATH: /app/certs/api-gateway.crt
       TLS_KEY_PATH: /app/certs/api-gateway.key
@@ -112,6 +116,10 @@ services:
       NOTIFICATION_SERVICE_URL: https://notification-service:3004
       RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY is required}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?RESEND_FROM_EMAIL is required}
+      BLOCKLIST_HMAC_KEY: ${BLOCKLIST_HMAC_KEY:?BLOCKLIST_HMAC_KEY is required}
+      DEFAULT_PHONE_REGION: ${DEFAULT_PHONE_REGION:-EG}
+      # Admin listener: internal only, not published (ADR-0008).
+      ADMIN_LISTEN_ADDR: ":9001"
       TLS_CERT_PATH: /app/certs/auth-service.crt
       TLS_KEY_PATH: /app/certs/auth-service.key
       TLS_CA_PATH: /app/certs/ca.crt
@@ -141,6 +149,9 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       GATEWAY_SECRET: ${GATEWAY_SECRET}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      # Optional; empty means the service default (3 and 10).
+      STREAM_MAX_CONCURRENT: ${STREAM_MAX_CONCURRENT:-}
+      STREAM_OPEN_RATE_LIMIT: ${STREAM_OPEN_RATE_LIMIT:-}
       TLS_CERT_PATH: /app/certs/notification-service.crt
       TLS_KEY_PATH: /app/certs/notification-service.key
       TLS_CA_PATH: /app/certs/ca.crt
@@ -151,6 +162,48 @@ services:
     mem_limit: ${NOTIFICATION_MEM_LIMIT:-192m}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS --cacert /app/certs/ca.crt --cert /app/certs/notification-service.crt --key /app/certs/notification-service.key https://localhost:3004/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  academy-service:
+    <<: *app
+    image: ghcr.io/omarmaarouf18/wael-app-academy-service:${IMAGE_TAG:?IMAGE_TAG is required}
+    expose:
+      - "3003"
+    environment:
+      APP_ENV: production
+      PORT: "3003"
+      MONGO_URI: ${ACADEMY_MONGO_URI:?ACADEMY_MONGO_URI is required}
+      ACADEMY_MONGO_DATABASE: academy_db
+      REDIS_URI: ${REDIS_URI}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_SECRET: ${GATEWAY_SECRET}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      AUTH_SERVICE_URL: https://auth-service:3002
+      SUPPORT_WHATSAPP: ${SUPPORT_WHATSAPP:?SUPPORT_WHATSAPP is required}
+      # Prices stay hidden from students unless this is "true" (SPEC D3).
+      EXPOSE_PRICE_TO_STUDENTS: ${EXPOSE_PRICE_TO_STUDENTS:-false}
+      # Optional per-minute tier limits; empty means the service default.
+      RATE_LIMIT_READ: ${RATE_LIMIT_READ:-}
+      RATE_LIMIT_PLAY: ${RATE_LIMIT_PLAY:-}
+      RATE_LIMIT_DOWNLOAD: ${RATE_LIMIT_DOWNLOAD:-}
+      RATE_LIMIT_WRITE: ${RATE_LIMIT_WRITE:-}
+      # Admin listener: internal only, not published (ADR-0008).
+      ADMIN_LISTEN_ADDR: ":9002"
+      TLS_CERT_PATH: /app/certs/academy-service.crt
+      TLS_KEY_PATH: /app/certs/academy-service.key
+      TLS_CA_PATH: /app/certs/ca.crt
+    volumes:
+      - ${WAEL_HOME}/certs/ca.crt:/app/certs/ca.crt:ro
+      - ${WAEL_HOME}/certs/academy-service.crt:/app/certs/academy-service.crt:ro
+      - ${WAEL_HOME}/certs/academy-service.key:/app/certs/academy-service.key:ro
+    mem_limit: ${ACADEMY_MEM_LIMIT:-192m}
+    healthcheck:
+      # Strict mTLS: the service requires a client certificate, and the probe
+      # verifies the local CA. No -k, no HTTP fallback (W-08).
+      test: ["CMD-SHELL", "curl -fsS --cacert /app/certs/ca.crt --cert /app/certs/academy-service.crt --key /app/certs/academy-service.key https://localhost:3003/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
