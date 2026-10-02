@@ -447,8 +447,7 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if clearErr := s.Codes.ClearFailures(ctx, "signup", email); clearErr != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", clearErr)
-		return
+		log.Printf("[AUTH] ClearFailures error: %v", clearErr)
 	}
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	u, err := s.Store.FindByEmail(dbCtx, email)
@@ -823,8 +822,7 @@ func (s *Server) VerifyResetCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if clearErr := s.Codes.ClearFailures(ctx, "reset", email); clearErr != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", clearErr)
-		return
+		log.Printf("[AUTH] ClearFailures error: %v", clearErr)
 	}
 	raw, err := otp.GenerateOpaqueToken()
 	if err != nil {

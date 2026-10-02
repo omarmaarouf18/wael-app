@@ -2182,21 +2182,41 @@ func TestResetAndVerify_StoreErrors(t *testing.T) {
 		t.Fatalf("RecordFailure err on verify-otp status = %d, want 503", rec.Code)
 	}
 
-	// 5. ClearFailures error -> 503 on VerifyResetCode and VerifyOTP
+	// 5. ClearFailures error -> does not fail consumed code; logs error and continues with 200
 	baseStore := otp.NewMemoryStore()
 	_ = baseStore.Set(context.Background(), "reset-code:err_clear@example.com", otp.HashToken("123456"), time.Hour)
 	_ = baseStore.Set(context.Background(), "signup-otp:err_clear@example.com", otp.HashToken("123456"), time.Hour)
+	uClear := &models.User{
+		ID:     "u-err-clear",
+		Email:  "err_clear@example.com",
+		Role:   models.RoleUser,
+		Status: models.StatusActive,
+	}
+	_ = memStore.Create(context.Background(), uClear)
+
 	fCodesClear := &failingCodesStore{
 		Store:            baseStore,
 		clearFailuresErr: errOutage,
 	}
 	sClear := New(memStore, fCodesClear, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
 	rec = doRequest(t, sClear, http.MethodPost, "/auth/reset/verify", map[string]string{"email": "err_clear@example.com", "code": "123456"}, "")
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("ClearFailures err on reset/verify status = %d, want 503", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ClearFailures err on reset/verify status = %d, want 200 (%s)", rec.Code, rec.Body.String())
 	}
-	rec = doRequest(t, sClear, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "err_clear@example.com", "code": "123456"}, "")
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("ClearFailures err on verify-otp status = %d, want 503", rec.Code)
+	if decodeBody(t, rec)["reset_token"] == "" {
+		t.Fatalf("expected reset_token on successful verify despite ClearFailures error")
+	}
+
+	rec = doRequest(t, sClear, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email":     "err_clear@example.com",
+		"code":      "123456",
+		"device_id": "11111111-1111-4111-8111-111111111111",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ClearFailures err on verify-otp status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	otpTokens := decodeBody(t, rec)
+	if otpTokens["access_token"] == "" || otpTokens["refresh_token"] == "" {
+		t.Fatalf("expected tokens on successful verify-otp despite ClearFailures error")
 	}
 }
