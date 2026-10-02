@@ -22,6 +22,7 @@ type MongoStore struct {
 	blockColl      *mongo.Collection
 	adminColl      *mongo.Collection
 	adminAuditColl *mongo.Collection
+	sessionColl    *mongo.Collection
 }
 
 // NewMongoStore connects to MongoDB, ensures unique indexes on email, phone (partial for active/suspended),
@@ -113,11 +114,40 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		return nil, fmt.Errorf("store: ensure admin_audit_log target_type_target_id index: %w", err)
 	}
 
+	// Ensure indexes on sessions (Phase 1.7, D23e): (user_id, ended_at, last_used_at), TTL on ended_at (30 days), refresh_hash
+	sessionColl := db.Collection("sessions")
+	_, err = sessionColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "ended_at", Value: 1},
+			{Key: "last_used_at", Value: -1},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: ensure sessions user_id_ended_at_last_used_at index: %w", err)
+	}
+
+	_, err = sessionColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "ended_at", Value: 1}},
+		Options: options.Index().SetExpireAfterSeconds(30 * 24 * 3600),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: ensure sessions ended_at ttl index: %w", err)
+	}
+
+	_, err = sessionColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "refresh_hash", Value: 1}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: ensure sessions refresh_hash index: %w", err)
+	}
+
 	return &MongoStore{
 		coll:           coll,
 		blockColl:      blockColl,
 		adminColl:      adminColl,
 		adminAuditColl: adminAuditColl,
+		sessionColl:    sessionColl,
 	}, nil
 }
 
@@ -533,4 +563,217 @@ func (s *MongoStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*mod
 		logs = []*models.AuditLog{}
 	}
 	return logs, int(total), nil
+}
+
+// CreateOrReplaceSession inserts a new session, replaces any existing active session for (user_id, device_id),
+// and ends any active sessions beyond the newest 2 by last_used_at. Returns all ended sessions.
+func (s *MongoStore) CreateOrReplaceSession(ctx context.Context, sess *models.Session) ([]*models.Session, error) {
+	var ended []*models.Session
+
+	// 1. If an active session exists for this (user_id, device_id), end it.
+	filter := bson.M{
+		"user_id":   sess.UserID,
+		"device_id": sess.DeviceID,
+		"ended_at":  nil,
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"ended_at":   sess.CreatedAt,
+			"end_reason": models.EndReasonReplaced,
+		},
+	}
+	var existing models.Session
+	err := s.sessionColl.FindOneAndUpdate(ctx, filter, update).Decode(&existing)
+	if err == nil {
+		t := sess.CreatedAt
+		existing.EndedAt = &t
+		existing.EndReason = models.EndReasonReplaced
+		ended = append(ended, &existing)
+	} else if !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("store: find and end existing session: %w", err)
+	}
+
+	// 2. Insert new session
+	if _, err := s.sessionColl.InsertOne(ctx, sess); err != nil {
+		return nil, fmt.Errorf("store: insert session: %w", err)
+	}
+
+	// 3. Re-read all active sessions for this user, sorted by last_used_at DESC, created_at DESC, _id DESC
+	trimmed, err := s.trimActiveSessions(ctx, sess.UserID, 2, models.EndReasonReplaced, sess.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	ended = append(ended, trimmed...)
+
+	return ended, nil
+}
+
+func (s *MongoStore) trimActiveSessions(ctx context.Context, userID string, maxActive int, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
+	filter := bson.M{
+		"user_id":  userID,
+		"ended_at": nil,
+	}
+	findOpts := options.Find().SetSort(bson.D{
+		{Key: "last_used_at", Value: -1},
+		{Key: "created_at", Value: -1},
+		{Key: "_id", Value: -1},
+	})
+	cursor, err := s.sessionColl.Find(ctx, filter, findOpts)
+	if err != nil {
+		return nil, fmt.Errorf("store: find active sessions: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var active []*models.Session
+	if err := cursor.All(ctx, &active); err != nil {
+		return nil, fmt.Errorf("store: decode active sessions: %w", err)
+	}
+
+	var ended []*models.Session
+	if len(active) > maxActive {
+		for _, excess := range active[maxActive:] {
+			updateFilter := bson.M{
+				"_id":      excess.ID,
+				"ended_at": nil,
+			}
+			update := bson.M{
+				"$set": bson.M{
+					"ended_at":   at,
+					"end_reason": reason,
+				},
+			}
+			res, err := s.sessionColl.UpdateOne(ctx, updateFilter, update)
+			if err != nil {
+				return nil, fmt.Errorf("store: end excess session %s: %w", excess.ID, err)
+			}
+			if res.ModifiedCount > 0 {
+				t := at
+				excess.EndedAt = &t
+				excess.EndReason = reason
+				ended = append(ended, excess)
+			}
+		}
+	}
+	return ended, nil
+}
+
+// GetSession returns a session by sid.
+func (s *MongoStore) GetSession(ctx context.Context, sid string) (*models.Session, error) {
+	var sess models.Session
+	err := s.sessionColl.FindOne(ctx, bson.M{"_id": sid}).Decode(&sess)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get session: %w", err)
+	}
+	return &sess, nil
+}
+
+// FindSessionByRefreshHash returns a session matching refreshHash.
+func (s *MongoStore) FindSessionByRefreshHash(ctx context.Context, refreshHash string) (*models.Session, error) {
+	var sess models.Session
+	err := s.sessionColl.FindOne(ctx, bson.M{"refresh_hash": refreshHash}).Decode(&sess)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: find session by refresh hash: %w", err)
+	}
+	return &sess, nil
+}
+
+// UpdateSessionActivity updates last_used_at and refresh_hash for a session.
+func (s *MongoStore) UpdateSessionActivity(ctx context.Context, sid string, refreshHash string, lastUsedAt time.Time) error {
+	_, err := s.sessionColl.UpdateOne(ctx,
+		bson.M{"_id": sid, "ended_at": nil},
+		bson.M{"$set": bson.M{
+			"last_used_at": lastUsedAt,
+			"refresh_hash": refreshHash,
+		}},
+	)
+	if err != nil {
+		return fmt.Errorf("store: update session activity: %w", err)
+	}
+	return nil
+}
+
+// EndSession marks a session as ended.
+func (s *MongoStore) EndSession(ctx context.Context, sid string, reason models.SessionEndReason, at time.Time) error {
+	_, err := s.sessionColl.UpdateOne(ctx,
+		bson.M{"_id": sid, "ended_at": nil},
+		bson.M{"$set": bson.M{
+			"ended_at":   at,
+			"end_reason": reason,
+		}},
+	)
+	if err != nil {
+		return fmt.Errorf("store: end session: %w", err)
+	}
+	return nil
+}
+
+// EndAllUserSessions terminates all active sessions for a user.
+func (s *MongoStore) EndAllUserSessions(ctx context.Context, userID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
+	filter := bson.M{
+		"user_id":  userID,
+		"ended_at": nil,
+	}
+	cursor, err := s.sessionColl.Find(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("store: find active user sessions: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var active []*models.Session
+	if err := cursor.All(ctx, &active); err != nil {
+		return nil, fmt.Errorf("store: decode active user sessions: %w", err)
+	}
+
+	var ended []*models.Session
+	for _, sess := range active {
+		res, err := s.sessionColl.UpdateOne(ctx,
+			bson.M{"_id": sess.ID, "ended_at": nil},
+			bson.M{"$set": bson.M{
+				"ended_at":   at,
+				"end_reason": reason,
+			}},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("store: end session %s: %w", sess.ID, err)
+		}
+		if res.ModifiedCount > 0 {
+			t := at
+			sess.EndedAt = &t
+			sess.EndReason = reason
+			ended = append(ended, sess)
+		}
+	}
+	return ended, nil
+}
+
+// ListActiveSessions returns all currently active sessions for a user, sorted by last_used_at DESC.
+func (s *MongoStore) ListActiveSessions(ctx context.Context, userID string) ([]*models.Session, error) {
+	filter := bson.M{
+		"user_id":  userID,
+		"ended_at": nil,
+	}
+	findOpts := options.Find().SetSort(bson.D{
+		{Key: "last_used_at", Value: -1},
+		{Key: "created_at", Value: -1},
+	})
+	cursor, err := s.sessionColl.Find(ctx, filter, findOpts)
+	if err != nil {
+		return nil, fmt.Errorf("store: list active sessions: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var active []*models.Session
+	if err := cursor.All(ctx, &active); err != nil {
+		return nil, fmt.Errorf("store: decode active sessions: %w", err)
+	}
+	if active == nil {
+		active = []*models.Session{}
+	}
+	return active, nil
 }

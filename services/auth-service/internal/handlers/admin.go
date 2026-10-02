@@ -339,6 +339,21 @@ func (s *Server) SuspendAccount(w http.ResponseWriter, r *http.Request, id strin
 	}
 
 	now := time.Now().UTC()
+	// End all user sessions (end_reason=admin)
+	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+	endedSessions, endErr := s.Store.EndAllUserSessions(dbCtx, id, models.EndReasonAdmin, now)
+	cancel()
+	if endErr != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", endErr)
+		return
+	}
+	for _, endedSess := range endedSessions {
+		if endedSess.RefreshHash != "" {
+			_ = s.Codes.Delete(r.Context(), "refresh:"+endedSess.RefreshHash)
+		}
+		_ = jwtutil.RevokeSession(endedSess.ID)
+	}
+
 	// 2. SetStatus active->suspended (CAS)
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 	err = s.Store.SetStatus(dbCtx, id, string(models.StatusActive), string(models.StatusSuspended), cleanReason, now)
@@ -545,6 +560,21 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, id string
 	if err := jwtutil.RevokeAllUserTokens(id); err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
+	}
+
+	// End all user sessions (end_reason=admin)
+	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+	endedSessions, endErr := s.Store.EndAllUserSessions(dbCtx, id, models.EndReasonAdmin, now)
+	cancel()
+	if endErr != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", endErr)
+		return
+	}
+	for _, endedSess := range endedSessions {
+		if endedSess.RefreshHash != "" {
+			_ = s.Codes.Delete(r.Context(), "refresh:"+endedSess.RefreshHash)
+		}
+		_ = jwtutil.RevokeSession(endedSess.ID)
 	}
 
 	// 3. SetStatus active|suspended -> deleted (CAS)

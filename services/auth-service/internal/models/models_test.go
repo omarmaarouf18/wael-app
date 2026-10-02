@@ -102,3 +102,21 @@ func TestUser_ToDTO(t *testing.T) {
 		t.Fatalf("DTO fields mismatch: %+v", dto)
 	}
 }
+
+func TestSession_IsActive(t *testing.T) {
+	var nilSess *Session
+	if nilSess.IsActive() {
+		t.Fatal("nil session must not be active")
+	}
+
+	activeSess := &Session{ID: "s1"}
+	if !activeSess.IsActive() {
+		t.Fatal("session without ended_at must be active")
+	}
+
+	now := time.Now().UTC()
+	endedSess := &Session{ID: "s2", EndedAt: &now, EndReason: EndReasonReplaced}
+	if endedSess.IsActive() {
+		t.Fatal("session with ended_at must not be active")
+	}
+}

@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -675,6 +677,7 @@ func TestMemoryStore_CRUD(t *testing.T) {
 	runUserStoreSuite(t, s)
 	runAdminStoreSuite(t, s)
 	runPhase15StoreSuite(t, s)
+	runSessionStoreSuite(t, s)
 }
 
 func TestMongoStore_CRUD(t *testing.T) {
@@ -696,6 +699,7 @@ func TestMongoStore_CRUD(t *testing.T) {
 	runUserStoreSuite(t, s)
 	runAdminStoreSuite(t, s)
 	runPhase15StoreSuite(t, s)
+	runSessionStoreSuite(t, s)
 }
 
 func TestMongoStore_RawLegacyDocWithoutStatusField(t *testing.T) {
@@ -747,5 +751,192 @@ func TestMongoStore_RawLegacyDocWithoutStatusField(t *testing.T) {
 	}
 	if uAfter.EffectiveStatus() != models.StatusSuspended {
 		t.Fatalf("expected suspended, got %q", uAfter.EffectiveStatus())
+	}
+}
+
+func runSessionStoreSuite(t *testing.T, s Store) {
+	ctx := context.Background()
+	userID := fmt.Sprintf("u-sess-%d", time.Now().UnixNano())
+
+	// 1. First device signs in
+	now := time.Now().UTC()
+	sess1 := &models.Session{
+		ID:          fmt.Sprintf("sid-1-%d", time.Now().UnixNano()),
+		UserID:      userID,
+		DeviceID:    "device-1",
+		DeviceLabel: "iPhone 13",
+		RefreshHash: "hash-1",
+		CreatedAt:   now,
+		LastUsedAt:  now,
+	}
+	ended, err := s.CreateOrReplaceSession(ctx, sess1)
+	if err != nil {
+		t.Fatalf("CreateOrReplaceSession sess1: %v", err)
+	}
+	if len(ended) != 0 {
+		t.Fatalf("expected 0 ended sessions, got %d", len(ended))
+	}
+
+	// 2. Second device signs in 10ms later
+	time.Sleep(10 * time.Millisecond)
+	now2 := time.Now().UTC()
+	sess2 := &models.Session{
+		ID:          fmt.Sprintf("sid-2-%d", time.Now().UnixNano()),
+		UserID:      userID,
+		DeviceID:    "device-2",
+		DeviceLabel: "iPad Pro",
+		RefreshHash: "hash-2",
+		CreatedAt:   now2,
+		LastUsedAt:  now2,
+	}
+	ended, err = s.CreateOrReplaceSession(ctx, sess2)
+	if err != nil {
+		t.Fatalf("CreateOrReplaceSession sess2: %v", err)
+	}
+	if len(ended) != 0 {
+		t.Fatalf("expected 0 ended sessions, got %d", len(ended))
+	}
+
+	active, err := s.ListActiveSessions(ctx, userID)
+	if err != nil {
+		t.Fatalf("ListActiveSessions: %v", err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("expected 2 active sessions, got %d", len(active))
+	}
+
+	// 3. Third device signs in -> device 1 (oldest last_used_at) is ended
+	time.Sleep(10 * time.Millisecond)
+	now3 := time.Now().UTC()
+	sess3 := &models.Session{
+		ID:          fmt.Sprintf("sid-3-%d", time.Now().UnixNano()),
+		UserID:      userID,
+		DeviceID:    "device-3",
+		DeviceLabel: "MacBook",
+		RefreshHash: "hash-3",
+		CreatedAt:   now3,
+		LastUsedAt:  now3,
+	}
+	ended, err = s.CreateOrReplaceSession(ctx, sess3)
+	if err != nil {
+		t.Fatalf("CreateOrReplaceSession sess3: %v", err)
+	}
+	if len(ended) != 1 {
+		t.Fatalf("expected 1 ended session, got %d", len(ended))
+	}
+	if ended[0].ID != sess1.ID || ended[0].EndReason != models.EndReasonReplaced {
+		t.Fatalf("expected sess1 ended with reason replaced, got ID=%s reason=%s", ended[0].ID, ended[0].EndReason)
+	}
+
+	// Verify sess1 is marked ended in store
+	s1Check, err := s.GetSession(ctx, sess1.ID)
+	if err != nil || s1Check == nil {
+		t.Fatalf("GetSession s1: %v", err)
+	}
+	if s1Check.EndedAt == nil || s1Check.EndReason != models.EndReasonReplaced {
+		t.Fatalf("expected s1 ended in DB, got %+v", s1Check)
+	}
+
+	// 4. Re-login from device 2 (same device_id) replaces its own session
+	time.Sleep(10 * time.Millisecond)
+	now4 := time.Now().UTC()
+	sess2New := &models.Session{
+		ID:          fmt.Sprintf("sid-2-new-%d", time.Now().UnixNano()),
+		UserID:      userID,
+		DeviceID:    "device-2",
+		DeviceLabel: "iPad Pro (Updated)",
+		RefreshHash: "hash-2-new",
+		CreatedAt:   now4,
+		LastUsedAt:  now4,
+	}
+	ended, err = s.CreateOrReplaceSession(ctx, sess2New)
+	if err != nil {
+		t.Fatalf("CreateOrReplaceSession sess2New: %v", err)
+	}
+	if len(ended) != 1 || ended[0].ID != sess2.ID {
+		t.Fatalf("expected sess2 to be ended on re-login, got %v", ended)
+	}
+
+	active, err = s.ListActiveSessions(ctx, userID)
+	if err != nil {
+		t.Fatalf("ListActiveSessions: %v", err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("expected 2 active sessions after re-login, got %d", len(active))
+	}
+
+	// 5. UpdateSessionActivity and FindSessionByRefreshHash
+	time.Sleep(10 * time.Millisecond)
+	now5 := time.Now().UTC()
+	if err := s.UpdateSessionActivity(ctx, sess2New.ID, "hash-2-rotated", now5); err != nil {
+		t.Fatalf("UpdateSessionActivity: %v", err)
+	}
+	foundSess, err := s.FindSessionByRefreshHash(ctx, "hash-2-rotated")
+	if err != nil || foundSess == nil || foundSess.ID != sess2New.ID {
+		t.Fatalf("FindSessionByRefreshHash expected sess2New, got: %v, err: %v", foundSess, err)
+	}
+
+	// 6. EndSession (logout)
+	logoutTime := time.Now().UTC()
+	if err := s.EndSession(ctx, sess3.ID, models.EndReasonLogout, logoutTime); err != nil {
+		t.Fatalf("EndSession: %v", err)
+	}
+	s3Check, err := s.GetSession(ctx, sess3.ID)
+	if err != nil || s3Check == nil || s3Check.EndedAt == nil || s3Check.EndReason != models.EndReasonLogout {
+		t.Fatalf("expected sess3 logged out, got %+v", s3Check)
+	}
+
+	// 7. EndAllUserSessions (admin suspend/delete)
+	endedAll, err := s.EndAllUserSessions(ctx, userID, models.EndReasonAdmin, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("EndAllUserSessions: %v", err)
+	}
+	if len(endedAll) != 1 || endedAll[0].ID != sess2New.ID {
+		t.Fatalf("expected sess2New to be ended by admin, got %v", endedAll)
+	}
+	active, err = s.ListActiveSessions(ctx, userID)
+	if err != nil {
+		t.Fatalf("ListActiveSessions: %v", err)
+	}
+	if len(active) != 0 {
+		t.Fatalf("expected 0 active sessions after admin end all, got %d", len(active))
+	}
+
+	// 8. 10 parallel logins from 10 device IDs: convergence to exactly 2 active sessions
+	const parallelLogins = 10
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	userConcurrent := fmt.Sprintf("u-concurrent-%d", time.Now().UnixNano())
+
+	for i := 0; i < parallelLogins; i++ {
+		wg.Add(1)
+		devID := fmt.Sprintf("concurrent-dev-%d", i)
+		sID := fmt.Sprintf("concurrent-sid-%d", i)
+		go func(dID, sid string) {
+			defer wg.Done()
+			<-start
+			pNow := time.Now().UTC()
+			pSess := &models.Session{
+				ID:          sid,
+				UserID:      userConcurrent,
+				DeviceID:    dID,
+				DeviceLabel: "Dev " + dID,
+				RefreshHash: "hash-" + sid,
+				CreatedAt:   pNow,
+				LastUsedAt:  pNow,
+			}
+			_, _ = s.CreateOrReplaceSession(ctx, pSess)
+		}(devID, sID)
+	}
+
+	close(start)
+	wg.Wait()
+
+	activeConc, err := s.ListActiveSessions(ctx, userConcurrent)
+	if err != nil {
+		t.Fatalf("ListActiveSessions concurrent: %v", err)
+	}
+	if len(activeConc) != 2 {
+		t.Fatalf("expected exactly 2 active sessions after 10 concurrent logins, got %d", len(activeConc))
 	}
 }

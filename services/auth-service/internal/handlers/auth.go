@@ -105,6 +105,34 @@ func normalizePhone(raw, defaultRegion string) (string, error) {
 	return phonenumbers.Format(num, phonenumbers.E164), nil
 }
 
+func isValidUUIDv4(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	if id[8] != '-' || id[13] != '-' || id[18] != '-' || id[23] != '-' {
+		return false
+	}
+	if id[14] != '4' {
+		return false
+	}
+	switch id[19] {
+	case '8', '9', 'a', 'b', 'A', 'B':
+	default:
+		return false
+	}
+	for i := 0; i < 36; i++ {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			continue
+		}
+		c := id[i]
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 // GatewayAuth requires the gateway secret on every non-health route.
 func (s *Server) GatewayAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -157,6 +185,51 @@ func issuePair(userID string, role models.Role, email string) (access, refresh s
 		return "", "", err
 	}
 	return access, raw, nil
+}
+
+func (s *Server) createSessionAndTokens(ctx context.Context, u *models.User, deviceID, deviceLabel string) (access, refresh string, err error) {
+	sid, err := jwtutil.GenerateUUID()
+	if err != nil {
+		return "", "", err
+	}
+	access, err = jwtutil.GenerateTokenWithSession(u.ID, string(u.Role), u.Email, sid)
+	if err != nil {
+		return "", "", err
+	}
+	refresh, err = otp.GenerateOpaqueToken()
+	if err != nil {
+		return "", "", err
+	}
+	refreshHash := otp.HashToken(refresh)
+	now := time.Now().UTC()
+	sess := &models.Session{
+		ID:          sid,
+		UserID:      u.ID,
+		DeviceID:    deviceID,
+		DeviceLabel: deviceLabel,
+		RefreshHash: refreshHash,
+		CreatedAt:   now,
+		LastUsedAt:  now,
+	}
+
+	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+	ended, err := s.Store.CreateOrReplaceSession(dbCtx, sess)
+	cancel()
+	if err != nil {
+		return "", "", err
+	}
+
+	for _, endedSess := range ended {
+		if endedSess.RefreshHash != "" {
+			_ = s.Codes.Delete(ctx, "refresh:"+endedSess.RefreshHash)
+		}
+		_ = jwtutil.RevokeSession(endedSess.ID)
+	}
+
+	if err := s.Codes.Set(ctx, "refresh:"+refreshHash, u.ID+":"+sid, 7*24*time.Hour); err != nil {
+		return "", "", err
+	}
+	return access, refresh, nil
 }
 
 type signupRequest struct {
@@ -321,8 +394,10 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 }
 
 type verifyOTPRequest struct {
-	Email string `json:"email"`
-	Code  string `json:"code"`
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	DeviceID    string `json:"device_id"`
+	DeviceLabel string `json:"device_label,omitempty"`
 }
 
 // VerifyOTP consumes a signup OTP, marks the email verified, and issues tokens.
@@ -334,6 +409,15 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	email := normalizeEmail(req.Email)
 	if !validEmail(email) || len(req.Code) != 6 {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid email or code", nil)
+		return
+	}
+	if !isValidUUIDv4(req.DeviceID) {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid device_id", nil)
+		return
+	}
+	deviceLabel := strings.TrimSpace(req.DeviceLabel)
+	if utf8.RuneCountInString(deviceLabel) > 64 {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid device_label", nil)
 		return
 	}
 	ctx := r.Context()
@@ -389,13 +473,9 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	access, refresh, err := issuePair(u.ID, u.Role, u.Email)
+	access, refresh, err := s.createSessionAndTokens(ctx, u, req.DeviceID, deviceLabel)
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
-		return
-	}
-	if err := s.Codes.Set(ctx, "refresh:"+otp.HashToken(refresh), u.ID, 7*24*time.Hour); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 	go notify.Welcome(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
@@ -403,8 +483,10 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	DeviceID    string `json:"device_id"`
+	DeviceLabel string `json:"device_label,omitempty"`
 }
 
 // Login authenticates with email+password, enforcing lockout with backoff.
@@ -419,6 +501,16 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "invalid credentials", nil)
 		return
 	}
+	if !isValidUUIDv4(req.DeviceID) {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid device_id", nil)
+		return
+	}
+	deviceLabel := strings.TrimSpace(req.DeviceLabel)
+	if utf8.RuneCountInString(deviceLabel) > 64 {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid device_label", nil)
+		return
+	}
+
 	ip := handlerutil.GetIP(r)
 	emailKey := "login:email:" + email
 	ipKey := "login:ip:" + ip
@@ -455,13 +547,9 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Lockout.Reset(emailKey)
 	s.Lockout.Reset(ipKey)
-	access, refresh, err := issuePair(u.ID, u.Role, u.Email)
+	access, refresh, err := s.createSessionAndTokens(r.Context(), u, req.DeviceID, deviceLabel)
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
-		return
-	}
-	if err := s.Codes.Set(r.Context(), "refresh:"+otp.HashToken(refresh), u.ID, 7*24*time.Hour); err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": refresh})
@@ -482,13 +570,65 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	key := "refresh:" + otp.HashToken(req.RefreshToken)
-	// Resolve the refresh key's user. The refresh entry is not deleted here.
-	userID, err := s.Codes.Get(ctx, key)
-	if err != nil || userID == "" {
+	refreshHash := otp.HashToken(req.RefreshToken)
+	key := "refresh:" + refreshHash
+
+	// 1. Resolve the refresh key's user and sid from Redis.
+	val, err := s.Codes.Get(ctx, key)
+	if err != nil || val == "" {
+		// Key not in Redis. Check if session was ended with reason replaced.
+		dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+		sess, findErr := s.Store.FindSessionByRefreshHash(dbCtx, refreshHash)
+		cancel()
+		if findErr == nil && sess != nil && sess.EndReason == models.EndReasonReplaced {
+			msg := "Sorry, this account's usage limit has been exceeded"
+			if strings.HasPrefix(strings.ToLower(r.Header.Get("Accept-Language")), "ar") {
+				msg = "عفوًا، لقد تجاوزت الحد المسموح لاستخدام هذا الحساب"
+			}
+			handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]string{
+				"error": msg,
+				"code":  "session_replaced",
+			})
+			return
+		}
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
 		return
 	}
+
+	userID := val
+	sid := ""
+	if strings.Contains(val, ":") {
+		parts := strings.SplitN(val, ":", 2)
+		userID = parts[0]
+		sid = parts[1]
+	}
+
+	// If session has sid, check if session was ended in DB.
+	if sid != "" {
+		dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+		sess, err := s.Store.GetSession(dbCtx, sid)
+		cancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+		if sess != nil && sess.EndedAt != nil {
+			if sess.EndReason == models.EndReasonReplaced {
+				msg := "Sorry, this account's usage limit has been exceeded"
+				if strings.HasPrefix(strings.ToLower(r.Header.Get("Accept-Language")), "ar") {
+					msg = "عفوًا، لقد تجاوزت الحد المسموح لاستخدام هذا الحساب"
+				}
+				handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]string{
+					"error": msg,
+					"code":  "session_replaced",
+				})
+				return
+			}
+			handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
+			return
+		}
+	}
+
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	u, err := s.Store.FindByID(dbCtx, userID)
 	cancel()
@@ -504,22 +644,95 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 		writeStatusRefusal(w, r)
 		return
 	}
+
 	// Atomic take: exactly one concurrent redeemer wins; the rest get "".
-	consumedID, err := s.Codes.Take(ctx, key)
-	if err != nil || consumedID == "" {
+	consumedVal, err := s.Codes.Take(ctx, key)
+	if err != nil || consumedVal == "" {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
 		return
 	}
-	access, refresh, err := issuePair(u.ID, u.Role, u.Email)
+
+	newRefresh, err := otp.GenerateOpaqueToken()
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
-	if err := s.Codes.Set(ctx, "refresh:"+otp.HashToken(refresh), u.ID, 7*24*time.Hour); err != nil {
+	newRefreshHash := otp.HashToken(newRefresh)
+
+	var access string
+	if sid != "" {
+		access, err = jwtutil.GenerateTokenWithSession(u.ID, string(u.Role), u.Email, sid)
+	} else {
+		access, err = jwtutil.GenerateToken(u.ID, string(u.Role), u.Email)
+	}
+	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": refresh})
+
+	now := time.Now().UTC()
+	if sid != "" {
+		dbCtx, cancel = context.WithTimeout(ctx, dbTimeout)
+		err = s.Store.UpdateSessionActivity(dbCtx, sid, newRefreshHash, now)
+		cancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+	}
+
+	storeVal := u.ID
+	if sid != "" {
+		storeVal = u.ID + ":" + sid
+	}
+	if err := s.Codes.Set(ctx, "refresh:"+newRefreshHash, storeVal, 7*24*time.Hour); err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
+		return
+	}
+
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": newRefresh})
+}
+
+// Logout terminates the caller's session, revoking the session and refresh token.
+// Authenticated via Bearer token. Idempotent: returns 204 No Content.
+func (s *Server) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+		return
+	}
+	token := handlerutil.BearerToken(r)
+	if token == "" {
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+		return
+	}
+
+	claims, err := jwtutil.ValidateToken(token)
+	if err != nil {
+		// If the session was already revoked, logout is idempotent -> 204 No Content.
+		if errors.Is(err, jwtutil.ErrSessionRevoked) {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+		return
+	}
+
+	if claims.SID != "" {
+		now := time.Now().UTC()
+		dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+		sess, getErr := s.Store.GetSession(dbCtx, claims.SID)
+		if getErr == nil && sess != nil {
+			_ = s.Store.EndSession(dbCtx, claims.SID, models.EndReasonLogout, now)
+			if sess.RefreshHash != "" {
+				_ = s.Codes.Delete(r.Context(), "refresh:"+sess.RefreshHash)
+			}
+		}
+		cancel()
+
+		_ = jwtutil.RevokeSession(claims.SID)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type resetRequestRequest struct {

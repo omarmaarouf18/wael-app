@@ -167,3 +167,38 @@ func TestGateway_AcademyRoute(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
+
+func TestGateway_AuthLogoutRoute(t *testing.T) {
+	var receivedMethod, receivedPath, receivedToken string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMethod = r.Method
+		receivedPath = r.URL.Path
+		receivedToken = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer backend.Close()
+
+	route := config.ServiceRoute{Prefix: "/api/v1/auth/", Target: backend.URL, StripPrefix: "/api/v1"}
+	h, err := New(route, "gw-secret", nil, backend.Client().Transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "http://gateway/api/v1/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer sample-token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if receivedMethod != http.MethodPost {
+		t.Errorf("backend received method = %q, want POST", receivedMethod)
+	}
+	if receivedPath != "/auth/logout" {
+		t.Errorf("backend received path = %q, want /auth/logout", receivedPath)
+	}
+	if receivedToken != "Bearer sample-token" {
+		t.Errorf("backend received token = %q, want Bearer sample-token", receivedToken)
+	}
+}

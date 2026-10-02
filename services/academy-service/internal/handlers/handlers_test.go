@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -2794,5 +2795,91 @@ func TestListSubjects_AccessExpiresAt_EntitlementVersusSubject(t *testing.T) {
 	}
 	if !foundB.AccessExpiresAt.Equal(t2) {
 		t.Errorf("student B list item access_expires_at = %v, want %v (subject date)", foundB.AccessExpiresAt, t2)
+	}
+}
+
+func TestPlayVideo_EndedDeviceSessionRevoked_Refused401(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb, err := ratelimit.NewRedisClient(fmt.Sprintf("redis://%s", mr.Addr()))
+	if err != nil {
+		t.Fatalf("failed to connect to miniredis: %v", err)
+	}
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	s := newTestServer(false)
+	h := s.PublicHandler()
+	ctx := context.Background()
+
+	subj := &models.Subject{
+		ID:              "subj-play-sess",
+		LevelKey:        "bachelor-y1",
+		Term:            "first",
+		TitleAr:         "مادة الجلسات",
+		TitleEn:         "Session Subject",
+		Status:          models.StatusPublished,
+		AccessExpiresAt: time.Now().Add(24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj); err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+	vid := &models.Video{
+		ID:             "vid-play-sess",
+		SubjectID:      "subj-play-sess",
+		Position:       1,
+		TitleAr:        "فيديو الجلسة",
+		TitleEn:        "Session Video",
+		YouTubeVideoID: "dQw4w9WgXcQ",
+		Published:      true,
+		CreatedAt:      time.Now(),
+	}
+	if err := s.Store.CreateVideo(ctx, vid); err != nil {
+		t.Fatalf("CreateVideo: %v", err)
+	}
+	if err := s.Store.Grant(ctx, &models.Entitlement{UserID: "user-sess-1", SubjectID: "subj-play-sess"}); err != nil {
+		t.Fatalf("Grant: %v", err)
+	}
+
+	sid := "sid-ended-device-1234"
+	token, err := jwtutil.GenerateTokenWithSession("user-sess-1", "user", "user-sess@example.com", sid)
+	if err != nil {
+		t.Fatalf("GenerateTokenWithSession: %v", err)
+	}
+
+	// 1. When session is active (not revoked in Redis), /play succeeds through real StudentAuth middleware
+	req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-play-sess/play", nil)
+	req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for active session, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// 2. Revoke session in Redis (simulating 3rd device login ending this device's session)
+	if err := jwtutil.RevokeSession(sid); err != nil {
+		t.Fatalf("RevokeSession failed: %v", err)
+	}
+
+	// 3. jwtutil.ValidateToken rejects the old access token immediately
+	claims, valErr := jwtutil.ValidateToken(token)
+	if valErr == nil || claims != nil {
+		t.Fatalf("expected ValidateToken to fail for revoked sid, got claims=%+v, err=nil", claims)
+	}
+	if !errors.Is(valErr, jwtutil.ErrSessionRevoked) {
+		t.Fatalf("expected ErrSessionRevoked, got %v", valErr)
+	}
+
+	// 4. Academy /play through real StudentAuth middleware immediately returns 401 Unauthorized
+	reqRevoked := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-play-sess/play", nil)
+	reqRevoked.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+	reqRevoked.Header.Set("Authorization", "Bearer "+token)
+	recRevoked := httptest.NewRecorder()
+	h.ServeHTTP(recRevoked, reqRevoked)
+	if recRevoked.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for revoked session, got %d (%s)", recRevoked.Code, recRevoked.Body.String())
 	}
 }

@@ -819,8 +819,9 @@ func TestAdmin_Suspend_Flow_And_R7(t *testing.T) {
 
 	// User can log in before suspension
 	loginBody, _ := json.Marshal(map[string]string{
-		"email":    "student-suspend@example.com",
-		"password": pw,
+		"email":     "student-suspend@example.com",
+		"password":  pw,
+		"device_id": "11111111-1111-4111-8111-111111111111",
 	})
 	reqLogin := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewReader(loginBody))
 	reqLogin.Header.Set("Content-Type", "application/json")
@@ -905,7 +906,11 @@ func TestAdmin_Suspend_Flow_And_R7(t *testing.T) {
 	}
 
 	// VerifyOTP refused
-	otpBody, _ := json.Marshal(map[string]string{"email": "student-suspend@example.com", "code": "123456"})
+	otpBody, _ := json.Marshal(map[string]string{
+		"email":     "student-suspend@example.com",
+		"code":      "123456",
+		"device_id": "11111111-1111-4111-8111-111111111111",
+	})
 	reqOTP := httptest.NewRequest(http.MethodPost, "/auth/verify-otp", bytes.NewReader(otpBody))
 	reqOTP.Header.Set("Content-Type", "application/json")
 	reqOTP.Header.Set("X-Gateway-Secret", "gw-secret")

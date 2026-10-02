@@ -63,6 +63,15 @@ type Store interface {
 
 	CreateAuditLog(ctx context.Context, entry *models.AuditLog) error
 	ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error)
+
+	// Sessions (Phase 1.7)
+	CreateOrReplaceSession(ctx context.Context, s *models.Session) ([]*models.Session, error)
+	GetSession(ctx context.Context, sid string) (*models.Session, error)
+	FindSessionByRefreshHash(ctx context.Context, refreshHash string) (*models.Session, error)
+	UpdateSessionActivity(ctx context.Context, sid string, refreshHash string, lastUsedAt time.Time) error
+	EndSession(ctx context.Context, sid string, reason models.SessionEndReason, at time.Time) error
+	EndAllUserSessions(ctx context.Context, userID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error)
+	ListActiveSessions(ctx context.Context, userID string) ([]*models.Session, error)
 }
 
 type blockEntry struct {
@@ -81,6 +90,7 @@ type MemoryStore struct {
 	adminsByID   map[string]*models.Admin
 	adminsByHash map[string]*models.Admin
 	auditLogs    []*models.AuditLog
+	sessions     map[string]*models.Session
 }
 
 // NewMemoryStore creates an empty MemoryStore.
@@ -92,6 +102,7 @@ func NewMemoryStore() *MemoryStore {
 		adminsByID:   map[string]*models.Admin{},
 		adminsByHash: map[string]*models.Admin{},
 		auditLogs:    []*models.AuditLog{},
+		sessions:     map[string]*models.Session{},
 	}
 }
 
@@ -478,4 +489,153 @@ func (s *MemoryStore) ListAuditLogs(_ context.Context, page, limit int) ([]*mode
 	}
 
 	return logs[start:end], total, nil
+}
+
+func cloneSession(s *models.Session) *models.Session {
+	if s == nil {
+		return nil
+	}
+	cp := *s
+	if s.EndedAt != nil {
+		t := *s.EndedAt
+		cp.EndedAt = &t
+	}
+	return &cp
+}
+
+// CreateOrReplaceSession inserts a new session, replaces any existing active session for (user_id, device_id),
+// and ends any active sessions beyond the newest 2 by last_used_at. Returns all ended sessions.
+func (s *MemoryStore) CreateOrReplaceSession(_ context.Context, sess *models.Session) ([]*models.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var ended []*models.Session
+	// 1. If an active session exists for this (user_id, device_id), end it.
+	for _, existing := range s.sessions {
+		if existing.UserID == sess.UserID && existing.DeviceID == sess.DeviceID && existing.EndedAt == nil {
+			t := sess.CreatedAt
+			existing.EndedAt = &t
+			existing.EndReason = models.EndReasonReplaced
+			ended = append(ended, cloneSession(existing))
+		}
+	}
+
+	// 2. Insert new session
+	s.sessions[sess.ID] = cloneSession(sess)
+
+	// 3. Re-read all active sessions for this user, sorted by last_used_at DESC, created_at DESC, ID DESC
+	var active []*models.Session
+	for _, existing := range s.sessions {
+		if existing.UserID == sess.UserID && existing.EndedAt == nil {
+			active = append(active, existing)
+		}
+	}
+	sort.Slice(active, func(i, j int) bool {
+		if !active[i].LastUsedAt.Equal(active[j].LastUsedAt) {
+			return active[i].LastUsedAt.After(active[j].LastUsedAt)
+		}
+		if !active[i].CreatedAt.Equal(active[j].CreatedAt) {
+			return active[i].CreatedAt.After(active[j].CreatedAt)
+		}
+		return active[i].ID > active[j].ID
+	})
+
+	// 4. End sessions beyond the newest 2
+	if len(active) > 2 {
+		for _, excess := range active[2:] {
+			t := sess.CreatedAt
+			excess.EndedAt = &t
+			excess.EndReason = models.EndReasonReplaced
+			ended = append(ended, cloneSession(excess))
+		}
+	}
+
+	return ended, nil
+}
+
+// GetSession returns a session by sid.
+func (s *MemoryStore) GetSession(_ context.Context, sid string) (*models.Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sess, ok := s.sessions[sid]
+	if !ok {
+		return nil, nil
+	}
+	return cloneSession(sess), nil
+}
+
+// FindSessionByRefreshHash returns a session matching refreshHash.
+func (s *MemoryStore) FindSessionByRefreshHash(_ context.Context, refreshHash string) (*models.Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sess := range s.sessions {
+		if sess.RefreshHash == refreshHash {
+			return cloneSession(sess), nil
+		}
+	}
+	return nil, nil
+}
+
+// UpdateSessionActivity updates last_used_at and refresh_hash for a session.
+func (s *MemoryStore) UpdateSessionActivity(_ context.Context, sid string, refreshHash string, lastUsedAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[sid]
+	if !ok {
+		return nil
+	}
+	sess.LastUsedAt = lastUsedAt
+	sess.RefreshHash = refreshHash
+	return nil
+}
+
+// EndSession marks a session as ended.
+func (s *MemoryStore) EndSession(_ context.Context, sid string, reason models.SessionEndReason, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[sid]
+	if !ok {
+		return nil
+	}
+	if sess.EndedAt == nil {
+		t := at
+		sess.EndedAt = &t
+		sess.EndReason = reason
+	}
+	return nil
+}
+
+// EndAllUserSessions terminates all active sessions for a user.
+func (s *MemoryStore) EndAllUserSessions(_ context.Context, userID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var ended []*models.Session
+	for _, sess := range s.sessions {
+		if sess.UserID == userID && sess.EndedAt == nil {
+			t := at
+			sess.EndedAt = &t
+			sess.EndReason = reason
+			ended = append(ended, cloneSession(sess))
+		}
+	}
+	return ended, nil
+}
+
+// ListActiveSessions returns all currently active sessions for a user, sorted by last_used_at DESC.
+func (s *MemoryStore) ListActiveSessions(_ context.Context, userID string) ([]*models.Session, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var active []*models.Session
+	for _, sess := range s.sessions {
+		if sess.UserID == userID && sess.EndedAt == nil {
+			active = append(active, cloneSession(sess))
+		}
+	}
+	sort.Slice(active, func(i, j int) bool {
+		if !active[i].LastUsedAt.Equal(active[j].LastUsedAt) {
+			return active[i].LastUsedAt.After(active[j].LastUsedAt)
+		}
+		return active[i].CreatedAt.After(active[j].CreatedAt)
+	})
+	return active, nil
 }

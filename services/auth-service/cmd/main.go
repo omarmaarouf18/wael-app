@@ -128,6 +128,7 @@ func main() {
 	mux.HandleFunc("/auth/signup", srv.Signup)
 	mux.HandleFunc("/auth/verify-otp", srv.VerifyOTP)
 	mux.HandleFunc("/auth/login", srv.Login)
+	mux.HandleFunc("/auth/logout", srv.Logout)
 	mux.HandleFunc("/auth/refresh", srv.Refresh)
 	mux.HandleFunc("/auth/reset/request", srv.RequestReset)
 	mux.HandleFunc("/auth/reset/verify", srv.VerifyResetCode)

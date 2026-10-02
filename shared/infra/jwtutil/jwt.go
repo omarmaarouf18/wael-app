@@ -17,8 +17,10 @@ import (
 )
 
 var (
-	ErrInvalidToken = errors.New("invalid token")
-	ErrExpiredToken = errors.New("token has expired")
+	ErrInvalidToken   = errors.New("invalid token")
+	ErrExpiredToken   = errors.New("token has expired")
+	ErrTokenRevoked   = errors.New("jwtutil: token has been revoked")
+	ErrSessionRevoked = errors.New("jwtutil: session has been revoked")
 )
 
 type Claims struct {
@@ -26,6 +28,7 @@ type Claims struct {
 	Role   string   `json:"role"`
 	Email  string   `json:"email"`
 	AMR    []string `json:"amr,omitempty"`
+	SID    string   `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -122,7 +125,7 @@ func GenerateUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]), nil
 }
 
-func GenerateToken(userID string, role string, email string, amr ...[]string) (string, error) {
+func GenerateTokenWithSession(userID string, role string, email string, sid string, amr ...[]string) (string, error) {
 	uuidStr, err := GenerateUUID()
 	if err != nil {
 		return "", fmt.Errorf("jwtutil: failed to generate token uuid: %w", err)
@@ -138,6 +141,7 @@ func GenerateToken(userID string, role string, email string, amr ...[]string) (s
 		Role:   role,
 		Email:  email,
 		AMR:    amrVal,
+		SID:    sid,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -147,6 +151,10 @@ func GenerateToken(userID string, role string, email string, amr ...[]string) (s
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(getSecret())
+}
+
+func GenerateToken(userID string, role string, email string, amr ...[]string) (string, error) {
+	return GenerateTokenWithSession(userID, role, email, "", amr...)
 }
 
 // GenerateTokenWithAMR generates a token with the specified authentication method references.
@@ -209,7 +217,45 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 		}
 
 		if isDenylisted > 0 {
-			return nil, errors.New("jwtutil: token has been revoked")
+			return nil, ErrTokenRevoked
+		}
+	}
+
+	// Redis-backed session revocation check.
+	// Rejects tokens whose sid has key jwt:sid:<sid> in Redis (same fail-closed + one-retry path as the jti denylist).
+	// Tokens without sid (issued before deploy) stay valid until expiry.
+	if redisClient != nil && claims.SID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		isSessionRevoked, err := redisClient.Exists(ctx, "jwt:sid:"+claims.SID).Result()
+		cancel()
+
+		if err != nil {
+			healthTracker.recordFailure()
+			if healthTracker.canRetryBlip() {
+				retryCtx, retryCancel := context.WithTimeout(context.Background(), healthTracker.retryTimeout)
+				retrySessionRevoked, retryErr := redisClient.Exists(retryCtx, "jwt:sid:"+claims.SID).Result()
+				retryCancel()
+
+				if retryErr == nil {
+					healthTracker.recordSuccess()
+					log.Printf("[REDIS] Transient connectivity blip absorbed, sid check succeeded on retry for sid: %s", claims.SID)
+					isSessionRevoked = retrySessionRevoked
+					err = nil
+				} else {
+					healthTracker.recordFailure()
+					log.Printf("[SECURITY CRITICAL] Redis error checking JWT sid revocation (FAIL CLOSED after retry): %v. Rejecting token sid: %s", retryErr, claims.SID)
+					return nil, fmt.Errorf("jwtutil: security check failed (session lookup unreachable): %w", retryErr)
+				}
+			} else {
+				log.Printf("[SECURITY CRITICAL] Redis error checking JWT sid revocation (FAIL CLOSED): %v. Rejecting token sid: %s", err, claims.SID)
+				return nil, fmt.Errorf("jwtutil: security check failed (session lookup unreachable): %w", err)
+			}
+		} else {
+			healthTracker.recordSuccess()
+		}
+
+		if isSessionRevoked > 0 {
+			return nil, ErrSessionRevoked
 		}
 	}
 
@@ -252,7 +298,7 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 				return nil, fmt.Errorf("jwtutil: security check failed (invalid timestamp format): %w", parseErr)
 			}
 			if claims.IssuedAt == nil || claims.IssuedAt.Time.Unix() < ts {
-				return nil, errors.New("jwtutil: token has been revoked")
+				return nil, ErrTokenRevoked
 			}
 		}
 	}
@@ -346,6 +392,27 @@ func RevokeToken(tokenStr string) error {
 	if err != nil {
 		log.Printf("[SECURITY CRITICAL] Redis error storing revoked JWT (FAIL CLOSED): %v. Token jti: %s", err, claims.RegisteredClaims.ID)
 		return fmt.Errorf("jwtutil: revoke failed: %w", err)
+	}
+	return nil
+}
+
+// RevokeSession denylists a session's sid in Redis.
+// TTL = access token lifetime (24h).
+func RevokeSession(sid string) error {
+	if sid == "" {
+		return errors.New("jwtutil: missing sid")
+	}
+	if redisClient == nil {
+		return errors.New("jwtutil: redis client not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := redisClient.Set(ctx, "jwt:sid:"+sid, "1", 24*time.Hour).Err()
+	if err != nil {
+		log.Printf("[SECURITY CRITICAL] Redis error storing revoked session (FAIL CLOSED): %v. Session sid: %s", err, sid)
+		return fmt.Errorf("jwtutil: revoke session failed: %w", err)
 	}
 	return nil
 }

@@ -43,6 +43,46 @@ func testServerProd() *Server {
 
 func doRequest(t *testing.T, s *Server, method, path string, body any, token string) *httptest.ResponseRecorder {
 	t.Helper()
+	if m, ok := body.(map[string]string); ok && (path == "/auth/login" || path == "/auth/verify-otp") {
+		if _, hasDevice := m["device_id"]; !hasDevice {
+			if _, omit := m["__omit_device_id__"]; !omit {
+				cp := make(map[string]string, len(m)+1)
+				for k, v := range m {
+					cp[k] = v
+				}
+				cp["device_id"] = "11111111-1111-4111-8111-111111111111"
+				body = cp
+			} else {
+				cp := make(map[string]string, len(m))
+				for k, v := range m {
+					if k != "__omit_device_id__" {
+						cp[k] = v
+					}
+				}
+				body = cp
+			}
+		}
+	}
+	if m, ok := body.(map[string]any); ok && (path == "/auth/login" || path == "/auth/verify-otp") {
+		if _, hasDevice := m["device_id"]; !hasDevice {
+			if _, omit := m["__omit_device_id__"]; !omit {
+				cp := make(map[string]any, len(m)+1)
+				for k, v := range m {
+					cp[k] = v
+				}
+				cp["device_id"] = "11111111-1111-4111-8111-111111111111"
+				body = cp
+			} else {
+				cp := make(map[string]any, len(m))
+				for k, v := range m {
+					if k != "__omit_device_id__" {
+						cp[k] = v
+					}
+				}
+				body = cp
+			}
+		}
+	}
 	var buf bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
@@ -63,6 +103,8 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 		h = s.VerifyOTP
 	case "/auth/login":
 		h = s.Login
+	case "/auth/logout":
+		h = s.Logout
 	case "/auth/refresh":
 		h = s.Refresh
 	case "/auth/reset/request":
@@ -489,6 +531,27 @@ func (f *failingStore) CreateAuditLog(ctx context.Context, entry *models.AuditLo
 }
 func (f *failingStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error) {
 	return nil, 0, f.err
+}
+func (f *failingStore) CreateOrReplaceSession(ctx context.Context, sess *models.Session) ([]*models.Session, error) {
+	return nil, f.err
+}
+func (f *failingStore) GetSession(ctx context.Context, sid string) (*models.Session, error) {
+	return nil, f.err
+}
+func (f *failingStore) FindSessionByRefreshHash(ctx context.Context, refreshHash string) (*models.Session, error) {
+	return nil, f.err
+}
+func (f *failingStore) UpdateSessionActivity(ctx context.Context, sid string, refreshHash string, lastUsedAt time.Time) error {
+	return f.err
+}
+func (f *failingStore) EndSession(ctx context.Context, sid string, reason models.SessionEndReason, at time.Time) error {
+	return f.err
+}
+func (f *failingStore) EndAllUserSessions(ctx context.Context, userID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
+	return nil, f.err
+}
+func (f *failingStore) ListActiveSessions(ctx context.Context, userID string) ([]*models.Session, error) {
+	return nil, f.err
 }
 
 func TestSignup_StoreDown_Returns503(t *testing.T) {
@@ -1135,7 +1198,7 @@ func TestRefresh_TokenIssuedBeforeSuspension_Refused(t *testing.T) {
 
 	// 5. The refresh entry in s.Codes is NOT deleted
 	val, err := s.Codes.Get(ctx, "refresh:"+otp.HashToken(refreshToken))
-	if err != nil || val != u.ID {
+	if err != nil || (!strings.HasPrefix(val, u.ID+":") && val != u.ID) {
 		t.Fatalf("expected refresh key to remain in Codes, got val=%q, err=%v", val, err)
 	}
 

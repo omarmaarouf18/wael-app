@@ -182,7 +182,11 @@ func TestGatewayChain(t *testing.T) {
 	}
 
 	runStage("verify_otp", func(subT *testing.T) {
-		code, body := c.post(subT, "/api/v1/auth/verify-otp", "", map[string]string{"email": email, "code": otp})
+		code, body := c.post(subT, "/api/v1/auth/verify-otp", "", map[string]string{
+			"email":     email,
+			"code":      otp,
+			"device_id": "11111111-1111-4111-8111-111111111111",
+		})
 		if code != http.StatusOK {
 			subT.Fatalf("verify-otp = %d (%v)", code, body)
 		}
@@ -198,7 +202,11 @@ func TestGatewayChain(t *testing.T) {
 	}
 
 	runStage("login", func(subT *testing.T) {
-		code, body := c.post(subT, "/api/v1/auth/login", "", map[string]string{"email": email, "password": "password123"})
+		code, body := c.post(subT, "/api/v1/auth/login", "", map[string]string{
+			"email":     email,
+			"password":  "password123",
+			"device_id": "11111111-1111-4111-8111-111111111111",
+		})
 		if code != http.StatusOK {
 			subT.Fatalf("login = %d (%v)", code, body)
 		}

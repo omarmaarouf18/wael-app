@@ -701,3 +701,89 @@ func TestAMRClaimRoundTrip(t *testing.T) {
 		t.Errorf("expected empty amr for legacy token, got %v", claimsLegacy.AMR)
 	}
 }
+
+func TestSessionRevocation(t *testing.T) {
+	Init("super-secret-key-that-is-at-least-thirty-two-bytes-long")
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("failed to start miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+
+	SetRedisClient(rdb)
+	defer SetRedisClient(nil)
+
+	// 1. Token without sid validates
+	tokLegacy, err := GenerateToken("user-1", "user", "user1@example.com")
+	if err != nil {
+		t.Fatalf("GenerateToken failed: %v", err)
+	}
+	claims, err := ValidateToken(tokLegacy)
+	if err != nil {
+		t.Fatalf("ValidateToken for legacy token failed: %v", err)
+	}
+	if claims.SID != "" {
+		t.Errorf("expected empty SID, got %q", claims.SID)
+	}
+
+	// 2. Token with sid validates initially
+	sid1 := "session-uuid-1"
+	tok1, err := GenerateTokenWithSession("user-1", "user", "user1@example.com", sid1)
+	if err != nil {
+		t.Fatalf("GenerateTokenWithSession failed: %v", err)
+	}
+	claims1, err := ValidateToken(tok1)
+	if err != nil {
+		t.Fatalf("ValidateToken failed: %v", err)
+	}
+	if claims1.SID != sid1 {
+		t.Errorf("expected SID %q, got %q", sid1, claims1.SID)
+	}
+
+	// 3. Token for second session
+	sid2 := "session-uuid-2"
+	tok2, err := GenerateTokenWithSession("user-1", "user", "user1@example.com", sid2)
+	if err != nil {
+		t.Fatalf("GenerateTokenWithSession failed: %v", err)
+	}
+
+	// 4. Revoke session 1
+	if err := RevokeSession(sid1); err != nil {
+		t.Fatalf("RevokeSession failed: %v", err)
+	}
+
+	// Session 1 is rejected
+	_, err = ValidateToken(tok1)
+	if err == nil || err.Error() != "jwtutil: session has been revoked" {
+		t.Fatalf("expected session has been revoked error, got %v", err)
+	}
+
+	// Session 2 is still valid
+	_, err = ValidateToken(tok2)
+	if err != nil {
+		t.Fatalf("expected session 2 to remain valid, got: %v", err)
+	}
+
+	// Legacy token without sid is still valid
+	_, err = ValidateToken(tokLegacy)
+	if err != nil {
+		t.Fatalf("expected legacy token without sid to remain valid, got: %v", err)
+	}
+
+	// 5. Fail closed when Redis unreachable
+	badRdb := redis.NewClient(&redis.Options{Addr: "localhost:9999"})
+	badRdb.Close()
+	SetRedisClient(badRdb)
+
+	_, err = ValidateToken(tok2)
+	if err == nil {
+		t.Fatal("expected fail-closed error when Redis unreachable, got nil")
+	}
+
+	// Token without sid does not query Redis sid key, so it validates even if Redis is unreachable (unless user check triggers)
+	// (Note: user invalidation check also queries Redis so badRdb fails on user check for non-empty UserID, which is expected fail-closed).
+}

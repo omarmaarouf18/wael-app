@@ -139,3 +139,31 @@ func (u *User) ToDTO() *UserDTO {
 		DeletedAt:     u.DeletedAt,
 	}
 }
+
+// SessionEndReason indicates why a session was terminated.
+type SessionEndReason string
+
+const (
+	EndReasonReplaced SessionEndReason = "replaced"
+	EndReasonLogout   SessionEndReason = "logout"
+	EndReasonAdmin    SessionEndReason = "admin"
+)
+
+// Session represents an active or terminated login session (SPEC Section 5).
+// No IP address is stored.
+type Session struct {
+	ID          string           `json:"id" bson:"_id"` // sid (UUID)
+	UserID      string           `json:"user_id" bson:"user_id"`
+	DeviceID    string           `json:"device_id" bson:"device_id"`
+	DeviceLabel string           `json:"device_label,omitempty" bson:"device_label,omitempty"`
+	RefreshHash string           `json:"-" bson:"refresh_hash"`
+	CreatedAt   time.Time        `json:"created_at" bson:"created_at"`
+	LastUsedAt  time.Time        `json:"last_used_at" bson:"last_used_at"`
+	EndedAt     *time.Time       `json:"ended_at,omitempty" bson:"ended_at,omitempty"`
+	EndReason   SessionEndReason `json:"end_reason,omitempty" bson:"end_reason,omitempty"`
+}
+
+// IsActive reports whether the session has not been ended.
+func (s *Session) IsActive() bool {
+	return s != nil && s.EndedAt == nil
+}
