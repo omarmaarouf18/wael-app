@@ -16,20 +16,20 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 
 | File | Lines | Uses shared shell | Baseline entries (violations) | Catalog screen |
 |------|------:|-------------------|------------------------------:|----------------|
-| `course_detail_screen.dart` | 521 | yes | 0 (0) | yes |
-| `courses_screen.dart` | 291 | yes | 0 (0) | yes |
+| `course_detail_screen.dart` | 77 | yes | 0 (0) | yes |
+| `courses_screen.dart` | 311 | yes | 0 (0) | yes |
 | `ebook_screen.dart` | 27 | yes | 0 (0) | yes |
 | `forgot_password_screen.dart` | 165 | yes | 0 (0) | no |
-| `home_screen.dart` | 198 | yes | 0 (0) | yes |
+| `home_screen.dart` | 200 | yes | 0 (0) | yes |
 | `login_screen.dart` | 231 | yes | 0 (0) | no |
 | `main_shell.dart` | 103 | yes | 0 (0) | no |
 | `notifications_screen.dart` | 189 | yes | 0 (0) | no |
 | `otp_screen.dart` | 111 | yes | 0 (0) | no |
-| `settings_screen.dart` | 550 | yes | 0 (0) | no |
+| `settings_screen.dart` | 221 | yes | 0 (0) | no |
 | `signup_screen.dart` | 332 | yes | 0 (0) | no |
 | `splash_screen.dart` | 61 | yes | 0 (0) | no |
 | `video_player_screen.dart` | 436 | yes | 0 (0) | no |
-| **Total** | 3327 | 13 of 13 | 0 (0) | 4 of 13 |
+| **Total** | 2361 | 13 of 13 | 0 (0) | 4 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.

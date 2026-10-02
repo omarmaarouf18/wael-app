@@ -80,6 +80,6 @@ I did not decide these. Each is shown to students today.
 
 | What | Detail |
 |---|---|
-| Unused generic strings | 10 l10n keys with no caller: `eduLisence`, `eduDiploma`, `eduVocational`, `levelYear1` to `levelYear4`, `save`, `videoLocked`, `academyMotto`. Also unused: the constants `academyMotto`, `academyWordmark`, `academySubWordmark`. Four more keys are used only by tests that assert the removed mock sections stay gone: `tabClasses`, `continueLearning`, `upcoming`, `downloadSyllabus` |
+| Unused generic strings | 7 l10n keys with no caller: `levelYear1` to `levelYear4`, `save`, `videoLocked`, `academyMotto` (`eduLisence`, `eduDiploma` and `eduVocational` were replaced by `studyTypeLabel` on 2026-10-02). Also unused: the constants `academyMotto`, `academyWordmark`, `academySubWordmark`. Four more keys are used only by tests that assert the removed mock sections stay gone: `tabClasses`, `continueLearning`, `upcoming`, `downloadSyllabus` |
 | Orphaned shared widgets | `widgets/pill_filter_bar.dart` and `widgets/hero_backdrop.dart` have no screen caller (`HeroBackdrop` lost its last one when the login screen switched to the poster). `confirm_action_dialog.dart` is used only by the debug library. Not deleted: they are not mock data, and `HeroBackdrop` still has its own tests. *(Corrected 2026-10-02: an earlier version of this row also listed `file_details_sheet.dart`, which the subject screen does use.)* |
 | Not done (out of scope) | `url_launcher` (the support link can only be copied), backend, admin, player |
