@@ -291,7 +291,10 @@ Design points worth copying:
 
 ### 6.3 Not built yet (documented as open, so not defects)
 
-Deploy repo, CD workflow, staging stack, release-gate workflow, RUNBOOK, DEPLOYMENT,
+The deploy repo, the publish and deploy workflows and a deploy-only RUNBOOK are
+scaffolded but switched off (ADR-0011, `infrastructure/deploy/`); they are not live.
+
+Staging stack, release-gate workflow, DEPLOYMENT,
 changelog, real `tools/docgen`, real contract tests, academy service (SPEC phases 0 to 7),
 admin console and CLI identity tooling (ADR-0008 accepted, not implemented),
 `shared/infra/storage` (removed, scheduled to be restored in Phase 0.4).
@@ -520,12 +523,12 @@ result; the last column is the target.
 | Token revocation wired to real flows | Partial | Partial | Yes |
 | Log redaction and CR/LF sanitization | Yes | Yes | Yes |
 | Encryption at rest for sensitive files | Yes | Planned | Yes |
-| Strict health probes (no HTTP fallback) | No | No | Yes |
+| Strict health probes (no HTTP fallback) | No | Partial (scaffolded, off; ADR-0011) | Yes |
 | Ops actions as CLI, no admin HTTP surface | Yes | Planned (ADR-0008) | Yes |
 | **Deploy and operate** | | | |
-| Separate deploy repo, pull-only runner | Yes | Planned | Yes |
-| Pre-flight env validation before any change | Partial (S-02) | No | Yes |
-| Health-gated rollback | Yes (S-03 caveats) | No | Yes |
+| Separate deploy repo, pull-only runner | Yes | Partial (scaffolded, off; ADR-0011) | Yes |
+| Pre-flight env validation before any change | Partial (S-02) | Partial (scaffolded, off; ADR-0011) | Yes |
+| Health-gated rollback | Yes (S-03 caveats) | Partial (scaffolded, off; ADR-0011) | Yes |
 | Staging parity plus release gate | Yes | No | Yes |
 | Migration framework tied to rollback | No | No | Yes |
 | Scheduled backups plus restore drill | No | No | Yes |
