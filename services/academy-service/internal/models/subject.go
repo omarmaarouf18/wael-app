@@ -19,6 +19,7 @@ type Subject struct {
 	DescriptionEn   string    `bson:"description_en" json:"description_en"`
 	Price           int       `bson:"price" json:"price"`
 	Status          string    `bson:"status" json:"status"` // "draft", "published"
+	Order           int       `bson:"order" json:"order"`
 	AccessExpiresAt time.Time `bson:"access_expires_at" json:"access_expires_at"`
 	CreatedAt       time.Time `bson:"created_at" json:"created_at"`
 	UpdatedAt       time.Time `bson:"updated_at" json:"updated_at"`

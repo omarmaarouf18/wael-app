@@ -732,6 +732,37 @@ func runStoreSuite(t *testing.T, s Store) {
 	if err := s.DeleteLevel(ctx, "diploma-test-1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound deleting missing level, got %v", err)
 	}
+
+	// Subject order (Phase 4.3): admin order field persists and sorts before
+	// creation time.
+	orderSubjA := &models.Subject{
+		ID: "subj-order-a", LevelKey: "diploma-order-1", TitleAr: "أ",
+		Status: models.StatusPublished, Order: 5,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now().Add(-time.Hour), UpdatedAt: time.Now(),
+	}
+	orderSubjB := &models.Subject{
+		ID: "subj-order-b", LevelKey: "diploma-order-1", TitleAr: "ب",
+		Status: models.StatusPublished, Order: 2,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(), UpdatedAt: time.Now(),
+	}
+	for _, subj := range []*models.Subject{orderSubjA, orderSubjB} {
+		if err := s.CreateSubject(ctx, subj); err != nil {
+			t.Fatalf("CreateSubject order fixture failed: %v", err)
+		}
+	}
+	ordered, _, err := s.ListSubjects(ctx, SubjectFilter{LevelKey: "diploma-order-1", Status: models.StatusPublished, Page: 1, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListSubjects order fixture failed: %v", err)
+	}
+	if len(ordered) != 2 || ordered[0].ID != "subj-order-b" || ordered[1].ID != "subj-order-a" {
+		t.Fatalf("expected order sort [subj-order-b subj-order-a], got %+v", ordered)
+	}
+	gotOrdered, err := s.GetSubjectByID(ctx, "subj-order-b")
+	if err != nil || gotOrdered == nil || gotOrdered.Order != 2 {
+		t.Fatalf("expected persisted order 2, got %+v err=%v", gotOrdered, err)
+	}
 }
 
 func TestMemoryStore(t *testing.T) {

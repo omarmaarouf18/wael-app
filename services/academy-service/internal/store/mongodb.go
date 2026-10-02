@@ -390,7 +390,7 @@ func (s *MongoStore) ListSubjects(ctx context.Context, filter SubjectFilter) ([]
 
 	skip := int64((page - 1) * limit)
 	opts := options.Find().
-		SetSort(bson.D{{Key: "created_at", Value: 1}}).
+		SetSort(bson.D{{Key: "order", Value: 1}, {Key: "created_at", Value: 1}}).
 		SetSkip(skip).
 		SetLimit(int64(limit))
 

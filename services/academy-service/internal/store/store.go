@@ -295,6 +295,9 @@ func (s *MemoryStore) ListSubjects(_ context.Context, filter SubjectFilter) ([]*
 	}
 
 	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].Order != matches[j].Order {
+			return matches[i].Order < matches[j].Order
+		}
 		return matches[i].CreatedAt.Before(matches[j].CreatedAt)
 	})
 
