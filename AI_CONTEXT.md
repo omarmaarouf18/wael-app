@@ -10,7 +10,7 @@ pre-push hook, CI. Branch: `develop` (work), `main` (fast-forward merges after C
 
 ## Done
 Skeleton, shared/infra, gateway+auth, notifications, Flutter wiring+rename,
-compose+certs, hooks+Makefile, CI (publish disabled). Refresh tokens consume
+compose+certs, hooks+Makefile, CI (publish live since 2026-10-02, ADR-0011). Refresh tokens consume
 atomically (single redemption); signup takes no client role (always user).
 Gateway chain covered by env-gated tests/e2e. gosec pinned v2.29.0 in
 hook and CI with drift check. README matches the repo. ADR-0002/0003/0004/0005
@@ -91,7 +91,7 @@ Core Phase 1.6: notification-service stream caps: per-account concurrent stream 
 
 SPEC Phase 2.1: `academy-service` skeleton (`github.com/omarmaarouf18/wael-app/academy-service` Go module on Go 1.26 / toolchain go1.26.6, added to `go.work`); config `Load()` with allowlist-based `APP_ENV` and table tests; `--check-env` flag and test suite; `/health` on public listener behind `GatewayAuth` (`X-Gateway-Secret`); internal admin listener (`ADMIN_LISTEN_ADDR` defaulting to `:9002`, not published on host) serving only `/internal/admin/*` behind `X-Internal-Token` (empty 404 for 2.1); `buildServer` enforcing TLS/mTLS parity across public and admin listeners; `Store` interface with `MemoryStore` and `MongoStore` with `EnsureIndexes` (no domain collections invented yet) and `REQUIRE_DB`-gated MongoDB integration tests; docker-compose service definition with mTLS certs and healthcheck; gateway route `/api/v1/academy/` forwarding to `academy-service` with `/api/v1` stripped; contract tests asserting gateway academy route exists, gateway has no `/internal/` route, and admin ports 9001/9002 are not published in compose; added to CI `Build & Test` and `Security Scan` matrices (`Build & Test (services/academy-service, academy-service)` and `Security Scan (services/academy-service, academy-service)`).
 
-SPEC Phase 2.2: `levels` model, unique key index, and idempotent startup seed (bachelor years 1-4 and the vocational level only); `GET /academy/levels` student route behind `GatewayAuth` and `StudentAuth` (Bearer JWT validated with `jwtutil.ValidateToken` on every request against Redis revocation markers and denylist); levels with no published subjects are hidden; `LevelDTO` and `LevelsResponseDTO` response shape; `MemoryStore` and `MongoStore` implementations with `REQUIRE_DB` integration tests verifying seed idempotency, unique key index, and published subject filtering.
+SPEC Phase 2.2: `levels` model, unique key index, and idempotent startup seed (bachelor years 1-4 and the vocational level only); `GET /academy/levels` student route behind `GatewayAuth` and `StudentAuth` (Bearer JWT validated with `jwtutil.ValidateToken` on every request against Redis revocation markers and denylist); levels with no published subjects are hidden; `LevelDTO` and `LevelsResponseDTO` response shape; `MemoryStore` and `MongoStore` implementations with `REQUIRE_DB` integration tests verifying seed idempotency, unique key index, and published subject filtering. *(2026-10-02: superseded — `GET /academy/levels` now returns all levels with or without published subjects; unpublished subjects stay hidden in lists and details.)*
 
 SPEC Phase 2.3: `subjects` and `videos` models per SPEC Section 5 (including `access_expires_at` on subjects per decision 18, and `published` flags); student read endpoints `GET /academy/subjects` and `GET /academy/subjects/{id}` returning metadata only behind `GatewayAuth` and `StudentAuth`; strict leak tests ensuring `youtube_video_id` and raw video IDs never appear in student JSON responses (lists, detail, errors); price and currency hidden unless `EXPOSE_PRICE_TO_STUDENTS=true` (D3); unpublished subjects and videos hidden; pagination capped at 20 default and 100 max; compound indexes on `subjects(level_key, status)`, `videos(subject_id, position)`, and `subject_files(subject_id)` in MemoryStore and MongoStore.
 
@@ -143,11 +143,11 @@ SPEC Phase 6.1 admin-console (owner decision 2026-10-02: Go plus static pages mo
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy/mobile pipeline live on production with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true` (ADR-0011).
-RUNBOOK, DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
+RUNBOOK (at `infrastructure/deploy/RUNBOOK.md`), DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
 rows in `docs/asset-provenance.md`.
 Hardening reference and backlog: docs/BOOTSTRAP-REFERENCE.md.
 Owner question: reminder notification before a subscription expires (SPEC Section 3 question 17).
-Pipeline hardening & required checks decisions (owner 2026-10-02): (1) E2E as release gate is sufficient: E2E (compose) and Prod Image Build inside CI Gate run on main before publish; (2) required checks: replace per-job ruleset list with single aggregate job 'CI OK' in ci.yml covering all jobs, sole required check on main and develop; (3) publishing and deploy are ON and live since 557f367; (4) admin tooling shipped in auth-service image and verified on live server with sudo docker exec wael-auth-service-1 /bin/onboard-admin --ttl 2160h; (5) rollback correctness: last-good compose/Caddyfile preservation, --remove-orphans, and failed-releases guard.
+Pipeline hardening & required checks decisions (owner 2026-10-02): (1) E2E as release gate is sufficient: E2E (compose) and Prod Image Build inside CI Gate run on main before publish; (2) required checks: replace per-job ruleset list with single aggregate job 'CI OK' in ci.yml covering all jobs, sole required check on main and develop; (3) publishing and deploy are ON and live since 557f367; (4) admin tooling shipped in auth-service image and verified on live server with sudo docker exec wael-auth-service-1 /bin/onboard-admin --name "<name>" --ttl 2160h; (5) rollback correctness: last-good compose/Caddyfile preservation, --remove-orphans, and failed-releases guard.
 
 ## Decisions
 - [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)

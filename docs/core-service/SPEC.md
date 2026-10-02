@@ -64,7 +64,7 @@ This is the build contract for the core of the application. It is written for im
 | D9 | Entitlement revocation | Allowed by admin, reason mandatory, audited. |
 | D10 | Learning progress | Local to the device only; no server field. |
 | D11 | Video ordering | `position` integer, no unique index (reorder rewrites positions in one bulk write; code enforces contiguity). This replaces the unique compound index in ADR-0007 decision 12. |
-| D12 | Levels seed | Bachelor years 1-4 only until the diploma/vocational lists are provided. |
+| D12 | Levels seed | Bachelor years 1-4 only until the diploma/vocational lists are provided. *(Amended 2026-10-02: resolved — the seed holds bachelor years 1-4 and the single vocational level; diplomas are admin-created under the fixed diploma study type; see Section 1 decision 2.)* |
 | D13 | Rate-limit tiers (ADR-0016 in saas-core) | Read 30/min, download 10/min, access-request and admin writes 5/min, per user (or per admin). Configurable. *(Amended 2026-10-01)*: Read default raised to 120/min; play video (`/academy/videos/{id}/play`) given its own tier Play with default 60/min (`RATE_LIMIT_PLAY`). Configurable via env (`RATE_LIMIT_READ`, `RATE_LIMIT_PLAY`, etc.); owner may change. |
 | D14 | Max PDF size | 50 MB (`MAX_PDF_BYTES`). |
 | D15 | Blocklist hashing | **Supersedes the hashing in D8.** Blocklist hashes use HMAC-SHA256 with a secret key from env (required in production), not plain SHA-256. |
@@ -333,7 +333,7 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 - 5.3 Delete (removes the stored object).
 
 **Phase 6 - admin console and deployment**
-- 6.1 `services/admin-console` skeleton: static shell, proxy that adds the internal token, no authorization logic. *(Done 2026-10-02, held from `main` pending owner confirmation (rule 6 of Section 12). Built as the owner directed: Go standard library plus static pages modelled on the reviewer console, see ADR-0008 Section 10. It already serves the Accounts and Audit pages; the compose service, Caddy admin host, preflight checks and memory limit that Section 6.2 lists were added with it, and 6.2 is otherwise not reviewed.)*
+- 6.1 `services/admin-console` skeleton: static shell, proxy that adds the internal token, no authorization logic. *(Done 2026-10-02, held from `main` pending owner confirmation (rule 6 of Section 12). Built as the owner directed: Go standard library plus static pages modelled on the reviewer console, see ADR-0008 Section 10. It already serves the Accounts and Audit pages; the compose service, Caddy admin host, preflight checks and memory limit that Section 6.2 lists were added with it, and 6.2 is otherwise not reviewed.) (2026-10-02: owner confirmed; released to `main` as `b6a11fe`.)*
 - 6.2 Compose: Caddy with a persistent certificate volume, `api.` and `admin.` hosts, `--check-env` preflight, memory limits sized for the small host, Mongo cache size set.
 - 6.3 Console pages (separate spec). *(2026-10-02: the Accounts and Audit pages were built with 6.1 at the owner's direction; Requests, Catalog and Files remain, hidden in the console until their APIs exist.)*
 

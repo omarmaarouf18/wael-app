@@ -81,7 +81,7 @@ publishing and deploying kept off until the prerequisites exist.
 
 - The first sync run pushes a `frontend/`-rooted tree to wael-app-mobile and
   its Build Android workflow starts.
-- The first publish run creates three images tagged with the CI-verified
+- The first publish run creates five images tagged with the CI-verified
   commit and one commit in wael-app-deploy.
 - `scripts/preflight.sh` on the server refuses a placeholder value and an
   `IMAGE_TAG` that is not a full commit sha.

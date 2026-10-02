@@ -262,13 +262,13 @@ Design points worth copying:
 
 | Area | What exists |
 |---|---|
-| Services | `api-gateway` (routes `/api/v1/auth/`, `/api/v1/notifications/`), `auth-service` (signup, verify-otp, login, refresh, reset request/verify/confirm, me; single role `user`), `notification-service` (SSE, list, mark-read, internal push) |
+| Services | `api-gateway` (routes `/api/v1/auth/`, `/api/v1/notifications/`, `/api/v1/academy/`), `auth-service` (signup, verify-otp, login, refresh, reset request/verify/confirm, me; single role `user`; sessions with 2-device cap, `POST /auth/logout`), `notification-service` (SSE, list, mark-read, internal push), `academy-service` (levels, subjects, play; SPEC Phases 2-3), `admin-console` (thin admin proxy and static pages, SPEC Phase 6.1) |
 | Shared | `shared/infra`: `jwtutil`, `ratelimit`, `handlerutil`, `redact`, `resilience`, `tlsutil` (10 test files) |
 | Tests | Go unit tests per module (gateway 4, auth 5, notification 3 test files); `tests/contracts` is a skeleton (`doc.go` only); `tests/e2e/chain_test.go` runs only when `E2E_GATEWAY_URL` and `E2E_CA_CERT` are set; Flutter: 11 test files |
 | Frontend | Flutter app with real gateway auth, notification repository, debug diagnostics screen (excluded in release) |
 | Infra | Local compose (`mongo:7`, `redis:7-alpine`, mTLS), `generate-certs.sh`, `.env.example` |
-| CI | `ci.yml` (lint-formatting, build-test matrix, security, gitleaks, flutter-test); `build-and-publish.yml` disabled with `if: false` |
-| Governance | `CLAUDE.md`, `AGENTS.md` pointer, `AI_CONTEXT.md`, 8 ADRs, `docs/core-service/SPEC.md`, `docs/frontend/BEHAVIOR.md` (24 executed scenarios with captured output), `docs/asset-provenance.md` |
+| CI | `ci.yml` (lint-formatting, build-test matrix, security, gitleaks, flutter-test, `E2E (compose)`, `Prod Image Build`, `CI OK` aggregate gate); `build-and-publish.yml` gated by `vars.PUBLISH_ENABLED` (live in production since 2026-10-02) |
+| Governance | `CLAUDE.md`, `AGENTS.md` pointer, `AI_CONTEXT.md`, 10 ADRs (0001-0009 plus 0011; 0010 reserved), `docs/core-service/SPEC.md`, `docs/frontend/BEHAVIOR.md` (24 executed scenarios with captured output), `docs/asset-provenance.md` |
 
 ### 6.2 Done well (keep, and copy into project 3)
 
@@ -295,10 +295,15 @@ The deploy repo, the publish and deploy workflows and the deploy RUNBOOK are
 live in production since `557f367` with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true`
 (ADR-0011, `infrastructure/deploy/`).
 
-Staging stack, release-gate workflow, DEPLOYMENT,
-changelog, real `tools/docgen`, real contract tests, academy service (SPEC phases 0 to 7),
-the admin console's academy pages (requests, catalog, files; the console itself exists since SPEC Phase 6.1 and the CLI identity tooling since Phase 1.4),
-`shared/infra/storage` (removed, scheduled to be restored in Phase 0.4).
+Staging stack, DEPLOYMENT,
+changelog, real `tools/docgen`.
+(2026-10-02: done since the review — the CI Gate itself (with `E2E (compose)`
+and `Prod Image Build`) is the release gate per the Q1 decision, real contract
+tests run in CI, the academy-service read path and entitlements (SPEC Phases 2-3)
+and the admin console (SPEC Phase 6.1) with the admin CLI identity tooling
+(Phase 1.4) are built; the console's academy pages (requests, catalog, files)
+are still open.)
+`shared/infra/storage` (removed at review time; restored in Phase 0.4 and covered by contract tests).
 
 ---
 
@@ -369,7 +374,7 @@ Actions use tags (`actions/checkout@v4`, `setup-go@v5`, `golang/govulncheck-acti
 `subosito/flutter-action@v2`, `docker/*`). The hook installs `govulncheck@latest`.
 Dockerfile bases use tags (`golang:1.26.6-alpine`, `alpine:3.20`, `mongo:7`,
 `redis:7-alpine`), not digests. No Dependabot, no CODEOWNERS, no image scan, signing or
-SBOM (publishing is still disabled, so the last three are pre-work).
+SBOM (2026-10-02: publishing is live, so the last three are still pre-work).
 *Fix:* pin actions by commit SHA with a version comment, pin `govulncheck`, add
 `.github/dependabot.yml` (gomod per module, github-actions, docker, pub), add CODEOWNERS
 for `.github/`, `infrastructure/`, `shared/infra/`, `docs/adr/`, `services/auth-service/`.
@@ -487,7 +492,7 @@ result; the last column is the target.
 | Categorized changelog with verified SHAs | Yes | No | Yes |
 | SHA citation check locally | Yes | Yes | Yes |
 | SHA citation check in CI | Yes | Yes | Yes |
-| Branch ruleset (required checks, linear history, no force push) | Unknown | Unknown | Yes |
+| Branch ruleset (required checks, linear history, no force push) | Unknown | Recorded in `docs/REPOSITORY-SETTINGS.md` (observed via API 2026-10-02: `main` still lists 17 per-job checks, `develop` requires none; `CI OK` decided but not yet applied) | Yes |
 | CODEOWNERS | No | No | Yes |
 | Dependabot or Renovate | No | No | Yes |
 | Secret scanning in CI (full history) | No | Yes | Yes |
@@ -508,7 +513,7 @@ result; the last column is the target.
 | Real contract tests | Yes | **No (skeleton)** | Yes |
 | E2E on a production-image stack | Yes | No | Yes |
 | Skips fail in CI | No | Yes for e2e | Yes |
-| Publish gated on CI and E2E | No | n/a (disabled) | Yes |
+| Publish gated on CI and E2E | No | Yes (2026-10-02: CI Gate runs `E2E (compose)` and `Prod Image Build` on `main`; publish waits via `workflow_run`; live since `557f367`) | Yes |
 | **Build** | | | |
 | Multi-stage, non-root, static binary | Yes | Yes | Yes |
 | Base images pinned by digest | No | No | Yes |
@@ -576,7 +581,8 @@ done, because the academy service will copy whatever the existing services do.
     (SPEC 8.5), and its OTP strategy ADR (W-17).
 13. Deploy repo, pull-only runner, pre-flight ordering fixed (S-02), rollback that uses
     recorded image tags (S-03), then re-enable `build-and-publish.yml` gated on CI and E2E
-    (S-01).
+    (S-01). (Done 2026-10-02: live since `557f367` with `PUBLISH_ENABLED`/`DEPLOY_ENABLED`
+    on; `deploy.sh`/`rollback.sh` keep a last-good compose snapshot and a failed-releases guard.)
 14. RUNBOOK and DEPLOYMENT, including backup, restore drill and secret handling.
 
 ### Phase C: hardening
@@ -746,6 +752,9 @@ one workflow, or `workflow_run` with a success condition), never run beside them
   (`Lint & Formatting`, every `Build & Test` matrix entry, `Security Scan`,
   `Secret Scan`, `Flutter Lint & Test`, the E2E job once it exists), require linear
   history, block force pushes, block deletion, require branches to be up to date.
+  (2026-10-02: superseded by the Q2 owner decision — the intended sole required
+  check is the `CI OK` aggregate job; not yet applied, see
+  `docs/REPOSITORY-SETTINGS.md` for the observed state.)
 - Target the development branch: block force pushes and deletion; require the same checks.
 - Restrict who can edit `.github/workflows/` (CODEOWNERS plus required review).
 - Enable secret scanning with push protection, Dependabot alerts and security updates,
@@ -838,11 +847,11 @@ Examined commit: `46c7997...`
 | W-08 | Confirmed | `services/*/Dockerfile:50-51,45-46`, `infrastructure/docker-compose.yml:98` | none |
 | W-09 | Confirmed | `infrastructure/docker-compose.yml:24,45,50` | none |
 | W-10 | Confirmed | `infrastructure/certs/generate-certs.sh:11,31,37,39,40` | none |
-| W-11 | Confirmed | `shared/infra/jwtutil/jwt.go:142`, `services/auth-service/cmd/main.go:74-81`, `grep -rn "RevokeToken\|RevokeAllUserTokens" services/` (0 matches) | none |
+| W-11 | Fixed (Phase 1.7) | `services/auth-service/internal/handlers/auth.go` (`POST /auth/logout`, 401 code `session_replaced`), `admin.go` (suspend/delete terminate sessions) | `RevokeSession`/`RevokeAllUserTokens` now have non-test callers; newest-2 session cap with `device_id`. |
 | W-12 | Confirmed | `services/auth-service/internal/handlers/auth.go:136-139`, `services/api-gateway/internal/middleware/limiter.go:47` | none |
 | W-13 | Confirmed | `tools/docgen/main.go:8`, `Makefile:1-51` (no docs target), absence of `docs/changelog/` | none |
 | W-14 | Fixed in 06f0612 (gate); route parity check still open | `scripts/frontend_composition_gate.sh`, `scripts/frontend_gate_baseline.txt`, `.githooks/pre-push:26-30`, `.github/workflows/ci.yml` (step "Frontend Composition Gate") | Composition gate ported with a ratchet baseline and run in the pre-push hook and in CI job "Flutter Lint & Test". The route parity script does not exist yet. |
-| W-15 | Unknown (not visible from the repo) | GitHub repository rulesets and branch protection settings cannot be inspected from local git clone | none |
+| W-15 | Recorded 2026-10-02 | `docs/REPOSITORY-SETTINGS.md`; observed via API: `main` requires 17 per-job checks (no `CI OK`), `develop` requires none | Apply the Q2 decision: replace both lists with the single `CI OK` check. |
 | W-16 | Confirmed | `services/auth-service/internal/otp/otp.go:31-34`, `services/auth-service/internal/handlers/auth.go:174-178,337-341` | none |
 | W-17 | Confirmed | `services/auth-service/internal/config/config.go:64-66` (staging not allowed; no staging OTP strategy exists) | none |
 

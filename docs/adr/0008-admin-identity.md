@@ -103,7 +103,7 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
    7. Arabic first and right-to-left, with an English toggle, using the EL METR dark and crimson tokens.
 3. **Routes are an explicit allowlist**, each forwarding to exactly one `/internal/admin/*` endpoint of auth-service: whoami (`verify`), accounts list, suspend, reactivate, delete, and the audit log. There is no generic pass-through and no route under `/internal/`.
 4. **Audit log merge (Section 9.4)**: until the academy-service admin endpoints exist (SPEC Phase 4.1), the console serves auth-service's audit log only. Merging both logs by `created_at` descending is added with Phase 4.1; the academy routes (requests, catalog, files) are added as Phase 4 lands. Their tabs exist in the code and stay hidden until then.
-5. **Held from `main`**: this is an admin-authorization surface (SPEC Section 12, rule 6). It stays off `main` until the owner confirms.
+5. **Held from `main`**: this is an admin-authorization surface (SPEC Section 12, rule 6). It stays off `main` until the owner confirms. *(2026-10-02: owner confirmed; the console released to `main` as `b6a11fe`.)*
 
 ## Consequences
 

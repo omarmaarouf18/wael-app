@@ -12,8 +12,11 @@ wael-app main (fast-forward) -> CI Gate green
   -> wael-app-deploy push -> deploy.yml on the self-hosted runner [wael-vm]
        scripts/preflight.sh   (touches nothing running)
        docker compose up --wait (strict health checks)
-       public check through Caddy
-       success: record state/last-good.env   failure: scripts/rollback.sh
+        public check through Caddy
+        success: record state/last-good/last-good.env (plus a legacy copy at
+        state/last-good.env) and snapshot docker-compose.yml + Caddyfile
+        failure: scripts/rollback.sh (the failed tag is recorded in
+        state/failed-releases, which later deploys refuse)
 ```
 
 Do not edit files in wael-app-deploy by hand. Change them in
@@ -111,10 +114,13 @@ Run as a sudo-capable admin unless stated otherwise.
 Production is live since `557f367`. For reference, the setup order was:
 
 1. Prerequisites in wael-app: W-04 (`--check-env`, preflight step 7 needs
-   it), W-08 (strict probes in the Dockerfiles), W-10 (fixed UID), and a
-   release gate (E2E) that publishing waits for (saas-core S-01). Per owner
-   decision Q1 (2026-10-02), `E2E (compose)` and `Prod Image Build` inside CI Gate
-   are sufficient and run on `main` before publishing.
+    it), W-08 (strict CA-verified probes in the production compose
+    healthchecks, which override the Dockerfile `HEALTHCHECK` fallbacks),
+    and a release gate (E2E) that publishing waits for (saas-core S-01).
+    W-10 (fixed container UID) is still open, so certificate keys stay
+    world-readable (`644`) inside the `700` certs directory. Per owner
+    decision Q1 (2026-10-02), `E2E (compose)` and `Prod Image Build` inside CI Gate
+    are sufficient and run on `main` before publishing.
 2. Server setup above, then run `WAEL_HOME=... ./scripts/preflight.sh` by hand
    with a real `release.env` and read every line.
 3. Set `PUBLISH_ENABLED=true` in wael-app. Merge to main. Check that images
@@ -147,9 +153,10 @@ request is checked by auth-service against the operator's token.
 
 Tokens are created only by the server-side CLI `onboard-admin` (ADR-0008):
 no page or API can mint or revoke one. It prints the admin ID and token once on
-stdout and stores only its SHA-256 hash. `--ttl` takes a Go duration (for example
-`2160h` for 90 days; bare numbers like `90` fail with "missing unit" and there is
-no `d` unit). The maximum TTL is `8760h` (365 days). Give each person their own named token.
+stdout and stores only its SHA-256 hash. `--ttl` takes a duration: a Go
+duration such as `2160h` for 90 days, or the day shorthand the CLI also
+accepts (`90d`, which is also the default). A bare number like `90` fails
+with "missing unit". The maximum TTL is 365 days (`8760h`). Give each person their own named token.
 
 On the server (run directly via `sudo docker exec`; `azureuser` cannot cd into the 700 directory and `sudo cd` does not exist):
 

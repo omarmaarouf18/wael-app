@@ -9,20 +9,28 @@ Applied 2026-09-30 through the GitHub web UI (owner session).
 
 | Setting | Value |
 |---|---|
-| Ruleset "main: CI-verified fast-forward only" | Target `main`. Restrict deletions, block force pushes, require linear history, require status check (GitHub Actions): `CI OK`. No pull request required, no bypass actors. A commit can reach `main` only after `CI OK` passes on it (fast-forward from `develop`). |
-| Ruleset "develop: no force push, no deletion" | Target `develop`. Restrict deletions, block force pushes, require status check: `CI OK`. |
+| Ruleset "main: CI-verified fast-forward only" | Target `main`. Restrict deletions, block force pushes, require linear history. Required status checks (observed via the GitHub API 2026-10-02; NOT yet the `CI OK` aggregate — see below): `Lint & Formatting`, eight `Build & Test` matrix entries (api-gateway, auth-service, notification-service, academy-service, shared-infra, docgen, contracts, e2e), five `Security Scan` entries (api-gateway, auth-service, notification-service, academy-service, shared-infra), `Secret Scan (gitleaks)`, `Flutter Lint & Test`, `E2E (compose)`. Missing from the list: `CI OK`, `Prod Image Build`, `Deploy Script Tests`/`deploy-config-check`, `admin-console-web`. No pull request required, no bypass actors. |
+| Ruleset "develop: no force push, no deletion" | Target `develop`. Restrict deletions, block force pushes. No required status check is configured on `develop` (observed via the GitHub API 2026-10-02). |
 | Secret Protection | Enabled (secret scanning alerts) |
 | Push protection | Enabled |
 | Dependency graph / Dependabot alerts | Enabled |
 | Dependabot version updates, CodeQL | Not enabled (W-07 adds `.github/dependabot.yml`) |
 | Branches | `main`, `develop`. `wire/existing-services` deleted on GitHub (fully merged into `develop`). |
 
-### Required check architecture (owner decision 2026-10-02, Q2)
+### Required check architecture (owner decision 2026-10-02, Q2 — DECIDED, NOT YET APPLIED)
 
 Instead of listing brittle individual matrix jobs in branch rulesets (which breaks whenever a service is added or removed), `ci.yml` defines a single aggregate job: `CI OK`.
 - `CI OK` depends on all CI Gate jobs via `needs:` (including `E2E (compose)`, `Deploy Script Tests`, the admin-console jobs, and `Prod Image Build`).
 - It runs with `if: always()` and fails if any required dependency does not succeed.
-- `CI OK` is the sole required status check on both `main` and `develop`.
+- Intended: `CI OK` becomes the sole required status check on both `main` and `develop`.
+
+Status 2026-10-02: the `CI OK` job exists in `ci.yml` (`ci-ok`, `name: CI OK`), but the
+GitHub rulesets still enforce the old per-job lists: `main` requires 17 per-job checks
+(without `CI OK`, `Prod Image Build`, `deploy-config-check` or `admin-console-web`) and
+`develop` requires none. Owner action needed: replace the ruleset check lists with the
+single `CI OK` check on both branches (and add it to `develop`), then this file returns
+to saying "`CI OK` is the sole required check". Verified with
+`gh api repos/omarmaarouf18/wael-app/rulesets/24259214` (main) and `.../24259229` (develop).
 
 ## wael-app-deploy
 
