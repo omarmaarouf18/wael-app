@@ -1,7 +1,7 @@
 version: 2
 updates:
   # Keep production compose image digests up to date automatically
-  - package-ecosystem: "docker"
+  - package-ecosystem: "docker-compose"
     directory: "/infrastructure/deploy"
     schedule:
       interval: "weekly"
