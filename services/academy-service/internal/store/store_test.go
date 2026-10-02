@@ -660,6 +660,78 @@ func runStoreSuite(t *testing.T, s Store) {
 	if len(logsPage2) != 1 || logsPage2[0].Action != "level_create" {
 		t.Fatalf("expected page 2 to hold level_create, got %+v", logsPage2)
 	}
+
+	// Level admin CRUD (Phase 4.2).
+	dip := &models.Level{
+		Key:       "diploma-test-1",
+		StudyType: models.StudyTypeDiploma,
+		TitleAr:   "دبلومة اختبار",
+		Position:  6,
+		Published: false,
+	}
+	if err := s.CreateLevel(ctx, dip); err != nil {
+		t.Fatalf("CreateLevel failed: %v", err)
+	}
+	if err := s.CreateLevel(ctx, dip); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("expected ErrDuplicate on second CreateLevel, got %v", err)
+	}
+	gotDip, err := s.GetLevelByKey(ctx, "diploma-test-1")
+	if err != nil || gotDip == nil {
+		t.Fatalf("GetLevelByKey failed: %v", err)
+	}
+	if gotDip.Published {
+		t.Fatalf("expected new diploma unpublished, got %+v", gotDip)
+	}
+	missingLvl, err := s.GetLevelByKey(ctx, "diploma-missing")
+	if err != nil || missingLvl != nil {
+		t.Fatalf("expected nil for missing level, got %+v err=%v", missingLvl, err)
+	}
+
+	gotDip.TitleAr = "دبلومة محدثة"
+	gotDip.Published = true
+	if err := s.UpdateLevel(ctx, gotDip); err != nil {
+		t.Fatalf("UpdateLevel failed: %v", err)
+	}
+	afterUpdate, err := s.GetLevelByKey(ctx, "diploma-test-1")
+	if err != nil || afterUpdate == nil {
+		t.Fatalf("GetLevelByKey after update failed: %v", err)
+	}
+	if afterUpdate.TitleAr != "دبلومة محدثة" || !afterUpdate.Published {
+		t.Fatalf("update not applied: %+v", afterUpdate)
+	}
+	if err := s.UpdateLevel(ctx, &models.Level{Key: "diploma-missing"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound updating missing level, got %v", err)
+	}
+
+	if n, err := s.CountSubjectsByLevel(ctx, "diploma-test-1", ""); err != nil || n != 0 {
+		t.Fatalf("expected 0 subjects in new diploma, got n=%d err=%v", n, err)
+	}
+	dipSubj := &models.Subject{
+		ID:              "subj-dip-count-1",
+		LevelKey:        "diploma-test-1",
+		Term:            "first",
+		TitleAr:         "مادة دبلومة",
+		Status:          models.StatusDraft,
+		AccessExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := s.CreateSubject(ctx, dipSubj); err != nil {
+		t.Fatalf("CreateSubject in diploma failed: %v", err)
+	}
+	if n, err := s.CountSubjectsByLevel(ctx, "diploma-test-1", ""); err != nil || n != 1 {
+		t.Fatalf("expected 1 subject in diploma, got n=%d err=%v", n, err)
+	}
+	if n, err := s.CountSubjectsByLevel(ctx, "diploma-test-1", models.StatusPublished); err != nil || n != 0 {
+		t.Fatalf("expected 0 published subjects in diploma, got n=%d err=%v", n, err)
+	}
+
+	if err := s.DeleteLevel(ctx, "diploma-test-1"); err != nil {
+		t.Fatalf("DeleteLevel failed: %v", err)
+	}
+	if err := s.DeleteLevel(ctx, "diploma-test-1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound deleting missing level, got %v", err)
+	}
 }
 
 func TestMemoryStore(t *testing.T) {

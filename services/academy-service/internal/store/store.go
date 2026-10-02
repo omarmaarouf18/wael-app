@@ -38,6 +38,11 @@ type Store interface {
 	EnsureIndexes(ctx context.Context) error
 	SeedLevels(ctx context.Context) error
 	ListLevels(ctx context.Context, onlyWithPublishedSubjects bool) ([]*models.Level, error)
+	GetLevelByKey(ctx context.Context, key string) (*models.Level, error)
+	CreateLevel(ctx context.Context, lvl *models.Level) error
+	UpdateLevel(ctx context.Context, lvl *models.Level) error
+	DeleteLevel(ctx context.Context, key string) error
+	CountSubjectsByLevel(ctx context.Context, levelKey, status string) (int, error)
 	CreateSubject(ctx context.Context, s *models.Subject) error
 	UpdateSubject(ctx context.Context, s *models.Subject) error
 	ListSubjects(ctx context.Context, filter SubjectFilter) ([]*models.Subject, int, error)
@@ -171,6 +176,76 @@ func (s *MemoryStore) PutLevel(lvl models.Level) {
 	defer s.mu.Unlock()
 	cp := lvl
 	s.levels[lvl.Key] = &cp
+}
+
+// GetLevelByKey retrieves a single level by its key, or nil if missing.
+func (s *MemoryStore) GetLevelByKey(_ context.Context, key string) (*models.Level, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	lvl, exists := s.levels[key]
+	if !exists {
+		return nil, nil
+	}
+	cp := *lvl
+	return &cp, nil
+}
+
+// CreateLevel stores a new level. Duplicate keys return ErrDuplicate.
+func (s *MemoryStore) CreateLevel(_ context.Context, lvl *models.Level) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.levels[lvl.Key]; exists {
+		return ErrDuplicate
+	}
+	cp := *lvl
+	s.levels[lvl.Key] = &cp
+	return nil
+}
+
+// UpdateLevel replaces an existing level. Missing keys return ErrNotFound.
+func (s *MemoryStore) UpdateLevel(_ context.Context, lvl *models.Level) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.levels[lvl.Key]; !exists {
+		return ErrNotFound
+	}
+	cp := *lvl
+	s.levels[lvl.Key] = &cp
+	return nil
+}
+
+// DeleteLevel removes a level. Missing keys return ErrNotFound.
+func (s *MemoryStore) DeleteLevel(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, exists := s.levels[key]; !exists {
+		return ErrNotFound
+	}
+	delete(s.levels, key)
+	return nil
+}
+
+// CountSubjectsByLevel counts subjects in a level, optionally filtered by
+// status (empty status counts all).
+func (s *MemoryStore) CountSubjectsByLevel(_ context.Context, levelKey, status string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	n := 0
+	for _, subj := range s.subjects {
+		if subj.LevelKey != levelKey {
+			continue
+		}
+		if status != "" && subj.Status != status {
+			continue
+		}
+		n++
+	}
+	return n, nil
 }
 
 // CreateSubject stores a subject in memory.

@@ -27,12 +27,16 @@ func StudyTypeTitle(key string) LocalizedText {
 }
 
 // Level represents an academic year or diploma/programme tier.
+// Published controls student visibility: GET /academy/levels shows published
+// levels only. Seeded levels are always published; admin-created diplomas
+// start unpublished (published=false) until the admin publishes them.
 type Level struct {
 	Key       string `bson:"key" json:"key"`
 	StudyType string `bson:"study_type" json:"study_type"` // "bachelor", "diploma", "vocational"
 	TitleAr   string `bson:"title_ar" json:"title_ar"`
 	TitleEn   string `bson:"title_en" json:"title_en"`
 	Position  int    `bson:"position" json:"position"`
+	Published bool   `bson:"published" json:"published"`
 }
 
 // LocalizedText provides bilingual titles/descriptions with Arabic required and English optional.
@@ -84,6 +88,7 @@ var SeededLevels = []Level{
 		TitleAr:   "الفرقة الأولى",
 		TitleEn:   "Year 1",
 		Position:  1,
+		Published: true,
 	},
 	{
 		Key:       "bachelor-y2",
@@ -91,6 +96,7 @@ var SeededLevels = []Level{
 		TitleAr:   "الفرقة الثانية",
 		TitleEn:   "Year 2",
 		Position:  2,
+		Published: true,
 	},
 	{
 		Key:       "bachelor-y3",
@@ -98,6 +104,7 @@ var SeededLevels = []Level{
 		TitleAr:   "الفرقة الثالثة",
 		TitleEn:   "Year 3",
 		Position:  3,
+		Published: true,
 	},
 	{
 		Key:       "bachelor-y4",
@@ -105,6 +112,7 @@ var SeededLevels = []Level{
 		TitleAr:   "الفرقة الرابعة",
 		TitleEn:   "Year 4",
 		Position:  4,
+		Published: true,
 	},
 	{
 		Key:       "vocational",
@@ -112,5 +120,6 @@ var SeededLevels = []Level{
 		TitleAr:   "التدريب المهني والعملي",
 		TitleEn:   "Vocational Training",
 		Position:  5,
+		Published: true,
 	},
 }

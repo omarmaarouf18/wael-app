@@ -209,6 +209,8 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 }
 
 // SeedLevels idempotently initializes the 5 fixed academic levels using $setOnInsert.
+// Levels seeded before the published flag existed are backfilled to
+// published=true (explicitly unpublished levels are left alone).
 func (s *MongoStore) SeedLevels(ctx context.Context) error {
 	for _, lvl := range models.SeededLevels {
 		filter := bson.M{"key": lvl.Key}
@@ -219,11 +221,16 @@ func (s *MongoStore) SeedLevels(ctx context.Context) error {
 				"title_ar":   lvl.TitleAr,
 				"title_en":   lvl.TitleEn,
 				"position":   lvl.Position,
+				"published":  true,
 			},
 		}
 		opts := options.UpdateOne().SetUpsert(true)
 		if _, err := s.db.Collection("levels").UpdateOne(ctx, filter, update, opts); err != nil {
 			return fmt.Errorf("store: seed level %s: %w", lvl.Key, err)
+		}
+		backfill := bson.M{"key": lvl.Key, "published": bson.M{"$exists": false}}
+		if _, err := s.db.Collection("levels").UpdateOne(ctx, backfill, bson.M{"$set": bson.M{"published": true}}); err != nil {
+			return fmt.Errorf("store: backfill level %s published: %w", lvl.Key, err)
 		}
 	}
 	return nil
@@ -262,6 +269,70 @@ func (s *MongoStore) ListLevels(ctx context.Context, onlyWithPublished bool) ([]
 		result = []*models.Level{}
 	}
 	return result, nil
+}
+
+// GetLevelByKey retrieves a single level by its key, or nil if missing.
+func (s *MongoStore) GetLevelByKey(ctx context.Context, key string) (*models.Level, error) {
+	var lvl models.Level
+	err := s.db.Collection("levels").FindOne(ctx, bson.M{"key": key}).Decode(&lvl)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find level by key: %w", err)
+	}
+	return &lvl, nil
+}
+
+// CreateLevel inserts a new level. Duplicate keys return ErrDuplicate.
+func (s *MongoStore) CreateLevel(ctx context.Context, lvl *models.Level) error {
+	_, err := s.db.Collection("levels").InsertOne(ctx, lvl)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert level: %w", err)
+	}
+	return nil
+}
+
+// UpdateLevel replaces an existing level matched by key. Missing keys return
+// ErrNotFound.
+func (s *MongoStore) UpdateLevel(ctx context.Context, lvl *models.Level) error {
+	res, err := s.db.Collection("levels").ReplaceOne(ctx, bson.M{"key": lvl.Key}, lvl)
+	if err != nil {
+		return fmt.Errorf("store: update level: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteLevel removes a level by key. Missing keys return ErrNotFound.
+func (s *MongoStore) DeleteLevel(ctx context.Context, key string) error {
+	res, err := s.db.Collection("levels").DeleteOne(ctx, bson.M{"key": key})
+	if err != nil {
+		return fmt.Errorf("store: delete level: %w", err)
+	}
+	if res.DeletedCount == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CountSubjectsByLevel counts subjects in a level, optionally filtered by
+// status (empty status counts all).
+func (s *MongoStore) CountSubjectsByLevel(ctx context.Context, levelKey, status string) (int, error) {
+	filter := bson.M{"level_key": levelKey}
+	if status != "" {
+		filter["status"] = status
+	}
+	n, err := s.db.Collection("subjects").CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, fmt.Errorf("store: count subjects by level: %w", err)
+	}
+	return int(n), nil
 }
 
 // CreateSubject inserts a new subject into the subjects collection.

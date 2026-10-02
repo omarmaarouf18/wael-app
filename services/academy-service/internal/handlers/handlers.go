@@ -123,13 +123,14 @@ func (s *Server) InternalTokenAuth(next http.Handler) http.Handler {
 // GetLevels serves GET /academy/levels.
 //
 // It returns the whole catalog tree: all three study types in the fixed order
-// bachelor, diploma, vocational, each with all of its levels, whether or not
-// they have published subjects (SPEC Section 1 decision 2, amended
-// 2026-10-02). The diploma study type is present with an empty levels list
-// when no diploma exists. Subject lists and details still hide unpublished
-// subjects; only the axes are always visible. Within a study type levels are
-// ordered by position, then key. The flat `levels` list is the same levels in
-// tree order.
+// bachelor, diploma, vocational, each with all of its *published* levels,
+// whether or not they have published subjects (SPEC Section 1 decision 2, as
+// amended). Admin-created diplomas start unpublished and appear here once the
+// admin publishes them; the diploma study type is present with an empty levels
+// list when no published diploma exists. Subject lists and details still hide
+// unpublished subjects; only the axes are always visible. Within a study type
+// levels are ordered by position, then key. The flat `levels` list is the same
+// levels in tree order.
 func (s *Server) GetLevels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
@@ -147,6 +148,9 @@ func (s *Server) GetLevels(w http.ResponseWriter, r *http.Request) {
 	byType := make(map[string][]*models.Level)
 	var unknownOrder []string
 	for _, l := range levels {
+		if !l.Published {
+			continue
+		}
 		if _, known := byType[l.StudyType]; !known && !isFixedStudyType(l.StudyType) {
 			unknownOrder = append(unknownOrder, l.StudyType)
 		}

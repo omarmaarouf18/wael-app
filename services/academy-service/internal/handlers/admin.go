@@ -264,6 +264,8 @@ func (s *Server) AuditLogs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) AdminHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/internal/admin/audit-log", s.AuditLogs)
+	mux.HandleFunc("/internal/admin/levels", s.AdminLevels)
+	mux.HandleFunc("/internal/admin/levels/", s.AdminLevelSubroute)
 
 	var h http.Handler = mux
 	h = s.requireAdmin(h)

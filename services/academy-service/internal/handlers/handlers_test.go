@@ -306,7 +306,7 @@ func TestGetLevels(t *testing.T) {
 	t.Run("a_diploma_without_subjects_is_listed", func(t *testing.T) {
 		fresh := newTestServer(false)
 		st := fresh.Store.(*store.MemoryStore)
-		st.PutLevel(models.Level{Key: "diploma-criminal-law", StudyType: models.StudyTypeDiploma, TitleAr: "دبلومة القانون الجنائي", TitleEn: "Criminal Law Diploma", Position: 6})
+		st.PutLevel(models.Level{Key: "diploma-criminal-law", StudyType: models.StudyTypeDiploma, TitleAr: "دبلومة القانون الجنائي", TitleEn: "Criminal Law Diploma", Position: 6, Published: true})
 
 		resp, _ := getLevels(t, fresh)
 		diploma := resp.StudyTypes[1]
@@ -327,9 +327,9 @@ func TestGetLevels(t *testing.T) {
 	t.Run("diplomas_are_ordered_by_position_then_key", func(t *testing.T) {
 		fresh := newTestServer(false)
 		st := fresh.Store.(*store.MemoryStore)
-		st.PutLevel(models.Level{Key: "diploma-b", StudyType: models.StudyTypeDiploma, TitleAr: "ب", TitleEn: "B", Position: 7})
-		st.PutLevel(models.Level{Key: "diploma-c", StudyType: models.StudyTypeDiploma, TitleAr: "ج", TitleEn: "C", Position: 6})
-		st.PutLevel(models.Level{Key: "diploma-a", StudyType: models.StudyTypeDiploma, TitleAr: "أ", TitleEn: "A", Position: 7})
+		st.PutLevel(models.Level{Key: "diploma-b", StudyType: models.StudyTypeDiploma, TitleAr: "ب", TitleEn: "B", Position: 7, Published: true})
+		st.PutLevel(models.Level{Key: "diploma-c", StudyType: models.StudyTypeDiploma, TitleAr: "ج", TitleEn: "C", Position: 6, Published: true})
+		st.PutLevel(models.Level{Key: "diploma-a", StudyType: models.StudyTypeDiploma, TitleAr: "أ", TitleEn: "A", Position: 7, Published: true})
 
 		resp, _ := getLevels(t, fresh)
 		got := keysOf(resp.StudyTypes[1].Levels)
@@ -340,7 +340,7 @@ func TestGetLevels(t *testing.T) {
 
 	t.Run("a_level_with_an_unknown_study_type_comes_after_the_fixed_three", func(t *testing.T) {
 		fresh := newTestServer(false)
-		fresh.Store.(*store.MemoryStore).PutLevel(models.Level{Key: "odd-1", StudyType: "legacy", TitleAr: "قديم", TitleEn: "Legacy", Position: 9})
+		fresh.Store.(*store.MemoryStore).PutLevel(models.Level{Key: "odd-1", StudyType: "legacy", TitleAr: "قديم", TitleEn: "Legacy", Position: 9, Published: true})
 
 		resp, _ := getLevels(t, fresh)
 		if len(resp.StudyTypes) != 4 || resp.StudyTypes[3].Key != "legacy" {
