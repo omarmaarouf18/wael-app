@@ -53,7 +53,7 @@ services:
       - caddy_config:/config
     mem_limit: ${CADDY_MEM_LIMIT:-128m}
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:2019/config/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
