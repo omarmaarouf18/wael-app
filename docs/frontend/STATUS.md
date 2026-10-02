@@ -18,7 +18,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 |------|------:|-------------------|------------------------------:|----------------|
 | `course_detail_screen.dart` | 521 | yes | 0 (0) | yes |
 | `courses_screen.dart` | 291 | yes | 0 (0) | yes |
-| `ebook_screen.dart` | 954 | no | 7 (60) | yes |
+| `ebook_screen.dart` | 27 | yes | 0 (0) | yes |
 | `forgot_password_screen.dart` | 165 | yes | 0 (0) | no |
 | `home_screen.dart` | 198 | yes | 0 (0) | yes |
 | `login_screen.dart` | 343 | yes | 0 (0) | no |
@@ -29,7 +29,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `signup_screen.dart` | 332 | yes | 0 (0) | no |
 | `splash_screen.dart` | 61 | yes | 0 (0) | no |
 | `video_player_screen.dart` | 436 | yes | 0 (0) | no |
-| **Total** | 4254 | 12 of 13 | 7 (60) | 4 of 13 |
+| **Total** | 3327 | 13 of 13 | 0 (0) | 4 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.
@@ -61,7 +61,7 @@ The gate scans screens only, so widgets carry no baseline entries.
 | `moving_watermark.dart` | 109 | none |
 | `otp_pin_input.dart` | 178 | forgot password, otp |
 | `owned_subject_tile.dart` | 83 | course detail body, home |
-| `pill_filter_bar.dart` | 88 | ebook |
+| `pill_filter_bar.dart` | 88 | none |
 | `player_controls.dart` | 153 | none |
 | `primary_button.dart` | 89 | 8 screens |
 | `profile_avatar.dart` | 42 | settings |

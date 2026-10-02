@@ -282,13 +282,11 @@ bar.
 
 ## Known gaps
 
-- Screens are being moved onto the shared shell and the F2 widgets one at a time (F3a, see
-  `STATUS.md`); the catalog screens move with SPEC Phase 2-3.
+- Every screen now builds on the shared shell and carries no composition violation: the
+  gate baseline is empty (see `STATUS.md`), so any new raw `Scaffold(`, colour, text style
+  or `.toUpperCase()` in `lib/screens/` fails the gate.
 - `theme.dart` itself still has a raw value that is not a named token: the input hint
   style size (`fontSize: 14`).
-- Raw colours and `.toUpperCase()` are gone from `lib/widgets/` and the non-catalog
-  screens (splash, OTP, forgot password, login, signup, notifications, settings, main
-  shell). The catalog screens (home, courses, course detail, ebook) still carry
-  them and move with SPEC Phase 2-3.
+- Raw colours and `.toUpperCase()` are gone from `lib/widgets/` and every screen.
 - The gate matches text, so a pattern split across lines (`Scaffold\n(`) is not
   detected, and a pattern inside a comment is counted.
