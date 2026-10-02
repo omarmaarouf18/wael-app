@@ -187,6 +187,13 @@ fi
   exit 1
 }
 
+# 5c. Certificate script self-test (--sign-only must keep the CA and other certs)
+echo "-- running certificate script tests --"
+bash scripts/generate_certs_test.sh || {
+  echo "BLOCKED: scripts/generate_certs_test.sh failed"
+  exit 1
+}
+
 # 6. Contract tests
 echo "-- running contract tests (tests/contracts) --"
 (cd tests/contracts && go test -v -count=1 ./...) || {

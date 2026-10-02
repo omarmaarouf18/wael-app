@@ -31,6 +31,7 @@ other merge. Record the date here when applied.
 | `Build & Test (services/admin-console, admin-console)` | `build-test` matrix |
 | `Security Scan (services/admin-console, admin-console)` | `security` matrix |
 | `Admin Console Web Tests (node)` | job `admin-console-web` |
+| `Deploy Script Tests` | job `deploy-scripts` |
 
 The counts in the applied table above (7 build and 4 security entries) are what
 was recorded on 2026-09-30. `ci.yml` before this change already had 8 and 5:

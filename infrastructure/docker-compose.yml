@@ -244,6 +244,45 @@ services:
     networks:
       - wael-net
 
+  admin-console:
+    build:
+      context: ../services/admin-console
+      dockerfile: Dockerfile
+      target: dev
+    container_name: wael-admin-console
+    restart: unless-stopped
+    # No published port (ADR-0008): in production it is reached only through
+    # Caddy on admin.<domain>. For a local look, add a temporary override that
+    # publishes it on 127.0.0.1.
+    expose:
+      - "${ADMIN_CONSOLE_PORT:-3005}"
+    volumes:
+      - ../services/admin-console:/app
+      - ./certs/ca.crt:/app/certs/ca.crt:ro
+      - ./certs/admin-console.crt:/app/certs/admin-console.crt:ro
+      - ./certs/admin-console.key:/app/certs/admin-console.key:ro
+      - ../shared/infra:/shared/infra:ro
+    environment:
+      PORT: ${ADMIN_CONSOLE_PORT:-3005}
+      APP_ENV: ${APP_ENV}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      # The admin listeners are internal only; the console calls them over mTLS.
+      AUTH_ADMIN_URL: https://auth-service:9001
+      ACADEMY_ADMIN_URL: https://academy-service:9002
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      TLS_CERT_PATH: /app/certs/admin-console.crt
+      TLS_KEY_PATH: /app/certs/admin-console.key
+      TLS_CA_PATH: /app/certs/ca.crt
+    healthcheck:
+      # The console serves HTTPS; the probe verifies the local CA.
+      test: ["CMD-SHELL", "curl -sf --cacert /app/certs/ca.crt https://localhost:${ADMIN_CONSOLE_PORT:-3005}/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    networks:
+      - wael-net
+
 volumes:
   mongo_data:
     driver: local

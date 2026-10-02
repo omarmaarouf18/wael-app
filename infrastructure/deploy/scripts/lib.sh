@@ -12,7 +12,7 @@ STATE_DIR="${WAEL_HOME}/state"
 LAST_GOOD_FILE="${STATE_DIR}/last-good.env"
 
 # shellcheck disable=SC2034
-APP_SERVICES=(api-gateway auth-service notification-service academy-service)
+APP_SERVICES=(api-gateway auth-service notification-service academy-service admin-console)
 
 log() { printf '[deploy] %s\n' "$*"; }
 fail() { printf '[deploy] FAILED: %s\n' "$*" >&2; exit 1; }

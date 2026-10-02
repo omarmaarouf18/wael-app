@@ -266,6 +266,74 @@ func TestContract_AdminPortNotPublishedInCompose(t *testing.T) {
 	}
 }
 
+// composeServiceBlock returns the lines of one top-level service in a compose file
+// (everything between "  <name>:" and the next two-space-indented key).
+func composeServiceBlock(t *testing.T, candidates []string, name string) (block []string, pathUsed string) {
+	t.Helper()
+	var data []byte
+	for _, p := range candidates {
+		if d, err := os.ReadFile(p); err == nil {
+			data, pathUsed = d, p
+			break
+		}
+	}
+	if data == nil {
+		t.Fatalf("could not find a compose file for %s in any candidate path: %v", name, candidates)
+	}
+	in := false
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") && strings.HasSuffix(trimmed, ":") {
+			in = trimmed == name+":"
+			continue
+		}
+		if !strings.HasPrefix(line, " ") && trimmed != "" {
+			in = false // a new top-level key such as volumes: or networks:
+		}
+		if in {
+			block = append(block, line)
+		}
+	}
+	return block, pathUsed
+}
+
+// 5b. The admin console is reachable only through Caddy (ADR-0008): it exists in
+// both compose files, publishes no host port, and reaches the admin listeners
+// over https.
+func TestContract_AdminConsoleNotPublishedInCompose(t *testing.T) {
+	files := map[string][]string{
+		"dev compose": {
+			"../../infrastructure/docker-compose.yml",
+			"../infrastructure/docker-compose.yml",
+			"infrastructure/docker-compose.yml",
+		},
+		"deploy compose": {
+			"../../infrastructure/deploy/docker-compose.yml",
+			"../infrastructure/deploy/docker-compose.yml",
+			"infrastructure/deploy/docker-compose.yml",
+		},
+	}
+	for label, candidates := range files {
+		block, pathUsed := composeServiceBlock(t, candidates, "admin-console")
+		if len(block) == 0 {
+			t.Errorf("%s (%s): no admin-console service found", label, pathUsed)
+			continue
+		}
+		for _, line := range block {
+			if strings.HasPrefix(line, "    ports:") {
+				t.Errorf("contract violation: admin-console in %s (%s) defines a ports section (no host port may be published)", label, pathUsed)
+			}
+		}
+		joined := strings.Join(block, "\n")
+		if !strings.Contains(joined, "https://auth-service:9001") {
+			t.Errorf("%s (%s): admin-console must call auth-service's admin listener over https", label, pathUsed)
+		}
+		if strings.Contains(joined, "tls_insecure_skip_verify") || strings.Contains(joined, "-k ") {
+			t.Errorf("%s (%s): admin-console must verify TLS against the local CA", label, pathUsed)
+		}
+	}
+}
+
 // 6. Auth /auth/me profile contract: verify response shape contains exactly
 // id, email, role, email_verified, full_name, phone; and never status or admin fields.
 func TestContract_AuthMeResponseShape(t *testing.T) {

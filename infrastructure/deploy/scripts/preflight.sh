@@ -26,7 +26,7 @@ tag="$(read_var "$RELEASE_FILE" IMAGE_TAG)"
 check "IMAGE_TAG is a full commit sha" grep -qE '^[0-9a-f]{40}$' <<<"$tag"
 
 # 3. Required values present and not placeholders or dev defaults
-required=(API_DOMAIN ACME_EMAIL ALLOWED_ORIGIN JWT_SECRET GATEWAY_SECRET
+required=(API_DOMAIN ADMIN_DOMAIN ACME_EMAIL ALLOWED_ORIGIN JWT_SECRET GATEWAY_SECRET
 	INTERNAL_SERVICE_TOKEN MONGO_ROOT_USERNAME AUTH_MONGO_URI
 	NOTIFICATION_MONGO_URI ACADEMY_MONGO_URI REDIS_URI RESEND_API_KEY
 	RESEND_FROM_EMAIL BLOCKLIST_HMAC_KEY SUPPORT_WHATSAPP)
@@ -48,11 +48,11 @@ if grep -q '^APP_ENV=' "$ENV_FILE"; then
 fi
 
 # 4. Certificates: present and not expiring within 14 days
-for crt in ca api-gateway auth-service notification-service academy-service; do
+for crt in ca api-gateway auth-service notification-service academy-service admin-console; do
 	check "cert $crt.crt valid for 14+ days" \
 		openssl x509 -checkend $((14 * 86400)) -noout -in "$WAEL_HOME/certs/$crt.crt"
 done
-for key in api-gateway auth-service notification-service academy-service; do
+for key in api-gateway auth-service notification-service academy-service admin-console; do
 	check "key $key.key exists" test -s "$WAEL_HOME/certs/$key.key"
 done
 [ "$errors" -eq 0 ] || fail "$errors check(s) failed; nothing was changed"
@@ -64,7 +64,7 @@ check "compose config renders" compose config --quiet
 # 6. Get the new images (does not affect running containers).
 #    SKIP_PULL=1 is for a manual trial deploy where the app images were
 #    loaded with `docker load` instead of coming from GHCR (RUNBOOK.md,
-#    "Manual trial deploy"). It skips the pull of the four app images only:
+#    "Manual trial deploy"). It skips the pull of the app images only:
 #    they must already be present locally under this exact tag. mongo, redis
 #    and caddy are still pulled from Docker Hub. Shell only: the deploy
 #    workflow never sets it, so the normal path always pulls.

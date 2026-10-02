@@ -68,12 +68,29 @@ Run as a sudo-capable admin unless stated otherwise.
 7. **Internal mTLS certificates.** Generate with the wael-app script
    (`infrastructure/certs/generate-certs.sh`) on an admin machine, copy
    `ca.crt` and the `.crt/.key` of `api-gateway`, `auth-service`,
-   `notification-service` and `academy-service` into `$WAEL_HOME/certs/` (never `ca.key`: keep it offline). Until W-10 (fixed
+   `notification-service`, `academy-service` and `admin-console` into
+   `$WAEL_HOME/certs/` (never `ca.key`: keep it offline). Until W-10 (fixed
    container UID) lands, key files must be `644`; the `700` certs directory
    keeps other host users out.
-8. **DNS.** Create an A (and AAAA if used) record for `api.elmetracademy.app` pointing
-   at the server. Caddy obtains the public certificate on first start; the
-   deploy's public health check fails until DNS resolves.
+
+   **Adding one certificate later** (for example `admin-console` on a server
+   that already has the others): do **not** run the script without arguments
+   again. A full run creates a new CA and replaces every certificate, which
+   would break the running stack. Sign only the missing one with the existing
+   CA (kept offline), from a wael-app checkout:
+   ```bash
+   ./infrastructure/certs/generate-certs.sh --sign-only admin-console \
+     --ca-dir /path/to/offline-ca --out-dir ./signed
+   ```
+   `--ca-dir` must hold the original `ca.crt` and `ca.key`; it is only read (no
+   file is written there). The command refuses to overwrite an existing
+   `admin-console.crt/.key` in `--out-dir` unless you add `--force`. Copy the
+   two new files into `$WAEL_HOME/certs/` and run `scripts/preflight.sh`.
+8. **DNS.** Create an A (and AAAA if used) record for `api.elmetracademy.app`
+   and one for `admin.elmetracademy.app` pointing at the server. Caddy obtains
+   the public certificates on first start; the deploy's public health check
+   (API host only) fails until the API record resolves. The admin host is not
+   part of that check: confirm it yourself (see "Admin console").
 9. **GHCR login** (as deploybot), with a fine-grained token that has only
    `read:packages`: `docker login ghcr.io -u omarmaarouf18`.
 10. **Self-hosted runner** (as deploybot): add a runner to
@@ -104,10 +121,99 @@ Run as a sudo-capable admin unless stated otherwise.
 4. Set `DEPLOY_ENABLED=true` in wael-app-deploy and re-run the Deploy
    workflow.
 
+## Admin console
+
+`admin-console` (SPEC Phase 6.1, ADR-0008) runs in the stack with the other
+services. It is reached only through Caddy on `ADMIN_DOMAIN`
+(`admin.elmetracademy.app`), has no published port, and calls the admin
+listeners of auth-service (`:9001`) over mTLS. It decides nothing itself: every
+request is checked by auth-service against the operator's token.
+
+**Before the first deploy that includes it**
+
+1. DNS record for `ADMIN_DOMAIN` (server setup step 8).
+2. `ADMIN_DOMAIN` in `$WAEL_HOME/.env.production` (the template has it;
+   `preflight.sh` fails while it is empty).
+3. The `admin-console` certificate and key in `$WAEL_HOME/certs/` (server setup
+   step 7; on a server that already has the other certificates use
+   `--sign-only`). `preflight.sh` checks both files.
+4. Deploy as usual. The container has its own health check, so `deploy.sh`
+   waits for it. It does not check the admin host through Caddy; do that by
+   hand once DNS resolves: `curl -fsS https://admin.elmetracademy.app/healthz`
+   prints `ok`.
+
+**Minting an admin token (the first one, and one per operator)**
+
+Tokens are created only by the server-side CLI `onboard-admin` (ADR-0008):
+no page or API can mint or revoke one. It prints the token once on stdout and
+stores only its SHA-256 hash; `--ttl` defaults to `90d` and may be at most
+`365d`. Give each person their own named token.
+
+> **Known gap.** The production auth-service image contains only
+> `/bin/service`: `onboard-admin` and `revoke-admin` (`services/auth-service/cmd/`)
+> are not in it, so `docker compose exec auth-service onboard-admin` does **not**
+> work today (checked in `services/auth-service/Dockerfile`). Until the owner
+> decides to ship the CLIs in the image, run them from the auth-service *build*
+> stage on the stack's network. This was run against the local stack on
+> 2026-10-02 and printed a token; it has not been run on the production host.
+
+On an admin machine, from a checkout of the deployed commit, build and send the
+tools image (same pattern as "Manual trial deploy"):
+
+```bash
+SHA="$(git rev-parse HEAD)"
+docker build --target build -f services/auth-service/Dockerfile -t wael-auth-tools:$SHA .
+docker save wael-auth-tools:$SHA | gzip | ssh deploybot@<host> 'gunzip | docker load'
+```
+
+On the server as `deploybot`:
+
+```bash
+export WAEL_HOME=/home/deploybot/wael
+docker run --rm --network wael_wael-net \
+  -e MONGO_URI="$(sed -n 's/^AUTH_MONGO_URI=//p' "$WAEL_HOME/.env.production")" \
+  -e AUTH_MONGO_DATABASE=auth_db \
+  wael-auth-tools:<sha> go run ./cmd/onboard-admin --name "Wael" --ttl 90d
+```
+
+Copy the printed token straight into the operator's password manager. It is
+shown once and cannot be recovered; a lost token is revoked and replaced. Never
+paste it into chat, tickets or the shell history of a shared machine.
+
+**Revoking a token.** `revoke-admin` needs the admin id (`adm_...`), which
+`onboard-admin` does not print. Look it up by name, then revoke (the same
+`docker run` as above with `go run ./cmd/revoke-admin --id adm_...`):
+
+```bash
+source scripts/lib.sh
+compose exec -T mongo mongosh -u wael_root -p "$(cat "$WAEL_HOME/secrets/mongo_root_password")" \
+  --authenticationDatabase admin --quiet --eval \
+  'db.getSiblingDB("auth_db").admins.find({}, {name:1, expires_at:1, revoked_at:1}).forEach(printjson)'
+```
+
+Revocation takes effect on the next request: auth-service checks the token on
+every call.
+
+**Using it.** Open `https://admin.elmetracademy.app` and enter the token. It is
+kept in the memory of that browser tab only (never in storage, a cookie or the
+URL), so each tab asks for it, and reloading, closing the tab or any `401`
+signs out. The page is Arabic first with an English toggle. Today it offers
+Accounts (search, suspend, reactivate, delete, each with a recorded reason) and
+the Audit log; the Requests, Catalog and Files tabs stay hidden until their
+APIs exist (SPEC Phase 4), and until then the audit log shows auth-service
+actions only.
+
+**Sign-in problems.** `401`: wrong, expired or revoked token. `429`: five bad
+attempts from the same client address lock that address out for 30 seconds,
+growing on repeats. The address is the browser's, taken from Caddy's
+`X-Forwarded-For`; it is what auth-service keys the lockout on. `503`:
+auth-service did not answer within 10 seconds: check
+`docker compose -p wael ps` and `docker compose -p wael logs --tail 100 auth-service`.
+
 ## Memory profiles
 
 The defaults in `docker-compose.yml` fit a 2 GB host (container limits add up
-to about 1.7 GB). For a 1 GB host, uncomment the "1 GB host" block at the end
+to about 1.8 GB). For a 1 GB host, uncomment the "1 GB host" block at the end
 of `env.production.example` in `$WAEL_HOME/.env.production`:
 
 | Service | 2 GB default | 1 GB host |
@@ -118,9 +224,10 @@ of `env.production.example` in `$WAEL_HOME/.env.production`:
 | auth-service (`AUTH_MEM_LIMIT`) | 192m | 96m |
 | notification-service (`NOTIFICATION_MEM_LIMIT`) | 192m | 96m |
 | academy-service (`ACADEMY_MEM_LIMIT`) | 192m | 96m |
+| admin-console (`ADMIN_MEM_LIMIT`) | 64m | 48m |
 | caddy (`CADDY_MEM_LIMIT`) | 128m | 64m |
 
-The 1 GB limits total about 930 MB, which leaves very little for the
+The 1 GB limits total about 980 MB, which leaves very little for the
 operating system and the Docker daemon. Add swap to the host first (for
 example a 1 GB swap file), run nothing else on it, and watch
 `docker stats --no-stream` and `docker inspect -f '{{.State.OOMKilled}}' <container>`
@@ -145,14 +252,14 @@ architecture as the host, or add `--platform linux/amd64` (or the host's).
    the repo root as build context):
    ```bash
    SHA="$(git rev-parse HEAD)"          # full 40-character commit sha
-   for svc in api-gateway auth-service notification-service academy-service; do
+   for svc in api-gateway auth-service notification-service academy-service admin-console; do
      docker build -f services/$svc/Dockerfile --target prod \
        -t ghcr.io/omarmaarouf18/wael-app-$svc:$SHA .
    done
    ```
 2. **Send the images to the host:**
    ```bash
-   docker save $(for svc in api-gateway auth-service notification-service academy-service; do
+   docker save $(for svc in api-gateway auth-service notification-service academy-service admin-console; do
        echo ghcr.io/omarmaarouf18/wael-app-$svc:$SHA; done) \
      | gzip | ssh deploybot@<host> 'gunzip | docker load'
    ```
@@ -173,9 +280,9 @@ architecture as the host, or add `--platform linux/amd64` (or the host's).
    ```
 
 `SKIP_PULL=1` is a shell-only switch (the deploy workflow never sets it). Without it, `preflight.sh`
-runs `docker compose pull` on the four app images, which fails for images
+runs `docker compose pull` on the five app images, which fails for images
 that exist only on the host. With it, preflight skips that pull, checks that
-all four images are already loaded under the exact `IMAGE_TAG`, and still
+all five images are already loaded under the exact `IMAGE_TAG`, and still
 pulls mongo, redis and caddy from Docker Hub. `deploy.sh` and
 `rollback.sh` pull nothing themselves, so they need no switch.
 
@@ -199,4 +306,6 @@ has no last good release to roll back to; if it fails, read
 - `REDIS_URI` and Mongo URIs carry passwords in container env (`docker inspect`).
 - Base images are pinned by tag, not digest (W-07).
 - No certificate rotation job; preflight only refuses certs expiring within 14 days.
-- admin-console is not in the stack yet (SPEC Phase 6). The admin listeners of auth-service (:9001) and academy-service (:9002) run inside their containers and are not published.
+- The production auth-service image does not contain `onboard-admin` or `revoke-admin`, and `onboard-admin` does not print the admin id that `revoke-admin` needs (see "Admin console"). Owner decision pending.
+- The admin console shows accounts and the auth-service audit log only; its academy pages and the academy half of the audit log arrive with SPEC Phase 4. `deploy.sh` checks the API host through Caddy but not `ADMIN_DOMAIN`.
+- The admin listeners of auth-service (:9001) and academy-service (:9002) run inside their containers and are not published.

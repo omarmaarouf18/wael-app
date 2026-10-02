@@ -10,9 +10,9 @@
 #   --env-file $WAEL_HOME/.env.production --env-file release.env
 #
 # Host layout ($WAEL_HOME, default /home/deploybot/wael): see RUNBOOK.md.
-# Not yet in this stack: admin-console (SPEC Phase 6). The admin listeners of
-# auth-service (:9001) and academy-service (:9002) are bound inside their
-# containers and never published.
+# admin-console (SPEC Phase 6.1) is reached only through Caddy on ADMIN_DOMAIN.
+# It and the admin listeners of auth-service (:9001) and academy-service
+# (:9002) are bound inside their containers and never published.
 # =============================================================================
 
 name: wael
@@ -45,6 +45,7 @@ services:
       - "443:443/udp"
     environment:
       API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?ADMIN_DOMAIN is required}
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -204,6 +205,41 @@ services:
       # Strict mTLS: the service requires a client certificate, and the probe
       # verifies the local CA. No -k, no HTTP fallback (W-08).
       test: ["CMD-SHELL", "curl -fsS --cacert /app/certs/ca.crt --cert /app/certs/academy-service.crt --key /app/certs/academy-service.key https://localhost:3003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  admin-console:
+    # Not <<: *app: the console talks only to the auth and academy admin
+    # listeners, so it does not wait for (or depend on) mongo and redis.
+    restart: unless-stopped
+    logging: *logging
+    networks:
+      - wael-net
+    image: ghcr.io/omarmaarouf18/wael-app-admin-console:${IMAGE_TAG:?IMAGE_TAG is required}
+    expose:
+      - "3005"
+    environment:
+      APP_ENV: production
+      PORT: "3005"
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      # Admin listeners: internal only, called over mTLS (ADR-0008).
+      AUTH_ADMIN_URL: https://auth-service:9001
+      ACADEMY_ADMIN_URL: https://academy-service:9002
+      # The console believes X-Forwarded-For only from Caddy's fixed address.
+      TRUSTED_PROXY_IPS: 172.30.0.10
+      TLS_CERT_PATH: /app/certs/admin-console.crt
+      TLS_KEY_PATH: /app/certs/admin-console.key
+      TLS_CA_PATH: /app/certs/ca.crt
+    volumes:
+      - ${WAEL_HOME}/certs/ca.crt:/app/certs/ca.crt:ro
+      - ${WAEL_HOME}/certs/admin-console.crt:/app/certs/admin-console.crt:ro
+      - ${WAEL_HOME}/certs/admin-console.key:/app/certs/admin-console.key:ro
+    mem_limit: ${ADMIN_MEM_LIMIT:-64m}
+    healthcheck:
+      # Strict: verifies the local CA, no -k, no HTTP fallback (W-08).
+      test: ["CMD-SHELL", "curl -fsS --cacert /app/certs/ca.crt https://localhost:3005/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 6
