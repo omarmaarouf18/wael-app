@@ -2,7 +2,7 @@ name: Deploy
 
 # Runs on the production host's self-hosted runner (pull-only: the runner
 # polls GitHub; the host opens no inbound port and GitHub holds no SSH key).
-# Disabled until the repository variable DEPLOY_ENABLED is set to "true".
+# Active when the repository variable DEPLOY_ENABLED is set to "true" (enabled in production).
 on:
   push:
     branches: [main]

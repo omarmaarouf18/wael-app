@@ -291,8 +291,9 @@ Design points worth copying:
 
 ### 6.3 Not built yet (documented as open, so not defects)
 
-The deploy repo, the publish and deploy workflows and a deploy-only RUNBOOK are
-scaffolded but switched off (ADR-0011, `infrastructure/deploy/`); they are not live.
+The deploy repo, the publish and deploy workflows and the deploy RUNBOOK are
+live in production since `557f367` with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true`
+(ADR-0011, `infrastructure/deploy/`).
 
 Staging stack, release-gate workflow, DEPLOYMENT,
 changelog, real `tools/docgen`, real contract tests, academy service (SPEC phases 0 to 7),
@@ -552,7 +553,8 @@ done, because the academy service will copy whatever the existing services do.
    non-local environment.
 3. **W-02** (done) Production refusal for the log-only sender and the local-with-telemetry guard.
    *Done when:* both refusals have tests.
-4. **W-04** (done) `--check-env` in all three services (and in every new service by template).
+4. **W-04** (done) `--check-env` in all five services (api-gateway, auth-service,
+   notification-service, academy-service, admin-console).
    *Done when:* each exits 1 on a missing required variable and 0 on a valid environment.
 5. **W-05** (done) Service containers in CI, `REQUIRE_DB=1`, first Mongo store tests for auth
    (refresh single-redemption under `-race`). *Done when:* CI fails if Mongo is
@@ -829,7 +831,7 @@ Examined commit: `46c7997...`
 | W-01 | Fixed in 0f6c02b + e1e8479 | `services/*/internal/config/config.go`, `services/*/cmd/main.go` | Outside local/test, Load() requires Mongo, Redis and the TLS triple (auth also Resend); main.go refuses memory stores, LogSender, plain HTTP and TLS without a client CA. e1e8479 restores REDIS_URI as required in every APP_ENV for the gateway (0f6c02b had made it optional in local/test). |
 | W-02 | Fixed in 0f6c02b | `services/auth-service/internal/config/config.go`, `services/auth-service/cmd/main.go` | RESEND_API_KEY and RESEND_FROM_EMAIL are required outside local/test; LogSender only in local/test. The local-with-telemetry guard is not applicable: the repo has no telemetry variable. |
 | W-03 | Fixed in 36033d7 | .github/workflows/ci.yml:37-54 | none |
-| W-04 | Fixed | `services/*/cmd/main.go`, `services/*/cmd/checkenv_test.go` | `--check-env` flag added to gateway, auth, and notification services; validates config via Load() and exits 0/1 without starting resources. |
+| W-04 | Fixed | `services/*/cmd/main.go`, `services/*/cmd/checkenv_test.go`, `services/admin-console/main.go` | `--check-env` flag added to all five services (api-gateway, auth-service, notification-service, academy-service, admin-console); validates config via Load() and exits 0/1 without starting resources. |
 | W-05 | Fixed | `.github/workflows/ci.yml:105-121`, `services/auth-service/internal/{store,otp}/*_test.go`, `services/notification-service/internal/store/*_test.go` | Mongo and Redis service containers added to build-test job with health checks and `REQUIRE_DB=1`; dual-implementation store test suites run against MemoryStore and MongoStore/RedisStore. |
 | W-06 | Fixed (dev stack) | `tests/contracts/contracts_test.go:20-159`, `tests/e2e/chain_test.go`, `.github/workflows/ci.yml` | Contract tests active in build-test matrix; tests/e2e split into sequential t.Run stages with E2E_REQUIRED=1 fail-closed mode and executed against live compose stack in CI job "E2E (compose)". |
 | W-07 | Confirmed | `.github/workflows/ci.yml:19,24,146,189`, `.githooks/pre-push:125`, `services/*/Dockerfile:11,28,41` | none |

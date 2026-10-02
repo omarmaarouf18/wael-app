@@ -1,11 +1,6 @@
 # wael-app production runbook
 
-Status: **scaffolded, not live.** Deploys are off until the repository
-variable `DEPLOY_ENABLED` is `true`, and publishing in wael-app is off until
-`PUBLISH_ENABLED` is `true` (see "Turning it on" for the order).
-
-Nothing in this runbook has been executed yet. Treat every command as a
-checklist to run and verify, not as a record of what exists.
+Status: **LIVE in production.** Production has been live since `557f367`, and the deploy pipeline has run three releases successfully (`557f367`, `6bd6c12`, `b6a11fe`). Publishing (`PUBLISH_ENABLED=true` in `wael-app`) and deploys (`DEPLOY_ENABLED=true` in `wael-app-deploy`) are active and enabled.
 
 ## How a release reaches the server
 
@@ -57,6 +52,8 @@ Run as a sudo-capable admin unless stated otherwise.
    export WAEL_HOME=/home/deploybot/wael
    source scripts/lib.sh        # defines the `compose` helper used by the scripts
    compose up -d --wait mongo
+   # Note: A first mongosh right after `up --wait mongo` can get ECONNREFUSED while
+   # mongo restarts during initialization. If so, retry after 10 seconds.
    compose exec -T mongo mongosh -u wael_root -p "$(cat "$WAEL_HOME/secrets/mongo_root_password")" --authenticationDatabase admin --eval '
      db.getSiblingDB("auth_db").createUser({user:"auth_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"auth_db"}]});
      db.getSiblingDB("notification_db").createUser({user:"notif_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"notification_db"}]});
@@ -101,7 +98,7 @@ Run as a sudo-capable admin unless stated otherwise.
 
 | Where | What |
 |---|---|
-| GitHub App (owner account) | Permission: Contents read/write. Installed on `wael-app-deploy` and `wael-app-mobile` only. |
+| GitHub App (owner account) | Permissions: Contents read/write and Workflows read/write. Installed on `wael-app-deploy` and `wael-app-mobile` only. After any permission update, the installation must accept the updated permissions. |
 | wael-app secrets | `APP_ID`, `APP_PRIVATE_KEY` (the App's key) |
 | wael-app variables | `PUBLISH_ENABLED`, `MOBILE_SYNC_ENABLED` |
 | wael-app-deploy variables | `DEPLOY_ENABLED`, optional `WAEL_HOME` |
@@ -111,9 +108,13 @@ Run as a sudo-capable admin unless stated otherwise.
 
 ## Turning it on (order matters)
 
+Production is live since `557f367`. For reference, the setup order was:
+
 1. Prerequisites in wael-app: W-04 (`--check-env`, preflight step 7 needs
    it), W-08 (strict probes in the Dockerfiles), W-10 (fixed UID), and a
-   release gate (E2E) that publishing waits for (saas-core S-01).
+   release gate (E2E) that publishing waits for (saas-core S-01). Per owner
+   decision Q1 (2026-10-02), `E2E (compose)` and `Prod Image Build` inside CI Gate
+   are sufficient and run on `main` before publishing.
 2. Server setup above, then run `WAEL_HOME=... ./scripts/preflight.sh` by hand
    with a real `release.env` and read every line.
 3. Set `PUBLISH_ENABLED=true` in wael-app. Merge to main. Check that images
@@ -146,13 +147,14 @@ request is checked by auth-service against the operator's token.
 
 Tokens are created only by the server-side CLI `onboard-admin` (ADR-0008):
 no page or API can mint or revoke one. It prints the admin ID and token once on
-stdout and stores only its SHA-256 hash; `--ttl` defaults to `90d` and may be
-at most `365d`. Give each person their own named token.
+stdout and stores only its SHA-256 hash. `--ttl` takes a Go duration (for example
+`2160h` for 90 days; bare numbers like `90` fail with "missing unit" and there is
+no `d` unit). The maximum TTL is `8760h` (365 days). Give each person their own named token.
 
-On the server as `deploybot`:
+On the server (run directly via `sudo docker exec`; `azureuser` cannot cd into the 700 directory and `sudo cd` does not exist):
 
 ```bash
-docker compose -p wael exec auth-service /bin/onboard-admin --name "Wael" --ttl 90d
+sudo docker exec wael-auth-service-1 /bin/onboard-admin --name "<name>" --ttl 2160h
 ```
 
 Copy the printed token straight into the operator's password manager and note
@@ -164,7 +166,7 @@ of a shared machine.
 when the token was minted:
 
 ```bash
-docker compose -p wael exec auth-service /bin/revoke-admin --id <id>
+sudo docker exec wael-auth-service-1 /bin/revoke-admin --id <id>
 ```
 
 Revocation takes effect on the next request: auth-service checks the token on
@@ -259,8 +261,10 @@ architecture as the host, or add `--platform linux/amd64` (or the host's).
 runs `docker compose pull` on the five app images, which fails for images
 that exist only on the host. With it, preflight skips that pull, checks that
 all five images are already loaded under the exact `IMAGE_TAG`, and still
-pulls mongo, redis and caddy from Docker Hub. `deploy.sh` and
-`rollback.sh` pull nothing themselves, so they need no switch.
+pulls mongo, redis and caddy from Docker Hub. Note that `docker compose up`
+itself pulls missing images automatically; with `SKIP_PULL=1`, if images for a
+release or rollback are not already loaded locally on the host, `compose up`
+will attempt to pull them from GHCR and fail.
 
 To deploy a newer build, repeat steps 1 to 4 with the new sha. Keep the
 previously loaded images: rollback needs the last good release's images on
@@ -271,6 +275,11 @@ has no last good release to roll back to; if it fails, read
 ## Operations
 
 - **Manual deploy of the current release.env:** Actions -> Deploy -> Run workflow.
+  **Warning:** after a rollback, `release.env` in `wael-app-deploy` still points at
+  the bad SHA. Do NOT re-run Deploy with that `release.env`. Recovery after a bad release
+  means fixing forward with a new commit on `main`, never re-running the rolled-back release.
+  `deploy.sh` checks `$WAEL_HOME/state/failed-releases` and refuses to deploy any SHA listed
+  there (unless overridden with `ALLOW_FAILED_RELEASE=1`).
 - **Manual rollback:** as deploybot, `cd` into the runner's checkout and run
   `WAEL_HOME=/home/deploybot/wael ./scripts/rollback.sh`.
 - **Logs:** `docker compose -p wael logs --tail 100 <service>`.

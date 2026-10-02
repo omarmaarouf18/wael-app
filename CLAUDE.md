@@ -19,6 +19,7 @@ Section 12. For frontend work, read `frontend/README.md` first.
   text and showing the amendment.
 - Changes to suspension, gating, or admin authorization stay off `main` until
   the owner confirms.
+- `main` moves only by an owner-approved fast-forward of a `develop` that is green on `CI OK` (owner amendment 2026-10-02). Agents never push `main`.
 - Merge to `main` by fast-forward only, after the full test suite and CI pass.
 - Never push, rewrite history, or force-push. SPEC Section 12 currently
   prohibits pushes; change that policy in the governing documentation before

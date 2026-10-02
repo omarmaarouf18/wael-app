@@ -17,6 +17,7 @@ HTTP fallback (S-06).
 
 The owner asked on 2026-09-30 to create both repositories now, with
 publishing and deploying kept off until the prerequisites exist.
+*(Production is now live since `557f367` with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true`.)*
 
 ## Decision
 
@@ -32,10 +33,12 @@ publishing and deploying kept off until the prerequisites exist.
 3. **Ordering.** Publishing and mobile sync trigger on `workflow_run` of
    "CI Gate" with `conclusion == success` on a push to `main`, never in
    parallel with CI. When a release gate (E2E) exists, publishing must wait
-   for it too.
+   for it too. *(2026-10-02 Q1 decision: satisfied — `E2E (compose)` and `Prod Image Build`
+   are part of the CI Gate itself, which runs on `main` before publishing.)*
 4. **Switches.** `PUBLISH_ENABLED` and `MOBILE_SYNC_ENABLED` (wael-app) and
    `DEPLOY_ENABLED` (wael-app-deploy) are repository variables, off by
-   default. Deploy stays off until W-04, W-08, W-10 and a release gate exist.
+   default. *(2026-10-02 update: Production is live since `557f367` with `PUBLISH_ENABLED=true`
+   and `DEPLOY_ENABLED=true`; releases `557f367`, `6bd6c12`, and `b6a11fe` deployed successfully.)*
 5. **Deploy behaviour.** Pull-only self-hosted runner (`wael-vm`).
    `preflight.sh` validates files, permissions, placeholders, certificate
    expiry, compose rendering and each new image's `--check-env` before any

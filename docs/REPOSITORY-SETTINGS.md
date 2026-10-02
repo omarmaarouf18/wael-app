@@ -9,39 +9,20 @@ Applied 2026-09-30 through the GitHub web UI (owner session).
 
 | Setting | Value |
 |---|---|
-| Ruleset "main: CI-verified fast-forward only" | Target `main`. Restrict deletions, block force pushes, require linear history, require status checks (GitHub Actions): `Lint & Formatting`, every `Build & Test (...)` matrix entry (7), every `Security Scan (...)` entry (4), `Secret Scan (gitleaks)`, `Flutter Lint & Test`. No pull request required, no bypass actors. A commit can reach `main` only after those checks passed on it (fast-forward from `develop`). |
-| Ruleset "develop: no force push, no deletion" | Target `develop`. Restrict deletions, block force pushes. No required checks, so work can still be pushed and checked by CI after the push. |
+| Ruleset "main: CI-verified fast-forward only" | Target `main`. Restrict deletions, block force pushes, require linear history, require status check (GitHub Actions): `CI OK`. No pull request required, no bypass actors. A commit can reach `main` only after `CI OK` passes on it (fast-forward from `develop`). |
+| Ruleset "develop: no force push, no deletion" | Target `develop`. Restrict deletions, block force pushes, require status check: `CI OK`. |
 | Secret Protection | Enabled (secret scanning alerts) |
 | Push protection | Enabled |
 | Dependency graph / Dependabot alerts | Enabled |
 | Dependabot version updates, CodeQL | Not enabled (W-07 adds `.github/dependabot.yml`) |
 | Branches | `main`, `develop`. `wire/existing-services` deleted on GitHub (fully merged into `develop`). |
 
-### Required checks to add before `services/admin-console` reaches `main` (2026-10-02, not yet applied)
+### Required check architecture (owner decision 2026-10-02, Q2)
 
-The admin console (SPEC Phase 6.1) adds these CI checks. The `main` ruleset
-cannot be changed from the repository, so the owner adds them in the GitHub UI.
-Add them when this work is about to be fast-forwarded to `main`, not earlier: a
-required check that a commit never produced blocks that commit from reaching
-`main`, so listing them while `main` still lacks the new jobs would block any
-other merge. Record the date here when applied.
-
-| Check name (as GitHub shows it) | Source |
-|---|---|
-| `Build & Test (services/admin-console, admin-console)` | `build-test` matrix |
-| `Security Scan (services/admin-console, admin-console)` | `security` matrix |
-| `Admin Console Web Tests (node)` | job `admin-console-web` |
-| `Deploy Script Tests` | job `deploy-scripts` |
-
-The counts in the applied table above (7 build and 4 security entries) are what
-was recorded on 2026-09-30. `ci.yml` before this change already had 8 and 5:
-the academy-service entries added in SPEC Phase 2.1 are not recorded here, so
-confirm in the GitHub UI that the ruleset lists them too. After this change
-`ci.yml` has 9 `Build & Test` and 6 `Security Scan` entries.
-
-When a matrix entry or job name in `ci.yml` changes, update the required
-checks in the `main` ruleset in the same change, or `main` can no longer be
-updated.
+Instead of listing brittle individual matrix jobs in branch rulesets (which breaks whenever a service is added or removed), `ci.yml` defines a single aggregate job: `CI OK`.
+- `CI OK` depends on all CI Gate jobs via `needs:` (including `E2E (compose)`, `Deploy Script Tests`, the admin-console jobs, and `Prod Image Build`).
+- It runs with `if: always()` and fails if any required dependency does not succeed.
+- `CI OK` is the sole required status check on both `main` and `develop`.
 
 ## wael-app-deploy
 

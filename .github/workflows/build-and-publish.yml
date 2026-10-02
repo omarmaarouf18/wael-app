@@ -3,8 +3,8 @@ name: Build and Publish
 # Publishes images only after "CI Gate" succeeded for a push to main
 # (never in parallel with it: saas-core S-01), then mirrors
 # infrastructure/deploy/ into wael-app-deploy with the new IMAGE_TAG.
-# OFF until the repository variable PUBLISH_ENABLED is "true". Keep it off
-# until a release gate (E2E) exists and is added as a second condition.
+# Active when the repository variable PUBLISH_ENABLED is "true" (enabled in production).
+# Release gate satisfied: "CI Gate" on main runs "E2E (compose)" and "Prod Image Build" (Q1 decision 2026-10-02).
 # No workflow_dispatch on purpose: publishing happens only from main.
 # Note: workflow_run triggers use the workflow file on the default branch.
 on:
