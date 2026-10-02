@@ -46,6 +46,7 @@ This is the build contract for the core of the application. It is written for im
 19. **Every activation is recorded financially, as history.** The recorded amount is the subject's price as set by the admin at the moment of activation; the admin does not type an amount. This applies to accepted requests and to manual grants.
 20. **Android first.** iOS is deferred (Section 3 question 8).
 21. **Video IDs released only at play time.** YouTube video IDs are never returned in catalog or subject metadata (subject detail returns `playable: bool` where `playable = owned now AND video published AND youtube_video_id non-empty`). Video IDs are released only by `POST /academy/videos/{id}/play` at play time when the student owns the subject and it is published. Target audience is ordinary students; protected host is a later option. Every 200 from `/play` writes an append-only `video_plays` record (no IP) for audit; write failure is logged with IDs only and never blocks playback.
+22. **Device cap per account.** At most 2 signed-in devices per account concurrently, newest wins, no monthly cap. (added 2026-10-01)
 
 ## 2. Defaults chosen by this spec (owner may override)
 
@@ -79,8 +80,13 @@ This is the build contract for the core of the application. It is written for im
 | D20 | Activation of an expired subject | The server refuses to accept a request or grant a subject while the subject's `access_expires_at` is in the past (409, generic message); the admin sets the new date first. No activation that is already expired, and no payment record for it, is ever created. The automatic access request of decision 9 is not created for such a subject. |
 | D21 | Expiry per activation | Each entitlement stores its own `expires_at`, copied from the subject's `access_expires_at` at activation. Moving the subject's date later does not revive expired entitlements; only a new paid activation gets the new date. |
 | D22 | Code issuance and failure caps | Reset code issuance is capped at 1 code per 60 s cooldown (`CodeCooldown = 60 s`) and max 5 codes per rolling hour window (`MaxCodesPerHour = 5`) per email. Verification failures across all codes for an email are capped at 15 wrong codes per rolling hour (`MaxFailuresPerHour = 15`), returning 429 `too_many_attempts`. Retains existing 5 wrong tries per single code and code TTL 10 min. *(added 2026-10-02, QA H1)* |
+| D23a | Device definition and enforcement | A "device" is a login session owned by auth-service. The cap is enforced where sessions are created (`Login`, `VerifyOTP`). `Refresh` keeps the session. *(added 2026-10-02)* |
+| D23b | Replacement policy | A 3rd device signs in successfully; the other session with the oldest `last_used_at` is ended. Re-login from the same `device_id` replaces its own session and does not take a second slot. *(added 2026-10-02)* |
+| D23c | Replaced session response | The ended device's next refresh gets 401 code `session_replaced`; its access token is rejected immediately. App message (owner wording): ar: "عفوًا، لقد تجاوزت الحد المسموح لاستخدام هذا الحساب", en: "Sorry, this account's usage limit has been exceeded". *(added 2026-10-02)* |
+| D23d | Device ID generation and validation | `device_id`: random UUIDv4 created by the app on first launch, kept in secure storage, sent in `Login` and `VerifyOTP` bodies with optional `device_label` (<=64 runes, trimmed). No fingerprinting. Reinstall = new device. Missing or invalid `device_id` -> 400. *(added 2026-10-02)* |
+| D23e | Sessions storage | Mongo `sessions` (auth-service): `_id` (`sid`, UUID), `user_id`, `device_id`, `device_label`, `refresh_hash`, `created_at`, `last_used_at`, `ended_at`, `end_reason` (`replaced`\|`logout`\|`admin`). No IP. Index `(user_id, ended_at, last_used_at)`. TTL index deletes rows 30 days after `ended_at`. *(added 2026-10-02)* |
 
-*D20-D21 added 2026-10-01 to implement owner decisions 18-19; D22 added 2026-10-02 (QA H1); owner may override.*
+*D20-D21 added 2026-10-01 to implement owner decisions 18-19; D22 added 2026-10-02 (QA H1); D23a-e added 2026-10-02 (owner decision 2026-10-01); owner may override.*
 
 ## 3. Open questions (do not implement)
 
@@ -162,10 +168,20 @@ Notes:
 - `admins`: `_id` (admin id), `name`, `token_hash` (SHA-256, never plaintext), `created_at`, `expires_at`, `revoked_at`.
 - `blocklist`: `kind` (`email`/`phone`), `hash`, `reason`, `created_at`; unique (`kind`, `hash`).
 - `admin_audit_log` *(added 2026-10-01, owner)*: `_id`, `actor_id`, `actor_name`, `action`, `target_type`, `target_id`, `detail`, `created_at`; no IP. Compound indexes on (`actor_id`, `created_at`) and (`target_type`, `target_id`).
+- `sessions` *(added 2026-10-02, owner decision 2026-10-01, Phase 1.7)*: `_id` (`sid`, UUID), `user_id`, `device_id` (UUID), `device_label` (string, <=64 runes), `refresh_hash`, `created_at`, `last_used_at`, `ended_at` (nullable), `end_reason` (`replaced`|`logout`|`admin`, nullable). No IP addresses. Compound index on (`user_id`, `ended_at`, `last_used_at`). TTL index deletes rows 30 days after `ended_at`.
 
 ## 6. API
 
-Student routes are served through the gateway as `/api/v1/academy/...` (the service sees `/academy/...`). All require `X-Gateway-Secret` (existing `GatewayAuth`) and a valid Bearer JWT validated with `jwtutil.ValidateToken` on **every request** (this is what makes suspension immediate).
+Student routes are served through the gateway as `/api/v1/auth/...` and `/api/v1/academy/...` (the services see `/auth/...` and `/academy/...`). All require `X-Gateway-Secret` (existing `GatewayAuth`) and a valid Bearer JWT validated with `jwtutil.ValidateToken` on **every request** (this is what makes suspension and session replacement immediate).
+
+### Student (auth-service additions, Phase 1.7)
+
+| Method and path | Purpose | Notes |
+|---|---|---|
+| `POST /auth/login` | Authenticate with email+password | Requires `device_id` (UUIDv4) and optional `device_label` (string, <=64 runes) in body. Enforces 2-device cap (newest wins, oldest ended with `end_reason=replaced`, refresh deleted, session revoked) |
+| `POST /auth/verify-otp` | Verify OTP code | Requires `device_id` (UUIDv4) and optional `device_label` (string, <=64 runes) in body. Enforces 2-device cap (same semantics as login) |
+| `POST /auth/refresh` | Rotate refresh token | Keeps session, updates `last_used_at` and `refresh_hash`. Returns 401 code `session_replaced` if session ended with reason `replaced` |
+| `POST /auth/logout` | End current session | Authenticated (student JWT Bearer). Ends caller's session (`end_reason=logout`), deletes its refresh key, revokes session via `RevokeSession(sid)`. 204 No Content |
 
 ### Student (academy-service)
 
@@ -286,6 +302,7 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 - 1.4 `admins` collection, `onboard-admin` and `revoke-admin` CLIs, `POST /internal/admin/verify` with lockout, second listener.
 - 1.5 Admin account endpoints (list, suspend, reactivate, delete) with audit, student notification, and `RevokeAllUserTokens`.
 - 1.6 Notification-service stream caps: per-account registration rate limit and a concurrent stream cap (pattern: saas-core `streamLimiter` and `acquireStreamSlot`).
+- 1.7 Two devices per account (owner decision 2026-10-01, D23a-e): `sessions` collection in Mongo with `(user_id, ended_at, last_used_at)` index and 30-day TTL; 2-device cap enforced on `Login` and `VerifyOTP` (newest wins, oldest `ended_at` set with `end_reason=replaced`); `sid` claim in access tokens, `RevokeSession(sid)` on Redis denylist; refresh token carries `sid`, ended session returns 401 code `session_replaced`; `POST /auth/logout` ends caller's session.
 
 **Phase 2 - academy-service read path**
 - 2.1 Skeleton: config, `--check-env`, health, `Store` interface with Memory and Mongo, both listeners.

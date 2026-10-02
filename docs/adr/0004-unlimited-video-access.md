@@ -1,7 +1,7 @@
 # ADR-0004: No Limits on Video Access
 
 - **Status**: Accepted
-- **Amended**: 2026-09-29
+- **Amended**: 2026-09-29, 2026-10-02 (owner decision 2026-10-01)
 - **Date**: 2026-09-29
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
@@ -54,3 +54,12 @@ locks access would reverse it.' It is never automatic and suspension is
 reversible. Abuse detection stays observational: the platform may surface
 signals to an admin but does not lock access itself. No view-count,
 expiry, or device cap is introduced.
+
+## Amendment (2026-10-02, owner decision 2026-10-01)
+
+Decision 3 ('No device cap on owned videos') is superseded. To curb account sharing,
+an account may have at most 2 signed-in devices concurrently (newest wins, no monthly cap).
+A third device signing in terminates the least-recently used active session (`session_replaced`).
+See SPEC Section 1 (2026-10-01 amendment) and Section 2 (D23a-e).
+Decisions 1 (no view-count cap) and the term-based expiry rules (owner decision 2026-10-01)
+remain as previously amended.
