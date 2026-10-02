@@ -21,7 +21,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `ebook_screen.dart` | 27 | yes | 0 (0) | yes |
 | `forgot_password_screen.dart` | 165 | yes | 0 (0) | no |
 | `home_screen.dart` | 198 | yes | 0 (0) | yes |
-| `login_screen.dart` | 343 | yes | 0 (0) | no |
+| `login_screen.dart` | 231 | yes | 0 (0) | no |
 | `main_shell.dart` | 103 | yes | 0 (0) | no |
 | `notifications_screen.dart` | 189 | yes | 0 (0) | no |
 | `otp_screen.dart` | 111 | yes | 0 (0) | no |
@@ -53,7 +53,8 @@ The gate scans screens only, so widgets carry no baseline entries.
 | `director_strip.dart` | 78 | course detail body |
 | `file_details_sheet.dart` | 102 | subject content section |
 | `header_icon_button.dart` | 52 | main shell |
-| `hero_backdrop.dart` | 85 | login |
+| `framed_poster_card.dart` | 76 | login |
+| `hero_backdrop.dart` | 85 | none |
 | `home_hero_banner.dart` | 207 | home |
 | `icon_tile.dart` | 41 | notifications, settings |
 | `instructor_dossier_card.dart` | 163 | home |

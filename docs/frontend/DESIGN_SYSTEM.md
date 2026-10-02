@@ -240,6 +240,7 @@ file for their exact values.
 | `ThemedLoadingIndicator` | `themed_loading_indicator.dart` | Centered crimson spinner with a localised semantic label and optional visible label. |
 | `ThemedSectionHeader` | `themed_section_header.dart` | Eyebrow section title (upper-cased via `uppercaseLabel` for Latin, no letter spacing for Arabic) with an optional end-aligned action. |
 | `HeroBackdrop` | `hero_backdrop.dart` | Full-width hero art (fraction of screen height) dissolving into `voidCanvas` with a linear fade and radial vignette; image, then fallback image, then flat surface. Place under `PositionedDirectional` in a `Stack`. |
+| `FramedPosterCard` | `framed_poster_card.dart` | A poster in a rounded card with a 1px crimson-tinted border and a soft crimson glow; shows the whole image (`BoxFit.contain`), sized from its aspect ratio and capped at a fraction of the screen height. Used by the login screen. |
 | `LanguageToggleChip` | `language_toggle_chip.dart` | Pill with a globe icon and the name of the language it switches to. |
 | `StatusDot` | `status_dot.dart` | Small filled circle (unread pip, live indicator) with an optional ring. |
 | `IconTile` | `icon_tile.dart` | Rounded square with a centred icon (list leading icons, setting rows); optional border. |

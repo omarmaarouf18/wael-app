@@ -1,6 +1,6 @@
 # Content gaps: what the app shows, what is real, what is missing
 
-Written 2026-10-02 (branch `fe/remove-mocks`). This is the owner's "what exists
+Written 2026-10-02 (branch `fe/remove-mocks`); rows 1-4 and 24 resolved the same day on `fe/login-v2` (owner-verified director content, owner-approved art). This is the owner's "what exists
 vs. what does not" list for the Flutter app.
 
 **Rule.** Anything shown to a student as real (people, bios, credentials,
@@ -20,14 +20,14 @@ list and live stream; the profile header (name, email, phone from
 *Owner decision* = a product or legal choice, not code. *Backend phase* = needs
 an API that does not exist yet (SPEC section 11). *Nothing* = already correct.
 
-## 1. Removed or emptied (was fake, now gone or hidden)
+## 1. Removed, emptied or resolved (was fake, now gone, hidden or owner-verified)
 
 | # | File(s) | What it showed | Action taken | Needed to make it real |
 |---|---|---|---|---|
-| 1 | `providers/home_provider.dart` (old), `models/instructor_profile.dart` | Director card: "Dean Wael El Metr", "Ph.D. in Law, Certified International Arbitrator, Academy Founder", a bio claiming 15+ years, four credential chips (Arabic and English) | Deleted. Content moved to `lib/content/director_profile.dart`, every field empty. The card is hidden while there is no name | **Owner content**: name, title, badge, bio, credentials (ar and en), optional portrait asset. Fill only `lib/content/director_profile.dart` |
-| 2 | `widgets/instructor_dossier_card.dart` | A hardcoded "FOUNDER" tag | Now the profile's own `badge` field; not drawn when empty | **Owner content** (the badge text, if any) |
-| 3 | `l10n` `directorTagline`; `screens/course_detail/course_detail_body.dart` | Strip on every subject: "Counselor, International Arbitrator, Arab Lawyers Union" | Key deleted. The strip uses the profile's name and title, hidden when empty | **Owner content** (same file as 1) |
-| 4 | `widgets/catalog_subject_card.dart`, `screens/courses_screen.dart` | The director's name under every subject title | Row hidden when the profile is empty | **Owner content** (same file as 1) |
+| 1 | `providers/home_provider.dart` (old), `models/instructor_profile.dart` | Director card: "Dean Wael El Metr", "Ph.D. in Law, Certified International Arbitrator, Academy Founder", a bio claiming 15+ years, four credential chips (Arabic and English) | **Resolved 2026-10-02.** Content is the owner's business card, verified by the owner: Wael El Saeed / وائل السعيد and four titles (no bio), portrait = the character art. Lives only in `lib/content/director_profile.dart` | Nothing (resolved) |
+| 2 | `widgets/instructor_dossier_card.dart` | A hardcoded "FOUNDER" tag | **Resolved 2026-10-02.** The tag is gone; the card shows one chip per title | Nothing (resolved) |
+| 3 | `l10n` `directorTagline`; `screens/course_detail/course_detail_body.dart` | Strip on every subject: "Counselor, International Arbitrator, Arab Lawyers Union" | **Resolved 2026-10-02.** Key deleted; the strip shows the portrait, the name and the four titles on one line | Nothing (resolved) |
+| 4 | `widgets/catalog_subject_card.dart`, `screens/courses_screen.dart` | The director's name under every subject title | **Resolved 2026-10-02.** The row shows the verified name (hidden if the profile had no name) | Nothing (resolved) |
 | 5 | `providers/ebook_provider.dart` (old) | Six sample books with fake titles, authors, page counts, file sizes and `example.com` PDF links; sample study notes; an exam checklist; a "pinned maxim" quote | Deleted with `EBook`, `StudyNote`, `ChecklistItem`, `AcademicMaterial` | **Backend phase**: study notes and a library (SPEC Phase 5 files and downloads, ADR-0005; ADR-0010 app content is reserved but not written) |
 | 6 | `screens/ebook_screen.dart` | The whole fake library UI (search, filters, reader sheet, note editor) | Replaced by an empty state: "Study materials and notes will appear here." Route `/ebooks` and the tab kept | **Backend phase** (as 5) |
 | 7 | `screens/course_detail/course_detail_body.dart` | "Add to Study Notes": created a note with invented text ("Observations on ...", "Key observations recorded...") | Card and its strings deleted | **Owner decision** + **backend phase**: whether students keep personal notes (ADR-0005) |
@@ -54,7 +54,7 @@ I did not decide these. Each is shown to students today.
 
 | # | File(s) | What it shows | Why it is listed | Needed |
 |---|---|---|---|---|
-| 24 | `widgets/home_hero_banner.dart`, `screens/login_screen.dart`, `assets/branding/el_metr_character_art.png`, `assets/images/home_hero.png`, `assets/images/login_portrait.jpg` | Art of a person on Home and on the login screen | Who it shows and the right to publish it are UNCONFIRMED in `docs/asset-provenance.md` | **Owner content**: confirm source and license (blocks the release review, SPEC Phase 8) |
+| 24 | `widgets/home_hero_banner.dart`, `screens/login_screen.dart`, `assets/branding/el_metr_character_art.png`, `assets/branding/el_metr_poster.jpg`, `assets/images/home_hero.png` | Art of a person on Home; the EL METR poster on the login screen | **Resolved 2026-10-02.** The owner supplied and approved the character art (Home hero, director portrait, app icon) and the poster (login only); provenance rows updated. `login_portrait.jpg` deleted (same picture as `home_hero.png`) | Nothing (resolved). The poster's own text includes a phone number line, as supplied |
 | 25 | `l10n.heroHeadline`, `heroSubheadline` | "Your next level starts here" and "Learn. Understand. Apply. Because knowledge is power." | Marketing copy nobody approved | **Owner decision** |
 | 26 | `screens/signup_screen.dart`, `l10n.agreeToTerms` | Checkbox "I agree to the Academy Honor Code & Terms", **pre-checked** (`_agreeToTerms = true`) | Consent is pre-ticked, and after item 16 the terms are shown nowhere in the app | **Owner decision** (legal): approved terms text, and whether the box starts unchecked. Changes sign-up behaviour, so not done here |
 | 27 | `screens/signup_screen.dart`, `l10n.admissionsNote` | "Admissions are strictly merit-based." | A policy claim | **Owner decision** |
@@ -82,5 +82,5 @@ I did not decide these. Each is shown to students today.
 |---|---|
 | Unused generic strings | 10 l10n keys with no caller: `eduLisence`, `eduDiploma`, `eduVocational`, `levelYear1` to `levelYear4`, `save`, `videoLocked`, `academyMotto`. Also unused: the constants `academyMotto`, `academyWordmark`, `academySubWordmark`. Four more keys are used only by tests that assert the removed mock sections stay gone: `tabClasses`, `continueLearning`, `upcoming`, `downloadSyllabus` |
 | Unused asset | `assets/branding/el_metr_landscape.jpg` (listed in the provenance doc) |
-| Orphaned shared widgets | `widgets/file_details_sheet.dart` and `widgets/pill_filter_bar.dart` have no caller. `confirm_action_dialog.dart` is used only by the debug library. Not deleted: they are not mock data and the task did not name them |
+| Orphaned shared widgets | `widgets/pill_filter_bar.dart` and `widgets/hero_backdrop.dart` have no screen caller (`HeroBackdrop` lost its last one when the login screen switched to the poster). `confirm_action_dialog.dart` is used only by the debug library. Not deleted: they are not mock data, and `HeroBackdrop` still has its own tests. *(Corrected 2026-10-02: an earlier version of this row also listed `file_details_sheet.dart`, which the subject screen does use.)* |
 | Not done (out of scope) | `device_id` and logout API (needs the Phase 1.7 backend), `url_launcher` (the support link can only be copied), backend, admin, player |

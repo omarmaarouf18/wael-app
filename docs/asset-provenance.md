@@ -22,22 +22,25 @@ published. *(Phase 0.0, owner review 2026-09-30.)*
 All assets below were introduced with the frontend wiring commit
 `b900b17` (2026-09), without a provenance
 record. Every row is **UNCONFIRMED** until the owner fills in the Source
-and License columns. UNCONFIRMED rows block the release review
+and License columns, except the rows the owner confirmed on 2026-10-02 (the
+character art, the EL METR poster, the Home hero copy of the art, and the
+Android app icon set), which say so. UNCONFIRMED rows block the release review
 (SPEC Section 11, Phase 8), not development.
 
 ## Brand art — `frontend/assets/branding/`
 
 | Path | Used as (constants.dart) | Source | License |
 |---|---|---|---|
-| `el_metr_character_art.png` | `imgCharacterArt` | UNCONFIRMED | UNCONFIRMED |
+| `el_metr_character_art.png` | `imgCharacterArt`; the director portrait; the source of the app icon | Owner-supplied | Owner-approved 2026-10-02 |
+| `el_metr_poster.jpg` | `imgPoster`; shown on the login screen only | Owner-supplied (the EL METR poster, 548 x 871 JPEG) | Owner-approved 2026-10-02 |
+| `store_icon_512.png` | none (Play Store listing icon, not bundled in the app) | Generated 2026-10-02 from `el_metr_character_art.png` by `scripts/make_app_icons.sh` | Owner-approved 2026-10-02 |
 | `el_metr_landscape.jpg` | `imgLandscape` | UNCONFIRMED | UNCONFIRMED |
 
 ## Screen imagery — `frontend/assets/images/`
 
 | Path | Used as (constants.dart) | Source | License |
 |---|---|---|---|
-| `login_portrait.jpg` | `imgLoginPortrait` | UNCONFIRMED | UNCONFIRMED |
-| `home_hero.png` | `imgHomeHero` | UNCONFIRMED | UNCONFIRMED |
+| `home_hero.png` | `imgHomeHero` | A downscaled copy (341 x 512) of `el_metr_character_art.png` | Owner-approved 2026-10-02 (same picture as the character art) |
 | `catalog_composure.jpg` | `imgCatalogComposure` | UNCONFIRMED | UNCONFIRMED |
 
 ## Launcher and platform icons
@@ -47,7 +50,7 @@ that has not been recorded; treat all as UNCONFIRMED.
 
 | Path (set) | Platform | Source | License |
 |---|---|---|---|
-| `frontend/android/app/src/main/res/mipmap-*/ic_launcher.png` (5 densities) | Android launcher | UNCONFIRMED | UNCONFIRMED |
+| `frontend/android/app/src/main/res/mipmap-*/ic_launcher.png` (5 densities), `ic_launcher_foreground.png` (5 densities), `mipmap-anydpi-v26/ic_launcher.xml`, `values/ic_launcher_background.xml` | Android launcher (adaptive and legacy) | Generated 2026-10-02 from `el_metr_character_art.png` by `scripts/make_app_icons.sh` | Owner-approved 2026-10-02 |
 | `frontend/ios/Runner/Assets.xcassets/AppIcon.appiconset/*` (15 icons) | iOS app icon | UNCONFIRMED | UNCONFIRMED |
 | `frontend/ios/Runner/Assets.xcassets/LaunchImage.imageset/*` (3 images) | iOS launch image | UNCONFIRMED | UNCONFIRMED |
 | `frontend/macos/Runner/Assets.xcassets/AppIcon.appiconset/*` (7 icons) | macOS app icon | UNCONFIRMED | UNCONFIRMED |
@@ -64,6 +67,12 @@ to the removed mock library, mock catalog and stock profile photo; see
 `catalog_private_protocol.jpg`, `course_strategic_rhetoric.jpg`,
 `course_psychology_composure.jpg` and `course_executive_protocol.jpg`. They
 remain in git history.
+
+Also deleted 2026-10-02: `login_portrait.jpg` (the login screen now shows the
+poster; it was the same picture as `home_hero.png`, which stays). The poster
+`el_metr_poster_007.jpg` listed above is byte-identical to today's
+`el_metr_poster.jpg`: the owner asked for it back on 2026-10-02, under the new
+name, for the login screen.
 
 ## Known gaps
 
