@@ -8,8 +8,13 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${WAEL_HOME}/.env.production"
 RELEASE_FILE="${REPO_DIR}/release.env"
 STATE_DIR="${WAEL_HOME}/state"
+LAST_GOOD_DIR="${STATE_DIR}/last-good"
 # shellcheck disable=SC2034 # used by the scripts that source this file
-LAST_GOOD_FILE="${STATE_DIR}/last-good.env"
+LAST_GOOD_FILE="${LAST_GOOD_DIR}/last-good.env"
+# shellcheck disable=SC2034
+LEGACY_LAST_GOOD_FILE="${STATE_DIR}/last-good.env"
+# shellcheck disable=SC2034
+FAILED_RELEASES_FILE="${STATE_DIR}/failed-releases"
 
 # shellcheck disable=SC2034
 APP_SERVICES=(api-gateway auth-service notification-service academy-service admin-console)
@@ -21,6 +26,7 @@ fail() { printf '[deploy] FAILED: %s\n' "$*" >&2; exit 1; }
 # A shell-exported IMAGE_TAG overrides release.env (used by rollback).
 compose() {
 	docker compose \
+		-p wael \
 		--project-directory "${REPO_DIR}" \
 		--env-file "${ENV_FILE}" \
 		--env-file "${RELEASE_FILE}" \

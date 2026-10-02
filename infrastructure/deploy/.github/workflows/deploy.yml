@@ -7,6 +7,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      allow_failed_release:
+        description: 'Force deploy even if this commit was previously rolled back (ALLOW_FAILED_RELEASE=1)'
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -31,4 +37,5 @@ jobs:
       - name: Deploy (pre-flight, health-gated up, rollback on failure)
         env:
           WAEL_HOME: ${{ vars.WAEL_HOME || '/home/deploybot/wael' }}
+          ALLOW_FAILED_RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.allow_failed_release) && '1' || '0' }}
         run: ./scripts/deploy.sh

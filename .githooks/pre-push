@@ -194,6 +194,13 @@ bash scripts/generate_certs_test.sh || {
   exit 1
 }
 
+# 5d. Deploy script tests (rollback correctness, orphans, failed-releases guard)
+echo "-- running deploy script tests --"
+bash scripts/deploy_scripts_test.sh || {
+  echo "BLOCKED: scripts/deploy_scripts_test.sh failed"
+  exit 1
+}
+
 # 6. Contract tests
 echo "-- running contract tests (tests/contracts) --"
 (cd tests/contracts && go test -v -count=1 ./...) || {

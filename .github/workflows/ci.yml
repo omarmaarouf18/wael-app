@@ -190,6 +190,10 @@ jobs:
       - name: Certificate script tests
         run: bash scripts/generate_certs_test.sh
 
+      # deploy.sh and rollback.sh tests (last-good compose, orphans, failed-releases)
+      - name: Deploy script tests
+        run: bash scripts/deploy_scripts_test.sh
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest

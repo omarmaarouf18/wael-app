@@ -14,6 +14,14 @@ chmod 700 "$STATE_DIR"
 tag="$(read_var "$RELEASE_FILE" IMAGE_TAG)"
 log "deploying IMAGE_TAG=$tag"
 
+# Refuse to deploy a release that was rolled back unless explicitly allowed
+if [ -f "$FAILED_RELEASES_FILE" ] && grep -qxF "$tag" "$FAILED_RELEASES_FILE"; then
+	if [ "${ALLOW_FAILED_RELEASE:-0}" != "1" ]; then
+		fail "IMAGE_TAG=$tag was rolled back and is listed in $FAILED_RELEASES_FILE. Fix forward with a new commit on main, or set ALLOW_FAILED_RELEASE=1 to force."
+	fi
+	log "WARNING: IMAGE_TAG=$tag is listed in $FAILED_RELEASES_FILE, but ALLOW_FAILED_RELEASE=1 is set; proceeding"
+fi
+
 deployed=0
 if compose up -d --remove-orphans --wait --wait-timeout 180; then
 	# Health through Caddy with real public TLS; allow time for ACME on first run.
@@ -27,8 +35,13 @@ else
 fi
 
 if [ "$deployed" -eq 1 ]; then
+	mkdir -p "$LAST_GOOD_DIR"
+	chmod 700 "$LAST_GOOD_DIR"
 	printf 'IMAGE_TAG=%s\nDEPLOYED_AT=%s\n' "$tag" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$LAST_GOOD_FILE"
-	log "deploy succeeded; recorded $tag as last good release"
+	cp "$LAST_GOOD_FILE" "$LEGACY_LAST_GOOD_FILE"
+	cp "${REPO_DIR}/docker-compose.yml" "${LAST_GOOD_DIR}/docker-compose.yml"
+	cp "${REPO_DIR}/Caddyfile" "${LAST_GOOD_DIR}/Caddyfile"
+	log "deploy succeeded; recorded $tag as last good release and preserved compose config"
 	exit 0
 fi
 
@@ -37,5 +50,5 @@ for svc in "${APP_SERVICES[@]}"; do
 	log "last log lines: $svc"
 	compose logs --no-color --tail 30 "$svc" || true
 done
-"$(dirname "$0")/rollback.sh" || true
+"$(dirname "$0")/rollback.sh" "$tag" || true
 fail "deploy of $tag failed (see rollback output above)"

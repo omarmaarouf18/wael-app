@@ -279,7 +279,10 @@ has no last good release to roll back to; if it fails, read
   the bad SHA. Do NOT re-run Deploy with that `release.env`. Recovery after a bad release
   means fixing forward with a new commit on `main`, never re-running the rolled-back release.
   `deploy.sh` checks `$WAEL_HOME/state/failed-releases` and refuses to deploy any SHA listed
-  there (unless overridden with `ALLOW_FAILED_RELEASE=1`).
+  there. If a manual forced re-deploy of a rolled-back SHA is ever truly required, trigger
+  Deploy via Actions -> Deploy -> Run workflow and check the "Force deploy even if this
+  commit was previously rolled back" option (which passes `ALLOW_FAILED_RELEASE=1` to `deploy.sh`).
+  Because `deploybot` has no login, this workflow input is the supported operational override.
 - **Manual rollback:** as deploybot, `cd` into the runner's checkout and run
   `WAEL_HOME=/home/deploybot/wael ./scripts/rollback.sh`.
 - **Logs:** `docker compose -p wael logs --tail 100 <service>`.
