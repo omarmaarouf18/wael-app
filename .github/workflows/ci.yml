@@ -126,6 +126,7 @@ jobs:
           - { path: services/auth-service, name: auth-service }
           - { path: services/notification-service, name: notification-service }
           - { path: services/academy-service, name: academy-service }
+          - { path: services/admin-console, name: admin-console }
           - { path: shared/infra, name: shared-infra }
           - { path: tools/docgen, name: docgen }
           - { path: tests/contracts, name: contracts }
@@ -154,6 +155,25 @@ jobs:
         working-directory: ${{ matrix.service.path }}
         run: go test -race ./... -count=1
 
+  admin-console-web:
+    name: Admin Console Web Tests (node)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Plain ES modules and node:test: no npm packages, no build step.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run web tests
+        working-directory: services/admin-console
+        run: node --test web/test/*.test.mjs
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -165,6 +185,7 @@ jobs:
           - { path: services/auth-service, name: auth-service }
           - { path: services/notification-service, name: notification-service }
           - { path: services/academy-service, name: academy-service }
+          - { path: services/admin-console, name: admin-console }
           - { path: shared/infra, name: shared-infra }
     steps:
       - name: Checkout Code

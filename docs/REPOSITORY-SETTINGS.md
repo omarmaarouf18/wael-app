@@ -17,6 +17,27 @@ Applied 2026-09-30 through the GitHub web UI (owner session).
 | Dependabot version updates, CodeQL | Not enabled (W-07 adds `.github/dependabot.yml`) |
 | Branches | `main`, `develop`. `wire/existing-services` deleted on GitHub (fully merged into `develop`). |
 
+### Required checks to add before `services/admin-console` reaches `main` (2026-10-02, not yet applied)
+
+The admin console (SPEC Phase 6.1) adds these CI checks. The `main` ruleset
+cannot be changed from the repository, so the owner adds them in the GitHub UI.
+Add them when this work is about to be fast-forwarded to `main`, not earlier: a
+required check that a commit never produced blocks that commit from reaching
+`main`, so listing them while `main` still lacks the new jobs would block any
+other merge. Record the date here when applied.
+
+| Check name (as GitHub shows it) | Source |
+|---|---|
+| `Build & Test (services/admin-console, admin-console)` | `build-test` matrix |
+| `Security Scan (services/admin-console, admin-console)` | `security` matrix |
+| `Admin Console Web Tests (node)` | job `admin-console-web` |
+
+The counts in the applied table above (7 build and 4 security entries) are what
+was recorded on 2026-09-30. `ci.yml` before this change already had 8 and 5:
+the academy-service entries added in SPEC Phase 2.1 are not recorded here, so
+confirm in the GitHub UI that the ruleset lists them too. After this change
+`ci.yml` has 9 `Build & Test` and 6 `Security Scan` entries.
+
 When a matrix entry or job name in `ci.yml` changes, update the required
 checks in the `main` ruleset in the same change, or `main` can no longer be
 updated.

@@ -123,7 +123,7 @@ if [ -z "$GOVULNCHECK_BIN" ] && [ -d "$HOME/go/bin" ]; then
   GOVULNCHECK_BIN="$HOME/go/bin/govulncheck"
 fi
 
-for mod in services/academy-service services/api-gateway services/auth-service services/notification-service shared/infra tools/docgen tests/contracts tests/e2e; do
+for mod in services/academy-service services/admin-console services/api-gateway services/auth-service services/notification-service shared/infra tools/docgen tests/contracts tests/e2e; do
   echo "-- checking $mod --"
   (cd "$mod" && go build ./... && go vet ./... && go test -race ./... -count=1) || {
     echo "BLOCKED: $mod failed build/vet/test"
@@ -131,7 +131,7 @@ for mod in services/academy-service services/api-gateway services/auth-service s
   }
 done
 
-for mod in services/academy-service services/api-gateway services/auth-service services/notification-service shared/infra; do
+for mod in services/academy-service services/admin-console services/api-gateway services/auth-service services/notification-service shared/infra; do
   if [ -z "$GOVULNCHECK_BIN" ] || [ ! -x "$GOVULNCHECK_BIN" ]; then
     echo "govulncheck not found, installing..."
     go install golang.org/x/vuln/cmd/govulncheck@latest 2>/dev/null || true
@@ -175,6 +175,17 @@ for mod in services/academy-service services/api-gateway services/auth-service s
     exit 1
   fi
 done
+
+# 5b. Admin console browser-side tests (node:test, no npm packages)
+echo "-- running admin console web tests (node --test) --"
+if ! command -v node >/dev/null 2>&1; then
+  echo "BLOCKED: node is required for services/admin-console/web tests (Node 20 or newer)"
+  exit 1
+fi
+(cd services/admin-console && node --test web/test/*.test.mjs) || {
+  echo "BLOCKED: services/admin-console web tests failed"
+  exit 1
+}
 
 # 6. Contract tests
 echo "-- running contract tests (tests/contracts) --"
