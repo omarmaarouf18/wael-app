@@ -288,7 +288,7 @@ bar.
   style size (`fontSize: 14`).
 - Raw colours and `.toUpperCase()` are gone from `lib/widgets/` and the non-catalog
   screens (splash, OTP, forgot password, login, signup, notifications, settings, main
-  shell). The catalog screens (home, courses, course detail, ebook, payment) still carry
+  shell). The catalog screens (home, courses, course detail, ebook) still carry
   them and move with SPEC Phase 2-3.
 - The gate matches text, so a pattern split across lines (`Scaffold\n(`) is not
   detected, and a pattern inside a comment is counted.

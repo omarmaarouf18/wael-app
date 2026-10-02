@@ -9,7 +9,7 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
   (F3a); until a screen is migrated it declares its own `Scaffold(`.
 - **Baseline entries**: file/rule pairs in the gate baseline (violation count in
   parentheses). The baseline only goes down.
-- **Catalog screen**: course catalog and payment screens. They move with SPEC Phase 2-3,
+- **Catalog screen**: course catalog screens. They move with SPEC Phase 2-3,
   so avoid polishing them before the academy API lands.
 
 ## Screens
@@ -25,12 +25,11 @@ refresh the numbers when the baseline is lowered. Token and widget reference:
 | `main_shell.dart` | 103 | yes | 0 (0) | no |
 | `notifications_screen.dart` | 189 | yes | 0 (0) | no |
 | `otp_screen.dart` | 111 | yes | 0 (0) | no |
-| `payment_screen.dart` | 672 | no | 8 (36) | yes |
 | `settings_screen.dart` | 550 | yes | 0 (0) | no |
 | `signup_screen.dart` | 332 | yes | 0 (0) | no |
 | `splash_screen.dart` | 61 | yes | 0 (0) | no |
 | `video_player_screen.dart` | 436 | yes | 0 (0) | no |
-| **Total** | 4926 | 12 of 14 | 15 (96) | 5 of 14 |
+| **Total** | 4254 | 12 of 13 | 7 (60) | 4 of 13 |
 
 `main_shell.dart` hosts the bottom navigation, but it is a screen with its own
 `Scaffold(`, not the shared template.
@@ -70,7 +69,7 @@ The gate scans screens only, so widgets carry no baseline entries.
 | `search_field.dart` | 75 | courses |
 | `secondary_button.dart` | 90 | home |
 | `selectable_chip.dart` | 125 | courses, subject content section |
-| `status_badge.dart` | 76 | payment |
+| `status_badge.dart` | 76 | none |
 | `status_dot.dart` | 37 | notifications, settings |
 | `subject_hero_banner.dart` | 76 | course detail body |
 | `themed_card.dart` | 55 | 5 screens |
