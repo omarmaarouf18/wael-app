@@ -200,7 +200,10 @@ func isFixedStudyType(key string) bool {
 }
 
 // ListSubjects serves GET /academy/subjects?level=<key>&term=<t>&page=<p>&limit=<l>.
-// Returns published subjects with item counts. Unpublished subjects never appear.
+// Returns published subjects with item counts. Visibility: owners with an
+// active entitlement keep seeing their subjects (owned list/detail) even
+// after unpublish, until the entitlement expires; non-owners see only
+// published subjects under published levels.
 func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
@@ -231,6 +234,146 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	claims := StudentClaims(r)
+	var activeEnts map[string]*models.Entitlement
+	if claims != nil && claims.UserID != "" {
+		ownedCtx, ownedCancel := context.WithTimeout(r.Context(), dbTimeout)
+		var err error
+		activeEnts, err = s.Store.GetActiveEntitlements(ownedCtx, claims.UserID)
+		ownedCancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+	}
+
+	levelsCtx, levelsCancel := context.WithTimeout(r.Context(), dbTimeout)
+	allLevels, err := s.Store.ListLevels(levelsCtx, false)
+	levelsCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	levelsByKey := make(map[string]*models.Level, len(allLevels))
+	allPublished := true
+	for _, lvl := range allLevels {
+		levelsByKey[lvl.Key] = lvl
+		if !lvl.Published {
+			allPublished = false
+		}
+	}
+
+	// Owned subjects that the plain published query would miss (drafts, or
+	// subjects under unpublished levels): owners keep seeing them.
+	var ownedExtras []*models.Subject
+	ownedExtraEnts := make(map[string]*models.Entitlement)
+	if len(activeEnts) > 0 {
+		for id, ent := range activeEnts {
+			extraCtx, extraCancel := context.WithTimeout(r.Context(), dbTimeout)
+			subj, err := s.Store.GetSubjectByID(extraCtx, id)
+			extraCancel()
+			if err != nil {
+				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+				return
+			}
+			if subj == nil {
+				continue
+			}
+			if levelKey != "" && subj.LevelKey != levelKey {
+				continue
+			}
+			if term != "" && subj.Term != term {
+				continue
+			}
+			if subj.Status == models.StatusPublished && levelVisible(levelsByKey, subj.LevelKey) {
+				continue // covered by the published query below
+			}
+			ownedExtras = append(ownedExtras, subj)
+			ownedExtraEnts[subj.ID] = ent
+		}
+	}
+
+	if allPublished && len(ownedExtras) == 0 {
+		s.listPublishedSubjects(w, r, levelKey, term, page, limit, activeEnts, levelsByKey)
+		return
+	}
+
+	// Merge path: every published subject plus owned extras, filtered for
+	// non-owners to published subjects under published levels, then paginated.
+	var published []*models.Subject
+	for p := 1; ; p++ {
+		mergeCtx, mergeCancel := context.WithTimeout(r.Context(), dbTimeout)
+		batch, _, err := s.Store.ListSubjects(mergeCtx, store.SubjectFilter{
+			LevelKey: levelKey,
+			Term:     term,
+			Status:   models.StatusPublished,
+			Page:     p,
+			Limit:    100,
+		})
+		mergeCancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+		published = append(published, batch...)
+		if len(batch) < 100 {
+			break
+		}
+	}
+
+	seen := make(map[string]bool, len(published)+len(ownedExtras))
+	var merged []*models.Subject
+	for _, subj := range published {
+		seen[subj.ID] = true
+		if _, owned := activeEnts[subj.ID]; !owned && !levelVisible(levelsByKey, subj.LevelKey) {
+			continue
+		}
+		merged = append(merged, subj)
+	}
+	for _, subj := range ownedExtras {
+		if !seen[subj.ID] {
+			merged = append(merged, subj)
+		}
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].Order != merged[j].Order {
+			return merged[i].Order < merged[j].Order
+		}
+		return merged[i].CreatedAt.Before(merged[j].CreatedAt)
+	})
+
+	total := len(merged)
+	start := (page - 1) * limit
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	paged := merged[start:end]
+
+	items := make([]models.SubjectListItemDTO, 0, len(paged))
+	for _, subj := range paged {
+		dto, err := s.subjectListItem(r, subj, activeEnts)
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+		items = append(items, dto)
+	}
+
+	handlerutil.WriteJSON(w, http.StatusOK, models.SubjectListResponseDTO{
+		Items: items,
+		Total: total,
+		Page:  page,
+		Limit: limit,
+	})
+}
+
+// listPublishedSubjects serves the common catalog path: paginated published
+// subjects, hiding subjects under unpublished levels from non-owners.
+func (s *Server) listPublishedSubjects(w http.ResponseWriter, r *http.Request, levelKey, term string, page, limit int, activeEnts map[string]*models.Entitlement, levelsByKey map[string]*models.Level) {
 	filter := store.SubjectFilter{
 		LevelKey: levelKey,
 		Term:     term,
@@ -247,52 +390,78 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := StudentClaims(r)
-	var activeEnts map[string]*models.Entitlement
-	if claims != nil && claims.UserID != "" {
-		ownedCtx, ownedCancel := context.WithTimeout(r.Context(), dbTimeout)
-		activeEnts, err = s.Store.GetActiveEntitlements(ownedCtx, claims.UserID)
-		ownedCancel()
+	items := make([]models.SubjectListItemDTO, 0, len(subjects))
+	hidden := 0
+	for _, subj := range subjects {
+		owned := false
+		if activeEnts != nil {
+			_, owned = activeEnts[subj.ID]
+		}
+		if !owned && !levelVisible(levelsByKey, subj.LevelKey) {
+			hidden++
+			continue
+		}
+		dto, err := s.subjectListItem(r, subj, activeEnts)
 		if err != nil {
 			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 			return
 		}
-	}
-
-	items := make([]models.SubjectListItemDTO, len(subjects))
-	for i, subj := range subjects {
-		countCtx, countCancel := context.WithTimeout(r.Context(), dbTimeout)
-		counts, _ := s.Store.GetSubjectCounts(countCtx, subj.ID)
-		countCancel()
-
-		owned := false
-		var ent *models.Entitlement
-		if activeEnts != nil {
-			ent = activeEnts[subj.ID]
-			owned = ent != nil
-		}
-		dto := subj.ToListItemDTO(counts, owned, s.ExposePrice)
-		if owned && ent != nil {
-			dto.AccessExpiresAt = ent.ExpiresAt
-		}
-		items[i] = dto
-	}
-	if items == nil {
-		items = []models.SubjectListItemDTO{}
+		items = append(items, dto)
 	}
 
 	handlerutil.WriteJSON(w, http.StatusOK, models.SubjectListResponseDTO{
 		Items: items,
-		Total: total,
+		Total: total - hidden,
 		Page:  page,
 		Limit: limit,
 	})
 }
 
+// subjectListItem builds the student list DTO for one subject with its
+// counts, ownership flag, and entitlement expiry override.
+func (s *Server) subjectListItem(r *http.Request, subj *models.Subject, activeEnts map[string]*models.Entitlement) (models.SubjectListItemDTO, error) {
+	countCtx, countCancel := context.WithTimeout(r.Context(), dbTimeout)
+	counts, err := s.Store.GetSubjectCounts(countCtx, subj.ID)
+	countCancel()
+	if err != nil {
+		return models.SubjectListItemDTO{}, err
+	}
+
+	owned := false
+	var ent *models.Entitlement
+	if activeEnts != nil {
+		ent = activeEnts[subj.ID]
+		owned = ent != nil
+	}
+	dto := subj.ToListItemDTO(counts, owned, s.ExposePrice)
+	if owned && ent != nil {
+		dto.AccessExpiresAt = ent.ExpiresAt
+	}
+	return dto, nil
+}
+
+// levelVisible reports whether a level exists and is published. Subjects
+// under missing or unpublished levels are hidden from non-owners.
+func levelVisible(levelsByKey map[string]*models.Level, levelKey string) bool {
+	lvl, ok := levelsByKey[levelKey]
+	return ok && lvl != nil && lvl.Published
+}
+
+// studentCanSee reports whether a subject is visible to a student:
+// owners with an active entitlement see it regardless of draft state or
+// level visibility; others see only published subjects under published levels.
+func studentCanSee(levelsByKey map[string]*models.Level, subj *models.Subject, owned bool) bool {
+	if owned {
+		return true
+	}
+	return subj.Status == models.StatusPublished && levelVisible(levelsByKey, subj.LevelKey)
+}
+
 // GetSubjectDetail serves GET /academy/subjects/{id}.
 // Returns subject metadata, published video titles/descriptions (NEVER youtube_video_id),
 // attached file metadata, and pending request status if unowned.
-// Returns 404 for unknown or unpublished subjects.
+// Returns 404 for unknown subjects; unpublished subjects (or subjects under
+// unpublished levels) are visible only to owners with an active entitlement.
 func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
 		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
@@ -315,7 +484,7 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id str
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	if subj == nil || subj.Status != models.StatusPublished {
+	if subj == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "subject not found", nil)
 		return
 	}
@@ -332,6 +501,20 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id str
 			return
 		}
 		owned = activeEnt != nil
+	}
+
+	// Owners keep seeing their subject after unpublish until the entitlement
+	// expires; others see only published subjects under published levels.
+	lvlCtx, lvlCancel := context.WithTimeout(r.Context(), dbTimeout)
+	lvl, err := s.Store.GetLevelByKey(lvlCtx, subj.LevelKey)
+	lvlCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if !studentCanSee(map[string]*models.Level{subj.LevelKey: lvl}, subj, owned) {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "subject not found", nil)
+		return
 	}
 
 	countsCtx, countsCancel := context.WithTimeout(r.Context(), dbTimeout)
@@ -560,10 +743,12 @@ func (s *Server) VideoSubroute(w http.ResponseWriter, r *http.Request) {
 // PlayVideo handles POST /academy/videos/{id}/play.
 // Authenticated with Bearer JWT (StudentAuth).
 // Returns 200 {"video_id": "...", "youtube_video_id": "..."} with Cache-Control: private, no-store
-// when the student owns the subject containing the video, the video and subject are published,
-// and the video has a non-empty youtube_video_id.
+// when the student owns the subject containing the video, the video is
+// published with a non-empty youtube_video_id, and the subject is unexpired.
+// Owners keep playing after unpublish until the entitlement expires;
+// non-owners additionally need a published subject under a published level.
 // Returns a generic 404 with Cache-Control: private, no-store for any refusal
-// (unknown/unpublished video or subject, unowned, expired, or empty youtube_video_id).
+// (unknown/deleted/unpublished video, unowned, expired, or empty youtube_video_id).
 // Logs successful playback to video_plays; write failure is logged with IDs only and never blocks playback.
 // Fails closed with 503 on store errors.
 func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID string) {
@@ -591,7 +776,8 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 		return
 	}
 
-	// 2. Fetch parent subject
+	// 2. Fetch parent subject. Published state is checked at step 4 (owners
+	// keep playing after unpublish); unknown subjects are always 404.
 	sCtx, sCancel := context.WithTimeout(r.Context(), dbTimeout)
 	subj, err := s.Store.GetSubjectByID(sCtx, video.SubjectID)
 	sCancel()
@@ -599,7 +785,7 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	if subj == nil || subj.Status != models.StatusPublished {
+	if subj == nil {
 		writeNotFound()
 		return
 	}
@@ -610,7 +796,9 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 		return
 	}
 
-	// 4. Check active entitlement (ownership)
+	// 4. Check active entitlement (ownership). Only owners play: they keep
+	// playing after unpublish (or under an unpublished level) until the
+	// entitlement expires. Non-owners always get the generic 404.
 	eCtx, eCancel := context.WithTimeout(r.Context(), dbTimeout)
 	owned, err := s.Store.HasActiveEntitlement(eCtx, claims.UserID, video.SubjectID)
 	eCancel()

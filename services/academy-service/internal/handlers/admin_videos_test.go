@@ -313,13 +313,22 @@ func TestAdminVideos_Delete(t *testing.T) {
 		if got := play(ownerTok, v2.ID); got.Code != http.StatusNotFound {
 			t.Fatalf("force-deleted video /play must be 404, got %d", got.Code)
 		}
-		req := httptest.NewRequest(http.MethodGet, "/academy/subjects/"+subj.ID, nil)
-		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
-		req.Header.Set("Authorization", "Bearer "+ownerTok)
-		recS := httptest.NewRecorder()
-		s.PublicHandler().ServeHTTP(recS, req)
-		if recS.Code != http.StatusNotFound {
-			t.Fatalf("subject must be unpublished after force delete, got %d", recS.Code)
+		// The subject is unpublished, but the owner keeps seeing it until
+		// the entitlement expires; strangers get 404.
+		detail := func(tok string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodGet, "/academy/subjects/"+subj.ID, nil)
+			req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+			req.Header.Set("Authorization", "Bearer "+tok)
+			recS := httptest.NewRecorder()
+			s.PublicHandler().ServeHTTP(recS, req)
+			return recS
+		}
+		if recO := detail(ownerTok); recO.Code != http.StatusOK {
+			t.Fatalf("owner must keep seeing the unpublished subject, got %d", recO.Code)
+		}
+		strangerTok := makeStudentToken(t, "user-del-stranger")
+		if recS := detail(strangerTok); recS.Code != http.StatusNotFound {
+			t.Fatalf("stranger must get 404 for the unpublished subject, got %d", recS.Code)
 		}
 	})
 

@@ -229,7 +229,7 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 | `GET /subjects?level_id=&published=&page=&limit=` | Filtered subject list including drafts (limit at most 100) |
 | `POST /subjects` | Create a draft (level must exist; price integer EGP >= 0; `access_expires_at` future RFC3339; `term` first/second/empty). `published: true` is refused with 409 `subject_has_no_videos` (a new subject has no videos yet) |
 | `PATCH /subjects/{id}` | Same fields, all optional. A draft-to-published change requires at least one video |
-| `POST /subjects/{id}/publish`, `.../unpublish` | Status change. Publishing requires at least one video (409 `subject_has_no_videos`). No hard delete: unpublish hides the subject |
+| `POST /subjects/{id}/publish`, `.../unpublish` | Status change. Publishing requires at least one video (409 `subject_has_no_videos`). No hard delete: unpublish hides the subject. Owners with an active entitlement keep list/detail/`/play` access until the entitlement expires; non-owners get 404 |
 | `GET /subjects/{id}/videos` | Admin video list including the YouTube id, in order |
 | `POST /subjects/{id}/videos` | Add a video (`title_ar`; `youtube` URL or bare id; `order` defaults to append; optional `duration_seconds`). Only the validated 11-char id is stored (400 `invalid_youtube_id`) |
 | `PATCH /videos/{id}` | Edit `title_ar`, `youtube`, `order`, `duration_seconds` |

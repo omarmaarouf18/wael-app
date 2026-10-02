@@ -96,3 +96,17 @@ func TestContract_AcademyAdminVideos(t *testing.T) {
 		"TestAdminVideos_AuditPerMutation",
 	)
 }
+
+// 12. Owned unpublished visibility: owners keep list/detail/play after
+// unpublish (or under unpublished levels) until entitlement expiry;
+// non-owners are hidden everywhere.
+func TestContract_AcademyStudentVisibility(t *testing.T) {
+	out := runAcademyAdminTests(t, "^(TestStudentVisibility_OwnedUnpublished|TestStudentVisibility_EntitlementExpiry|TestStudentVisibility_UnpublishedLevel|TestStudentVisibility_OwnedDraftPagination|TestPlayVideoEndpoint)$")
+	requirePass(t, out,
+		"TestStudentVisibility_OwnedUnpublished",
+		"TestStudentVisibility_EntitlementExpiry",
+		"TestStudentVisibility_UnpublishedLevel",
+		"TestStudentVisibility_OwnedDraftPagination",
+		"TestPlayVideoEndpoint",
+	)
+}

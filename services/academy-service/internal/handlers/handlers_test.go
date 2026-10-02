@@ -2378,19 +2378,20 @@ func TestPlayVideoEndpoint(t *testing.T) {
 		}
 	})
 
-	// 4. Refusal: video in draft subject returns generic 404 even if entitled
-	t.Run("owner_play_video_in_draft_subject_404", func(t *testing.T) {
+	// 4. Owner keeps playing a video in a draft subject until the
+	// entitlement expires; the YouTube id is released only to the owner.
+	t.Run("owner_play_video_in_draft_subject_200", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-draft-1/play", nil)
 		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
 		req.Header.Set("Authorization", "Bearer "+ownerToken)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 		}
 		if rec.Header().Get("Cache-Control") != "private, no-store" {
-			t.Errorf("expected Cache-Control: private, no-store on 404, got %q", rec.Header().Get("Cache-Control"))
+			t.Errorf("expected Cache-Control: private, no-store on 200, got %q", rec.Header().Get("Cache-Control"))
 		}
 	})
 

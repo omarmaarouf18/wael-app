@@ -19,6 +19,7 @@ The owner creates diplomas, subjects and videos through an API (SPEC Section 1 d
 6. **Videos are soft-deleted.** Deleted videos are hidden from listings, counts, detail and `/play`, and count as absent for the publish gate. Deleting the last video of a published subject needs `?force=true` (409 `last_video_of_published_subject`), which also unpublishes the subject. The server never calls YouTube; it stores only the validated 11-char id.
 7. **Admin-created videos are published.** The subject's own draft/published state gates student visibility; there is no per-video publish toggle in this phase.
 8. **Subject `order` sorts listings.** Both student and admin subject lists sort by `(order, created_at)`; existing rows default to 0, preserving current order.
+9. **Owned unpublished subjects stay visible to owners (owner review 2026-10-02).** Students with an active entitlement keep seeing the subject in their owned list/detail, and `/play` keeps working, after unpublish until the entitlement expires. Non-owners see only published subjects under published levels (catalog, detail 404, `/play` 404). The same rule covers subjects under unpublished levels; subjects whose level is missing are treated as hidden for non-owners.
 
 ## Consequences
 
