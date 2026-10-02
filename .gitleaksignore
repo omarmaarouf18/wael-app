@@ -30,3 +30,10 @@ f8e19c9606a487afe9cd91ec1b542661a8a0d65a:shared/infra/storage/storage_test.go:ge
 8d2cae869c6fcda8b2bdfecfee660c9e626dd3cf:shared/infra/storage/storage_test.go:generic-api-key:664
 ba07e5003915db2616b817edefb81450dfa4f83d:shared/infra/storage/storage_test.go:generic-api-key:353
 ba07e5003915db2616b817edefb81450dfa4f83d:shared/infra/storage/storage_test.go:generic-api-key:387
+
+# Added 2026-10-02 by the agent for SPEC Phase 6.1, pending owner approval:
+# "tok_ABCdef-123_456" is a dummy X-Admin-Token constant (testToken) in the
+# admin-console proxy tests. It is only ever sent to an httptest fake upstream;
+# it is not a credential. The fingerprint is tied to that commit: if the commit
+# is squashed or rewritten before it reaches main, replace the hash here.
+187066e1e5a376c7304afbf553ccb556b6fbe56d:services/admin-console/internal/proxy/proxy_test.go:generic-api-key:25
