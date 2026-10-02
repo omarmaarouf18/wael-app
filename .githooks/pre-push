@@ -1,7 +1,15 @@
 #!/bin/bash
 # wael-app pre-push gate: gofmt, Go version drift, build/vet/test per
 # module, gosec, govulncheck, contract tests, Flutter gates.
+#
+# The gate checks the commits being pushed, never the working tree. Git
+# passes the pushed refs on stdin; every unique pushed SHA is checked once
+# in a temporary detached worktree that is removed afterwards (on pass and
+# on fail), so an unrelated uncommitted file can never block a push.
+# Running the hook directly with no refs on stdin (as `make ci` does)
+# checks the working tree instead.
 set -e
+run_gate_checks() {
 echo "== pre-push gate: running checks =="
 
 unset GIT_DIR GIT_WORK_TREE
@@ -218,3 +226,85 @@ if [ -d "frontend/lib" ]; then
 fi
 
 echo "== pre-push gate: all checks passed =="
+}
+
+# Temporary worktrees for the pushed SHAs. Created in main(), removed by the
+# EXIT trap on both pass and fail.
+_PRE_PUSH_TMP_ROOT=""
+_PRE_PUSH_REPO_ROOT=""
+
+cleanup_push_worktrees() {
+  if [ -z "$_PRE_PUSH_TMP_ROOT" ]; then
+    return 0
+  fi
+  local w
+  for w in "$_PRE_PUSH_TMP_ROOT"/wt-*; do
+    if [ -e "$w" ]; then
+      git -C "$_PRE_PUSH_REPO_ROOT" worktree remove --force "$w" >/dev/null 2>&1 || rm -rf "$w"
+    fi
+  done
+  rm -rf "$_PRE_PUSH_TMP_ROOT"
+  _PRE_PUSH_TMP_ROOT=""
+}
+
+main() {
+  local line local_ref local_sha remote_ref remote_sha s
+  local shas="" seen="" sha_list=""
+  local zero="0000000000000000000000000000000000000000"
+
+  if [ -t 0 ]; then
+    shas=""
+  else
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -z "$line" ] && continue
+      read -r local_ref local_sha remote_ref remote_sha <<<"$line"
+      [ -z "${local_sha:-}" ] && continue
+      [ "$local_sha" = "$zero" ] && continue
+      shas="$shas $local_sha"
+    done
+  fi
+
+  # No refs on stdin (direct run, as `make ci` does): check the working tree.
+  if [ -z "$shas" ]; then
+    echo "== pre-push gate: no refs on stdin; checking the working tree =="
+    run_gate_checks
+    return "$?"
+  fi
+
+  # Two refs pointing at the same SHA are checked once.
+  for s in $shas; do
+    case " $seen " in
+      *" $s "*) continue ;;
+    esac
+    seen="$seen $s"
+    sha_list="$sha_list $s"
+  done
+
+  _PRE_PUSH_REPO_ROOT="$(git rev-parse --show-toplevel)"
+  _PRE_PUSH_TMP_ROOT="$(mktemp -d)"
+  trap cleanup_push_worktrees EXIT
+
+  local n=0 wt
+  for s in $sha_list; do
+    n=$((n + 1))
+    wt="$_PRE_PUSH_TMP_ROOT/wt-$n"
+    echo "== pre-push gate: checking pushed commit $s in a temporary worktree =="
+    if ! git -C "$_PRE_PUSH_REPO_ROOT" worktree add --detach "$wt" "$s" >/dev/null; then
+      echo "BLOCKED: cannot check out pushed commit $s"
+      return 1
+    fi
+    if ! ( cd "$wt" && run_gate_checks ); then
+      echo "BLOCKED: pushed commit $s failed the gate"
+      return 1
+    fi
+  done
+
+  echo "== pre-push gate: all pushed commits passed =="
+  return 0
+}
+
+# Sourced by scripts/pre_push_hook_test.sh with PRE_PUSH_SOURCED=1 so the
+# test can stub run_gate_checks and drive main() with fake ref lines.
+if [ "${PRE_PUSH_SOURCED:-}" != "1" ]; then
+  main "$@"
+fi

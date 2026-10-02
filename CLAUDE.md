@@ -39,6 +39,10 @@ not verified. Never invent command output or commit hashes.
   `flutter analyze`, and `flutter test` when `frontend/` changes.
 - Run `make ci` before reporting work that touches shared code, CI files, or
   more than one module.
+- The pre-push hook gates the pushed commits, not the working tree: every
+  unique pushed SHA is checked once in a temporary detached worktree that is
+  removed afterwards, so uncommitted files can never block a push. `make ci`
+  still gates the working tree.
 - Configure hooks before staging or committing with `git config core.hooksPath
   .githooks`, or use `make commit MSG="..."`.
 

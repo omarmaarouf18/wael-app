@@ -194,6 +194,11 @@ jobs:
       - name: Deploy script tests
         run: bash scripts/deploy_scripts_test.sh
 
+      # The pre-push hook gates pushed SHAs in a temp worktree, never the
+      # working tree: an untracked failing file must not block a push.
+      - name: Pre-push hook tests
+        run: bash scripts/pre_push_hook_test.sh
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
