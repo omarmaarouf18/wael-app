@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
-# Self-test for deploy.sh and rollback.sh:
+# Self-test for deploy.sh, rollback.sh, backup.sh, restore.sh and pull-backups.sh:
 # 1. Rollback uses state/last-good/docker-compose.yml with -p wael and --remove-orphans
 # 2. Failed-releases guard blocks deployment of rolled-back SHAs unless ALLOW_FAILED_RELEASE=1
 # 3. Missing state/last-good/ fallback triggers loud warning and uses current compose
 # 4. Successful deploy populates state/last-good/ (compose, Caddyfile, last-good.env)
 # 5. Rollback records failed SHA in state/failed-releases
+# 6. Last-good snapshot completeness: relative paths in compose are captured
+# 7. Backup writes a 600 archive via the compose-resolved container, never prints the password
+# 8. Backup honors MONGO_CONTAINER and BACKUP_KEEP_DAYS pruning, rejects bad keep values
+# 9. Backup fails without the root password file
+# 10. Restore refuses to run without --yes and touches nothing
+# 11. Restore with --yes stops apps, runs mongorestore --drop, restarts and health-gates
+# 12. Restore --skip-restart restores without touching services (rehearsal path)
+# 13. pull-backups.sh validates env, pulls via rsync, keeps newest N at 600
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -44,6 +52,8 @@ setup_sandbox() {
 	cp "$REPO_ROOT/infrastructure/deploy/scripts/lib.sh" "$d/repo/scripts/"
 	cp "$REPO_ROOT/infrastructure/deploy/scripts/deploy.sh" "$d/repo/scripts/"
 	cp "$REPO_ROOT/infrastructure/deploy/scripts/rollback.sh" "$d/repo/scripts/"
+	cp "$REPO_ROOT/infrastructure/deploy/scripts/backup.sh" "$d/repo/scripts/"
+	cp "$REPO_ROOT/infrastructure/deploy/scripts/restore.sh" "$d/repo/scripts/"
 	chmod +x "$d/repo/scripts/"*.sh
 
 	# Minimal docker-compose.yml and Caddyfile in repo
@@ -64,10 +74,17 @@ exit 0
 EOF
 	chmod +x "$d/bin/curl"
 
-	# Mock docker: logs arguments and simulates compose commands
+	# Mock docker: logs arguments and simulates compose commands.
+	# mongodump emits fake archive bytes on stdout (which the caller
+	# redirects into the archive file); mongorestore consumes stdin.
 	cat > "$d/bin/docker" << 'EOF'
 #!/usr/bin/env bash
 echo "DOCKER_CALL: $*" >> "$DOCKER_LOG"
+case "$*" in
+*"ps -q"*) echo "mockcid123" ;;
+*mongodump*) printf 'FAKE-GZIP-ARCHIVE-BYTES' ;;
+*mongorestore*) cat >/dev/null ;;
+esac
 exit "${MOCK_DOCKER_EXIT:-0}"
 EOF
 	chmod +x "$d/bin/docker"
@@ -204,6 +221,149 @@ done
 assert "deploy.sh copies Caddyfile into last-good" grep -qF 'cp "${REPO_DIR}/Caddyfile" "${LAST_GOOD_DIR}/Caddyfile"' "$REPO_ROOT/infrastructure/deploy/scripts/deploy.sh"
 # shellcheck disable=SC2016
 assert "deploy.sh copies docker-compose.yml into last-good" grep -qF 'cp "${REPO_DIR}/docker-compose.yml" "${LAST_GOOD_DIR}/docker-compose.yml"' "$REPO_ROOT/infrastructure/deploy/scripts/deploy.sh"
+
+# ---------------------------------------------------------------------------
+# Test 7: Backup writes a 600 archive via the compose-resolved container
+# ---------------------------------------------------------------------------
+BOX7="$(setup_sandbox test7)"
+TAG7="7777777777777777777777777777777777777777"
+printf 'IMAGE_TAG=%s\n' "$TAG7" > "$BOX7/repo/release.env"
+printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX7/wael/.env.production"
+mkdir -p "$BOX7/wael/secrets"
+printf '%s' "pw-for-test7-never-logged" > "$BOX7/wael/secrets/mongo_root_password"
+export DOCKER_LOG="$BOX7/docker.log"
+RC=0
+OUT="$(PATH="$BOX7/bin:$PATH" WAEL_HOME="$BOX7/wael" bash "$BOX7/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup succeeds" 0 "backup written:"
+ARCHIVE7="$(echo "$BOX7"/wael/backups/mongo-*.archive.gz)"
+assert "backup archive exists and is non-empty" test -s "$ARCHIVE7"
+assert "backup archive mode is 600" test "$(stat -c %a "$ARCHIVE7")" = 600
+assert "backup resolved the container via compose ps" grep -qF "ps -q mongo" "$BOX7/docker.log"
+assert "backup ran mongodump --archive --gzip" grep -qF "mongodump" "$BOX7/docker.log"
+if grep -qF "pw-for-test7-never-logged" <<<"$OUT"; then
+	bad "backup printed the root password"
+else
+	ok "backup never printed the root password"
+fi
+
+# ---------------------------------------------------------------------------
+# Test 8: Backup honors MONGO_CONTAINER and BACKUP_KEEP_DAYS pruning
+# ---------------------------------------------------------------------------
+BOX8="$(setup_sandbox test8)"
+printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX8/wael/.env.production"
+mkdir -p "$BOX8/wael/secrets" "$BOX8/wael/backups"
+printf '%s' "pw-for-test8" > "$BOX8/wael/secrets/mongo_root_password"
+touch -d '10 days ago' "$BOX8/wael/backups/mongo-2000-01-01T000000Z.archive.gz"
+export DOCKER_LOG="$BOX8/docker.log"
+RC=0
+OUT="$(PATH="$BOX8/bin:$PATH" WAEL_HOME="$BOX8/wael" MONGO_CONTAINER=mockcid BACKUP_KEEP_DAYS=7 bash "$BOX8/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup with MONGO_CONTAINER succeeds" 0 "pruned 1 archive(s)"
+assert "10-day-old archive was pruned" test ! -f "$BOX8/wael/backups/mongo-2000-01-01T000000Z.archive.gz"
+REMAINING8="$(echo "$BOX8"/wael/backups/mongo-*.archive.gz)"
+assert "fresh archive was kept" test -s "$REMAINING8"
+RC=0
+OUT="$(PATH="$BOX8/bin:$PATH" WAEL_HOME="$BOX8/wael" BACKUP_KEEP_DAYS=0 bash "$BOX8/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup rejects BACKUP_KEEP_DAYS=0" 1 "must be a positive integer"
+RC=0
+OUT="$(PATH="$BOX8/bin:$PATH" WAEL_HOME="$BOX8/wael" BACKUP_KEEP_DAYS=soon bash "$BOX8/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup rejects BACKUP_KEEP_DAYS=soon" 1 "must be a positive integer"
+
+# ---------------------------------------------------------------------------
+# Test 9: Backup fails without the root password file
+# ---------------------------------------------------------------------------
+BOX9="$(setup_sandbox test9)"
+printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX9/wael/.env.production"
+export DOCKER_LOG="$BOX9/docker.log"
+RC=0
+OUT="$(PATH="$BOX9/bin:$PATH" WAEL_HOME="$BOX9/wael" bash "$BOX9/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup fails without the password file" 1 "password file is missing or empty"
+
+# ---------------------------------------------------------------------------
+# Test 10: Restore refuses to run without --yes and touches nothing
+# ---------------------------------------------------------------------------
+BOX10="$(setup_sandbox test10)"
+printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX10/wael/.env.production"
+mkdir -p "$BOX10/wael/secrets"
+printf '%s' "pw-for-test10" > "$BOX10/wael/secrets/mongo_root_password"
+printf 'FAKE-ARCHIVE' > "$BOX10/dummy.archive.gz"
+export DOCKER_LOG="$BOX10/docker.log"
+RC=0
+OUT="$(PATH="$BOX10/bin:$PATH" WAEL_HOME="$BOX10/wael" bash "$BOX10/repo/scripts/restore.sh" "$BOX10/dummy.archive.gz" 2>&1)" || RC=$?
+check "restore refuses without --yes" 1 "without --yes"
+assert "restore without --yes called no docker command" test ! -f "$BOX10/docker.log"
+
+# ---------------------------------------------------------------------------
+# Test 11: Restore with --yes stops apps, restores, restarts, health-gates
+# ---------------------------------------------------------------------------
+BOX11="$(setup_sandbox test11)"
+printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX11/wael/.env.production"
+mkdir -p "$BOX11/wael/secrets"
+printf '%s' "pw-for-test11" > "$BOX11/wael/secrets/mongo_root_password"
+printf 'FAKE-ARCHIVE' > "$BOX11/dummy.archive.gz"
+export DOCKER_LOG="$BOX11/docker.log"
+RC=0
+OUT="$(PATH="$BOX11/bin:$PATH" WAEL_HOME="$BOX11/wael" MONGO_CONTAINER=mockcid bash "$BOX11/repo/scripts/restore.sh" "$BOX11/dummy.archive.gz" --yes 2>&1)" || RC=$?
+check "restore with --yes succeeds" 0 "restore of $BOX11/dummy.archive.gz complete and healthy"
+assert "restore stopped the five app services" grep -qF "stop api-gateway auth-service notification-service academy-service admin-console" "$BOX11/docker.log"
+assert "restore ran mongorestore --archive --gzip --drop" grep -qF "mongorestore" "$BOX11/docker.log"
+assert "restore restarted with --wait" grep -qF -- "--wait" "$BOX11/docker.log"
+
+# ---------------------------------------------------------------------------
+# Test 12: Restore --skip-restart restores without touching services
+# ---------------------------------------------------------------------------
+BOX12="$(setup_sandbox test12)"
+printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX12/wael/.env.production"
+mkdir -p "$BOX12/wael/secrets"
+printf '%s' "pw-for-test12" > "$BOX12/wael/secrets/mongo_root_password"
+printf 'FAKE-ARCHIVE' > "$BOX12/dummy.archive.gz"
+export DOCKER_LOG="$BOX12/docker.log"
+RC=0
+OUT="$(PATH="$BOX12/bin:$PATH" WAEL_HOME="$BOX12/wael" MONGO_CONTAINER=mockcid bash "$BOX12/repo/scripts/restore.sh" "$BOX12/dummy.archive.gz" --yes --skip-restart 2>&1)" || RC=$?
+check "restore --skip-restart succeeds" 0 "restore of $BOX12/dummy.archive.gz complete and healthy"
+assert "skip-restart still ran mongorestore" grep -qF "mongorestore" "$BOX12/docker.log"
+assert "skip-restart stopped nothing" bash -c "! grep -qF ' stop ' \"$BOX12/docker.log\""
+assert "skip-restart started nothing" bash -c "! grep -qF ' up ' \"$BOX12/docker.log\""
+
+# ---------------------------------------------------------------------------
+# Test 13: pull-backups.sh validates env, pulls, keeps newest N at 600
+# ---------------------------------------------------------------------------
+BOX13="$WORK/test13"
+mkdir -p "$BOX13/bin" "$BOX13/fixture" "$BOX13/local"
+cat >"$BOX13/bin/ssh" << 'EOF'
+#!/usr/bin/env bash
+case "$*" in
+*"sudo -n true"*) exit "${MOCK_SSH_EXIT:-0}" ;;
+*) exit 0 ;;
+esac
+EOF
+chmod +x "$BOX13/bin/ssh"
+cat >"$BOX13/bin/rsync" << 'EOF'
+#!/usr/bin/env bash
+# Faithful enough: copy files only, like 'rsync -a src/ dst/' (which, unlike
+# 'cp -a src/. dst/', never retargets the destination dir mode).
+dest="${@: -1}"
+mkdir -p "$dest"
+for f in "$FIXTURE_SRC"/*; do cp -a "$f" "$dest/"; done
+EOF
+chmod +x "$BOX13/bin/rsync"
+touch -d '40 days ago' "$BOX13/fixture/mongo-a.archive.gz"
+touch -d '20 days ago' "$BOX13/fixture/mongo-b.archive.gz"
+touch -d '10 days ago' "$BOX13/fixture/mongo-c.archive.gz"
+touch -d '1 day ago' "$BOX13/fixture/mongo-d.archive.gz"
+RC=0
+OUT="$(PATH="$BOX13/bin:$PATH" FIXTURE_SRC="$BOX13/fixture" WAEL_HOST=server.test BACKUP_KEEP_LOCAL=2 LOCAL_BACKUP_DIR="$BOX13/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups keeps newest 2" 0 "2 archive(s)"
+assert "newest archive kept" test -f "$BOX13/local/mongo-d.archive.gz"
+assert "second newest kept" test -f "$BOX13/local/mongo-c.archive.gz"
+assert "older archives pruned" test ! -f "$BOX13/local/mongo-b.archive.gz"
+assert "pulled archives are mode 600" test "$(stat -c %a "$BOX13/local/mongo-d.archive.gz")" = 600
+assert "local dir is mode 700" test "$(stat -c %a "$BOX13/local")" = 700
+RC=0
+OUT="$(PATH="$BOX13/bin:$PATH" env -u WAEL_HOST bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups requires WAEL_HOST" 1 "WAEL_HOST"
+RC=0
+OUT="$(PATH="$BOX13/bin:$PATH" MOCK_SSH_EXIT=1 WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX13/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups explains the sudoers rule" 1 "NOPASSWD"
 
 # ---------------------------------------------------------------------------
 # Summary

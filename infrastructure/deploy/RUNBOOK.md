@@ -178,7 +178,9 @@ guard, backups, restore, logs, cleanup, rotation, base-image updates).
 ## Known gaps (not solved by this scaffold)
 
 - No database migration framework; rollback restores images only (saas-core S-08).
-- No scheduled backups or restore drill yet (Bootstrap Phase B item 14).
+- Server backup cron exists (deploybot `17 0 * * *`, adopt repo
+  `scripts/backup.sh`); restore rehearsed locally 2026-10-02 (`SERVER-MANUAL.md`
+  §10); production restore drill still open (Bootstrap Phase B item 14).
 - `REDIS_URI` and Mongo URIs carry passwords in container env (`docker inspect`).
 - App images are tagged by commit sha; third-party bases (`caddy`, `mongo`,
   `redis`) are pinned by digest with weekly Dependabot updates (W-07 done

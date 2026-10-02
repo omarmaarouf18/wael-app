@@ -16,9 +16,10 @@ Never write a real secret into any file: use placeholders such as
 `<GENERATE: openssl rand -hex 32>`.
 
 Status of rehearsal: the pipeline path (build, publish, deploy, rollback) has
-run three releases (557f367, 6bd6c12, b6a11fe). The backup (§10), restore (§10)
-and migration (§11) procedures below are written from the repo state, **not yet
-rehearsed** — rehearse them before relying on them.
+run three releases (557f367, 6bd6c12, b6a11fe). Backup and restore (§10) are
+rehearsed locally as of 2026-10-02 (throwaway containers; a production drill
+is still recommended). Migration (§11) is written from the repo state, **not
+yet rehearsed**.
 
 ## 0. Overview
 
@@ -617,53 +618,83 @@ changes are NOT rolled back. Afterwards: fix forward with a new commit on
 unless the Deploy workflow's "Force deploy even if previously rolled back"
 input (`ALLOW_FAILED_RELEASE=1`) is set.
 
-Backups — status: no backup automation exists in the repo (RUNBOOK "Known
-gaps"). Set this up on every server; the procedure below is **not yet
-rehearsed**. Daily `mongodump` cron at 00:17 UTC, 7-day retention, `umask
-077`, archives at mode `600`. Save as `$WAEL_HOME/bin/mongo-backup.sh`
-(owner deploybot, mode `700`):
+Backups — status: the server already runs a hand-written backup
+(`$WAEL_HOME/backup.sh`: `mongodump --archive --gzip` as the mongo root user
+via `docker exec` into `wael-mongo-1`) from the deploybot crontab
+`17 0 * * *`, keeping 7 days in `~/wael/backups/` (dir 700). That behaviour
+now lives versioned in `scripts/backup.sh` (`umask 077`, archives
+`mongo-<UTC-timestamp>.archive.gz` at mode `600`, keep window via
+`BACKUP_KEEP_DAYS`, default 7; the root password is read from
+`$WAEL_HOME/secrets/mongo_root_password` and never printed). Switch the cron
+to the repo script (from the runner checkout of `wael-app-deploy`, which the
+publish workflow keeps in sync):
 
 ```bash
-[server azureuser] sudo -u deploybot tee /home/deploybot/wael/bin/mongo-backup.sh > /dev/null <<'SCRIPT'
-#!/usr/bin/env bash
-# Nightly full mongo backup. NOT YET REHEARSED — drill restore before relying on it.
-set -euo pipefail
-umask 077
-WAEL_HOME=/home/deploybot/wael
-DAY="$(date -u +%Y-%m-%dT%H%MZ)"
-DEST="$WAEL_HOME/backups/mongo-$DAY"
-mkdir -p "$DEST"
-ROOT_PW="$(cat "$WAEL_HOME/secrets/mongo_root_password")"
-docker exec wael-mongo-1 mongodump -u wael_root -p "$ROOT_PW" \
-  --authenticationDatabase admin --out "/dump/$DAY"
-docker cp "wael-mongo-1:/dump/$DAY" "$DEST/dump"
-docker exec wael-mongo-1 rm -rf "/dump/$DAY"
-chmod 600 "$DEST"/dump/*/*.bson "$DEST"/dump/*/*.json 2>/dev/null || true
-find "$WAEL_HOME/backups" -maxdepth 1 -name "mongo-*" -mtime +7 -exec rm -rf {} +
-SCRIPT
-[server azureuser] sudo chmod 700 /home/deploybot/wael/bin/mongo-backup.sh
-[server azureuser] (sudo -u deploybot crontab -l 2>/dev/null; echo "17 0 * * * /home/deploybot/wael/bin/mongo-backup.sh") | sudo -u deploybot crontab -
+[server azureuser] sudo -u deploybot crontab -l
+[server azureuser] (sudo -u deploybot crontab -l 2>/dev/null | grep -v "wael/backup.sh\|wael/bin/mongo-backup.sh"; echo "17 0 * * * /home/deploybot/<deploy-checkout>/scripts/backup.sh") | sudo -u deploybot crontab -
+[server azureuser] sudo -u deploybot crontab -l   # confirm exactly one backup line
 ```
 
-Off-site copy: pull the newest archive off the host regularly (the manual way
-until automated), and keep a second automated copy (recommended: object storage
-via `rclone`, or a second host):
+(`<deploy-checkout>` is the runner checkout path used for manual rollback
+above; `lib.sh` defaults `WAEL_HOME` so no env is needed in cron. The old
+`$WAEL_HOME/backup.sh` can be deleted once the new cron has produced its
+first archive.)
+
+Off-site copy: `scripts/pull-backups.sh` on the owner's laptop (rsync over
+SSH as `azureuser` with the `--rsync-path='sudo rsync'` trick for the 700
+dir; no cloud storage, no new secrets — existing SSH key auth). It keeps the
+newest 30 archives locally at mode 600:
 
 ```bash
-[laptop] scp -r deploybot@<host>:/home/deploybot/wael/backups/ ./offsite/   # via azureuser jump if deploybot has no SSH: scp azureuser@<host>:... then sudo-side copy
+[laptop] export WAEL_HOST=<host>   # plus WAEL_SSH_USER / LOCAL_BACKUP_DIR / BACKUP_KEEP_LOCAL to override
+[laptop] ./infrastructure/deploy/scripts/pull-backups.sh
 ```
 
-(Run the `scp` as whichever user can SSH; if only `azureuser` can, copy
-server-side to a readable staging path first.) Verify archives are mode 600
-and restorable — an untested backup is not a backup.
+First run explains itself if passwordless rsync-sudo is missing (it prints
+the one `sudoers.d` line to add). Run it daily via a systemd user timer
+[laptop]:
 
-Restore (**not tested** — drill on a spare host first):
+```ini
+# ~/.config/systemd/user/wael-pull-backups.service
+[Unit]
+Description=Pull wael-app backups off-site
+[Service]
+Type=oneshot
+Environment=WAEL_HOST=<host>
+ExecStart=%h/wael-app/infrastructure/deploy/scripts/pull-backups.sh
+
+# ~/.config/systemd/user/wael-pull-backups.timer
+[Unit]
+Description=Daily wael-app backup pull
+[Timer]
+OnCalendar=daily
+Persistent=true
+[Install]
+WantedBy=timers.target
+```
 
 ```bash
-[server azureuser] sudo -u deploybot bash -c 'LATEST=$(ls -dt ~/wael/backups/mongo-* | head -1); echo "$LATEST"'
-# stop writers to be safe, then push the dump back and restore per database:
-[server azureuser] sudo -u deploybot bash -c 'docker cp <archive>/dump wael-mongo-1:/restore && docker exec wael-mongo-1 mongorestore -u wael_root -p "$(cat ~/wael/secrets/mongo_root_password)" --authenticationDatabase admin --drop /restore'
+[laptop] systemctl --user daemon-reload && systemctl --user enable --now wael-pull-backups.timer
+[laptop] systemctl --user list-timers | grep wael
 ```
+
+Verify off-site archives are mode 600 and restorable — an untested backup is
+not a backup.
+
+Restore with `scripts/restore.sh` (rehearsed locally 2026-10-02: throwaway
+`mongo:7` containers, seed 3 users + 5 orders, backup → restore into a fresh
+container → counts match, `--drop` confirmed by re-restoring over extra
+rows; orchestration path covered by mocked tests in
+`scripts/deploy_scripts_test.sh`; a production drill is still recommended):
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cd /home/deploybot/<deploy-checkout> && ./scripts/restore.sh ~/wael/backups/<archive>.archive.gz --yes'
+```
+
+Without `--yes` it refuses and touches nothing. It stops the five app
+services first (mongo and redis stay up), runs `mongorestore --archive
+--gzip --drop`, restarts the services with `--wait` and must pass the public
+health gate. `--skip-restart` is a rehearsal-only escape hatch.
 
 Logs: `docker compose -p wael logs --tail 100 <service>` (from the deploy
 checkout as deploybot); host side: `journalctl -u docker.service --since -1h`.
