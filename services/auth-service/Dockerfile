@@ -30,7 +30,9 @@ RUN go mod download 2>/dev/null || true
 
 COPY services/auth-service/ .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/service ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/service ./cmd/main.go && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/onboard-admin ./cmd/onboard-admin/main.go && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/revoke-admin ./cmd/revoke-admin/main.go
 
 # ---- Production Stage ----------------------------------------------------
 FROM alpine:3.20 AS prod
@@ -39,6 +41,8 @@ RUN apk --no-cache add ca-certificates curl \
     && addgroup -S appgroup && adduser -S appuser -G appgroup
 
 COPY --from=build /bin/service /bin/service
+COPY --from=build /bin/onboard-admin /bin/onboard-admin
+COPY --from=build /bin/revoke-admin /bin/revoke-admin
 
 EXPOSE 3002
 

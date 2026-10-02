@@ -145,50 +145,26 @@ request is checked by auth-service against the operator's token.
 **Minting an admin token (the first one, and one per operator)**
 
 Tokens are created only by the server-side CLI `onboard-admin` (ADR-0008):
-no page or API can mint or revoke one. It prints the token once on stdout and
-stores only its SHA-256 hash; `--ttl` defaults to `90d` and may be at most
-`365d`. Give each person their own named token.
-
-> **Known gap.** The production auth-service image contains only
-> `/bin/service`: `onboard-admin` and `revoke-admin` (`services/auth-service/cmd/`)
-> are not in it, so `docker compose exec auth-service onboard-admin` does **not**
-> work today (checked in `services/auth-service/Dockerfile`). Until the owner
-> decides to ship the CLIs in the image, run them from the auth-service *build*
-> stage on the stack's network. This was run against the local stack on
-> 2026-10-02 and printed a token; it has not been run on the production host.
-
-On an admin machine, from a checkout of the deployed commit, build and send the
-tools image (same pattern as "Manual trial deploy"):
-
-```bash
-SHA="$(git rev-parse HEAD)"
-docker build --target build -f services/auth-service/Dockerfile -t wael-auth-tools:$SHA .
-docker save wael-auth-tools:$SHA | gzip | ssh deploybot@<host> 'gunzip | docker load'
-```
+no page or API can mint or revoke one. It prints the admin ID and token once on
+stdout and stores only its SHA-256 hash; `--ttl` defaults to `90d` and may be
+at most `365d`. Give each person their own named token.
 
 On the server as `deploybot`:
 
 ```bash
-export WAEL_HOME=/home/deploybot/wael
-docker run --rm --network wael_wael-net \
-  -e MONGO_URI="$(sed -n 's/^AUTH_MONGO_URI=//p' "$WAEL_HOME/.env.production")" \
-  -e AUTH_MONGO_DATABASE=auth_db \
-  wael-auth-tools:<sha> go run ./cmd/onboard-admin --name "Wael" --ttl 90d
+docker compose -p wael exec auth-service /bin/onboard-admin --name "Wael" --ttl 90d
 ```
 
-Copy the printed token straight into the operator's password manager. It is
-shown once and cannot be recovered; a lost token is revoked and replaced. Never
-paste it into chat, tickets or the shell history of a shared machine.
+Copy the printed token straight into the operator's password manager and note
+the admin ID. The token is shown once and cannot be recovered; a lost token is
+revoked and replaced. Never paste it into chat, tickets or the shell history
+of a shared machine.
 
-**Revoking a token.** `revoke-admin` needs the admin id (`adm_...`), which
-`onboard-admin` does not print. Look it up by name, then revoke (the same
-`docker run` as above with `go run ./cmd/revoke-admin --id adm_...`):
+**Revoking a token.** `revoke-admin` takes the admin id (`adm_...`) printed
+when the token was minted:
 
 ```bash
-source scripts/lib.sh
-compose exec -T mongo mongosh -u wael_root -p "$(cat "$WAEL_HOME/secrets/mongo_root_password")" \
-  --authenticationDatabase admin --quiet --eval \
-  'db.getSiblingDB("auth_db").admins.find({}, {name:1, expires_at:1, revoked_at:1}).forEach(printjson)'
+docker compose -p wael exec auth-service /bin/revoke-admin --id <id>
 ```
 
 Revocation takes effect on the next request: auth-service checks the token on
@@ -306,6 +282,5 @@ has no last good release to roll back to; if it fails, read
 - `REDIS_URI` and Mongo URIs carry passwords in container env (`docker inspect`).
 - Base images are pinned by tag, not digest (W-07).
 - No certificate rotation job; preflight only refuses certs expiring within 14 days.
-- The production auth-service image does not contain `onboard-admin` or `revoke-admin`, and `onboard-admin` does not print the admin id that `revoke-admin` needs (see "Admin console"). Owner decision pending.
 - The admin console shows accounts and the auth-service audit log only; its academy pages and the academy half of the audit log arrive with SPEC Phase 4. `deploy.sh` checks the API host through Caddy but not `ADMIN_DOMAIN`.
 - The admin listeners of auth-service (:9001) and academy-service (:9002) run inside their containers and are not published.

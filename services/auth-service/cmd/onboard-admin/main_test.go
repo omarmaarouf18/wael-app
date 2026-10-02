@@ -13,6 +13,18 @@ import (
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/store"
 )
 
+func parseOnboardOutput(out string) (adminID, token string) {
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "admin_id: ") {
+			adminID = strings.TrimPrefix(line, "admin_id: ")
+		} else if strings.HasPrefix(line, "token: ") {
+			token = strings.TrimPrefix(line, "token: ")
+		}
+	}
+	return adminID, token
+}
+
 func TestOnboardAdmin_Success_TokenPrintedOnceAndOnlyHashStored(t *testing.T) {
 	st := store.NewMemoryStore()
 	getStore := func(ctx context.Context) (store.Store, error) {
@@ -26,7 +38,13 @@ func TestOnboardAdmin_Success_TokenPrintedOnceAndOnlyHashStored(t *testing.T) {
 		t.Fatalf("expected exit code 0, got %d (stderr: %s)", code, stderr.String())
 	}
 
-	token := strings.TrimSpace(stdout.String())
+	adminID, token := parseOnboardOutput(stdout.String())
+	if adminID == "" {
+		t.Fatal("expected admin_id on stdout, got empty string")
+	}
+	if !strings.HasPrefix(adminID, "adm_") {
+		t.Fatalf("expected admin_id to start with adm_, got %q", adminID)
+	}
 	if token == "" {
 		t.Fatal("expected token on stdout, got empty string")
 	}
@@ -49,6 +67,9 @@ func TestOnboardAdmin_Success_TokenPrintedOnceAndOnlyHashStored(t *testing.T) {
 	if err != nil || adm == nil {
 		t.Fatalf("admin not found in store by token hash: %v", err)
 	}
+	if adm.ID != adminID {
+		t.Fatalf("expected stored adm.ID %q == printed adminID %q", adm.ID, adminID)
+	}
 	if adm.Name != "Alice Admin" {
 		t.Fatalf("expected admin name %q, got %q", "Alice Admin", adm.Name)
 	}
@@ -64,6 +85,52 @@ func TestOnboardAdmin_Success_TokenPrintedOnceAndOnlyHashStored(t *testing.T) {
 	expectedExpiry := time.Now().UTC().Add(30 * 24 * time.Hour)
 	if diff := adm.ExpiresAt.Sub(expectedExpiry); diff > time.Minute || diff < -time.Minute {
 		t.Fatalf("unexpected expiry: %v (expected close to %v)", adm.ExpiresAt, expectedExpiry)
+	}
+}
+
+func TestOnboardAdmin_AdminIDOutput(t *testing.T) {
+	st := store.NewMemoryStore()
+	getStore := func(ctx context.Context) (store.Store, error) {
+		return st, nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	args := []string{"--name", "Test Admin", "--ttl", "14d"}
+	code := runOnboardAdmin(args, &stdout, &stderr, getStore)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d (stderr: %s)", code, stderr.String())
+	}
+
+	out := stdout.String()
+	adminID, token := parseOnboardOutput(out)
+	if adminID == "" {
+		t.Fatal("expected admin_id in stdout, got none")
+	}
+	if !strings.HasPrefix(adminID, "adm_") || len(adminID) != 28 {
+		t.Fatalf("expected admin_id to start with 'adm_' and be 28 chars long, got %q", adminID)
+	}
+	if token == "" {
+		t.Fatal("expected token in stdout, got none")
+	}
+
+	// Verify token is printed exactly once
+	if strings.Count(out, token) != 1 {
+		t.Fatalf("expected token to be printed exactly once, found %d occurrences", strings.Count(out, token))
+	}
+	// Verify admin_id is printed exactly once
+	if strings.Count(out, adminID) != 1 {
+		t.Fatalf("expected admin_id to be printed exactly once, found %d occurrences", strings.Count(out, adminID))
+	}
+
+	// Stored admin has matching ID
+	hashBytes := sha256.Sum256([]byte(token))
+	hash := hex.EncodeToString(hashBytes[:])
+	adm, err := st.FindAdminByTokenHash(context.Background(), hash)
+	if err != nil || adm == nil {
+		t.Fatalf("failed to find admin by hash: %v", err)
+	}
+	if adm.ID != adminID {
+		t.Fatalf("stored admin ID %q != printed admin ID %q", adm.ID, adminID)
 	}
 }
 

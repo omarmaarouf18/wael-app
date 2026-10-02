@@ -129,8 +129,8 @@ func runOnboardAdmin(args []string, stdout, stderr io.Writer, getStore storeProv
 		return 1
 	}
 
-	// Print the token ONCE to stdout, never log it
-	fmt.Fprintln(stdout, token)
+	// Print the admin ID and token ONCE to stdout, never log them
+	fmt.Fprintf(stdout, "admin_id: %s\ntoken: %s\n", adminID, token)
 	return 0
 }
 
