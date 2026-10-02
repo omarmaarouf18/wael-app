@@ -78,8 +78,9 @@ This is the build contract for the core of the application. It is written for im
 |---|---|---|
 | D20 | Activation of an expired subject | The server refuses to accept a request or grant a subject while the subject's `access_expires_at` is in the past (409, generic message); the admin sets the new date first. No activation that is already expired, and no payment record for it, is ever created. The automatic access request of decision 9 is not created for such a subject. |
 | D21 | Expiry per activation | Each entitlement stores its own `expires_at`, copied from the subject's `access_expires_at` at activation. Moving the subject's date later does not revive expired entitlements; only a new paid activation gets the new date. |
+| D22 | Code issuance and failure caps | Reset code issuance is capped at 1 code per 60 s cooldown (`CodeCooldown = 60 s`) and max 5 codes per rolling hour window (`MaxCodesPerHour = 5`) per email. Verification failures across all codes for an email are capped at 15 wrong codes per rolling hour (`MaxFailuresPerHour = 15`), returning 429 `too_many_attempts`. Retains existing 5 wrong tries per single code and code TTL 10 min. *(added 2026-10-02, QA H1)* |
 
-*D20-D21 added 2026-10-01 to implement owner decisions 18-19; owner may override.*
+*D20-D21 added 2026-10-01 to implement owner decisions 18-19; D22 added 2026-10-02 (QA H1); owner may override.*
 
 ## 3. Open questions (do not implement)
 

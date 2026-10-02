@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/otp"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"golang.org/x/crypto/bcrypt"
@@ -1163,7 +1166,12 @@ func TestRefresh_TokenIssuedBeforeSuspension_Refused(t *testing.T) {
 
 type failingCodesStore struct {
 	otp.Store
-	consumeErr error
+	consumeErr          error
+	allowIssueErr       error
+	failuresExceededErr error
+	recordFailureErr    error
+	clearFailuresErr    error
+	setErr              error
 }
 
 func (f *failingCodesStore) ConsumeWithAttempts(ctx context.Context, key, hash string, maxAttempts int, ttl time.Duration) (bool, error) {
@@ -1171,6 +1179,45 @@ func (f *failingCodesStore) ConsumeWithAttempts(ctx context.Context, key, hash s
 		return false, f.consumeErr
 	}
 	return f.Store.ConsumeWithAttempts(ctx, key, hash, maxAttempts, ttl)
+}
+
+func (f *failingCodesStore) AllowIssue(ctx context.Context, purpose, email string) (bool, error) {
+	if f.allowIssueErr != nil {
+		return false, f.allowIssueErr
+	}
+	return f.Store.AllowIssue(ctx, purpose, email)
+}
+
+func (f *failingCodesStore) FailuresExceeded(ctx context.Context, purpose, email string, maxFailures int) (bool, error) {
+	if f.failuresExceededErr != nil {
+		return false, f.failuresExceededErr
+	}
+	return f.Store.FailuresExceeded(ctx, purpose, email, maxFailures)
+}
+
+func (f *failingCodesStore) RecordFailure(ctx context.Context, purpose, email string, ttl time.Duration) (int, error) {
+	if f.recordFailureErr != nil {
+		return 0, f.recordFailureErr
+	}
+	return f.Store.RecordFailure(ctx, purpose, email, ttl)
+}
+
+func (f *failingCodesStore) ClearFailures(ctx context.Context, purpose, email string) error {
+	if f.clearFailuresErr != nil {
+		return f.clearFailuresErr
+	}
+	return f.Store.ClearFailures(ctx, purpose, email)
+}
+
+func (f *failingCodesStore) Set(ctx context.Context, key, hash string, ttl time.Duration) error {
+	if f.setErr != nil {
+		return f.setErr
+	}
+	return f.Store.Set(ctx, key, hash, ttl)
+}
+
+func (f *failingCodesStore) ClearCooldown(ctx context.Context, purpose, email string) error {
+	return f.Store.ClearCooldown(ctx, purpose, email)
 }
 
 func TestVerifyOTP_AttemptLimit(t *testing.T) {
@@ -1339,6 +1386,7 @@ func TestVerifyResetCode_AttemptLimit(t *testing.T) {
 	}
 
 	// 5. Request new reset code -> new code works
+	_ = s.Codes.ClearCooldown(context.Background(), "reset", "reset_user@example.com")
 	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{
 		"email": "reset_user@example.com",
 	}, "")
@@ -1362,6 +1410,7 @@ func TestVerifyResetCode_AttemptLimit(t *testing.T) {
 
 	// 6. Counter resets on success:
 	// Request reset code, do 2 wrong attempts, then 3rd is right code -> succeeds
+	_ = s.Codes.ClearCooldown(context.Background(), "reset", "reset_user@example.com")
 	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{
 		"email": "reset_user@example.com",
 	}, "")
@@ -1435,5 +1484,656 @@ func TestVerifyResetCode_RedisDown_Returns503(t *testing.T) {
 	body := decodeBody(t, rec)
 	if body["code"] != "service_unavailable" {
 		t.Fatalf("expected code service_unavailable, got %q", body["code"])
+	}
+}
+
+type countingSender struct {
+	mu     sync.Mutex
+	counts map[string]int
+	total  int
+}
+
+func (c *countingSender) SendCode(_ context.Context, toEmail, code, purpose string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.counts == nil {
+		c.counts = map[string]int{}
+	}
+	c.counts[toEmail]++
+	c.total++
+	return nil
+}
+
+func (c *countingSender) countFor(toEmail string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.counts[toEmail]
+}
+
+func (c *countingSender) reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.counts = map[string]int{}
+	c.total = 0
+}
+
+func testResetCode_CooldownAndHourlyCap(t *testing.T, s *Server, sender *countingSender, clearCooldown func(purpose, email string)) {
+	t.Helper()
+	email := fmt.Sprintf("cooldown-%d@example.com", time.Now().UnixNano())
+
+	// Create user
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Cooldown User",
+		"email":     email,
+		"phone":     "+201011114444",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var signupBody map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &signupBody)
+	otpCode := signupBody["dev_otp"].(string)
+	doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": email,
+		"code":  otpCode,
+	}, "")
+
+	sender.reset()
+
+	// 1. First reset request: 200, sends email
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request 1 status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	body1 := decodeBody(t, rec)
+	code1 := body1["dev_otp"]
+	if code1 == "" {
+		t.Fatal("expected dev_otp on first reset request")
+	}
+	if sender.countFor(email) != 1 {
+		t.Fatalf("expected sender count 1, got %d", sender.countFor(email))
+	}
+
+	// 2. Second reset request within 60s: 200, no email sent (fake sender count remains 1)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("second reset request status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	body2 := decodeBody(t, rec)
+	if body2["dev_otp"] != "" {
+		t.Fatalf("expected no dev_otp on cooldown rejection, got %q", body2["dev_otp"])
+	}
+	if sender.countFor(email) != 1 {
+		t.Fatalf("expected sender count to stay 1, got %d", sender.countFor(email))
+	}
+
+	// 3. Old code still verifies
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": code1}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("old code verify status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	if decodeBody(t, rec)["reset_token"] == "" {
+		t.Fatal("expected reset_token from old code verify")
+	}
+
+	// 4. Issue codes 2..5 (clearing cooldown each time)
+	for i := 2; i <= 5; i++ {
+		clearCooldown("reset", email)
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("reset request %d status = %d (%s)", i, rec.Code, rec.Body.String())
+		}
+		if sender.countFor(email) != i {
+			t.Fatalf("expected sender count %d, got %d", i, sender.countFor(email))
+		}
+	}
+
+	// 5. 6th code in an hour: 200, nothing sent
+	clearCooldown("reset", email)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request 6 status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	body6 := decodeBody(t, rec)
+	if body6["dev_otp"] != "" {
+		t.Fatalf("expected no dev_otp on hourly limit, got %q", body6["dev_otp"])
+	}
+	if sender.countFor(email) != 5 {
+		t.Fatalf("expected sender count to stay 5, got %d", sender.countFor(email))
+	}
+}
+
+func testResetCode_FailureCapLoop(t *testing.T, s *Server, clearCooldown func(purpose, email string)) {
+	t.Helper()
+	email := fmt.Sprintf("failloop-%d@example.com", time.Now().UnixNano())
+
+	// Create user
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Loop User",
+		"email":     email,
+		"phone":     "+201011115555",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var signupBody map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &signupBody)
+	otpCode := signupBody["dev_otp"].(string)
+	doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": email,
+		"code":  otpCode,
+	}, "")
+
+	// Round 1: request reset, 5 wrong verifies
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request round 1 status = %d", rec.Code)
+	}
+	for i := 1; i <= 5; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "000000"}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("round 1 verify %d status = %d, want 401", i, rec.Code)
+		}
+	}
+
+	// Round 2: request reset, 5 wrong verifies
+	clearCooldown("reset", email)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request round 2 status = %d", rec.Code)
+	}
+	for i := 1; i <= 5; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "000000"}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("round 2 verify %d status = %d, want 401", i, rec.Code)
+		}
+	}
+
+	// Round 3: request reset, 4 wrong verifies -> 14 failures; 5th wrong verify -> 15 failures
+	clearCooldown("reset", email)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request round 3 status = %d", rec.Code)
+	}
+	code3 := decodeBody(t, rec)["dev_otp"]
+	if code3 == "" {
+		t.Fatal("expected dev_otp on round 3 reset request")
+	}
+
+	for i := 1; i <= 4; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "000000"}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("round 3 verify %d status = %d, want 401", i, rec.Code)
+		}
+	}
+	// 5th wrong verify in round 3 (15th wrong verify overall)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "000000"}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("15th wrong verify status = %d, want 401", rec.Code)
+	}
+
+	// Now at the 15th wrong verify in the hour, a CORRECT code is refused with 429
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": code3}, "")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("correct code after 15 failures status = %d, want 429 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "too_many_attempts" {
+		t.Fatalf("expected code too_many_attempts, got %q", body["code"])
+	}
+}
+
+func testVerify_UnknownEmailMatchesKnownEmail(t *testing.T, s *Server) {
+	t.Helper()
+	email := fmt.Sprintf("unknown-%d@example.com", time.Now().UnixNano())
+
+	// 1. Request reset: 200 {"status":"ok"}, same as known
+	rec := doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unknown email reset status = %d, want 200", rec.Code)
+	}
+	if decodeBody(t, rec)["status"] != "ok" {
+		t.Fatalf("unknown email reset body != ok")
+	}
+
+	// 2. Second request within 60s: 200 {"status":"ok"}
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unknown email second reset status = %d, want 200", rec.Code)
+	}
+
+	// 3. 15 wrong verifies -> all return 401
+	for i := 1; i <= 15; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "123456"}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("unknown email verify %d status = %d, want 401", i, rec.Code)
+		}
+		if decodeBody(t, rec)["code"] != "invalid_token" {
+			t.Fatalf("expected code invalid_token")
+		}
+	}
+
+	// 4. 16th verify -> 429 too_many_attempts
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "123456"}, "")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("unknown email 16th verify status = %d, want 429", rec.Code)
+	}
+	body := decodeBody(t, rec)
+	if body["code"] != "too_many_attempts" {
+		t.Fatalf("unknown email 16th verify code = %q, want too_many_attempts", body["code"])
+	}
+}
+
+func testVerify_ClearFailsOnSuccess_SetDoesNotClear(t *testing.T, s *Server, clearCooldown func(purpose, email string)) {
+	t.Helper()
+	email := fmt.Sprintf("clearfails-%d@example.com", time.Now().UnixNano())
+
+	// Create user
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Clear Fails User",
+		"email":     email,
+		"phone":     "+201011116666",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d", rec.Code)
+	}
+	var signupBody map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &signupBody)
+	otpCode := signupBody["dev_otp"].(string)
+	doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{"email": email, "code": otpCode}, "")
+
+	// 1. Request reset code 1
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request status = %d", rec.Code)
+	}
+
+	// 2. 2 wrong verifies -> fails = 2
+	for i := 1; i <= 2; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "000000"}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("wrong verify status = %d, want 401", rec.Code)
+		}
+	}
+
+	// 3. Request reset code 2 (calls Set!) -> Set must NOT clear fails
+	clearCooldown("reset", email)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request 2 status = %d", rec.Code)
+	}
+
+	// 4. Do 12 more wrong verifies (total 2 + 12 = 14 failures)
+	for i := 1; i <= 12; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "000000"}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("verify status = %d, want 401", rec.Code)
+		}
+	}
+	// 13th wrong verify (which is 2 + 13 = 15th wrong verify overall)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "000000"}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("15th wrong verify status = %d, want 401", rec.Code)
+	}
+
+	// Any subsequent verify is 429 (proving Set did not clear fails!)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email, "code": "000000"}, "")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("verify after 15 fails status = %d, want 429", rec.Code)
+	}
+
+	// 5. Test that successful verify DOES clear fails:
+	email2 := fmt.Sprintf("clearfails2-%d@example.com", time.Now().UnixNano())
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Clear Fails 2",
+		"email":     email2,
+		"phone":     "+201011117777",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &signupBody)
+	doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{"email": email2, "code": signupBody["dev_otp"].(string)}, "")
+
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email2}, "")
+	validCode := decodeBody(t, rec)["dev_otp"]
+
+	// 2 wrong verifies -> fails = 2
+	for i := 1; i <= 2; i++ {
+		doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email2, "code": "000000"}, "")
+	}
+
+	// Successful verify with validCode -> clears fails!
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email2, "code": validCode}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid verify status = %d, want 200", rec.Code)
+	}
+
+	// Issue new code and do 14 wrong verifies: all 14 succeed in returning 401 (not 429!)
+	clearCooldown("reset", email2)
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email2}, "")
+	for i := 1; i <= 14; i++ {
+		rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": email2, "code": "000000"}, "")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("verify %d after clear fails status = %d, want 401", i, rec.Code)
+		}
+	}
+}
+
+func testVerify_20ParallelWrongVerifies(t *testing.T, s *Server) {
+	t.Helper()
+	email := fmt.Sprintf("parallelfail-%d@example.com", time.Now().UnixNano())
+
+	const goroutines = 20
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, _ = s.Codes.RecordFailure(context.Background(), "reset", email, time.Hour)
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+
+	// Verify fails counter is exactly 20
+	cnt, err := s.Codes.RecordFailure(context.Background(), "reset", email, time.Hour)
+	if err != nil {
+		t.Fatalf("RecordFailure check error: %v", err)
+	}
+	if cnt != 21 {
+		t.Fatalf("expected fails counter to be 20 (next=21), got %d (next=%d)", cnt-1, cnt)
+	}
+}
+
+func TestResetCode_CooldownAndHourlyCap_MemoryStore(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	otpStore := otp.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	clearCooldown := func(purpose, email string) {
+		_ = otpStore.ClearCooldown(context.Background(), purpose, email)
+	}
+	testResetCode_CooldownAndHourlyCap(t, s, sender, clearCooldown)
+}
+
+func TestResetCode_FailureCapLoop_MemoryStore(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	otpStore := otp.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	clearCooldown := func(purpose, email string) {
+		_ = otpStore.ClearCooldown(context.Background(), purpose, email)
+	}
+	testResetCode_FailureCapLoop(t, s, clearCooldown)
+}
+
+func TestVerify_UnknownEmailMatchesKnownEmail_MemoryStore(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	otpStore := otp.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	testVerify_UnknownEmailMatchesKnownEmail(t, s)
+}
+
+func TestVerify_ClearFailsOnSuccess_SetDoesNotClear_MemoryStore(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	otpStore := otp.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	clearCooldown := func(purpose, email string) {
+		_ = otpStore.ClearCooldown(context.Background(), purpose, email)
+	}
+	testVerify_ClearFailsOnSuccess_SetDoesNotClear(t, s, clearCooldown)
+}
+
+func TestVerify_20ParallelWrongVerifies_MemoryStore(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	otpStore := otp.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	testVerify_20ParallelWrongVerifies(t, s)
+}
+
+func TestResetCode_CooldownAndHourlyCap_RedisStore(t *testing.T) {
+	redisURI := requireRedis(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_hdl_cd_%d", time.Now().UnixNano())
+	otpStore := otp.NewRedisStore(client, prefix)
+	memStore := store.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	clearCooldown := func(purpose, email string) {
+		_ = otpStore.ClearCooldown(context.Background(), purpose, email)
+	}
+	testResetCode_CooldownAndHourlyCap(t, s, sender, clearCooldown)
+}
+
+func TestResetCode_FailureCapLoop_RedisStore(t *testing.T) {
+	redisURI := requireRedis(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_hdl_fail_%d", time.Now().UnixNano())
+	otpStore := otp.NewRedisStore(client, prefix)
+	memStore := store.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	clearCooldown := func(purpose, email string) {
+		_ = otpStore.ClearCooldown(context.Background(), purpose, email)
+	}
+	testResetCode_FailureCapLoop(t, s, clearCooldown)
+}
+
+func TestVerify_UnknownEmailMatchesKnownEmail_RedisStore(t *testing.T) {
+	redisURI := requireRedis(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_hdl_unknown_%d", time.Now().UnixNano())
+	otpStore := otp.NewRedisStore(client, prefix)
+	memStore := store.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	testVerify_UnknownEmailMatchesKnownEmail(t, s)
+}
+
+func TestVerify_ClearFailsOnSuccess_SetDoesNotClear_RedisStore(t *testing.T) {
+	redisURI := requireRedis(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_hdl_clr_%d", time.Now().UnixNano())
+	otpStore := otp.NewRedisStore(client, prefix)
+	memStore := store.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	clearCooldown := func(purpose, email string) {
+		_ = otpStore.ClearCooldown(context.Background(), purpose, email)
+	}
+	testVerify_ClearFailsOnSuccess_SetDoesNotClear(t, s, clearCooldown)
+}
+
+func TestVerify_20ParallelWrongVerifies_RedisStore(t *testing.T) {
+	redisURI := requireRedis(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_hdl_par_%d", time.Now().UnixNano())
+	otpStore := otp.NewRedisStore(client, prefix)
+	memStore := store.NewMemoryStore()
+	sender := &countingSender{}
+	s := New(memStore, otpStore, NewMemoryLockout(), sender, "test", "gw-secret")
+	testVerify_20ParallelWrongVerifies(t, s)
+}
+
+func TestResetAndVerify_StoreErrors(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	memStore := store.NewMemoryStore()
+	errOutage := errors.New("redis connection refused")
+
+	// 1. AllowIssue error -> 200 on RequestReset (anti-enumeration)
+	fCodes := &failingCodesStore{
+		Store:         otp.NewMemoryStore(),
+		allowIssueErr: errOutage,
+	}
+	s := New(memStore, fCodes, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+	rec := doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": "err@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("allowIssue error status = %d, want 200", rec.Code)
+	}
+	if decodeBody(t, rec)["status"] != "ok" {
+		t.Fatalf("expected status: ok")
+	}
+
+	// 2. Set error in RequestReset -> 200 on RequestReset, does not send email
+	sender := &countingSender{}
+	fCodesSet := &failingCodesStore{
+		Store:  otp.NewMemoryStore(),
+		setErr: errOutage,
+	}
+	sSet := New(memStore, fCodesSet, NewMemoryLockout(), sender, "test", "gw-secret")
+	u := &models.User{
+		ID:            "u-err-set",
+		Email:         "err_set@example.com",
+		Role:          models.RoleUser,
+		EmailVerified: true,
+		Status:        models.StatusActive,
+	}
+	_ = memStore.Create(context.Background(), u)
+	rec = doRequest(t, sSet, http.MethodPost, "/auth/reset/request", map[string]string{"email": "err_set@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set error status = %d, want 200", rec.Code)
+	}
+	if sender.countFor("err_set@example.com") != 0 {
+		t.Fatalf("expected 0 emails sent on Set error, got %d", sender.countFor("err_set@example.com"))
+	}
+
+	// 3. FailuresExceeded error -> 503 on VerifyResetCode and VerifyOTP
+	fCodesFailures := &failingCodesStore{
+		Store:               otp.NewMemoryStore(),
+		failuresExceededErr: errOutage,
+	}
+	sFail := New(memStore, fCodesFailures, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+	rec = doRequest(t, sFail, http.MethodPost, "/auth/reset/verify", map[string]string{"email": "err@example.com", "code": "123456"}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("FailuresExceeded err on reset/verify status = %d, want 503", rec.Code)
+	}
+	rec = doRequest(t, sFail, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "err@example.com", "code": "123456"}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("FailuresExceeded err on verify-otp status = %d, want 503", rec.Code)
+	}
+
+	// 4. RecordFailure error -> 503 on VerifyResetCode and VerifyOTP
+	fCodesRec := &failingCodesStore{
+		Store:            otp.NewMemoryStore(),
+		recordFailureErr: errOutage,
+	}
+	sRec := New(memStore, fCodesRec, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+	rec = doRequest(t, sRec, http.MethodPost, "/auth/reset/verify", map[string]string{"email": "err@example.com", "code": "123456"}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("RecordFailure err on reset/verify status = %d, want 503", rec.Code)
+	}
+	rec = doRequest(t, sRec, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "err@example.com", "code": "123456"}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("RecordFailure err on verify-otp status = %d, want 503", rec.Code)
+	}
+
+	// 5. ClearFailures error -> 503 on VerifyResetCode and VerifyOTP
+	baseStore := otp.NewMemoryStore()
+	_ = baseStore.Set(context.Background(), "reset-code:err_clear@example.com", otp.HashToken("123456"), time.Hour)
+	_ = baseStore.Set(context.Background(), "signup-otp:err_clear@example.com", otp.HashToken("123456"), time.Hour)
+	fCodesClear := &failingCodesStore{
+		Store:            baseStore,
+		clearFailuresErr: errOutage,
+	}
+	sClear := New(memStore, fCodesClear, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
+	rec = doRequest(t, sClear, http.MethodPost, "/auth/reset/verify", map[string]string{"email": "err_clear@example.com", "code": "123456"}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("ClearFailures err on reset/verify status = %d, want 503", rec.Code)
+	}
+	rec = doRequest(t, sClear, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "err_clear@example.com", "code": "123456"}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("ClearFailures err on verify-otp status = %d, want 503", rec.Code)
 	}
 }

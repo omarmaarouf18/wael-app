@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -257,4 +258,211 @@ func TestRedisStore_ConsumeWithAttempts(t *testing.T) {
 	prefix := fmt.Sprintf("test_otp_attempts_%d", time.Now().UnixNano())
 	s := NewRedisStore(client, prefix)
 	testConsumeWithAttempts(t, s)
+}
+
+func testAllowIssue(t *testing.T, s Store, clearCooldown func(purpose, email string)) {
+	t.Helper()
+	ctx := context.Background()
+	email := fmt.Sprintf("user-%d@example.com", time.Now().UnixNano())
+	purpose := "reset"
+
+	// 1. First call: allowed
+	allowed, err := s.AllowIssue(ctx, purpose, email)
+	if err != nil {
+		t.Fatalf("AllowIssue error: %v", err)
+	}
+	if !allowed {
+		t.Fatal("first AllowIssue returned false, want true")
+	}
+
+	// 2. Second call within 60s for same email: refused by cooldown
+	allowed, err = s.AllowIssue(ctx, purpose, email)
+	if err != nil {
+		t.Fatalf("AllowIssue error: %v", err)
+	}
+	if allowed {
+		t.Fatal("second AllowIssue within 60s returned true, want false (cooldown)")
+	}
+
+	// 3. Different email within 60s: allowed
+	otherEmail := fmt.Sprintf("other-%d@example.com", time.Now().UnixNano())
+	allowed, err = s.AllowIssue(ctx, purpose, otherEmail)
+	if err != nil {
+		t.Fatalf("AllowIssue other email error: %v", err)
+	}
+	if !allowed {
+		t.Fatal("AllowIssue for other email returned false, want true")
+	}
+
+	// 4. Exhaust 5 codes per hour:
+	for i := 2; i <= 5; i++ {
+		clearCooldown(purpose, email)
+		allowed, err = s.AllowIssue(ctx, purpose, email)
+		if err != nil {
+			t.Fatalf("AllowIssue %d error: %v", i, err)
+		}
+		if !allowed {
+			t.Fatalf("AllowIssue %d returned false, want true", i)
+		}
+	}
+
+	// 5. 6th code in an hour: refused even after cooldown cleared
+	clearCooldown(purpose, email)
+	allowed, err = s.AllowIssue(ctx, purpose, email)
+	if err != nil {
+		t.Fatalf("AllowIssue 6th error: %v", err)
+	}
+	if allowed {
+		t.Fatal("6th AllowIssue returned true, want false (hourly cap)")
+	}
+}
+
+func testFailures(t *testing.T, s Store) {
+	t.Helper()
+	ctx := context.Background()
+	email := fmt.Sprintf("fail-user-%d@example.com", time.Now().UnixNano())
+	purpose := "reset"
+
+	// 1. Initial state: not exceeded
+	exceeded, err := s.FailuresExceeded(ctx, purpose, email, 15)
+	if err != nil {
+		t.Fatalf("FailuresExceeded error: %v", err)
+	}
+	if exceeded {
+		t.Fatal("FailuresExceeded initially returned true, want false")
+	}
+
+	// 2. 20 parallel wrong verifies -> fails counter is exactly 20
+	const goroutines = 20
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make(chan error, goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, recErr := s.RecordFailure(ctx, purpose, email, time.Hour)
+			if recErr != nil {
+				errs <- recErr
+			}
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("RecordFailure error during concurrency: %v", err)
+	}
+
+	// Fails counter is >= 15
+	exceeded, err = s.FailuresExceeded(ctx, purpose, email, 15)
+	if err != nil {
+		t.Fatalf("FailuresExceeded error: %v", err)
+	}
+	if !exceeded {
+		t.Fatal("FailuresExceeded after 20 failures returned false, want true")
+	}
+
+	// 3. Clear failures
+	if err := s.ClearFailures(ctx, purpose, email); err != nil {
+		t.Fatalf("ClearFailures error: %v", err)
+	}
+	exceeded, err = s.FailuresExceeded(ctx, purpose, email, 15)
+	if err != nil {
+		t.Fatalf("FailuresExceeded error: %v", err)
+	}
+	if exceeded {
+		t.Fatal("FailuresExceeded after ClearFailures returned true, want false")
+	}
+
+	// 4. Set does not clear fails
+	cnt, err := s.RecordFailure(ctx, purpose, email, time.Hour)
+	if err != nil {
+		t.Fatalf("RecordFailure error: %v", err)
+	}
+	if cnt != 1 {
+		t.Fatalf("RecordFailure count = %d, want 1", cnt)
+	}
+
+	// Call Set on code store
+	if err := s.Set(ctx, "reset-code:"+email, HashToken("123456"), 10*time.Minute); err != nil {
+		t.Fatalf("Set error: %v", err)
+	}
+
+	// Record another failure -> count must be 2 (Set did not reset fails)
+	cnt, err = s.RecordFailure(ctx, purpose, email, time.Hour)
+	if err != nil {
+		t.Fatalf("RecordFailure error: %v", err)
+	}
+	if cnt != 2 {
+		t.Fatalf("RecordFailure count after Set = %d, want 2", cnt)
+	}
+}
+
+func TestMemoryStore_AllowIssue(t *testing.T) {
+	mem := NewMemoryStore()
+	clearCooldown := func(purpose, email string) {
+		mem.mu.Lock()
+		delete(mem.cooldowns, purpose+":cooldown:"+HashToken(strings.ToLower(strings.TrimSpace(email))))
+		mem.mu.Unlock()
+	}
+	testAllowIssue(t, mem, clearCooldown)
+}
+
+func TestMemoryStore_Failures(t *testing.T) {
+	mem := NewMemoryStore()
+	testFailures(t, mem)
+}
+
+func TestRedisStore_AllowIssue(t *testing.T) {
+	_, redisURI := requireDB(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_otp_allow_%d", time.Now().UnixNano())
+	red := NewRedisStore(client, prefix)
+	clearCooldown := func(purpose, email string) {
+		_ = client.Del(context.Background(), red.cooldownKey(purpose, email)).Err()
+	}
+	testAllowIssue(t, red, clearCooldown)
+}
+
+func TestRedisStore_Failures(t *testing.T) {
+	_, redisURI := requireDB(t)
+	opts, err := redis.ParseURL(redisURI)
+	if err != nil {
+		t.Fatalf("invalid REDIS_URI %q: %v", redisURI, err)
+	}
+	client := redis.NewClient(opts)
+	t.Cleanup(func() { _ = client.Close() })
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("redis ping failed: %v", err)
+		}
+		t.Skipf("skipping test: redis unreachable: %v", err)
+	}
+
+	prefix := fmt.Sprintf("test_otp_fails_%d", time.Now().UnixNano())
+	red := NewRedisStore(client, prefix)
+	testFailures(t, red)
 }

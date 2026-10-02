@@ -22,6 +22,18 @@ func requireDB(t *testing.T) (mongoURI, redisURI string) {
 	return mongoURI, redisURI
 }
 
+func requireRedis(t *testing.T) string {
+	t.Helper()
+	redisURI := os.Getenv("REDIS_URI")
+	if redisURI == "" {
+		if os.Getenv("REQUIRE_DB") == "1" {
+			t.Fatalf("REDIS_URI is required when REQUIRE_DB=1")
+		}
+		t.Skip("skipping test: REDIS_URI is empty")
+	}
+	return redisURI
+}
+
 func randomDBName(prefix string) string {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -336,13 +337,33 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+
+	exceeded, err := s.Codes.FailuresExceeded(ctx, "signup", email, otp.MaxFailuresPerHour)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if exceeded {
+		handlerutil.WriteSafeError(w, r, http.StatusTooManyRequests, "too_many_attempts", "too many attempts, retry later", nil)
+		return
+	}
+
 	ok, err := s.Codes.ConsumeWithAttempts(ctx, "signup-otp:"+email, otp.HashToken(strings.TrimSpace(req.Code)), 5, 10*time.Minute)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 	if !ok {
+		if _, recErr := s.Codes.RecordFailure(ctx, "signup", email, time.Hour); recErr != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", recErr)
+			return
+		}
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
+		return
+	}
+
+	if clearErr := s.Codes.ClearFailures(ctx, "signup", email); clearErr != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", clearErr)
 		return
 	}
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
@@ -513,13 +534,29 @@ func (s *Server) RequestReset(w http.ResponseWriter, r *http.Request) {
 	}
 	email := normalizeEmail(req.Email)
 	ctx := r.Context()
+
+	allowed, err := s.Codes.AllowIssue(ctx, "reset", email)
+	if err != nil {
+		log.Printf("[AUTH] AllowIssue error: %v", err)
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if !allowed {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+
 	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
 	u, _ := s.Store.FindByEmail(dbCtx, email)
 	cancel()
 	if u != nil {
 		code, err := otp.GenerateNumericCode(6)
 		if err == nil {
-			_ = s.Codes.Set(ctx, "reset-code:"+email, otp.HashToken(code), 10*time.Minute)
+			if setErr := s.Codes.Set(ctx, "reset-code:"+email, otp.HashToken(code), 10*time.Minute); setErr != nil {
+				log.Printf("[AUTH] Set reset-code error: %v", setErr)
+				handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+				return
+			}
 			_ = s.Sender.SendCode(ctx, email, code, "password-reset")
 			if s.devOTPField() {
 				handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "dev_otp": code})
@@ -547,13 +584,33 @@ func (s *Server) VerifyResetCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+
+	exceeded, err := s.Codes.FailuresExceeded(ctx, "reset", email, otp.MaxFailuresPerHour)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if exceeded {
+		handlerutil.WriteSafeError(w, r, http.StatusTooManyRequests, "too_many_attempts", "too many attempts, retry later", nil)
+		return
+	}
+
 	ok, err := s.Codes.ConsumeWithAttempts(ctx, "reset-code:"+email, otp.HashToken(strings.TrimSpace(req.Code)), 5, 10*time.Minute)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 	if !ok {
+		if _, recErr := s.Codes.RecordFailure(ctx, "reset", email, time.Hour); recErr != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", recErr)
+			return
+		}
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
+		return
+	}
+
+	if clearErr := s.Codes.ClearFailures(ctx, "reset", email); clearErr != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", clearErr)
 		return
 	}
 	raw, err := otp.GenerateOpaqueToken()
