@@ -224,11 +224,16 @@ jobs:
           go-version: '1.26.6'
           cache: false
 
+      # Plain step (not the govulncheck action) so the scan runs with
+      # GOWORK=off: under a workspace, go.work can hide a module's own
+      # versions and the scan would not see what the module really builds.
       - name: Run govulncheck
-        uses: golang/govulncheck-action@v1
-        with:
-          work-dir: ${{ matrix.service.path }}
-          cache: false
+        working-directory: ${{ matrix.service.path }}
+        env:
+          GOWORK: 'off'
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
       - name: Run gosec
         working-directory: ${{ matrix.service.path }}
