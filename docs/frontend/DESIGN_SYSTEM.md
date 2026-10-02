@@ -230,7 +230,6 @@ file for their exact values.
 |--------|------|---------|
 | `PillFilterBar` (+ `FilterPillItem`) | `pill_filter_bar.dart` | Horizontal pill filter with optional per-item count. |
 | `PrimaryButton` | `primary_button.dart` | Primary (crimson, glow) button with loading state and leading/trailing icon. |
-| `StatusBadge` | `status_badge.dart` | Badge for a `PaymentStatus` (pending / approved / rejected) using the status colour tokens. |
 | `ThemedCard` | `themed_card.dart` | Bordered card surface with optional tap and glow. |
 | `ThemedTextField` | `themed_text_field.dart` | Themed form field with label, hint, validator and prefix/suffix. |
 | `AppShell` | `app_shell.dart` | `Scaffold` + `AppBar` from tokens: optional back button at the start edge, title, `actions` at the end edge, optional FAB and bottom bar. Mirrors in RTL. `titleWidget` replaces the title text (brand lockup). The body is wrapped in a `SafeArea` (top inset only when there is no header); `safeArea: false` lets a full-bleed body (hero art) run under the status bar. Screens use it instead of their own `Scaffold(` / `AppBar(`. |
