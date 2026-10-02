@@ -1,6 +1,6 @@
 module github.com/omarmaarouf18/wael-app/api-gateway
 
-go 1.26
+go 1.26.0
 
 toolchain go1.26.6
 

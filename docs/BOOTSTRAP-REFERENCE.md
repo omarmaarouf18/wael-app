@@ -45,7 +45,7 @@ hashes.
 
 ### 1.1 Shape
 
-- Go workspace monorepo (`go.work`, pinned `go 1.26` / `toolchain go1.26.6`) with five
+- Go workspace monorepo (`go.work`, pinned `go 1.26.0` / `toolchain go1.26.6`) with five
   services: `api-gateway`, `auth-service`, `user-service`, `chat-service`,
   `notification-service`.
 - `shared/infra` holds cross-cutting libraries: `jwtutil`, `ratelimit`, `handlerutil`
@@ -135,9 +135,13 @@ commit citation.
 
 Runs, in order: `gofmt` -> `dart format` -> frontend composition gate -> Markdown SHA
 validity and reachability -> Go version drift guard (go.work, every go.mod, ci.yml, every
-Dockerfile) -> per module `go build/vet/test` -> `govulncheck` -> `gosec` -> contract tests
--> `flutter analyze` and `flutter test`. The CI job "Flutter Lint & Test" uses the same
-frontend order: format, composition gate, gate self-test, analyze, test.
+Dockerfile; canonical language line `go 1.26.0`, toolchain `go1.26.6`) -> per module
+`go build/vet/test` (plus `GOWORK=off go build ./...`) -> `govulncheck` -> `gosec` ->
+contract tests -> `flutter analyze` and `flutter test`. The CI job "Flutter Lint & Test"
+uses the same frontend order: format, composition gate, gate self-test, analyze, test.
+
+*(Owner decision 2026-10-02: canonical Go language line is `go 1.26.0`; toolchain stays
+`go1.26.6`.)*
 
 Makefile targets worth keeping: `ensure-hooks`, `setup`, `ci`, `commit`, `push` (verifies
 local HEAD equals remote HEAD and writes `PUSH_VERIFIED`), `report-hash`,

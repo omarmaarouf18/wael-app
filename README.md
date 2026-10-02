@@ -17,8 +17,9 @@ real gateway auth.
 - Tools: `tools/docgen` (skeleton).
 - Frontend: `frontend/` (Flutter; backend URL via
   `--dart-define=API_BASE_URL`, see `frontend/README.md`).
-- Go: pinned `1.26` / toolchain `go1.26.6` via `go.work` (drift-guarded in
-  the hook and CI).
+- Go: pinned `1.26.0` / toolchain `go1.26.6` via `go.work` (drift-guarded in
+  the hook and CI). *(Owner decision 2026-10-02: canonical Go language line is
+  `go 1.26.0`; toolchain stays `go1.26.6`.)*
 
 ## Make targets
 
