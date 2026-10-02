@@ -2,6 +2,10 @@
 
 Status: **LIVE in production.** Production has been live since `557f367`, and the deploy pipeline has run three releases successfully (`557f367`, `6bd6c12`, `b6a11fe`). Publishing (`PUBLISH_ENABLED=true` in `wael-app`) and deploys (`DEPLOY_ENABLED=true` in `wael-app-deploy`) are active and enabled.
 
+Full install/run/operate manual: [SERVER-MANUAL.md](SERVER-MANUAL.md) (same
+folder, mirrored to `wael-app-deploy`). This runbook is the short day-2
+checklist; procedures live in the manual, summaries and quick commands here.
+
 ## How a release reaches the server
 
 ```
@@ -24,78 +28,25 @@ Do not edit files in wael-app-deploy by hand. Change them in
 
 ## One-time server setup
 
-Run as a sudo-capable admin unless stated otherwise.
+Full procedure: `SERVER-MANUAL.md` §3 (base + users), §4 (certs), §5 (secrets),
+§6 (mongo users), §2 (DNS), §7 (GHCR login, runner). Checklist:
 
-1. **Deploy user.** `sudo useradd -m -s /bin/bash deploybot` and add it to
-   the `docker` group. Accepted trade-off: the docker group is
-   root-equivalent (saas-core S-07). Nobody else logs in as deploybot.
-2. **Docker Engine and Compose v2** (`docker compose version` must work).
-3. **Firewall.** Allow inbound 22 (admin SSH, key only), 80 and 443 (TCP)
-   and 443/UDP. Nothing else. Mongo and Redis are never published.
-4. **Directory layout** (as deploybot):
-   ```bash
-   export WAEL_HOME=/home/deploybot/wael
-   mkdir -p "$WAEL_HOME"/{certs,secrets,state}
-   chmod 700 "$WAEL_HOME" "$WAEL_HOME"/{certs,secrets,state}
-   ```
-5. **Secrets.**
-   ```bash
-   cp env.production.example "$WAEL_HOME/.env.production"   # then fill every PASTE_ value
-   chmod 600 "$WAEL_HOME/.env.production"
-   openssl rand -hex 24 > "$WAEL_HOME/secrets/mongo_root_password"
-   printf 'requirepass %s\nappendonly yes\n' "$(openssl rand -hex 24)" > "$WAEL_HOME/secrets/redis.conf"
-   chmod 644 "$WAEL_HOME"/secrets/*   # readable inside the containers; the 700 dir blocks other host users
-   ```
-   Put the same Redis password into `REDIS_URI`.
-6. **Per-service Mongo users** (once, before the first deploy). The three
-   database-backed services cannot start until their users exist, so start
-   only mongo first. From the deploy checkout, with the step 5 files in place
-   and a `release.env` (the compose file needs `IMAGE_TAG` to render):
-   ```bash
-   export WAEL_HOME=/home/deploybot/wael
-   source scripts/lib.sh        # defines the `compose` helper used by the scripts
-   compose up -d --wait mongo
-   # Note: A first mongosh right after `up --wait mongo` can get ECONNREFUSED while
-   # mongo restarts during initialization. If so, retry after 10 seconds.
-   compose exec -T mongo mongosh -u wael_root -p "$(cat "$WAEL_HOME/secrets/mongo_root_password")" --authenticationDatabase admin --eval '
-     db.getSiblingDB("auth_db").createUser({user:"auth_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"auth_db"}]});
-     db.getSiblingDB("notification_db").createUser({user:"notif_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"notification_db"}]});
-     db.getSiblingDB("academy_db").createUser({user:"academy_svc",pwd:"<pw>",roles:[{role:"readWrite",db:"academy_db"}]});'
-   ```
-   Use a different `openssl rand -hex 24` for each `<pw>` (hex needs no URL
-   escaping). The passwords go into `AUTH_MONGO_URI`, `NOTIFICATION_MONGO_URI`
-   and `ACADEMY_MONGO_URI`.
-7. **Internal mTLS certificates.** Generate with the wael-app script
-   (`infrastructure/certs/generate-certs.sh`) on an admin machine, copy
-   `ca.crt` and the `.crt/.key` of `api-gateway`, `auth-service`,
-   `notification-service`, `academy-service` and `admin-console` into
-   `$WAEL_HOME/certs/` (never `ca.key`: keep it offline). Until W-10 (fixed
-   container UID) lands, key files must be `644`; the `700` certs directory
-   keeps other host users out.
-
-   **Adding one certificate later** (for example `admin-console` on a server
-   that already has the others): do **not** run the script without arguments
-   again. A full run creates a new CA and replaces every certificate, which
-   would break the running stack. Sign only the missing one with the existing
-   CA (kept offline), from a wael-app checkout:
-   ```bash
-   ./infrastructure/certs/generate-certs.sh --sign-only admin-console \
-     --ca-dir /path/to/offline-ca --out-dir ./signed
-   ```
-   `--ca-dir` must hold the original `ca.crt` and `ca.key`; it is only read (no
-   file is written there). The command refuses to overwrite an existing
-   `admin-console.crt/.key` in `--out-dir` unless you add `--force`. Copy the
-   two new files into `$WAEL_HOME/certs/` and run `scripts/preflight.sh`.
-8. **DNS.** Create an A (and AAAA if used) record for `api.elmetracademy.app`
-   and one for `admin.elmetracademy.app` pointing at the server. Caddy obtains
-   the public certificates on first start; the deploy's public health check
-   (API host only) fails until the API record resolves. The admin host is not
-   part of that check: confirm it yourself (see "Admin console").
-9. **GHCR login** (as deploybot), with a fine-grained token that has only
-   `read:packages`: `docker login ghcr.io -u omarmaarouf18`.
-10. **Self-hosted runner** (as deploybot): add a runner to
-    **wael-app-deploy only**, labels `self-hosted,wael-vm`, installed as a
-    service. The runner polls GitHub; no inbound port is opened.
+1. Base (`SERVER-MANUAL.md` §3, as `azureuser` with sudo): full-upgrade,
+   2 GB swap, zram, journald cap, fail2ban, unattended-upgrades, Docker
+   Engine + Compose v2, `deploybot` (docker group only; no password, sudo or
+   SSH) and `/home/deploybot/wael/{certs,secrets,state,backups}` at 700.
+2. Secrets (`SERVER-MANUAL.md` §5): generate on the server only with the
+   script (writes `.env.production` as deploybot, mode 600), plus
+   `secrets/mongo_root_password` and `secrets/redis.conf`.
+3. Per-service Mongo users, once (`SERVER-MANUAL.md` §6): `compose up -d
+   --wait mongo` (retry `mongosh` after 10 s on ECONNREFUSED), create
+   `auth_svc` / `notif_svc` / `academy_svc`, passwords back into the URIs.
+4. mTLS certificates (`SERVER-MANUAL.md` §4): CA on the laptop (`ca.key`
+   never leaves it), `--sign-only` per service, install as
+   `deploybot:deploybot` mode 644.
+5. DNS (`SERVER-MANUAL.md` §2): A records for `api` and `admin`.
+6. GHCR login (as deploybot) and self-hosted runner (`SERVER-MANUAL.md` §7):
+   runner labels `self-hosted,wael-vm`, installed as a service.
 
 ## GitHub setup
 
@@ -108,6 +59,8 @@ Run as a sudo-capable admin unless stated otherwise.
 | wael-app-deploy environment | `production` (add required reviewers if your plan allows it on private repos) |
 | wael-app-mobile variables | `API_BASE_URL` (`https://api.elmetracademy.app`) |
 | wael-app-mobile secrets (optional) | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` |
+
+Full procedure with copy-paste commands: `SERVER-MANUAL.md` §7.
 
 ## Turning it on (order matters)
 
@@ -152,32 +105,22 @@ request is checked by auth-service against the operator's token.
 **Minting an admin token (the first one, and one per operator)**
 
 Tokens are created only by the server-side CLI `onboard-admin` (ADR-0008):
-no page or API can mint or revoke one. It prints the admin ID and token once on
-stdout and stores only its SHA-256 hash. `--ttl` takes a duration: a Go
-duration such as `2160h` for 90 days, or the day shorthand the CLI also
-accepts (`90d`, which is also the default). A bare number like `90` fails
-with "missing unit". The maximum TTL is 365 days (`8760h`). Give each person their own named token.
-
-On the server (run directly via `sudo docker exec`; `azureuser` cannot cd into the 700 directory and `sudo cd` does not exist):
+no page or API can mint or revoke one. Full procedure, TTL rules and token
+handling: `SERVER-MANUAL.md` §9. Quick commands (on the server, `sudo docker
+exec` directly — `azureuser` cannot `cd` into the 700 dirs and `sudo cd`
+does not exist):
 
 ```bash
 sudo docker exec wael-auth-service-1 /bin/onboard-admin --name "<name>" --ttl 2160h
 ```
-
-Copy the printed token straight into the operator's password manager and note
-the admin ID. The token is shown once and cannot be recovered; a lost token is
-revoked and replaced. Never paste it into chat, tickets or the shell history
-of a shared machine.
-
-**Revoking a token.** `revoke-admin` takes the admin id (`adm_...`) printed
-when the token was minted:
 
 ```bash
 sudo docker exec wael-auth-service-1 /bin/revoke-admin --id <id>
 ```
 
 Revocation takes effect on the next request: auth-service checks the token on
-every call.
+every call. There is no list-admins CLI; list operators in the console
+Accounts tab.
 
 **Using it.** Open `https://admin.elmetracademy.app` and enter the token. It is
 kept in the memory of that browser tab only (never in storage, a cookie or the
@@ -197,89 +140,27 @@ auth-service did not answer within 10 seconds: check
 
 ## Memory profiles
 
-The defaults in `docker-compose.yml` fit a 2 GB host (container limits add up
-to about 1.8 GB). For a 1 GB host, uncomment the "1 GB host" block at the end
-of `env.production.example` in `$WAEL_HOME/.env.production`:
-
-| Service | 2 GB default | 1 GB host |
-|---|---|---|
-| mongo (`MONGO_MEM_LIMIT`, WiredTiger cache `MONGO_CACHE_GB`) | 768m, 0.25 GB | 420m, 0.25 GB |
-| redis (`REDIS_MEM_LIMIT`) | 128m | 64m |
-| api-gateway (`GATEWAY_MEM_LIMIT`) | 128m | 96m |
-| auth-service (`AUTH_MEM_LIMIT`) | 192m | 96m |
-| notification-service (`NOTIFICATION_MEM_LIMIT`) | 192m | 96m |
-| academy-service (`ACADEMY_MEM_LIMIT`) | 192m | 96m |
-| admin-console (`ADMIN_MEM_LIMIT`) | 64m | 48m |
-| caddy (`CADDY_MEM_LIMIT`) | 128m | 64m |
-
-The 1 GB limits total about 980 MB, which leaves very little for the
-operating system and the Docker daemon. Add swap to the host first (for
-example a 1 GB swap file), run nothing else on it, and watch
-`docker stats --no-stream` and `docker inspect -f '{{.State.OOMKilled}}' <container>`
-after the first deploy: a container that is OOM-killed needs a higher limit
-or a bigger host. This profile has not been tried.
+Sizing table, the "1 GB host" block, swap and the measured reference:
+`SERVER-MANUAL.md` §1. The 1 GB limits total about 980 MB — add swap first,
+run nothing else on the host, and watch for OOM kills after the first
+deploy. This profile has not been tried.
 
 ## Manual trial deploy (no GHCR)
 
-Use this to run the stack on the server before publishing is switched on, or
-without GHCR at all. The publish and deploy workflows stay off; you build the
-images yourself and load them on the host. Nothing here has been run yet.
-
-Prerequisites: server setup steps 1 to 8 are done (GHCR login and the
-runner, steps 9 and 10, are not needed), `$WAEL_HOME/.env.production` is
-filled, the certificates are in place and the DNS record resolves (the last
-check goes through Caddy and needs a public certificate, so ports 80 and 443
-must be reachable; otherwise the deploy fails). The admin machine needs
-Docker and a checkout of the commit to deploy. Build on the same CPU
-architecture as the host, or add `--platform linux/amd64` (or the host's).
-
-1. **Build each production image from the repo root** (the Dockerfiles expect
-   the repo root as build context):
-   ```bash
-   SHA="$(git rev-parse HEAD)"          # full 40-character commit sha
-   for svc in api-gateway auth-service notification-service academy-service admin-console; do
-     docker build -f services/$svc/Dockerfile --target prod \
-       -t ghcr.io/omarmaarouf18/wael-app-$svc:$SHA .
-   done
-   ```
-2. **Send the images to the host:**
-   ```bash
-   docker save $(for svc in api-gateway auth-service notification-service academy-service admin-console; do
-       echo ghcr.io/omarmaarouf18/wael-app-$svc:$SHA; done) \
-     | gzip | ssh deploybot@<host> 'gunzip | docker load'
-   ```
-3. **Send the deploy files** (they are the same files the publish workflow
-   mirrors): `rsync -a --delete --exclude '.git/' infrastructure/deploy/ deploybot@<host>:wael-deploy/`
-4. **On the host, write `release.env` by hand** (the publish workflow does
-   this normally):
-   ```bash
-   cd ~/wael-deploy
-   printf 'IMAGE_TAG=%s\n' "<the same 40-character sha>" > release.env
-   ```
-5. **First time only:** create the Mongo users (server setup step 6).
-6. **Pre-flight, then deploy:**
-   ```bash
-   export WAEL_HOME=/home/deploybot/wael
-   SKIP_PULL=1 ./scripts/preflight.sh      # read every line
-   SKIP_PULL=1 ./scripts/deploy.sh
-   ```
-
-`SKIP_PULL=1` is a shell-only switch (the deploy workflow never sets it). Without it, `preflight.sh`
-runs `docker compose pull` on the five app images, which fails for images
-that exist only on the host. With it, preflight skips that pull, checks that
-all five images are already loaded under the exact `IMAGE_TAG`, and still
-pulls mongo, redis and caddy from Docker Hub. Note that `docker compose up`
-itself pulls missing images automatically; with `SKIP_PULL=1`, if images for a
-release or rollback are not already loaded locally on the host, `compose up`
-will attempt to pull them from GHCR and fail.
-
-To deploy a newer build, repeat steps 1 to 4 with the new sha. Keep the
-previously loaded images: rollback needs the last good release's images on
-the host, so do not `docker image prune` between deploys. The first deploy
-has no last good release to roll back to; if it fails, read
-`docker compose -p wael logs --tail 100 <service>` and fix the cause.
+Full procedure with copy-paste commands: `SERVER-MANUAL.md` §8 Path 2
+(build `--target prod`, `docker save | ssh … docker load`, rsync the deploy
+dir, rewrite `release.env` after `rsync --delete`, `SKIP_PULL=1` preflight +
+deploy). Notes that still apply: `SKIP_PULL=1` is shell-only (the Deploy
+workflow never sets it); without it `compose up` pulls from GHCR and fails
+for host-only images. Keep loaded images: rollback needs the last-good
+release's images on the host, so do not `docker image prune` between deploys.
+The first deploy has no last-good release to roll back to. Nothing here has
+been run yet.
 
 ## Operations
+
+Full procedures: `SERVER-MANUAL.md` §10 (release, rollback, failed-releases
+guard, backups, restore, logs, cleanup, rotation, base-image updates).
 
 - **Manual deploy of the current release.env:** Actions -> Deploy -> Run workflow.
   **Warning:** after a rollback, `release.env` in `wael-app-deploy` still points at

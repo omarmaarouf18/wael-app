@@ -1,0 +1,759 @@
+# wael-app server manual
+
+Complete manual: install, run and operate wael-app on any fresh server.
+Day-to-day checklist: [RUNBOOK.md](RUNBOOK.md) (short; this manual and the
+runbook link to each other — each procedure lives in exactly one place).
+
+This file lives in `wael-app/infrastructure/deploy/`, so the publish workflow
+mirrors it into `wael-app-deploy` together with the rest of that folder.
+
+Conventions: every command says who runs it where —
+`[laptop]`, `[server azureuser]`, `[server deploybot]`, `[GitHub UI]`.
+`azureuser` is the admin (sudo) account; `deploybot` runs the stack and the
+runner and has no password, no sudo and no SSH login — act as it with
+`sudo -u deploybot` from `azureuser`.
+Never write a real secret into any file: use placeholders such as
+`<GENERATE: openssl rand -hex 32>`.
+
+Status of rehearsal: the pipeline path (build, publish, deploy, rollback) has
+run three releases (557f367, 6bd6c12, b6a11fe). The backup (§10), restore (§10)
+and migration (§11) procedures below are written from the repo state, **not yet
+rehearsed** — rehearse them before relying on them.
+
+## 0. Overview
+
+### Architecture
+
+```
+internet (80/443) ──► Caddy ──┬──► https://api-gateway:8080 ──┬──► https://auth-service:3002 ──► mongo / redis
+                              │                                ├──► https://notification-service:3004 ──► mongo / redis
+                              │                                └──► https://academy-service:3003 ──► mongo / redis
+                              └──► https://admin-console:3005 ──► https://auth-service:9001 (admin listener, mTLS)
+                                                              └──► https://academy-service:9002 (admin listener, mTLS)
+```
+
+- Caddy terminates public TLS (Let's Encrypt) for `api.<domain>` and
+  `admin.<domain>` and re-encrypts every backend hop, verifying the local CA
+  (`tls_trusted_ca_certs /certs/ca.crt` in `Caddyfile`; never
+  `tls_insecure_skip_verify`).
+- Service-to-service traffic is mTLS with per-service certificates signed by
+  the offline CA (§4). The `:9001`/`:9002` admin listeners are bound inside
+  their containers and never published.
+- 8 containers: `caddy`, `api-gateway`, `auth-service`, `notification-service`,
+  `academy-service`, `admin-console`, `mongo:7`, `redis:7-alpine`. Only Caddy
+  publishes ports (`80/443 TCP, 443/UDP`).
+
+### What lives where
+
+- **Laptop (offline):** the CA directory with `ca.crt` **and `ca.key`**.
+  `ca.key` never leaves the laptop; keep an offline backup of it.
+- **GitHub:** `wael-app` (source + CI + publish + mobile sync), `wael-app-deploy`
+  (private mirror of `infrastructure/deploy/` + `release.env`), `wael-app-mobile`
+  (private mirror of `frontend/`), the GitHub App (writes the two mirrors),
+  secrets (`APP_ID`, `APP_PRIVATE_KEY`) and vars (`PUBLISH_ENABLED`,
+  `MOBILE_SYNC_ENABLED`, `DEPLOY_ENABLED`, `API_BASE_URL`).
+- **Server:** `$WAEL_HOME` = `/home/deploybot/wael`, holding `certs/`,
+  `secrets/`, `state/` (incl. `state/last-good/`), `backups/` and the git-ignored
+  `.env.production` (mode `600`).
+
+### Release flow
+
+```
+push main (owner fast-forward of a develop green on CI OK; agents never push main)
+  → CI Gate green (incl. E2E (compose) + Prod Image Build)
+  → Build and Publish (PUBLISH_ENABLED): 5 sha-tagged images → mirror → wael-app-deploy
+  → Deploy on the self-hosted runner [wael-vm]: preflight → up --wait → health gate
+  → success: write state/last-good/ (tag + compose/Caddyfile snapshot)
+  → failure: automatic rollback.sh to last-good + failed tag recorded in state/failed-releases
+```
+
+`deploy.sh` refuses any tag listed in `failed-releases` (override:
+`ALLOW_FAILED_RELEASE=1` via the Deploy workflow input). Recovery after a bad
+release is always a new commit on `main` (fix forward), never re-running the
+old `release.env`. Details: §10; quick commands: RUNBOOK "Operations".
+
+## 1. Requirements
+
+- OS: Ubuntu 24.04 x86_64.
+- RAM: recommended 2 GB. Minimum 1 GB **only** with the "1 GB host" env block
+  (see below) **plus** 2 GB swap (§3) and zram; expect no headroom.
+- Disk: 20 GB or more.
+- Open ports: `22` (key-only SSH), `80` and `443` (TCP) and `443/UDP`.
+- A domain with `api` and `admin` A records pointing at the server (§2).
+- Optional: Resend for email (required by the stack in practice: auth-service
+  needs `RESEND_API_KEY`/`RESEND_FROM_EMAIL` outside local/test).
+
+Memory sizing (`docker-compose.yml` defaults fit 2 GB; limits add to ~1.8 GB):
+
+| Service | 2 GB default | 1 GB host |
+|---|---|---|
+| mongo (`MONGO_MEM_LIMIT`, WiredTiger `MONGO_CACHE_GB`) | 768m, 0.25 GB | 420m, 0.25 GB |
+| redis (`REDIS_MEM_LIMIT`) | 128m | 64m |
+| api-gateway (`GATEWAY_MEM_LIMIT`) | 128m | 96m |
+| auth-service (`AUTH_MEM_LIMIT`) | 192m | 96m |
+| notification-service (`NOTIFICATION_MEM_LIMIT`) | 192m | 96m |
+| academy-service (`ACADEMY_MEM_LIMIT`) | 192m | 96m |
+| admin-console (`ADMIN_MEM_LIMIT`) | 64m | 48m |
+| caddy (`CADDY_MEM_LIMIT`) | 128m | 64m |
+
+For a 1 GB host, uncomment the "1 GB host" block at the end of
+`env.production.example` in `$WAEL_HOME/.env.production` (≈980 MB total),
+add swap first, run nothing else on the host, and watch
+`docker stats --no-stream` and OOM kills after the first deploy. The 1 GB
+profile has not been tried.
+
+Measured reference (owner-measured, not re-measured here): on Azure B2ats_v2
+(887 MB RAM) the running stack uses about 320–400 MB and needs swap.
+
+## 2. DNS
+
+- [GitHub UI / registrar] Create an `A` record for `api.<domain>` and one for
+  `admin.<domain>` pointing at the server (add `AAAA` too if the host has IPv6).
+- [GitHub UI / Resend dashboard] Resend DKIM/SPF/DMARC (generic forms — exact
+  values come from the Resend dashboard for the sending domain):
+  - `resend._domainkey.<domain> TXT "<dkim-value-from-resend>"`
+  - `<domain> TXT "v=spf1 include:<resend-spf-include> ~all"`
+  - `_dmarc.<domain> TXT "v=DMARC1; p=none; rua=mailto:<owner-mailbox>"`
+- Verify [laptop or server]:
+  ```bash
+  dig +short api.<domain> A
+  dig +short api.<domain> A @<authoritative-nameserver>   # bypasses local cache
+  ```
+  A fresh record can look missing locally because of negative caching — if the
+  authoritative NS answers but the default resolver does not, wait out the
+  negative TTL instead of recreating the record.
+- `.app` is HSTS-preloaded: HTTPS only, no plain-HTTP fallback. Caddy sends
+  `Strict-Transport-Security: max-age=31536000`.
+
+## 3. Base server setup ([server azureuser])
+
+`azureuser` (the admin user) runs everything here with sudo. `deploybot` runs
+the stack and the runner: member of the `docker` group only (accepted
+trade-off: the docker group is root-equivalent), no password, no sudo, no SSH
+login.
+
+```bash
+[server azureuser] sudo apt update && sudo apt full-upgrade -y && sudo reboot
+# reconnect, then:
+[server azureuser] sudo apt update && sudo apt install -y zram-tools fail2ban unattended-upgrades
+```
+
+Swap (2 GB file, swappiness 10):
+
+```bash
+[server azureuser] sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
+  && sudo mkswap /swapfile && sudo swapon /swapfile
+[server azureuser] echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+[server azureuser] echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-wael.conf
+[server azureuser] sudo sysctl --system && swapon --show && cat /proc/sys/vm/swappiness
+```
+
+zram (zstd, 50 %, priority 100):
+
+```bash
+[server azureuser] sudo tee /etc/default/zramswap <<'EOF'
+ALGO=zstd
+PERCENT=50
+PRIORITY=100
+EOF
+[server azureuser] sudo systemctl enable --now zramswap.service && zramctl
+```
+
+journald cap (100M):
+
+```bash
+[server azureuser] sudo mkdir -p /etc/systemd/journald.conf.d
+[server azureuser] printf '[Journal]\nSystemMaxUse=100M\n' | sudo tee /etc/systemd/journald.conf.d/99-wael-cap.conf
+[server azureuser] sudo systemctl restart systemd-journald
+```
+
+fail2ban (sshd jail):
+
+```bash
+[server azureuser] printf '[DEFAULT]\nbantime = 1h\nfindtime = 10m\nmaxretry = 5\n[sshd]\nenabled = true\n' | sudo tee /etc/fail2ban/jail.local
+[server azureuser] sudo systemctl enable --now fail2ban && sudo fail2ban-client status sshd
+```
+
+Automatic security updates:
+
+```bash
+[server azureuser] sudo dpkg-reconfigure -plow unattended-upgrades
+```
+
+Small hosts: disable and mask the heavy/unneeded units (ignore "not found" —
+minimal images may not ship them):
+
+```bash
+[server azureuser] sudo systemctl disable --now multipathd.service multipathd.socket 2>/dev/null || true
+[server azureuser] sudo systemctl mask multipathd
+[server azureuser] sudo systemctl disable --now packagekit.service 2>/dev/null || true
+[server azureuser] sudo systemctl mask packagekit.service
+[server azureuser] sudo systemctl disable --now fwupd.service fwupd-refresh.timer 2>/dev/null || true
+[server azureuser] sudo systemctl mask fwupd.service
+```
+
+Docker Engine + Compose v2 from Docker's apt repo:
+
+```bash
+[server azureuser] sudo install -m 0755 -d /etc/apt/keyrings
+[server azureuser] curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+[server azureuser] sudo chmod a+r /etc/apt/keyrings/docker.gpg
+[server azureuser] echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" | sudo tee /etc/apt/sources.list.d/docker.list
+[server azureuser] sudo apt update && sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+[server azureuser] docker compose version && sudo systemctl enable --now docker
+```
+
+deploybot + layout (mode 700):
+
+```bash
+[server azureuser] sudo useradd -m -s /bin/bash deploybot && sudo usermod -aG docker deploybot
+[server azureuser] sudo passwd -l deploybot && sudo usermod -p '!' deploybot   # no password login, no sudo, no authorized_keys
+[server azureuser] sudo mkdir -p /home/deploybot/wael/{certs,secrets,state,backups} /home/deploybot/wael/bin
+[server azureuser] sudo chown -R deploybot:deploybot /home/deploybot/wael
+[server azureuser] sudo chmod 700 /home/deploybot/wael /home/deploybot/wael/{certs,secrets,state,backups} /home/deploybot/wael/bin
+[server azureuser] sudo -u deploybot bash -c 'ls -la ~/wael'
+```
+
+### Common pitfalls
+
+- `sudo cd` does not exist (`cd` is a shell builtin). `cd` as deploybot via
+  `sudo -u deploybot bash -c 'cd ~/wael && ...'`, or `cd` to a world-readable
+  path first.
+- A glob inside a 700 dir fails for anyone but the owner ("No such file"):
+  run the whole glob as root or as the owner, e.g.
+  `sudo sh -c 'ls -la /home/deploybot/wael/certs/'`.
+- Never pipe a heredoc through `sudo -iu … bash -c` (quoting breaks); use
+  `sudo tee <file> <<'EOF'` for root-owned files and `sudo -u deploybot`
+  for deploybot-owned ones.
+
+## 4. Certificates (mTLS)
+
+One CA for the whole fleet. Create it once [laptop] from a wael-app checkout:
+
+```bash
+[laptop] ./infrastructure/certs/generate-certs.sh
+```
+
+This writes `ca.crt`/`ca.key` (4096-bit, 825 days) plus one 2048-bit cert per
+service (`api-gateway`, `auth-service`, `notification-service`,
+`academy-service`, `admin-console`; each 825 days, SANs
+`DNS:<svc>,DNS:localhost,IP:127.0.0.1`). `ca.key` never leaves the laptop —
+keep an offline backup (e.g. encrypted USB). Expiry check any time:
+
+```bash
+[laptop] openssl x509 -enddate -noout -in ca.crt
+[laptop] openssl x509 -checkend $((14*86400)) -noout -in <svc>.crt && echo "valid 14+ days"
+```
+
+Preflight refuses any cert expiring within 14 days
+(`infrastructure/deploy/scripts/preflight.sh`), so renew before that.
+
+Sign each service (or one service later) with the existing CA — never re-run
+the script without arguments on a live fleet (a full run creates a NEW CA and
+replaces every certificate, breaking the running stack):
+
+```bash
+[laptop] ./infrastructure/certs/generate-certs.sh --sign-only <svc> --ca-dir <offline-ca-dir> --out-dir ./signed
+```
+
+`--ca-dir` must hold the original `ca.crt` and `ca.key` (read-only; nothing is
+written there). It refuses to overwrite an existing `<svc>.crt/.key` in
+`--out-dir` unless `--force` is added. Adding a new service later means a new
+cert the same way — the `admin-console` case (server setup step 7 in RUNBOOK
+history) is the example.
+
+Install on the server (`scp` to `/tmp`, then move as root because the 700
+`certs/` dir blocks traversal):
+
+```bash
+[laptop] scp ./signed/<svc>.crt ./signed/<svc>.key azureuser@<host>:/tmp/
+[server azureuser] sudo install -o deploybot -g deploybot -m 644 /tmp/<svc>.crt /tmp/<svc>.key /home/deploybot/wael/certs/
+[server azureuser] rm /tmp/<svc>.crt /tmp/<svc>.key
+[server azureuser] sudo sh -c 'ls -la /home/deploybot/wael/certs/'
+```
+
+Repeat for `ca.crt` and all 5 services on first install. Ownership
+`deploybot:deploybot`, mode `644` for keys — the key MUST stay world-readable
+because every service container runs as `USER appuser` (see each
+`services/*/Dockerfile`) with a dynamically assigned UID, reading host-mounted
+`:ro` files owned by `deploybot` (see the `volumes:` in `docker-compose.yml`):
+anything stricter denies the container. (W-10, a fixed container UID that
+would allow `640`, is still open.)
+
+Renewal: sign fresh certs with the same CA, install as above, then re-run
+preflight and deploy the current `release.env` so containers pick them up
+(§10). Compromised or replaced CA means re-issuing everything and restarting
+the stack — plan a maintenance window.
+
+## 5. Secrets and .env.production
+
+The real file lives ONLY at `$WAEL_HOME/.env.production` (owner deploybot,
+mode `600`); it is never committed. `APP_ENV` must NOT appear in it (compose
+pins `APP_ENV=production`; preflight fails otherwise). Every name below is
+checked against each service's `config.Load()` and `env.production.example`.
+
+| Name | Service(s) | Required? | Meaning | Value / generation |
+|---|---|---|---|---|
+| `API_DOMAIN` | caddy (+ gateway `APP_DOMAIN`) | yes | Public API host | `api.<domain>` (DNS §2) |
+| `ADMIN_DOMAIN` | caddy, admin-console reachability | yes | Public admin host | `admin.<domain>` (DNS §2) |
+| `ACME_EMAIL` | caddy | yes | Let's Encrypt account mail | operator email address |
+| `ALLOWED_ORIGIN` | api-gateway | yes | CORS origin for browser clients | `https://api.<domain>` |
+| `JWT_SECRET` | auth, notification, academy | yes | Signs access/refresh tokens | `<GENERATE: openssl rand -hex 32>` |
+| `GATEWAY_SECRET` | gateway + auth/notification/academy | yes | `X-Gateway-Secret` edge auth | `<GENERATE: openssl rand -hex 32>` |
+| `INTERNAL_SERVICE_TOKEN` | auth, notification, academy, admin-console | yes | `X-Internal-Token` for admin listeners | `<GENERATE: openssl rand -hex 32>` |
+| `MONGO_ROOT_USERNAME` | mongo | yes | InitDB root user | `wael_root` |
+| `AUTH_MONGO_URI` | auth-service | yes | Least-privilege DB user URI | `mongodb://auth_svc:<pw>@mongo:27017/auth_db?authSource=auth_db`, pw `<GENERATE: openssl rand -hex 24>` (hex needs no URL escaping) |
+| `NOTIFICATION_MONGO_URI` | notification-service | yes | Least-privilege DB user URI | `mongodb://notif_svc:<pw>@mongo:27017/notification_db?authSource=notification_db`, pw as above (different value) |
+| `ACADEMY_MONGO_URI` | academy-service | yes | Least-privilege DB user URI | `mongodb://academy_svc:<pw>@mongo:27017/academy_db?authSource=academy_db`, pw as above (different value) |
+| `REDIS_URI` | gateway, auth, notification, academy | yes | Must match `requirepass` in `secrets/redis.conf` | `redis://:<pw>@redis:6379/0`, pw `<GENERATE: openssl rand -hex 24>` |
+| `RESEND_API_KEY` | auth-service | yes (production) | Email delivery | from the Resend dashboard |
+| `RESEND_FROM_EMAIL` | auth-service | yes (production) | Sender identity | `no-reply@<domain>` (verify domain in Resend) |
+| `BLOCKLIST_HMAC_KEY` | auth-service | yes (production) | HMAC key for blocked email/phone identities — do NOT rotate casually: existing entries stop matching | `<GENERATE: openssl rand -hex 32>` |
+| `DEFAULT_PHONE_REGION` | auth-service | no (default `EG`) | Phone normalization region | `EG` |
+| `SUPPORT_WHATSAPP` | academy-service | yes (production) | Support link shown after access requests | international format, e.g. `+20...` |
+| `EXPOSE_PRICE_TO_STUDENTS` | academy-service | no (default `false`) | Show subject prices | leave `false` unless the owner decides otherwise |
+| `RATE_LIMIT_READ/PLAY/DOWNLOAD/WRITE` | academy-service | no (defaults 120/60/10/5) | Per-user per-minute tiers | uncomment to override |
+| `STREAM_MAX_CONCURRENT` / `STREAM_OPEN_RATE_LIMIT` | notification-service | no (defaults 3 / 10) | SSE caps | uncomment to override |
+| `*_MEM_LIMIT`, `MONGO_CACHE_GB` | compose only | no | Container memory / WiredTiger cache | §1 table; "1 GB host" block for small hosts |
+
+Fixed by compose (never in `.env.production`): `APP_ENV=production`, `PORT`,
+`ADMIN_LISTEN_ADDR` (`:9001`/`:9002`), `*_MONGO_DATABASE`, internal
+`https://<svc>:<port>` URLs, `TRUSTED_PROXY_IPS=172.30.0.10`,
+`TLS_*_PATH=/app/certs/...`. Infra-provided (not secrets): `IMAGE_TAG` comes
+from `release.env` (written by publish), `WAEL_HOME` from the runner env.
+
+Generate everything on the server only, with a script that writes the file as
+deploybot (mode `600`) — values never leave the server. Save as
+`/tmp/gen-env.sh`, review it, then run it:
+
+```bash
+[server azureuser] cat > /tmp/gen-env.sh <<'SCRIPT'
+#!/usr/bin/env bash
+# Scaffold $WAEL_HOME/.env.production as deploybot. Review, then fill the
+# OPERATOR_* values (or pass them as env). Re-running overwrites secrets.
+set -euo pipefail
+umask 077
+: "${WAEL_HOME:=/home/deploybot/wael}"
+: "${OPERATOR_API_DOMAIN:=api.<domain>}"
+: "${OPERATOR_ADMIN_DOMAIN:=admin.<domain>}"
+: "${OPERATOR_ACME_EMAIL:=<operator-mailbox>}"
+: "${OPERATOR_RESEND_KEY:=<paste-from-resend-dashboard>}"
+: "${OPERATOR_WHATSAPP:=+<international-number>}"
+MONGO_AUTH_PW="$(openssl rand -hex 24)"
+MONGO_NOTIF_PW="$(openssl rand -hex 24)"
+MONGO_ACADEMY_PW="$(openssl rand -hex 24)"
+REDIS_PW="$(openssl rand -hex 24)"
+{
+echo "API_DOMAIN=${OPERATOR_API_DOMAIN}"
+echo "ADMIN_DOMAIN=${OPERATOR_ADMIN_DOMAIN}"
+echo "ACME_EMAIL=${OPERATOR_ACME_EMAIL}"
+echo "ALLOWED_ORIGIN=https://${OPERATOR_API_DOMAIN}"
+echo "JWT_SECRET=$(openssl rand -hex 32)"
+echo "GATEWAY_SECRET=$(openssl rand -hex 32)"
+echo "INTERNAL_SERVICE_TOKEN=$(openssl rand -hex 32)"
+echo "MONGO_ROOT_USERNAME=wael_root"
+echo "AUTH_MONGO_URI=mongodb://auth_svc:${MONGO_AUTH_PW}@mongo:27017/auth_db?authSource=auth_db"
+echo "NOTIFICATION_MONGO_URI=mongodb://notif_svc:${MONGO_NOTIF_PW}@mongo:27017/notification_db?authSource=notification_db"
+echo "ACADEMY_MONGO_URI=mongodb://academy_svc:${MONGO_ACADEMY_PW}@mongo:27017/academy_db?authSource=academy_db"
+echo "REDIS_URI=redis://:${REDIS_PW}@redis:6379/0"
+echo "RESEND_API_KEY=${OPERATOR_RESEND_KEY}"
+echo "RESEND_FROM_EMAIL=no-reply@${OPERATOR_API_DOMAIN#api.}"
+echo "BLOCKLIST_HMAC_KEY=$(openssl rand -hex 32)"
+echo "DEFAULT_PHONE_REGION=EG"
+echo "SUPPORT_WHATSAPP=${OPERATOR_WHATSAPP}"
+echo "EXPOSE_PRICE_TO_STUDENTS=false"
+} > "$WAEL_HOME/.env.production"
+chmod 600 "$WAEL_HOME/.env.production"
+SCRIPT
+[server azureuser] sudo -u deploybot bash /tmp/gen-env.sh && rm /tmp/gen-env.sh
+[server azureuser] sudo -u deploybot bash -c 'ls -la ~/wael/.env.production'
+```
+
+Then the two secret files (passwords must match the URIs above — read them
+back from the file, §6):
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'openssl rand -hex 24 > ~/wael/secrets/mongo_root_password && chmod 600 ~/wael/secrets/mongo_root_password'
+[server azureuser] sudo -u deploybot bash -c 'R="$(sed -n "s#^REDIS_URI=redis://:\\([^@]*\\)@.*#\\1#p" ~/wael/.env.production)"; printf "requirepass %s\nappendonly yes\n" "$R" > ~/wael/secrets/redis.conf && chmod 600 ~/wael/secrets/redis.conf'
+```
+
+- `secrets/mongo_root_password` is injected as `MONGO_INITDB_ROOT_PASSWORD_FILE`
+  (a file, never an env var, so it stays out of `docker inspect`); the compose
+  file reads it via the `mongo_root_password` secret.
+- `secrets/redis.conf` is mounted as the redis config (`requirepass` +
+  `appendonly yes`); the password never appears on a command line.
+- `--check-env`: all 5 services accept `--check-env` (runs `config.Load()`,
+  exits 0/1 without starting anything). Preflight (§8/§10) runs it for every
+  service in one-off containers (`compose run --rm --no-deps -T <svc>
+  --check-env`) after pulling the new images and before touching anything
+  running.
+
+Completeness proof (run from `wael-app/infrastructure/deploy/`): every name
+set in `env.production.example` is referenced by `docker-compose.yml`, and the
+only compose-referenced names missing from the example are the commented
+tuning overrides, `IMAGE_TAG` (from `release.env`) and `WAEL_HOME` (host env):
+
+```bash
+[laptop] grep -o -E '\$\{[A-Z_][A-Z_0-9]*' docker-compose.yml Caddyfile | sed 's/.*\${//' | sort -u > /tmp/used
+[laptop] grep -E '^[A-Z_]+=' env.production.example | cut -d= -f1 | sort -u > /tmp/set
+[laptop] grep -E '^# (RATE_LIMIT|STREAM_[A-Z_]+|[A-Z]+_MEM_LIMIT|MONGO_CACHE_GB)=' env.production.example | cut -d= -f1 | sed 's/^# //' | sort -u > /tmp/tuning
+[laptop] comm -23 /tmp/used <(sort -u /tmp/set /tmp/tuning); echo "only IMAGE_TAG and WAEL_HOME may remain"
+```
+
+## 6. Mongo first-time init
+
+Three database-backed services, one least-privilege user each (`auth_svc` on
+`auth_db`, `notif_svc` on `notification_db`, `academy_svc` on `academy_db`).
+They cannot start until their users exist, so bring up only mongo first (from
+the deploy checkout on the server, `$WAEL_HOME/.env.production` in place and a
+`release.env` present so the compose file renders):
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cd <deploy-checkout> && export WAEL_HOME=/home/deploybot/wael && source scripts/lib.sh && compose up -d --wait mongo'
+```
+
+`mongod` restarts once during init: a first `mongosh` right after
+`up --wait mongo` can get `ECONNREFUSED` — wait 10 s and retry:
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cd <deploy-checkout> && export WAEL_HOME=/home/deploybot/wael && source scripts/lib.sh && sleep 10 && compose exec -T mongo mongosh -u wael_root -p "$(cat "$WAEL_HOME/secrets/mongo_root_password")" --authenticationDatabase admin --eval '\''
+  db.getSiblingDB("auth_db").createUser({user:"auth_svc",pwd:"<pw-auth>",roles:[{role:"readWrite",db:"auth_db"}]});
+  db.getSiblingDB("notification_db").createUser({user:"notif_svc",pwd:"<pw-notif>",roles:[{role:"readWrite",db:"notification_db"}]});
+  db.getSiblingDB("academy_db").createUser({user:"academy_svc",pwd:"<pw-academy>",roles:[{role:"readWrite",db:"academy_db"}]});'\'
+```
+
+Read each `<pw-…>` back from its URI in `.env.production` (they were written
+by the §5 script — never invent new ones here, or the URIs and the users
+diverge):
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'sed -n "s#^AUTH_MONGO_URI=mongodb://auth_svc:\\([^@]*\\)@.*#\\1#p" ~/wael/.env.production'
+```
+
+Repeat for `NOTIFICATION_MONGO_URI` / `notif_svc` and `ACADEMY_MONGO_URI` /
+`academy_svc`, paste each as its `<pw-…>`. Uses one different
+`openssl rand -hex 24` per service (hex needs no URL escaping).
+
+## 7. GitHub setup
+
+`wael-app` ([laptop] with `gh`, or [GitHub UI]):
+
+```bash
+[laptop] gh variable set PUBLISH_ENABLED --repo omarmaarouf18/wael-app --body true
+[laptop] gh variable set MOBILE_SYNC_ENABLED --repo omarmaarouf18/wael-app --body true
+[laptop] gh secret set APP_ID --repo omarmaarouf18/wael-app --body "<numeric-app-id>"
+[laptop] gh secret set APP_PRIVATE_KEY --repo omarmaarouf18/wael-app < app-private-key.pem
+```
+
+The GitHub App: permissions **Contents read/write** and **Workflows
+read/write**; installed on `wael-app-deploy` and `wael-app-mobile` only
+([GitHub UI] App settings → Install). After any permission change, accept the
+new permissions on each installation, or the mirror steps fail (past failure:
+mirror failed with "Invalid keyData" when `APP_PRIVATE_KEY` was malformed, and
+with permission errors before Workflows R/W was granted and accepted).
+
+`wael-app-deploy`: environment `production`; variables `DEPLOY_ENABLED=true`
+(and optional `WAEL_HOME` if it differs from `/home/deploybot/wael`).
+`wael-app-mobile`: variable `API_BASE_URL=https://api.<domain>` (must be
+`https://*`; enforced by the APK workflow).
+
+Self-hosted runner (pull-only: it polls GitHub; the host opens no inbound
+port, GitHub holds no SSH key). Register [GitHub UI]
+`wael-app-deploy → Settings → Actions → Runners → New self-hosted runner`
+(copy the token — it expires within the hour), then on the server:
+
+```bash
+[server azureuser] sudo mkdir -p /home/deploybot/actions-runner && sudo chown deploybot:deploybot /home/deploybot/actions-runner
+[server azureuser] sudo -u deploybot bash -c 'cd ~/actions-runner && curl -fsSL -o runner.tar.gz https://github.com/actions/runner/releases/download/v2.XXX.X/actions-runner-linux-x64-2.XXX.X.tar.gz && tar xzf runner.tar.gz && rm runner.tar.gz'
+[server azureuser] sudo -u deploybot bash -c 'cd ~/actions-runner && ./config.sh --unattended --url https://github.com/omarmaarouf18/wael-app-deploy --token <registration-token> --labels wael-vm --name wael-prod-01 --work _work'
+[server azureuser] sudo ./home/deploybot/actions-runner/svc.sh install deploybot   # service file needs root; the service itself runs as deploybot
+[server azureuser] sudo ./home/deploybot/actions-runner/svc.sh start && sudo ./home/deploybot/actions-runner/svc.sh status
+```
+
+(Replace `2.XXX.X` with the version the "New runner" page shows.) Check it is
+online: [GitHub UI] the Runners page lists `wael-prod-01` idle, and
+`sudo ./home/deploybot/actions-runner/svc.sh status` is active. The Deploy
+workflow runs on `[self-hosted, wael-vm]` (see `deploy.yml`).
+
+Rulesets: the intent (owner decision Q2) is that `CI OK` — the aggregate gate
+in `ci.yml` covering every job — is the sole required check on `main` and
+`develop`. As of 2026-10-02 the rulesets still enforce the older per-job lists
+(see `docs/REPOSITORY-SETTINGS.md` and the audit); applying Q2 is an owner
+action in [GitHub UI] `wael-app → Settings → Rules`.
+
+GHCR: images are `ghcr.io/omarmaarouf18/wael-app-<svc>:<sha>` (no `:latest`).
+Package visibility could not be verified from the repo — check it in
+[GitHub UI] profile → Packages. If the packages are private, the server needs
+a login before pulls (`docker login ghcr.io -u <user>` with a
+`read:packages` token, as deploybot); if public, pulls work without one.
+Either way the tag is always the full commit sha.
+
+## 8. First deploy
+
+### Path 1 — pipeline (normal)
+
+First-run behaviour: with no `state/last-good/` yet, a successful deploy
+creates it; if the very first deploy fails there is nothing to roll back to —
+read the failure logs and fix forward. (No seeding needed.)
+
+1. Finish §3–§7. Run preflight once by hand with a real `release.env` and
+   read every line ([server azureuser]):
+   ```bash
+   [server azureuser] sudo -u deploybot bash -c 'cd <deploy-checkout> && export WAEL_HOME=/home/deploybot/wael && ./scripts/preflight.sh'
+   ```
+2. [laptop] Fast-forward `main` to the green `develop` (owner-approved;
+   agents never push `main`):
+   ```bash
+   [laptop] git fetch origin && git checkout main && git merge --ff-only origin/develop && git push origin main
+   ```
+3. Watch the runs ([GitHub UI] Actions, or `[laptop] gh run list --repo
+   omarmaarouf18/wael-app`): CI Gate → Build and Publish (images + mirror +
+   `release.env`) → Deploy on `[wael-vm]` (preflight → up → health gate →
+   last-good). E2E is the slow job; while it runs, "Deploy not started yet"
+   is normal — the pipeline is sequential.
+
+### Path 2 — manual, no GHCR (trial / pre-pipeline)
+
+Build on the same CPU architecture as the host (or add
+`--platform linux/amd64`). [laptop] from the repo root (Dockerfiles expect the
+repo root as context):
+
+```bash
+[laptop] SHA="$(git rev-parse HEAD)"   # full 40-character sha
+[laptop] for svc in api-gateway auth-service notification-service academy-service admin-console; do
+  docker build -f services/$svc/Dockerfile --target prod \
+    -t ghcr.io/omarmaarouf18/wael-app-$svc:$SHA .
+done
+[laptop] docker save $(for svc in api-gateway auth-service notification-service academy-service admin-console; do
+    echo ghcr.io/omarmaarouf18/wael-app-$svc:$SHA; done) \
+  | gzip | ssh azureuser@<host> 'gunzip | sudo -u deploybot docker load'
+[laptop] rsync -a --delete --exclude '.git/' infrastructure/deploy/ azureuser@<host>:/tmp/wael-deploy/
+```
+
+`rsync --delete` deletes `release.env` (it is written by publish, never
+mirrored), so rewrite it on the host after every rsync, then move the tree
+into place and deploy with pulls skipped:
+
+```bash
+[server azureuser] printf 'IMAGE_TAG=%s\n' "<same-40-char-sha>" > /tmp/wael-deploy/release.env
+[server azureuser] sudo rm -rf /home/deploybot/wael-deploy-new && sudo mv /tmp/wael-deploy /home/deploybot/wael-deploy-new && sudo chown -R deploybot:deploybot /home/deploybot/wael-deploy-new
+[server azureuser] sudo -u deploybot bash -c 'cd ~/wael-deploy-new && export WAEL_HOME=/home/deploybot/wael && SKIP_PULL=1 ./scripts/preflight.sh'
+[server azureuser] sudo -u deploybot bash -c 'cd ~/wael-deploy-new && export WAEL_HOME=/home/deploybot/wael && SKIP_PULL=1 ./scripts/deploy.sh'
+```
+
+`SKIP_PULL=1` is shell-only (the Deploy workflow never sets it): preflight
+checks the five app images are loaded locally under the exact tag but still
+pulls mongo/redis/caddy; without it, `compose up` would try GHCR and fail.
+For a newer build repeat all steps with the new sha — and keep the old images
+loaded: rollback needs the last-good images on the host (`docker image prune`
+between deploys breaks it).
+
+### Verification (both paths)
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cat ~/wael/state/last-good/last-good.env'
+[server azureuser] sudo -u deploybot bash -c 'cd <deploy-checkout> && docker compose -p wael ps'
+[laptop] curl -fsS https://api.<domain>/health        # {"status":"ok"}
+[laptop] curl -fsS -o /dev/null -w '%{http_code}\n' https://admin.<domain>   # 200
+```
+
+Expect: `last-good.env` shows the deployed tag; `docker ps` shows 8 healthy
+containers (`wael-caddy-1`, `wael-api-gateway-1`, `wael-auth-service-1`,
+`wael-notification-service-1`, `wael-academy-service-1`,
+`wael-admin-console-1`, `wael-mongo-1`, `wael-redis-1`); both curls return 200.
+
+## 9. Admin tokens
+
+Mint (prints the admin id + token ONCE to stdout, stores only the SHA-256
+hash). `--ttl` accepts a Go duration or the day shorthand the CLI also takes
+(`2160h` = `90d` = 90 days; default `90d`; max 365 days; a bare `90` fails
+with "missing unit"):
+
+```bash
+[server azureuser] sudo docker exec wael-auth-service-1 /bin/onboard-admin --name "<name>" --ttl 2160h
+```
+
+(`sudo docker exec` directly: `azureuser` cannot `cd` into the 700 dirs and
+`sudo cd` does not exist.) Copy the token straight into the operator's
+password manager with the admin id. In the console the token lives in a JS
+module variable (tab memory only — no storage, cookie or URL): reload, tab
+close or any 401 signs out. One token per person, for the audit trail. A lost
+token cannot be recovered — revoke and replace.
+
+Revoke with the printed id (`adm_…`):
+
+```bash
+[server azureuser] sudo docker exec wael-auth-service-1 /bin/revoke-admin --id <id>
+```
+
+Revocation applies on the next request (auth-service verifies the token on
+every call). Listing admins: there is no list CLI (only these two CLIs exist
+in `services/auth-service/cmd/`); list/search operators in the console
+Accounts tab (`GET /api/accounts` proxy). Sign-in problems (401/429/503):
+RUNBOOK "Admin console".
+
+## 10. Day-2 operations
+
+Release: the owner fast-forwards `main` (§8 Path 1). Agents never push `main`.
+E2E is the slow gate job — a quiet Deploy workflow while CI runs is normal.
+
+Rollback — automatic: `deploy.sh` runs `rollback.sh <failed-tag>` whenever the
+new release fails its health gate. Manual ([server azureuser], deploybot has
+no login so drive it with `sudo -u`):
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cd <runner-checkout-of-wael-app-deploy> && export WAEL_HOME=/home/deploybot/wael && ./scripts/rollback.sh'
+```
+
+Find the runner checkout under `~/actions-runner/_work/<repo>/<repo>`. What
+rollback does: reads `state/last-good/last-good.env` (fallback: legacy
+`state/last-good.env`), appends the failed tag to `state/failed-releases`
+(unless it equals the good tag), and brings up the **last-good compose
+snapshot** (`state/last-good/docker-compose.yml`, fallback: current file with
+a loud warning) with `--remove-orphans --wait` plus the public health check.
+Rollback covers images only — no DB migration framework exists, so data
+changes are NOT rolled back. Afterwards: fix forward with a new commit on
+`main`; never re-run the old `release.env` — `deploy.sh` refuses failed tags
+unless the Deploy workflow's "Force deploy even if previously rolled back"
+input (`ALLOW_FAILED_RELEASE=1`) is set.
+
+Backups — status: no backup automation exists in the repo (RUNBOOK "Known
+gaps"). Set this up on every server; the procedure below is **not yet
+rehearsed**. Daily `mongodump` cron at 00:17 UTC, 7-day retention, `umask
+077`, archives at mode `600`. Save as `$WAEL_HOME/bin/mongo-backup.sh`
+(owner deploybot, mode `700`):
+
+```bash
+[server azureuser] sudo -u deploybot tee /home/deploybot/wael/bin/mongo-backup.sh > /dev/null <<'SCRIPT'
+#!/usr/bin/env bash
+# Nightly full mongo backup. NOT YET REHEARSED — drill restore before relying on it.
+set -euo pipefail
+umask 077
+WAEL_HOME=/home/deploybot/wael
+DAY="$(date -u +%Y-%m-%dT%H%MZ)"
+DEST="$WAEL_HOME/backups/mongo-$DAY"
+mkdir -p "$DEST"
+ROOT_PW="$(cat "$WAEL_HOME/secrets/mongo_root_password")"
+docker exec wael-mongo-1 mongodump -u wael_root -p "$ROOT_PW" \
+  --authenticationDatabase admin --out "/dump/$DAY"
+docker cp "wael-mongo-1:/dump/$DAY" "$DEST/dump"
+docker exec wael-mongo-1 rm -rf "/dump/$DAY"
+chmod 600 "$DEST"/dump/*/*.bson "$DEST"/dump/*/*.json 2>/dev/null || true
+find "$WAEL_HOME/backups" -maxdepth 1 -name "mongo-*" -mtime +7 -exec rm -rf {} +
+SCRIPT
+[server azureuser] sudo chmod 700 /home/deploybot/wael/bin/mongo-backup.sh
+[server azureuser] (sudo -u deploybot crontab -l 2>/dev/null; echo "17 0 * * * /home/deploybot/wael/bin/mongo-backup.sh") | sudo -u deploybot crontab -
+```
+
+Off-site copy: pull the newest archive off the host regularly (the manual way
+until automated), and keep a second automated copy (recommended: object storage
+via `rclone`, or a second host):
+
+```bash
+[laptop] scp -r deploybot@<host>:/home/deploybot/wael/backups/ ./offsite/   # via azureuser jump if deploybot has no SSH: scp azureuser@<host>:... then sudo-side copy
+```
+
+(Run the `scp` as whichever user can SSH; if only `azureuser` can, copy
+server-side to a readable staging path first.) Verify archives are mode 600
+and restorable — an untested backup is not a backup.
+
+Restore (**not tested** — drill on a spare host first):
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'LATEST=$(ls -dt ~/wael/backups/mongo-* | head -1); echo "$LATEST"'
+# stop writers to be safe, then push the dump back and restore per database:
+[server azureuser] sudo -u deploybot bash -c 'docker cp <archive>/dump wael-mongo-1:/restore && docker exec wael-mongo-1 mongorestore -u wael_root -p "$(cat ~/wael/secrets/mongo_root_password)" --authenticationDatabase admin --drop /restore'
+```
+
+Logs: `docker compose -p wael logs --tail 100 <service>` (from the deploy
+checkout as deploybot); host side: `journalctl -u docker.service --since -1h`.
+Container logs rotate via the compose `x-logging` anchor (json-file,
+10 MB × 3). Caddy access logs are off by design (query strings must not be
+logged); 404s from internet scanners hitting random paths are expected noise.
+
+Disk cleanup — keep the last-good images:
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'GOOD=$(sed -n "s/^IMAGE_TAG=//p" ~/wael/state/last-good/last-good.env); docker images "ghcr.io/omarmaarouf18/wael-app-*" --format "{{.Repository}}:{{.Tag}}" | grep -v "$GOOD" | grep -v "$(sed -n "s/^IMAGE_TAG=//p" <checkout>/release.env)" | xargs -r docker rmi'
+[server azureuser] docker system df && docker builder prune -f
+```
+
+Secret rotation (change the value in `$WAEL_HOME/.env.production`, then
+re-deploy the current `release.env` so every container picks it up together):
+- `JWT_SECRET`: logs **everyone** out (all access + refresh tokens invalidate).
+- `GATEWAY_SECRET`: must land on gateway AND all three user-facing services
+  atomically — a partial rollout returns 401s on proxied calls.
+- `INTERNAL_SERVICE_TOKEN`: must land on auth/notification/academy AND the
+  console together, or admin calls fail.
+- Never rotate `BLOCKLIST_HMAC_KEY` casually: existing blocklist entries stop
+  matching (documented in the env table, §5).
+
+Updating mongo/redis/caddy: bases are pinned by tag (`mongo:7`,
+`redis:7-alpine`, `caddy:2-alpine`), not digest (known gap W-07); Dependabot
+is not enabled. Bump the tag in `docker-compose.yml`, run preflight + deploy
+on a test host first, then ship via the pipeline. Watch Dependabot PRs once
+`.github/dependabot.yml` (W-07) lands.
+
+## 11. Moving to a new server
+
+**Not yet rehearsed.** Expected downtime with the steps below (TTL lowered a
+day ahead, backup/restore practiced): roughly 15–45 minutes of API/admin
+unavailability, dominated by DNS propagation and Caddy's first ACME issuance.
+
+1. Build the new server with §3–§7 (base, certs — same CA, or a fresh CA with
+   all certs replaced at cutover — secrets, `.env.production` with the SAME
+   secret values if sessions must survive, GitHub runner registered as a
+   second `wael-vm` runner).
+2. Lower the DNS TTL to 300 s at least a day before (see §2).
+3. Take a final backup on the old server (§10) and restore it on the new one
+   (restore procedure, §10) with the stack stopped.
+4. Switch the `api`/`admin` A records to the new host; verify with
+   `dig @<authoritative-NS>` then the public curls (§8 verification).
+5. Confirm the new runner took the next Deploy (or disable the old runner
+   first to force it), then remove the old runner ([GitHub UI] Runners →
+   Remove) and decommission the old host: `docker compose -p wael down -v`,
+   shred `$WAEL_HOME/secrets`, revoke its GHCR token, terminate the VM.
+
+## 12. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Cloud Shell opens in PowerShell | Azure Cloud Shell default shell | Type `bash` and work from there. |
+| `sudo cd ...` fails | `cd` is a shell builtin, not a binary | `sudo -u deploybot bash -c 'cd ~/wael && …'`; see §3 pitfalls. |
+| Glob in a 700 dir: "No such file" | Only the owner traverses mode-700 dirs | Run the whole command as root/owner: `sudo sh -c '…'` (§3). |
+| `mongosh` ECONNREFUSED right after init | `mongod` restarts once during init | Wait 10 s and retry (§6). |
+| Caddy container unhealthy | Healthcheck used `localhost` (resolves to `::1`) | Uses `http://127.0.0.1:2019/config/` — do not "fix" it back (`docker-compose.yml`). |
+| `APP_PRIVATE_KEY` "Invalid keyData" | Malformed PEM in the secret | Re-export the App's PEM unchanged: `gh secret set APP_PRIVATE_KEY < key.pem` (§7). |
+| Mirror fails on permissions | App lacks Workflows R/W or install not updated | Grant Contents + Workflows R/W and accept on both installations (§7). |
+| `release.env` missing after rsync | `rsync --delete` removes it (never mirrored) | Rewrite it after every rsync (§8 Path 2). |
+| `--ttl 90` reports "missing unit" | Bare numbers carry no unit | Use `2160h` (or `90d`); see §9. |
+| Preflight fails on a new service's cert/env | Missing `<svc>.crt/.key` or env var | Sign with `--sign-only` (§4), add the var (§5), re-run preflight. |
+| Deploy not started yet after push to main | Pipeline is sequential; E2E is the slow job | Wait for CI Gate → publish → deploy (§8 Path 1). |
+| Fresh DNS record looks missing locally | Negative caching | Check the authoritative NS directly; wait out the TTL (§2). |
+| 404s for random paths in logs | Internet scanners | Expected noise; access logs stay off by design (§10). |
+| Deploy refuses a tag ("was rolled back") | `state/failed-releases` guard | Fix forward with a new commit; force only via the workflow input (§10). |
+| Containers OOM-killed on a small host | Limits exceed RAM | 1 GB block + 2 GB swap + zram (§1, §3), or a bigger host. |
+
+## Appendix A — cost and size reference
+
+- Reference host: Azure B2ats_v2, region UAE North (owner-measured; re-check
+  current Azure pricing — no price is quoted here and no free-tier coverage is
+  claimed).
+- Reference load: 887 MB host RAM; running stack ≈ 320–400 MB; swap required
+  (see §1, §3).
+
+## Appendix B — new server checklist (in order)
+
+1. [§1] Size the host (2 GB, or 1 GB only with the small profile + swap).
+2. [§2] DNS `api` + `admin` A records; Resend records.
+3. [§3] Base setup: upgrade, swap, zram, journald, fail2ban, auto-updates,
+   Docker, `deploybot` + 700 layout.
+4. [§4] Certificates: CA on laptop, sign 5 services, install 644.
+5. [§5] Secrets: server-side script, 600 file, secret files.
+6. [§6] Mongo users (once).
+7. [§7] GitHub vars/secrets, App install, `DEPLOY_ENABLED`, runner online,
+   rulesets.
+8. [§8] First deploy (pipeline, or manual without GHCR) + verification.
+9. [§9] Mint admin tokens (one per operator).
+10. [§10] Day-2: release/rollback/backups/logs/cleanup/rotation/updates.
+11. [§11] Migration plan (when needed). [§12] Troubleshooting.
