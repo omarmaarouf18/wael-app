@@ -5,7 +5,7 @@ go 1.26
 toolchain go1.26.6
 
 require (
-	github.com/omarmaarouf18/wael-app/shared/infra v0.0.0
+	github.com/omarmaarouf18/wael-app/shared/infra v0.0.0-00010101000000-000000000000
 	github.com/redis/go-redis/v9 v9.21.0
 	go.mongodb.org/mongo-driver/v2 v2.4.2
 )

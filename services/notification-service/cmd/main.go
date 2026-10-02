@@ -73,6 +73,7 @@ func main() {
 			log.Fatalf("[NOTIF] redis: %v (uri=%s)", err, redact.RedactURI(cfg.RedisURI))
 		}
 		defer func() { _ = rdb.Close() }()
+		jwtutil.SetRedisClient(rdb)
 		b = bus.NewRedisBus(rdb)
 		log.Printf("[NOTIF] active notification bus: Redis (%s)", redact.RedactURI(cfg.RedisURI))
 	} else {

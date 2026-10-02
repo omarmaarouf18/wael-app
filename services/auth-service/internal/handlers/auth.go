@@ -729,12 +729,7 @@ func (s *Server) Logout(w http.ResponseWriter, r *http.Request) {
 			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", getErr)
 			return
 		}
-		if sess != nil && sess.EndedAt != nil {
-			// Already-ended session -> keep 204 No Content.
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if sess != nil {
+		if sess != nil && sess.EndedAt == nil {
 			dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 			endErr := s.Store.EndSession(dbCtx, claims.SID, models.EndReasonLogout, now)
 			cancel()

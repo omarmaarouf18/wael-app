@@ -14,10 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/omarmaarouf18/wael-app/notification-service/internal/bus"
 	"github.com/omarmaarouf18/wael-app/notification-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/notification-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
+	"github.com/redis/go-redis/v9"
 )
 
 func testServer() *Server {
@@ -651,5 +653,38 @@ func TestStream_WriteError_ReturnsAndReleasesSlot(t *testing.T) {
 
 	if s.Limiter.ActiveSlots("user-write-fail") != 0 {
 		t.Fatalf("expected 0 active slots after event write error, got %d", s.Limiter.ActiveSlots("user-write-fail"))
+	}
+}
+
+func TestNotifications_RevokedSessionTokenRejected(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	s := testServer()
+	sid := "test-session-sid-456"
+	token, err := jwtutil.GenerateTokenWithSession("user-revoked", "user", "revoked@example.com", sid)
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+
+	// Active token succeeds
+	rec := doUser(t, s, http.MethodGet, "/notifications/list", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on active session token, got %d", rec.Code)
+	}
+
+	// Revoke the session sid in Redis
+	if err := jwtutil.RevokeSession(sid); err != nil {
+		t.Fatalf("revoke session: %v", err)
+	}
+
+	// List with revoked session token fails with 401
+	rec = doUser(t, s, http.MethodGet, "/notifications/list", token, nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on revoked session token, got %d", rec.Code)
 	}
 }

@@ -799,7 +799,7 @@ func TestSession_Logout_FailingRevokeSessionReturns503(t *testing.T) {
 }
 
 func TestSession_Logout_AlreadyEndedSessionReturns204(t *testing.T) {
-	s, _, cleanup := setupSessionTestServer(t)
+	s, mr, cleanup := setupSessionTestServer(t)
 	defer cleanup()
 
 	// 1. Signup and verify
@@ -826,14 +826,42 @@ func TestSession_Logout_AlreadyEndedSessionReturns204(t *testing.T) {
 	accessToken := decodeBody(t, rec)["access_token"]
 	claims, _ := jwtutil.ValidateToken(accessToken)
 
-	// Mark session ended in store
+	// Mark session ended in store (e.g. simulated retry after store ended session but before RevokeSession)
 	ctx := context.Background()
 	now := time.Now().UTC()
 	_ = s.Store.EndSession(ctx, claims.SID, models.EndReasonReplaced, now)
 
-	// Logout returns 204
+	// Verify sid is not yet revoked in Redis
+	if mr.Exists("jwt:sid:" + claims.SID) {
+		t.Fatalf("expected sid not yet revoked in redis")
+	}
+
+	// 1. Logout on already-ended session with Redis failing -> returns 503
+	jwtutil.SetRedisClient(nil)
+	rec = doRequest(t, s, http.MethodPost, "/auth/logout", nil, accessToken)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 on already-ended session logout when RevokeSession fails, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// 2. Restore Redis client -> Logout returns 204 and sid is now revoked in Redis
+	rdb, err := ratelimit.NewRedisClient("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatalf("connect miniredis: %v", err)
+	}
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+
 	rec = doRequest(t, s, http.MethodPost, "/auth/logout", nil, accessToken)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204 on already-ended session logout, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !mr.Exists("jwt:sid:" + claims.SID) {
+		t.Fatalf("expected sid to be revoked in Redis after logout")
+	}
+
+	// 3. Subsequent ValidateToken fails with ErrSessionRevoked
+	_, err = jwtutil.ValidateToken(accessToken)
+	if !errors.Is(err, jwtutil.ErrSessionRevoked) {
+		t.Fatalf("expected ErrSessionRevoked after logout, got %v", err)
 	}
 }

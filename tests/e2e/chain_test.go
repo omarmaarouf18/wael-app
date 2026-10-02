@@ -210,6 +210,12 @@ func TestGatewayChain(t *testing.T) {
 		if code != http.StatusOK {
 			subT.Fatalf("login = %d (%v)", code, body)
 		}
+		var okAccess, okRefresh bool
+		access, okAccess = body["access_token"].(string)
+		refresh, okRefresh = body["refresh_token"].(string)
+		if !okAccess || !okRefresh || access == "" || refresh == "" {
+			subT.Fatal("login returned no tokens")
+		}
 	})
 
 	runStage("refresh", func(subT *testing.T) {
@@ -219,6 +225,9 @@ func TestGatewayChain(t *testing.T) {
 		}
 		if newAccess, _ := body["access_token"].(string); newAccess != "" {
 			access = newAccess
+		}
+		if newRefresh, _ := body["refresh_token"].(string); newRefresh != "" {
+			refresh = newRefresh
 		}
 	})
 
@@ -347,6 +356,17 @@ func TestGatewayChain(t *testing.T) {
 			case <-timeout:
 				subT.Fatal("timed out waiting for the SSE probe frame")
 			}
+		}
+	})
+
+	runStage("logout", func(subT *testing.T) {
+		code, body := c.post(subT, "/api/v1/auth/logout", access, nil)
+		if code != http.StatusNoContent {
+			subT.Fatalf("logout = %d (%v)", code, body)
+		}
+		code, _ = c.get(subT, "/api/v1/notifications/list?page=1&limit=5", access)
+		if code != http.StatusUnauthorized {
+			subT.Fatalf("expected 401 on access token after logout, got %d", code)
 		}
 	})
 }
