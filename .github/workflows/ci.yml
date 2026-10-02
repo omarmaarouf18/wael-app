@@ -73,6 +73,7 @@ jobs:
               fi
             fi
           done
+          # shellcheck disable=SC2013
           for v in $(grep -oE "go-version: '[0-9]+\.[0-9]+\.[0-9]+'" .github/workflows/ci.yml | grep -oE "[0-9]+\.[0-9]+\.[0-9]+"); do
             if [ "$v" != "$CANONICAL_GO_PATCH_VERSION" ]; then
               echo "BLOCKED: drift in ci.yml: expected $CANONICAL_GO_PATCH_VERSION, found '$v'"
@@ -81,6 +82,7 @@ jobs:
           done
           for d in services/*/Dockerfile; do
             if [ -f "$d" ]; then
+              # shellcheck disable=SC2013
               for v in $(grep -oE "FROM golang:[0-9]+\.[0-9]+\.[0-9]+" "$d" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+"); do
                 if [ "$v" != "$CANONICAL_GO_PATCH_VERSION" ]; then
                   echo "BLOCKED: drift in $d: expected $CANONICAL_GO_PATCH_VERSION, found '$v'"
