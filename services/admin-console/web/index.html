@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>لوحة إدارة EL METR</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <!-- Sign-in: the admin token is the only credential. It is kept in memory
+       (js/auth.js) and never stored. -->
+  <main id="login-view" class="login">
+    <form id="login-form" class="card login-card" novalidate>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <p class="brand-name" data-i18n="app.brand">EL METR</p>
+          <h1 data-i18n="login.title">تسجيل دخول المشرف</h1>
+        </div>
+      </div>
+      <p class="muted" data-i18n="login.subtitle"></p>
+      <label for="login-token" data-i18n="login.token"></label>
+      <input id="login-token" class="ltr" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <div id="login-banner" class="banner" role="alert" hidden></div>
+      <button id="login-submit" class="btn primary" type="submit" data-i18n="login.submit"></button>
+      <p class="muted small" data-i18n="login.hint"></p>
+      <button id="login-lang" class="btn link" type="button" data-i18n="top.language"></button>
+    </form>
+  </main>
+
+  <div id="app-view" class="shell" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <p class="brand-name" data-i18n="app.brand">EL METR</p>
+          <p class="muted small" data-i18n="app.subtitle"></p>
+        </div>
+      </div>
+      <div class="topbar-end">
+        <p class="who"><span class="muted" data-i18n="top.signedInAs"></span> <strong id="admin-name"></strong></p>
+        <button id="lang-toggle" class="btn secondary" type="button" data-i18n="top.language"></button>
+        <button id="sign-out" class="btn secondary" type="button" data-i18n="top.signOut"></button>
+      </div>
+    </header>
+
+    <nav id="tabs" class="tabs" role="tablist" data-i18n-aria-label="tabs.label">
+      <button id="tab-accounts" class="tab" type="button" role="tab" aria-controls="panel-accounts" aria-selected="true" data-tab="accounts"><span data-i18n="tabs.accounts"></span></button>
+      <button id="tab-audit" class="tab" type="button" role="tab" aria-controls="panel-audit" aria-selected="false" tabindex="-1" data-tab="audit"><span data-i18n="tabs.audit"></span></button>
+      <!-- Hidden until their APIs exist (see js/tabs.js). -->
+      <button id="tab-requests" class="tab" type="button" role="tab" aria-controls="panel-requests" aria-selected="false" tabindex="-1" data-tab="requests" hidden><span data-i18n="tabs.requests"></span> <span id="badge-requests" class="count" hidden></span></button>
+      <button id="tab-catalog" class="tab" type="button" role="tab" aria-controls="panel-catalog" aria-selected="false" tabindex="-1" data-tab="catalog" hidden><span data-i18n="tabs.catalog"></span></button>
+      <button id="tab-files" class="tab" type="button" role="tab" aria-controls="panel-files" aria-selected="false" tabindex="-1" data-tab="files" hidden><span data-i18n="tabs.files"></span></button>
+    </nav>
+
+    <section id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts">
+      <h2 data-i18n="accounts.title"></h2>
+      <form id="accounts-filter" class="toolbar">
+        <div class="field grow">
+          <label for="accounts-search" data-i18n="accounts.searchLabel"></label>
+          <input id="accounts-search" type="search" maxlength="100" autocomplete="off" data-i18n-placeholder="accounts.search">
+        </div>
+        <div class="field">
+          <label for="accounts-status" data-i18n="accounts.statusLabel"></label>
+          <select id="accounts-status">
+            <option value="" data-i18n="accounts.statusAll"></option>
+            <option value="active" data-i18n="status.active"></option>
+            <option value="suspended" data-i18n="status.suspended"></option>
+            <option value="deleted" data-i18n="status.deleted"></option>
+          </select>
+        </div>
+        <button class="btn primary" type="submit" data-i18n="accounts.filter"></button>
+        <button id="accounts-reset" class="btn secondary" type="button" data-i18n="accounts.reset"></button>
+      </form>
+      <div id="accounts-banner" class="banner" role="alert" hidden></div>
+      <div class="table-wrap">
+        <table id="accounts-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="accounts.col.name"></th>
+              <th scope="col" data-i18n="accounts.col.email"></th>
+              <th scope="col" data-i18n="accounts.col.phone"></th>
+              <th scope="col" data-i18n="accounts.col.status"></th>
+              <th scope="col" data-i18n="accounts.col.created"></th>
+              <th scope="col" data-i18n="accounts.col.actions"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="accounts-pager" class="pager">
+        <span class="muted" data-role="total"></span>
+        <div class="pager-controls">
+          <button class="btn secondary small" type="button" data-role="prev" data-i18n="common.prev"></button>
+          <span data-role="info"></span>
+          <button class="btn secondary small" type="button" data-role="next" data-i18n="common.next"></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-audit" role="tabpanel" aria-labelledby="tab-audit" hidden>
+      <div class="section-head">
+        <div>
+          <h2 data-i18n="audit.title"></h2>
+          <p class="muted small" data-i18n="audit.hint"></p>
+        </div>
+        <button id="audit-refresh" class="btn secondary" type="button" data-i18n="common.refresh"></button>
+      </div>
+      <div id="audit-banner" class="banner" role="alert" hidden></div>
+      <div class="table-wrap">
+        <table id="audit-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="audit.col.time"></th>
+              <th scope="col" data-i18n="audit.col.actor"></th>
+              <th scope="col" data-i18n="audit.col.action"></th>
+              <th scope="col" data-i18n="audit.col.target"></th>
+              <th scope="col" data-i18n="audit.col.detail"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="audit-pager" class="pager">
+        <span class="muted" data-role="total"></span>
+        <div class="pager-controls">
+          <button class="btn secondary small" type="button" data-role="prev" data-i18n="common.prev"></button>
+          <span data-role="info"></span>
+          <button class="btn secondary small" type="button" data-role="next" data-i18n="common.next"></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panels for tabs that are not available yet. -->
+    <section id="panel-requests" role="tabpanel" aria-labelledby="tab-requests" hidden></section>
+    <section id="panel-catalog" role="tabpanel" aria-labelledby="tab-catalog" hidden></section>
+    <section id="panel-files" role="tabpanel" aria-labelledby="tab-files" hidden></section>
+  </div>
+
+  <dialog id="action-dialog" class="dialog" aria-labelledby="dialog-title">
+    <form id="action-form" novalidate>
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-target" class="muted ltr-block"></p>
+      <p id="dialog-note" class="callout"></p>
+      <div id="dialog-reason-group" class="field">
+        <label for="dialog-reason" data-i18n="dialog.reason"></label>
+        <textarea id="dialog-reason" rows="4" maxlength="1000" required></textarea>
+        <div class="field-foot">
+          <span id="dialog-reason-hint" class="muted small"></span>
+          <span id="dialog-reason-count" class="muted small"></span>
+        </div>
+      </div>
+      <div id="dialog-banner" class="banner" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button id="dialog-cancel" class="btn secondary" type="button" data-i18n="common.cancel"></button>
+        <button id="dialog-confirm" class="btn danger" type="submit"></button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

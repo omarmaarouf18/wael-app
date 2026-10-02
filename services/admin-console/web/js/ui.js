@@ -1,0 +1,79 @@
+// Shared building blocks for the tab modules: error banner, pager, status
+// badge. Messages come from i18n by error kind; server text is never shown.
+
+import { clear, h } from './dom.js';
+import { formatDate, formatNumber, formatTime, t } from './i18n.js';
+
+export function pageCount(total, limit) {
+  if (!(total > 0) || !(limit > 0)) return 1;
+  return Math.max(1, Math.ceil(total / limit));
+}
+
+/** Fills and shows a banner. A retry button is offered unless the session ended. */
+export function showBanner(container, kind, onRetry) {
+  clear(container);
+  container.append(h('span', { class: 'banner-text', text: t(`err.${kind}`) }));
+  if (onRetry && kind !== 'unauthorized') {
+    container.append(
+      h('button', { class: 'btn small', text: t('common.retry'), attrs: { type: 'button' }, on: { click: onRetry } }),
+    );
+  }
+  container.hidden = false;
+}
+
+export function hideBanner(container) {
+  clear(container);
+  container.hidden = true;
+}
+
+export function statusBadge(status) {
+  const known = status === 'active' || status === 'suspended' || status === 'deleted';
+  return h('span', {
+    class: `badge ${known ? `badge-${status}` : 'badge-unknown'}`,
+    text: known ? t(`status.${status}`) : String(status ?? ''),
+  });
+}
+
+/**
+ * Binds a pager made of [data-role=prev], [data-role=next], [data-role=info]
+ * and [data-role=total] elements. update() redraws it in the current language.
+ */
+export function createPager(root, onPage) {
+  const prev = root.querySelector('[data-role=prev]');
+  const next = root.querySelector('[data-role=next]');
+  const info = root.querySelector('[data-role=info]');
+  const total = root.querySelector('[data-role=total]');
+  let page = 1;
+  let pages = 1;
+  prev.addEventListener('click', () => {
+    if (page > 1) onPage(page - 1);
+  });
+  next.addEventListener('click', () => {
+    if (page < pages) onPage(page + 1);
+  });
+  return {
+    update({ page: p, total: n, limit }) {
+      page = p;
+      pages = pageCount(n, limit);
+      prev.disabled = page <= 1;
+      next.disabled = page >= pages;
+      info.textContent = t('common.pageOf', { page: formatNumber(page), pages: formatNumber(pages) });
+      total.textContent = t('common.total', { total: formatNumber(n) });
+    },
+  };
+}
+
+/** A table row with one full-width message cell. */
+export function messageRow(columns, text) {
+  return h('tr', {}, h('td', { class: 'empty', text, attrs: { colspan: columns } }));
+}
+
+/** A table cell with the date on one line and the time under it. */
+export function dateCell(value) {
+  return h(
+    'td',
+    { class: 'when' },
+    h('div', { text: formatDate(value) }),
+    h('div', { class: 'muted small', text: formatTime(value) }),
+  );
+}
