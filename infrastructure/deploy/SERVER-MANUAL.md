@@ -688,11 +688,11 @@ re-deploy the current `release.env` so every container picks it up together):
 - Never rotate `BLOCKLIST_HMAC_KEY` casually: existing blocklist entries stop
   matching (documented in the env table, §5).
 
-Updating mongo/redis/caddy: bases are pinned by tag (`mongo:7`,
-`redis:7-alpine`, `caddy:2-alpine`), not digest (known gap W-07); Dependabot
-is not enabled. Bump the tag in `docker-compose.yml`, run preflight + deploy
-on a test host first, then ship via the pipeline. Watch Dependabot PRs once
-`.github/dependabot.yml` (W-07) lands.
+Updating mongo/redis/caddy: the three third-party images are pinned by digest
+in `docker-compose.yml` (W-07 resolved 2026-10-02), with weekly Dependabot
+docker updates for `/infrastructure/deploy`. Bump the digest (and tag) in
+`docker-compose.yml`, run preflight + deploy on a test host first, then ship
+via the pipeline and review the Dependabot PRs.
 
 ## 11. Moving to a new server
 

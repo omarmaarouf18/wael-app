@@ -180,7 +180,9 @@ guard, backups, restore, logs, cleanup, rotation, base-image updates).
 - No database migration framework; rollback restores images only (saas-core S-08).
 - No scheduled backups or restore drill yet (Bootstrap Phase B item 14).
 - `REDIS_URI` and Mongo URIs carry passwords in container env (`docker inspect`).
-- Base images are pinned by tag, not digest (W-07).
+- App images are tagged by commit sha; third-party bases (`caddy`, `mongo`,
+  `redis`) are pinned by digest with weekly Dependabot updates (W-07 done
+  2026-10-02).
 - No certificate rotation job; preflight only refuses certs expiring within 14 days.
 - The admin console shows accounts and the auth-service audit log only; its academy pages and the academy half of the audit log arrive with SPEC Phase 4. `deploy.sh` checks the API host through Caddy but not `ADMIN_DOMAIN`.
 - The admin listeners of auth-service (:9001) and academy-service (:9002) run inside their containers and are not published.
