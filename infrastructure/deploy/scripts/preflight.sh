@@ -2,7 +2,7 @@
 # Pre-flight: validates everything a deploy needs WITHOUT touching running
 # containers (fixes saas-core S-02). Exit 0 only when every check passes.
 set -euo pipefail
-# shellcheck source=scripts/lib.sh
+# shellcheck disable=SC1091
 source "$(dirname "$0")/lib.sh"
 
 errors=0

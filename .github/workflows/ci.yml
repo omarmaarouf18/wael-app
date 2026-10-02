@@ -16,12 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.6'
           cache: false
@@ -133,12 +133,12 @@ jobs:
           - { path: tests/e2e, name: e2e }
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.6'
           cache: false
@@ -160,13 +160,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       # Plain ES modules and node:test: no npm packages, no build step.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
 
@@ -179,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -203,12 +203,12 @@ jobs:
           - { path: shared/infra, name: shared-infra }
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.6'
           cache: false
@@ -230,12 +230,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.6'
           cache: false
@@ -252,7 +252,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -290,12 +290,12 @@ jobs:
     needs: build-test
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.6'
           cache: false
@@ -335,3 +335,116 @@ jobs:
         run: |
           docker compose --env-file "${RUNNER_TEMP}/.env.local" -f infrastructure/docker-compose.yml down -v
 
+
+  prod-build:
+    name: Prod Image Build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - api-gateway
+          - auth-service
+          - notification-service
+          - academy-service
+          - admin-console
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build prod image
+        run: |
+          docker buildx build \
+            --file services/${{ matrix.service }}/Dockerfile \
+            --target prod \
+            --tag "wael-${{ matrix.service }}:test" \
+            --load \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            .
+
+      - name: Verify auth-service admin CLIs
+        if: matrix.service == 'auth-service'
+        run: |
+          docker run --rm --entrypoint /bin/onboard-admin "wael-${{ matrix.service }}:test" --help 2>&1 | grep "Usage of onboard-admin"
+          docker run --rm --entrypoint /bin/revoke-admin "wael-${{ matrix.service }}:test" --help 2>&1 | grep "Usage of revoke-admin"
+
+  deploy-config-check:
+    name: Deploy Config Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.6'
+          cache: false
+
+      - name: Validate deploy compose config
+        run: |
+          tmp="$(mktemp -d)"
+          sed 's/PASTE_[A-Z_0-9]*/x/g' infrastructure/deploy/env.production.example > "$tmp/env"
+          printf 'IMAGE_TAG=%s\n' "0000000000000000000000000000000000000000" >> "$tmp/env"
+          WAEL_HOME="$tmp" docker compose --env-file "$tmp/env" -f infrastructure/deploy/docker-compose.yml config --quiet
+          rm -rf "$tmp"
+
+      - name: Shellcheck deploy scripts
+        run: shellcheck infrastructure/deploy/scripts/*.sh
+
+      - name: Run actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          actionlint .github/workflows/*.yml infrastructure/deploy/.github/workflows/deploy.yml
+
+  ci-ok:
+    name: CI OK
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - lint-formatting
+      - build-test
+      - admin-console-web
+      - deploy-scripts
+      - security
+      - gitleaks
+      - flutter-test
+      - e2e-compose
+      - prod-build
+      - deploy-config-check
+    steps:
+      - name: Verify all CI Gate jobs succeeded
+        run: |
+          passed=true
+          echo "Evaluating CI Gate jobs:"
+          check_job() {
+            local job="$1"
+            local result="$2"
+            echo "  $job: $result"
+            if [ "$result" != "success" ]; then
+              passed=false
+            fi
+          }
+          check_job "lint-formatting" "${{ needs.lint-formatting.result }}"
+          check_job "build-test" "${{ needs.build-test.result }}"
+          check_job "admin-console-web" "${{ needs.admin-console-web.result }}"
+          check_job "deploy-scripts" "${{ needs.deploy-scripts.result }}"
+          check_job "security" "${{ needs.security.result }}"
+          check_job "gitleaks" "${{ needs.gitleaks.result }}"
+          check_job "flutter-test" "${{ needs.flutter-test.result }}"
+          check_job "e2e-compose" "${{ needs.e2e-compose.result }}"
+          check_job "prod-build" "${{ needs.prod-build.result }}"
+          check_job "deploy-config-check" "${{ needs.deploy-config-check.result }}"
+          if [ "$passed" != "true" ]; then
+            echo "CI OK gate failed: one or more required jobs did not succeed."
+            exit 1
+          fi
+          echo "CI OK: all required jobs succeeded."

@@ -3,7 +3,7 @@
 # On any failure after containers were touched, roll back to the last
 # release that passed this script (fixes saas-core S-03: no HEAD~1 guess).
 set -euo pipefail
-# shellcheck source=scripts/lib.sh
+# shellcheck disable=SC1091
 source "$(dirname "$0")/lib.sh"
 
 mkdir -p "$STATE_DIR"

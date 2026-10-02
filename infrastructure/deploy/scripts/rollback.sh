@@ -3,7 +3,7 @@
 # Limits: images only. Database changes are NOT rolled back (no migration
 # framework yet; see RUNBOOK.md "Known gaps").
 set -euo pipefail
-# shellcheck source=scripts/lib.sh
+# shellcheck disable=SC1091
 source "$(dirname "$0")/lib.sh"
 
 [ -f "$LAST_GOOD_FILE" ] || fail "no last-good release recorded ($LAST_GOOD_FILE); manual recovery needed"
