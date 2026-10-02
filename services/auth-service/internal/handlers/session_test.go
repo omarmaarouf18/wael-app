@@ -676,3 +676,164 @@ func TestSession_AdminSuspendAndRevokeSessions(t *testing.T) {
 		t.Fatalf("expected 401 on dev2 refresh after suspend, got %d", rec.Code)
 	}
 }
+
+type failingDeleteCodesStore struct {
+	otp.Store
+	failDelete bool
+}
+
+func (f *failingDeleteCodesStore) Delete(ctx context.Context, key string) error {
+	if f.failDelete {
+		return errors.New("simulated redis delete error")
+	}
+	return f.Store.Delete(ctx, key)
+}
+
+func TestSession_Replace_RedisFailureReturns503_OldSessionEnded(t *testing.T) {
+	s, _, cleanup := setupSessionTestServer(t)
+	defer cleanup()
+
+	failingCodes := &failingDeleteCodesStore{Store: s.Codes}
+	s.Codes = failingCodes
+
+	// 1. Signup and verify on Device 1
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Replace Failure User",
+		"email":     "replacefail@example.com",
+		"phone":     "+201012345710",
+		"password":  "Password123!",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup failed: %d", rec.Code)
+	}
+	devOtp := decodeBody(t, rec)["dev_otp"]
+
+	dev1ID := "11111111-1111-4111-8111-111111111111"
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email":     "replacefail@example.com",
+		"code":      devOtp,
+		"device_id": dev1ID,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify-otp failed: %d", rec.Code)
+	}
+
+	ctx := context.Background()
+	u, _ := s.Store.FindByEmail(ctx, "replacefail@example.com")
+	sessions, _ := s.Store.ListActiveSessions(ctx, u.ID)
+	if len(sessions) != 1 {
+		t.Fatalf("expected 1 active session, got %d", len(sessions))
+	}
+	sess1ID := sessions[0].ID
+
+	// 2. Login on Device 2
+	dev2ID := "22222222-2222-4222-8222-222222222222"
+	rec = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email":     "replacefail@example.com",
+		"password":  "Password123!",
+		"device_id": dev2ID,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login dev2 failed: %d", rec.Code)
+	}
+
+	// Now 2 active sessions. Arm Codes.Delete to fail on replacement.
+	failingCodes.failDelete = true
+
+	// 3. Login on Device 3 -> attempts to replace Device 1, but Codes.Delete fails -> 503
+	dev3ID := "33333333-3333-4333-8333-333333333333"
+	rec = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email":     "replacefail@example.com",
+		"password":  "Password123!",
+		"device_id": dev3ID,
+	}, "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 on replace Codes failure, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// 4. Verify old session (Device 1) is still ended in the store with reason replaced
+	sess1, err := s.Store.GetSession(ctx, sess1ID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if sess1 == nil || sess1.EndedAt == nil || sess1.EndReason != models.EndReasonReplaced {
+		t.Fatalf("expected old session to still be ended with replaced in store, got: %+v", sess1)
+	}
+}
+
+func TestSession_Logout_FailingRevokeSessionReturns503(t *testing.T) {
+	s, _, cleanup := setupSessionTestServer(t)
+	defer cleanup()
+
+	// 1. Signup and verify
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Logout Revoke Fail User",
+		"email":     "logoutrevfail@example.com",
+		"phone":     "+201012345711",
+		"password":  "Password123!",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup failed: %d", rec.Code)
+	}
+	devOtp := decodeBody(t, rec)["dev_otp"]
+
+	devID := "11111111-1111-4111-8111-111111111111"
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email":     "logoutrevfail@example.com",
+		"code":      devOtp,
+		"device_id": devID,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify-otp failed: %d", rec.Code)
+	}
+	accessToken := decodeBody(t, rec)["access_token"]
+
+	// Set Redis client to nil in jwtutil so RevokeSession fails
+	jwtutil.SetRedisClient(nil)
+
+	// Logout should return 503 because RevokeSession fails
+	rec = doRequest(t, s, http.MethodPost, "/auth/logout", nil, accessToken)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 on logout when RevokeSession fails, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSession_Logout_AlreadyEndedSessionReturns204(t *testing.T) {
+	s, _, cleanup := setupSessionTestServer(t)
+	defer cleanup()
+
+	// 1. Signup and verify
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Logout Ended User",
+		"email":     "logoutended@example.com",
+		"phone":     "+201012345712",
+		"password":  "Password123!",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup failed: %d", rec.Code)
+	}
+	devOtp := decodeBody(t, rec)["dev_otp"]
+
+	devID := "11111111-1111-4111-8111-111111111111"
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email":     "logoutended@example.com",
+		"code":      devOtp,
+		"device_id": devID,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify-otp failed: %d", rec.Code)
+	}
+	accessToken := decodeBody(t, rec)["access_token"]
+	claims, _ := jwtutil.ValidateToken(accessToken)
+
+	// Mark session ended in store
+	ctx := context.Background()
+	now := time.Now().UTC()
+	_ = s.Store.EndSession(ctx, claims.SID, models.EndReasonReplaced, now)
+
+	// Logout returns 204
+	rec = doRequest(t, s, http.MethodPost, "/auth/logout", nil, accessToken)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on already-ended session logout, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}

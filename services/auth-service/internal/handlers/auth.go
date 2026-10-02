@@ -221,9 +221,13 @@ func (s *Server) createSessionAndTokens(ctx context.Context, u *models.User, dev
 
 	for _, endedSess := range ended {
 		if endedSess.RefreshHash != "" {
-			_ = s.Codes.Delete(ctx, "refresh:"+endedSess.RefreshHash)
+			if err := s.Codes.Delete(ctx, "refresh:"+endedSess.RefreshHash); err != nil {
+				return "", "", err
+			}
 		}
-		_ = jwtutil.RevokeSession(endedSess.ID)
+		if err := jwtutil.RevokeSession(endedSess.ID); err != nil {
+			return "", "", err
+		}
 	}
 
 	if err := s.Codes.Set(ctx, "refresh:"+refreshHash, u.ID+":"+sid, 7*24*time.Hour); err != nil {
@@ -720,15 +724,36 @@ func (s *Server) Logout(w http.ResponseWriter, r *http.Request) {
 		now := time.Now().UTC()
 		dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 		sess, getErr := s.Store.GetSession(dbCtx, claims.SID)
-		if getErr == nil && sess != nil {
-			_ = s.Store.EndSession(dbCtx, claims.SID, models.EndReasonLogout, now)
+		cancel()
+		if getErr != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", getErr)
+			return
+		}
+		if sess != nil && sess.EndedAt != nil {
+			// Already-ended session -> keep 204 No Content.
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if sess != nil {
+			dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+			endErr := s.Store.EndSession(dbCtx, claims.SID, models.EndReasonLogout, now)
+			cancel()
+			if endErr != nil {
+				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", endErr)
+				return
+			}
 			if sess.RefreshHash != "" {
-				_ = s.Codes.Delete(r.Context(), "refresh:"+sess.RefreshHash)
+				if delErr := s.Codes.Delete(r.Context(), "refresh:"+sess.RefreshHash); delErr != nil {
+					handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", delErr)
+					return
+				}
 			}
 		}
-		cancel()
 
-		_ = jwtutil.RevokeSession(claims.SID)
+		if revErr := jwtutil.RevokeSession(claims.SID); revErr != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", revErr)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

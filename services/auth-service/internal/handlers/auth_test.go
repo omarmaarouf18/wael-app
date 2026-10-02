@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/mailer"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/otp"
@@ -866,6 +867,11 @@ func (w *legacyStoreWrapper) Update(ctx context.Context, u *models.User) error {
 
 func runStatusGateSuite(t *testing.T, baseStore store.Store) {
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
 	ctx := context.Background()
 
 	pwHash, err := bcrypt.GenerateFromPassword([]byte("Password123!"), bcrypt.DefaultCost)

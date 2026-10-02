@@ -351,6 +351,7 @@ func (s *Server) SuspendAccount(w http.ResponseWriter, r *http.Request, id strin
 		if endedSess.RefreshHash != "" {
 			_ = s.Codes.Delete(r.Context(), "refresh:"+endedSess.RefreshHash)
 		}
+		// RevokeAllUserTokens (fail-closed) is the backstop; keep ignoring individual RevokeSession errors.
 		_ = jwtutil.RevokeSession(endedSess.ID)
 	}
 
@@ -574,6 +575,7 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, id string
 		if endedSess.RefreshHash != "" {
 			_ = s.Codes.Delete(r.Context(), "refresh:"+endedSess.RefreshHash)
 		}
+		// RevokeAllUserTokens (fail-closed) is the backstop; keep ignoring individual RevokeSession errors.
 		_ = jwtutil.RevokeSession(endedSess.ID)
 	}
 
