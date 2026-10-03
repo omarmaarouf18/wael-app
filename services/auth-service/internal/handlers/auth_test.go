@@ -705,6 +705,56 @@ func TestLoginLockout_ResetClearsLocks(t *testing.T) {
 	}
 }
 
+func TestLogin_DummyBcryptCalledOnce(t *testing.T) {
+	s := testServer()
+
+	var mu sync.Mutex
+	calls := 0
+	real := s.BcryptCompare
+	s.BcryptCompare = func(hashed, password []byte) error {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return real(hashed, password)
+	}
+	count := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return calls
+	}
+
+	// Unknown email path calls the comparer exactly once.
+	rec := doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email": "nobody-dummy@example.com", "password": "wrongpass",
+	}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown email login = %d, want 401", rec.Code)
+	}
+	if got := count(); got != 1 {
+		t.Fatalf("unknown-email bcrypt calls = %d, want exactly 1", got)
+	}
+
+	// Wrong-password path calls the comparer exactly once.
+	doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Dummy User",
+		"email":     "dummy@example.com",
+		"phone":     "+201012345699",
+		"password":  "password123",
+	}, "")
+	mu.Lock()
+	calls = 0
+	mu.Unlock()
+	rec = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email": "dummy@example.com", "password": "wrongpass",
+	}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password login = %d, want 401", rec.Code)
+	}
+	if got := count(); got != 1 {
+		t.Fatalf("wrong-password bcrypt calls = %d, want exactly 1", got)
+	}
+}
+
 func TestGatewaySecretRequired(t *testing.T) {
 	s := testServer()
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(`{}`))

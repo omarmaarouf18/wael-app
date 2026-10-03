@@ -17,6 +17,7 @@ import (
 	"net/mail"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -64,6 +65,28 @@ type Server struct {
 	DefaultPhoneRegion string
 	NotifyURL          string
 	NotifyToken        string
+	// BcryptCompare compares a bcrypt hash with a password. Injectable for
+	// tests (call counting); defaults to bcrypt.CompareHashAndPassword.
+	BcryptCompare func(hashed, password []byte) error
+}
+
+// dummyBcryptHash is a fixed bcrypt hash generated once with the same cost as
+// real hashes. Login compares against it when the email does not exist, so an
+// unknown email costs the same bcrypt work as a wrong password (S4).
+var (
+	dummyBcryptHash     []byte
+	dummyBcryptHashOnce sync.Once
+)
+
+func getDummyBcryptHash() []byte {
+	dummyBcryptHashOnce.Do(func() {
+		h, err := bcrypt.GenerateFromPassword([]byte("dummy-password-for-unknown-email-timing-mitigation"), bcrypt.DefaultCost)
+		if err != nil {
+			panic("handlers: generate dummy bcrypt hash: " + err.Error())
+		}
+		dummyBcryptHash = h
+	})
+	return dummyBcryptHash
 }
 
 // New creates a Server.
@@ -77,7 +100,15 @@ func New(st store.Store, codes otp.Store, lockout Lockout, sender mailer.Sender,
 		AppEnv:             appEnv,
 		GatewaySecret:      gatewaySecret,
 		DefaultPhoneRegion: "EG",
+		BcryptCompare:      bcrypt.CompareHashAndPassword,
 	}
+}
+
+func (s *Server) bcryptCompare(hashed, password []byte) error {
+	if s.BcryptCompare != nil {
+		return s.BcryptCompare(hashed, password)
+	}
+	return bcrypt.CompareHashAndPassword(hashed, password)
 }
 
 func (s *Server) blocklistKey() string {
@@ -780,7 +811,16 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if u == nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
+	// Same bcrypt work for unknown emails as for wrong passwords (S4): compare
+	// against a fixed dummy hash generated once with the same cost, before
+	// returning the generic 401.
+	passwordOK := false
+	if u == nil {
+		_ = s.bcryptCompare(getDummyBcryptHash(), []byte(req.Password))
+	} else {
+		passwordOK = s.bcryptCompare([]byte(u.PasswordHash), []byte(req.Password)) == nil
+	}
+	if !passwordOK {
 		ll.RecordPairFailure(email, ip)
 		ll.RecordEmailFailure(email)
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "invalid credentials", nil)
