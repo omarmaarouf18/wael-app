@@ -275,6 +275,12 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid email or password", nil)
 		return
 	}
+	// bcrypt (x/crypto) rejects passwords longer than 72 bytes with an error;
+	// validate in bytes (an Arabic character is 2 bytes) and return 400, not 500.
+	if len(req.Password) > 72 {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "password_too_long", "password is too long", nil)
+		return
+	}
 
 	bKey := s.blocklistKey()
 	if bKey == "" {
@@ -874,6 +880,12 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ResetToken == "" || len(req.NewPassword) < 8 || len(req.NewPassword) > 128 {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid token or password", nil)
+		return
+	}
+	// Validate byte length before consuming the token, so a bad password never
+	// burns the token. bcrypt rejects >72 bytes; return 400, not 500.
+	if len(req.NewPassword) > 72 {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "password_too_long", "password is too long", nil)
 		return
 	}
 	ctx := r.Context()

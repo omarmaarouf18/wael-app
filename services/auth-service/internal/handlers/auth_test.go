@@ -244,6 +244,89 @@ func TestResetRequestAntiEnumeration(t *testing.T) {
 	}
 }
 
+func TestPassword_72ByteLimit(t *testing.T) {
+	s := testServer()
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	// 72 bytes accepted on signup.
+	pw72 := strings.Repeat("a", 72)
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Longpw User",
+		"email":     "longpw72@example.com",
+		"phone":     "+201012345682",
+		"password":  pw72,
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup 72-byte password = %d, want 201 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// 73 bytes rejected with 400 password_too_long.
+	pw73 := strings.Repeat("b", 73)
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Longpw User",
+		"email":     "longpw73@example.com",
+		"phone":     "+201012345683",
+		"password":  pw73,
+	}, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("signup 73-byte password = %d, want 400 (%s)", rec.Code, rec.Body.String())
+	}
+	var errBody map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("decode 73-byte error: %v", err)
+	}
+	if errBody["code"] != "password_too_long" {
+		t.Fatalf("73-byte code = %q, want password_too_long (%s)", errBody["code"], rec.Body.String())
+	}
+
+	// 40 Arabic characters (80 bytes) rejected with 400, not 500.
+	ar40 := strings.Repeat("أ", 40)
+	if len(ar40) != 80 {
+		t.Fatalf("test setup: len(ar40) = %d, want 80", len(ar40))
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Arabic User",
+		"email":     "arabic40@example.com",
+		"phone":     "+201012345684",
+		"password":  ar40,
+	}, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("signup 40-char Arabic password = %d, want 400 (%s)", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &errBody); err != nil {
+		t.Fatalf("decode arabic error: %v", err)
+	}
+	if errBody["code"] != "password_too_long" {
+		t.Fatalf("arabic code = %q, want password_too_long", errBody["code"])
+	}
+
+	// Reset token stays usable after password_too_long.
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": "longpw72@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request = %d", rec.Code)
+	}
+	devCode := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": "longpw72@example.com", "code": devCode}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset verify = %d (%s)", rec.Code, rec.Body.String())
+	}
+	resetToken := decodeBody(t, rec)["reset_token"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/confirm", map[string]string{"reset_token": resetToken, "new_password": pw73}, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("reset confirm 73-byte = %d, want 400 (%s)", rec.Code, rec.Body.String())
+	}
+	// Same token works with a valid password.
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/confirm", map[string]string{"reset_token": resetToken, "new_password": "newvalid123"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset confirm retry with valid password = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestConfirmReset_RevokesSessions(t *testing.T) {
 	s := testServer()
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")
