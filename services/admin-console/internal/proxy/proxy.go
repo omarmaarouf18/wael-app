@@ -1,9 +1,9 @@
-// Package proxy forwards a fixed set of admin requests to auth-service's
-// /internal/admin/* endpoints (ADR-0008).
+// Package proxy forwards a fixed set of admin requests to the
+// /internal/admin/* endpoints of auth-service and academy-service (ADR-0008).
 //
 // The console makes no authorization decision: it requires an X-Admin-Token,
 // validates the shape of the input, adds the internal token and the real
-// client address, and lets auth-service decide. Nothing is passed through
+// client address, and lets the upstream decide. Nothing is passed through
 // generically: every handler maps to exactly one upstream endpoint, and the
 // upstream request is built from scratch, so no client header (including a
 // forged X-Internal-Token or X-Admin-Client-IP) can reach it.
@@ -61,6 +61,9 @@ type Options struct {
 	InternalToken string
 	// AuthURL is the auth-service admin listener, scheme://host[:port]. Required.
 	AuthURL string
+	// AcademyURL is the academy-service admin listener, scheme://host[:port].
+	// Required: the catalog routes forward to it.
+	AcademyURL string
 	// TrustedProxies are the peers whose X-Forwarded-For is believed.
 	TrustedProxies []netip.Prefix
 	// Client performs upstream calls (mTLS in production). Nil uses a default
@@ -74,6 +77,7 @@ type Options struct {
 type Proxy struct {
 	internalToken string
 	authURL       string
+	academyURL    string
 	trusted       []netip.Prefix
 	client        *http.Client
 	timeout       time.Duration
@@ -89,6 +93,10 @@ func New(o Options) (*Proxy, error) {
 	if base == "" {
 		return nil, errors.New("proxy: auth admin URL is empty")
 	}
+	academy := strings.TrimRight(strings.TrimSpace(o.AcademyURL), "/")
+	if academy == "" {
+		return nil, errors.New("proxy: academy admin URL is empty")
+	}
 	timeout := o.Timeout
 	if timeout <= 0 {
 		timeout = UpstreamTimeout
@@ -102,6 +110,7 @@ func New(o Options) (*Proxy, error) {
 	return &Proxy{
 		internalToken: o.InternalToken,
 		authURL:       base,
+		academyURL:    academy,
 		trusted:       o.TrustedProxies,
 		client:        &c,
 		timeout:       timeout,
@@ -191,9 +200,10 @@ func (p *Proxy) Delete(w http.ResponseWriter, r *http.Request) {
 	p.accountAction(w, r, "accounts.delete", http.MethodDelete, "", true)
 }
 
-// Audit handles GET /api/audit -> GET auth /internal/admin/audit-log.
-// Only auth-service's log is served today; the academy log joins it when the
-// academy admin endpoints exist (SPEC Phase 4.1, ADR-0008 section 9).
+// Audit handles GET /api/audit -> GET auth /internal/admin/audit-log, or
+// -> GET academy /internal/admin/audit-log when source=academy. The two logs
+// are never merged: merged pagination over two sources is wrong without a
+// shared cursor, so the page shows one source at a time.
 func (p *Proxy) Audit(w http.ResponseWriter, r *http.Request) {
 	token, ok := p.begin(w, r, http.MethodGet)
 	if !ok {
@@ -205,9 +215,18 @@ func (p *Proxy) Audit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
-	p.relayCall(w, r, token, upstreamCall{
-		route: "audit.list", method: http.MethodGet, path: "/internal/admin/audit-log", query: q,
-	})
+	switch source := strings.TrimSpace(in.Get("source")); source {
+	case "", "auth":
+		p.relayCall(w, r, token, upstreamCall{
+			route: "audit.list", method: http.MethodGet, path: "/internal/admin/audit-log", query: q,
+		})
+	case "academy":
+		p.relayAcademy(w, r, token, upstreamCall{
+			route: "audit.academy", method: http.MethodGet, path: "/internal/admin/audit-log", query: q,
+		})
+	default:
+		writeError(w, http.StatusBadRequest, "bad_request")
+	}
 }
 
 // accountAction implements suspend, reactivate and delete. withReason selects
@@ -313,6 +332,19 @@ func (a accountRequest) reason() (string, bool) {
 // fields and trailing data are refused, and a reason is refused where none is
 // expected.
 func decodeBody(w http.ResponseWriter, r *http.Request, dst *accountRequest, withReason bool) bool {
+	if !decodeStrict(w, r, dst) {
+		return false
+	}
+	if !withReason && dst.Reason != nil {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return false
+	}
+	return true
+}
+
+// decodeStrict reads a size-capped JSON value with unknown fields and
+// trailing data refused.
+func decodeStrict(w http.ResponseWriter, r *http.Request, dst any) bool {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBody))
 	if err != nil || !utf8.Valid(raw) {
 		writeError(w, http.StatusBadRequest, "bad_request")
@@ -325,10 +357,6 @@ func decodeBody(w http.ResponseWriter, r *http.Request, dst *accountRequest, wit
 		return false
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request")
-		return false
-	}
-	if !withReason && dst.Reason != nil {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return false
 	}
@@ -451,10 +479,11 @@ func parseHostAddr(remote string) (netip.Addr, bool) {
 type upstreamCall struct {
 	route    string // log label
 	method   string
-	path     string // fixed or built from a validated UUID
+	path     string // fixed or built from a validated id
 	query    url.Values
 	body     []byte
-	targetID string // validated UUID, logged for account actions
+	targetID string // validated id, logged for account and catalog actions
+	academy  bool   // send to ACADEMY_ADMIN_URL instead of the auth listener
 }
 
 // relayCall performs the call and relays a usable answer to the browser.
@@ -472,6 +501,9 @@ func (p *Proxy) relayCall(w http.ResponseWriter, r *http.Request, token string, 
 // only the headers set here.
 func (p *Proxy) call(w http.ResponseWriter, r *http.Request, token string, c upstreamCall) (int, []byte, bool) {
 	target := p.authURL + c.path
+	if c.academy {
+		target = p.academyURL + c.path
+	}
 	if len(c.query) > 0 {
 		target += "?" + c.query.Encode()
 	}

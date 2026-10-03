@@ -24,9 +24,8 @@ type Config struct {
 	InternalServiceToken string
 	// AuthAdminURL is the auth-service admin listener (/internal/admin/*).
 	AuthAdminURL string
-	// AcademyAdminURL is the academy-service admin listener. It is validated
-	// now so a deploy fails early, but no route uses it until the academy
-	// admin endpoints land (SPEC Phase 4).
+	// AcademyAdminURL is the academy-service admin listener. The catalog
+	// routes (/api/levels, /api/subjects, /api/videos) forward to it.
 	AcademyAdminURL string
 	TLSCertPath     string
 	TLSKeyPath      string

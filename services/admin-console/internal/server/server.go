@@ -28,6 +28,20 @@ func APIRoutes() []string {
 		"/api/accounts/reactivate",
 		"/api/accounts/delete",
 		"/api/audit",
+		"/api/levels",
+		"/api/levels/create",
+		"/api/levels/update",
+		"/api/levels/delete",
+		"/api/subjects",
+		"/api/subjects/create",
+		"/api/subjects/update",
+		"/api/subjects/publish",
+		"/api/subjects/unpublish",
+		"/api/videos",
+		"/api/videos/create",
+		"/api/videos/update",
+		"/api/videos/reorder",
+		"/api/videos/delete",
 	}
 }
 
@@ -45,6 +59,20 @@ func New(p *proxy.Proxy, assets fs.FS) (http.Handler, error) {
 		"/api/accounts/reactivate": p.Reactivate,
 		"/api/accounts/delete":     p.Delete,
 		"/api/audit":               p.Audit,
+		"/api/levels":              p.LevelsList,
+		"/api/levels/create":       p.LevelsCreate,
+		"/api/levels/update":       p.LevelsUpdate,
+		"/api/levels/delete":       p.LevelsDelete,
+		"/api/subjects":            p.SubjectsList,
+		"/api/subjects/create":     p.SubjectsCreate,
+		"/api/subjects/update":     p.SubjectsUpdate,
+		"/api/subjects/publish":    p.SubjectsPublish,
+		"/api/subjects/unpublish":  p.SubjectsUnpublish,
+		"/api/videos":              p.VideosList,
+		"/api/videos/create":       p.VideosCreate,
+		"/api/videos/update":       p.VideosUpdate,
+		"/api/videos/reorder":      p.VideosReorder,
+		"/api/videos/delete":       p.VideosDelete,
 	}
 	for _, route := range APIRoutes() {
 		mux.HandleFunc(route, handlers[route])

@@ -99,6 +99,7 @@ func newProxy(t *testing.T, up *fakeUpstream, trusted ...string) *Proxy {
 	p, err := New(Options{
 		InternalToken:  testInternal,
 		AuthURL:        up.srv.URL,
+		AcademyURL:     up.srv.URL,
 		TrustedProxies: prefixes,
 		Timeout:        2 * time.Second,
 	})
@@ -169,9 +170,23 @@ type route struct {
 	upstreamQuery  string
 	upstreamStatus int
 	upstreamReply  string
+	// wantStatus is the console status for the happy path (upstreamStatus is
+	// relayed; 0 means 200).
+	wantStatus int
+}
+
+func (rt route) want() int {
+	if rt.wantStatus != 0 {
+		return rt.wantStatus
+	}
+	return http.StatusOK
 }
 
 func routes() []route {
+	return append(baseRoutes(), catalogRoutes()...)
+}
+
+func baseRoutes() []route {
 	return []route{
 		{
 			name: "whoami", handler: func(p *Proxy) http.HandlerFunc { return p.Whoami },
@@ -284,7 +299,7 @@ func TestRoutes_HappyPathForwardsExactlyOneUpstreamRequest(t *testing.T) {
 			up := newUpstream(t, rt.upstreamStatus, rt.upstreamReply)
 			p := newProxy(t, up)
 			w := do(rt.handler(p), rt.method, rt.target, rt.body, withToken())
-			if w.Code != http.StatusOK {
+			if w.Code != rt.want() {
 				t.Fatalf("status = %d body=%q", w.Code, w.Body.String())
 			}
 			calls := up.calls()
@@ -332,7 +347,7 @@ func TestRoutes_ClientHeadersAreStrippedNotForwarded(t *testing.T) {
 			up := newUpstream(t, rt.upstreamStatus, rt.upstreamReply)
 			p := newProxy(t, up)
 			w := do(rt.handler(p), rt.method, rt.target, rt.body, hostile)
-			if w.Code != http.StatusOK {
+			if w.Code != rt.want() {
 				t.Fatalf("status = %d", w.Code)
 			}
 			c := up.calls()[0]
@@ -385,7 +400,7 @@ func TestRoutes_UpstreamFailuresBecomeSafe503(t *testing.T) {
 		t.Run(rt.name+"/timeout", func(t *testing.T) {
 			up := newUpstream(t, 200, rt.upstreamReply)
 			up.delay = 400 * time.Millisecond
-			p, err := New(Options{InternalToken: testInternal, AuthURL: up.srv.URL, Timeout: 50 * time.Millisecond})
+			p, err := New(Options{InternalToken: testInternal, AuthURL: up.srv.URL, AcademyURL: up.srv.URL, Timeout: 50 * time.Millisecond})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -893,10 +908,12 @@ func TestUnknownPeerAddressOmitsClientIPHeader(t *testing.T) {
 
 func TestNew_FailsFastOnEmptySecretOrURL(t *testing.T) {
 	for name, o := range map[string]Options{
-		"empty token":    {InternalToken: "", AuthURL: "https://a:9001"},
-		"blank token":    {InternalToken: "  ", AuthURL: "https://a:9001"},
-		"empty auth url": {InternalToken: "x", AuthURL: ""},
-		"blank auth url": {InternalToken: "x", AuthURL: "  "},
+		"empty token":       {InternalToken: "", AuthURL: "https://a:9001", AcademyURL: "https://a:9002"},
+		"blank token":       {InternalToken: "  ", AuthURL: "https://a:9001", AcademyURL: "https://a:9002"},
+		"empty auth url":    {InternalToken: "x", AuthURL: "", AcademyURL: "https://a:9002"},
+		"blank auth url":    {InternalToken: "x", AuthURL: "  ", AcademyURL: "https://a:9002"},
+		"empty academy url": {InternalToken: "x", AuthURL: "https://a:9001", AcademyURL: ""},
+		"blank academy url": {InternalToken: "x", AuthURL: "https://a:9001", AcademyURL: "  "},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := New(o); err == nil {
@@ -907,7 +924,7 @@ func TestNew_FailsFastOnEmptySecretOrURL(t *testing.T) {
 }
 
 func TestNew_DefaultsToTenSecondTimeout(t *testing.T) {
-	p, err := New(Options{InternalToken: "x", AuthURL: "https://a:9001/"})
+	p, err := New(Options{InternalToken: "x", AuthURL: "https://a:9001/", AcademyURL: "https://a:9002/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -916,6 +933,9 @@ func TestNew_DefaultsToTenSecondTimeout(t *testing.T) {
 	}
 	if p.authURL != "https://a:9001" {
 		t.Fatalf("authURL = %q", p.authURL)
+	}
+	if p.academyURL != "https://a:9002" {
+		t.Fatalf("academyURL = %q", p.academyURL)
 	}
 	if UpstreamTimeout != 10*time.Second {
 		t.Fatal("UpstreamTimeout must be 10s")

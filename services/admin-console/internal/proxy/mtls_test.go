@@ -118,11 +118,74 @@ func mtlsUpstream(t *testing.T, pki *testPKI) string {
 
 func whoamiStatus(t *testing.T, client *http.Client, url string) int {
 	t.Helper()
-	p, err := New(Options{InternalToken: testInternal, AuthURL: url, Client: client, Timeout: 3 * time.Second})
+	p, err := New(Options{InternalToken: testInternal, AuthURL: url, AcademyURL: url, Client: client, Timeout: 3 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return do(p.Whoami, http.MethodGet, "/api/whoami", "", withToken()).Code
+}
+
+// academyUpstream is an academy admin listener that requires a client
+// certificate signed by pki and serves the levels list.
+func academyUpstream(t *testing.T, pki *testPKI) string {
+	t.Helper()
+	certPEM, keyPEM := pki.issue(t, "academy-service", 5)
+	serverCert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pool := x509.NewCertPool()
+	pool.AddCert(pki.caCert)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/admin/levels" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"levels":[]}`))
+	}))
+	srv.TLS = &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    pool,
+		MinVersion:   tls.VersionTLS12,
+	}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func levelsStatus(t *testing.T, client *http.Client, authURL, academyURL string) int {
+	t.Helper()
+	p, err := New(Options{InternalToken: testInternal, AuthURL: authURL, AcademyURL: academyURL, Client: client, Timeout: 3 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return do(p.LevelsList, http.MethodGet, "/api/levels", "", withToken()).Code
+}
+
+func TestMTLS_AcademyCallsUseTheSameClientCertificate(t *testing.T) {
+	pki := newPKI(t, "wael-test-ca")
+	authURL := mtlsUpstream(t, pki)
+	academyURL := academyUpstream(t, pki)
+
+	certPEM, keyPEM := pki.issue(t, "admin-console", 6)
+	certPath, keyPath, caPath := writePEMs(t, certPEM, keyPEM, pki.caPEM)
+	cfg, err := tlsutil.LoadClientTLSConfig(certPath, keyPath, caPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := &http.Client{Transport: &http.Transport{TLSClientConfig: cfg}}
+	if got := levelsStatus(t, good, authURL, academyURL); got != http.StatusOK {
+		t.Fatalf("mTLS levels call = %d, want 200", got)
+	}
+
+	// Without a client certificate the academy handshake fails and the
+	// browser sees a safe 503; the auth listener is never a fallback.
+	noCert := &tls.Config{RootCAs: cfg.RootCAs, MinVersion: tls.VersionTLS12}
+	if got := levelsStatus(t, &http.Client{Transport: &http.Transport{TLSClientConfig: noCert}}, authURL, academyURL); got != http.StatusServiceUnavailable {
+		t.Fatalf("levels call without client cert = %d, want 503", got)
+	}
 }
 
 func TestMTLS_ClientCertificateAndLocalCAAreRequired(t *testing.T) {

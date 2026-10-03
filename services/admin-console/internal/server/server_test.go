@@ -38,7 +38,7 @@ func newHarness(t *testing.T) *harness {
 		_, _ = w.Write([]byte(`{"name":"Wael","items":[],"total":0}`))
 	}))
 	t.Cleanup(up.Close)
-	p, err := proxy.New(proxy.Options{InternalToken: "internal", AuthURL: up.URL, Timeout: 2 * time.Second})
+	p, err := proxy.New(proxy.Options{InternalToken: "internal", AuthURL: up.URL, AcademyURL: up.URL, Timeout: 2 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,8 +163,8 @@ func TestEveryAllowlistedRouteIsRegistered(t *testing.T) {
 			t.Fatalf("route %s answered %d without a token", route, w.Code)
 		}
 	}
-	if got := len(APIRoutes()); got != 6 {
-		t.Fatalf("expected exactly 6 API routes, got %d", got)
+	if got := len(APIRoutes()); got != 20 {
+		t.Fatalf("expected exactly 20 API routes, got %d", got)
 	}
 }
 
@@ -210,6 +210,8 @@ func TestNearMissAPIPathsAre404(t *testing.T) {
 	for _, path := range []string{
 		"/api", "/api/", "/api/accounts/", "/api/accounts/suspend/", "/api/accounts/x",
 		"/api/accounts/suspend/extra", "/api/whoami/", "/api/audit/", "/api/Accounts", "/api/accounts%2fsuspend",
+		"/api/levels/", "/api/levels/create/extra", "/api/subjects/x", "/api/subjects/publish/",
+		"/api/videos/", "/api/videos/reorder/extra", "/api/Levels", "/api/videos%2fcreate",
 	} {
 		w := hh.do("POST", path, "X-Admin-Token", "t")
 		if w.Code != http.StatusNotFound {
@@ -293,7 +295,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestNewRequiresIndexAndIgnoresUnknownExtensions(t *testing.T) {
-	p, err := proxy.New(proxy.Options{InternalToken: "x", AuthURL: "http://127.0.0.1:1"})
+	p, err := proxy.New(proxy.Options{InternalToken: "x", AuthURL: "http://127.0.0.1:1", AcademyURL: "http://127.0.0.1:2"})
 	if err != nil {
 		t.Fatal(err)
 	}

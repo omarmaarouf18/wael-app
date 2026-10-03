@@ -61,6 +61,7 @@ func main() {
 	p, err := proxy.New(proxy.Options{
 		InternalToken:  cfg.InternalServiceToken,
 		AuthURL:        cfg.AuthAdminURL,
+		AcademyURL:     cfg.AcademyAdminURL,
 		TrustedProxies: cfg.TrustedProxies,
 		Client:         client,
 	})
@@ -101,8 +102,8 @@ func main() {
 		_ = srv.Shutdown(ctx)
 	}()
 
-	log.Printf("[ADMIN-CONSOLE] env=%s listening %s on :%s auth_admin=%s mtls-client=%t trusted-proxies=%d",
-		cfg.AppEnv, scheme, cfg.Port, cfg.AuthAdminURL, cfg.MTLSClientEnabled(), len(cfg.TrustedProxies))
+	log.Printf("[ADMIN-CONSOLE] env=%s listening %s on :%s auth_admin=%s academy_admin=%s mtls-client=%t trusted-proxies=%d",
+		cfg.AppEnv, scheme, cfg.Port, cfg.AuthAdminURL, cfg.AcademyAdminURL, cfg.MTLSClientEnabled(), len(cfg.TrustedProxies))
 	if err := serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("[ADMIN-CONSOLE] %v", err)
 	}
