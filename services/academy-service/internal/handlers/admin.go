@@ -268,6 +268,21 @@ func (s *Server) AuditLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// notifyStudent delivers an internal push to notification-service, best-effort.
+// A failure is logged with clean ids only (no secrets) and never fails the admin call.
+func (s *Server) notifyStudent(ctx context.Context, userID, action string, pushFn func(context.Context) error) {
+	if s.NotifyURL == "" {
+		return
+	}
+	pushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	cleanID := strings.ReplaceAll(strings.ReplaceAll(userID, "\r", ""), "\n", "")
+	if err := pushFn(pushCtx); err != nil {
+		// #nosec G706 -- cleanID sanitized of CR/LF
+		log.Printf("[ACADEMY] student notification failed (%s user %s): %v", action, cleanID, err)
+	}
+}
+
 // AdminHandler constructs the HTTP handler for the internal admin listener.
 // It serves ONLY /internal/admin/* routes behind X-Internal-Token +
 // X-Admin-Token (verified via auth-service, fail closed) and 404s on all
@@ -280,6 +295,10 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("/internal/admin/subjects", s.AdminSubjects)
 	mux.HandleFunc("/internal/admin/subjects/", s.AdminSubjectSubroute)
 	mux.HandleFunc("/internal/admin/videos/", s.AdminVideoSubroute)
+	mux.HandleFunc("/internal/admin/requests", s.AdminRequests)
+	mux.HandleFunc("/internal/admin/requests/", s.AdminRequestSubroute)
+	mux.HandleFunc("/internal/admin/entitlements", s.AdminEntitlements)
+	mux.HandleFunc("/internal/admin/entitlements/", s.AdminEntitlementSubroute)
 
 	var h http.Handler = mux
 	h = s.requireAdmin(h)

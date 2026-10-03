@@ -52,3 +52,13 @@ func cleanAdminText(raw string, maxRunes int) (string, bool) {
 	}
 	return s, true
 }
+
+// cleanAdminReason validates an admin-supplied mandatory reason:
+// strips CR/LF, enforces 1-1000 characters, and refuses empty strings.
+func cleanAdminReason(raw string) (string, bool) {
+	s, ok := cleanAdminText(raw, 1000)
+	if !ok || s == "" {
+		return "", false
+	}
+	return s, true
+}

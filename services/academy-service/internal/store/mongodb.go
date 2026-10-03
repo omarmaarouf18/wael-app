@@ -651,6 +651,10 @@ func (s *MongoStore) HasActiveEntitlement(ctx context.Context, userID, subjectID
 		"subject_id": subjectID,
 		"active":     true,
 		"expires_at": bson.M{"$gt": now},
+		"$or": []bson.M{
+			{"revoked_at": nil},
+			{"revoked_at": bson.M{"$exists": false}},
+		},
 	}
 	err := s.db.Collection("entitlements").FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
 	if err != nil {
@@ -670,6 +674,10 @@ func (s *MongoStore) GetActiveEntitlement(ctx context.Context, userID, subjectID
 		"subject_id": subjectID,
 		"active":     true,
 		"expires_at": bson.M{"$gt": now},
+		"$or": []bson.M{
+			{"revoked_at": nil},
+			{"revoked_at": bson.M{"$exists": false}},
+		},
 	}
 	var ent models.Entitlement
 	err := s.db.Collection("entitlements").FindOne(ctx, filter).Decode(&ent)
@@ -689,6 +697,10 @@ func (s *MongoStore) GetActiveEntitlements(ctx context.Context, userID string) (
 		"user_id":    userID,
 		"active":     true,
 		"expires_at": bson.M{"$gt": now},
+		"$or": []bson.M{
+			{"revoked_at": nil},
+			{"revoked_at": bson.M{"$exists": false}},
+		},
 	}
 	cursor, err := s.db.Collection("entitlements").Find(ctx, filter)
 	if err != nil {
@@ -716,6 +728,10 @@ func (s *MongoStore) GetActiveEntitlementSubjectIDs(ctx context.Context, userID 
 		"user_id":    userID,
 		"active":     true,
 		"expires_at": bson.M{"$gt": now},
+		"$or": []bson.M{
+			{"revoked_at": nil},
+			{"revoked_at": bson.M{"$exists": false}},
+		},
 	}
 	opts := options.Find().SetProjection(bson.M{"subject_id": 1})
 	cursor, err := s.db.Collection("entitlements").Find(ctx, filter, opts)

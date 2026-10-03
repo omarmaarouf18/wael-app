@@ -110,3 +110,29 @@ func TestContract_AcademyStudentVisibility(t *testing.T) {
 		"TestPlayVideoEndpoint",
 	)
 }
+
+// 13. Requests: list with pending_count, accept flow (entitlement + payment_record + audit + notify),
+// reject flow, concurrency and retries.
+func TestContract_AcademyAdminRequests(t *testing.T) {
+	out := runAcademyAdminTests(t, "^(TestAdminRequests_List|TestAdminRequests_Accept_R4Matrix|TestAdminRequests_Accept_PreexistingManualGrant|TestAdminRequests_Accept_Concurrency|TestAdminRequests_Reject|TestAdminRequests_NotificationBestEffort)$")
+	requirePass(t, out,
+		"TestAdminRequests_List",
+		"TestAdminRequests_Accept_R4Matrix",
+		"TestAdminRequests_Accept_PreexistingManualGrant",
+		"TestAdminRequests_Accept_Concurrency",
+		"TestAdminRequests_Reject",
+		"TestAdminRequests_NotificationBestEffort",
+	)
+}
+
+// 14. Entitlements: list by user, grant with payment record, revoke with preserved payment record,
+// and R1 revocation impact across list/detail/play/my entitlements.
+func TestContract_AcademyAdminEntitlements(t *testing.T) {
+	out := runAcademyAdminTests(t, "^(TestAdminEntitlements_List|TestAdminEntitlements_Grant|TestAdminEntitlements_Revoke|TestAdminEntitlements_RevocationImpactOnR1)$")
+	requirePass(t, out,
+		"TestAdminEntitlements_List",
+		"TestAdminEntitlements_Grant",
+		"TestAdminEntitlements_Revoke",
+		"TestAdminEntitlements_RevocationImpactOnR1",
+	)
+}

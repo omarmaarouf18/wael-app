@@ -25,6 +25,7 @@ func baseEnv(t *testing.T) {
 	_ = os.Unsetenv("TLS_CA_PATH")
 	_ = os.Unsetenv("AUTH_SERVICE_URL")
 	_ = os.Unsetenv("AUTH_ADMIN_URL")
+	_ = os.Unsetenv("NOTIFICATION_SERVICE_URL")
 	_ = os.Unsetenv("ADMIN_LISTEN_ADDR")
 	_ = os.Unsetenv("JWT_SECRET")
 	_ = os.Unsetenv("REDIS_URI")
@@ -41,6 +42,7 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "TLS_CA_PATH", "/tmp/ca.pem")
 	setEnv(t, "AUTH_SERVICE_URL", "https://auth-service:3002")
 	setEnv(t, "AUTH_ADMIN_URL", "https://auth-service:9001")
+	setEnv(t, "NOTIFICATION_SERVICE_URL", "https://notification-service:3004")
 	setEnv(t, "ADMIN_LISTEN_ADDR", ":9002")
 	setEnv(t, "JWT_SECRET", "test-jwt-secret")
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
@@ -144,6 +146,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"ADMIN_LISTEN_ADDR",
 		"AUTH_SERVICE_URL",
 		"AUTH_ADMIN_URL",
+		"NOTIFICATION_SERVICE_URL",
 		"JWT_SECRET",
 		"REDIS_URI",
 		"SUPPORT_WHATSAPP",
@@ -162,6 +165,18 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("notification_url_must_use_https_in_production", func(t *testing.T) {
+		fullProdEnv(t)
+		setEnv(t, "NOTIFICATION_SERVICE_URL", "http://notification-service:3004")
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected error for http NOTIFICATION_SERVICE_URL in production, got nil")
+		}
+		if !strings.Contains(err.Error(), "must use https") {
+			t.Fatalf("expected error to mention 'must use https', got %v", err)
+		}
+	})
 
 	t.Run("all_required_unset_default_production", func(t *testing.T) {
 		for _, v := range append(requiredVars, "APP_ENV") {

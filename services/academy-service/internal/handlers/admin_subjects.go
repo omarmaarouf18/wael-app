@@ -68,6 +68,19 @@ func validSubjectTerm(term string) bool {
 	return term == "" || term == "first" || term == "second"
 }
 
+// validateStudyTypeTerm reports whether term is valid for the given study type.
+// Bachelor and diploma levels require "first" or "second"; vocational requires empty "".
+func validateStudyTypeTerm(studyType, term string) bool {
+	switch studyType {
+	case models.StudyTypeBachelor, models.StudyTypeDiploma:
+		return term == "first" || term == "second"
+	case models.StudyTypeVocational:
+		return term == ""
+	default:
+		return false
+	}
+}
+
 // AdminSubjects dispatches GET (list) and POST (create) on /internal/admin/subjects.
 func (s *Server) AdminSubjects(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -242,6 +255,11 @@ func (s *Server) CreateAdminSubject(w http.ResponseWriter, r *http.Request) {
 	}
 	if lvl == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "level_not_found", "level not found", nil)
+		return
+	}
+
+	if !validateStudyTypeTerm(lvl.StudyType, subj.Term) {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_term", "invalid term for study type", nil)
 		return
 	}
 
@@ -431,6 +449,21 @@ func (s *Server) PatchAdminSubject(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 	subj = updated
+
+	currentLvl, err := s.Store.GetLevelByKey(dbCtx, subj.LevelKey)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if currentLvl == nil {
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "level_not_found", "level not found", nil)
+		return
+	}
+	if !validateStudyTypeTerm(currentLvl.StudyType, subj.Term) {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_term", "invalid term for study type", nil)
+		return
+	}
+
 	if wasDraft && subj.Status == models.StatusPublished {
 		n, err := s.subjectVideoCount(dbCtx, subj.ID)
 		if err != nil {

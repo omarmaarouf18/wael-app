@@ -17,6 +17,7 @@ import (
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/config"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/handlers"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/limiter"
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/notify"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 	"github.com/omarmaarouf18/wael-app/shared/infra/ratelimit"
@@ -90,6 +91,12 @@ func main() {
 	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL, cfg.ExposePriceToStudents, cfg.SupportWhatsApp)
 	srv.Limiter = tierLimiter
 	srv.AuthAdminURL = cfg.AuthAdminURL
+	srv.NotifyURL = cfg.NotificationServiceURL
+	srv.NotifyToken = cfg.InternalServiceToken
+
+	if err := notify.InitClient(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath); err != nil {
+		log.Fatalf("[ACADEMY] notify client: %v", err)
+	}
 
 	// Verify client for admin tokens (POST {AUTH_ADMIN_URL}/internal/admin/verify):
 	// mTLS when client certs are configured, plain client with the 3 s handler

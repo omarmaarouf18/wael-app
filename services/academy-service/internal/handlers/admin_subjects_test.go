@@ -33,8 +33,13 @@ func createSubject(t *testing.T, s *Server, body map[string]any) SubjectAdminDTO
 }
 
 func baseSubjectBody(levelID string) map[string]any {
+	term := "first"
+	if strings.HasPrefix(levelID, "vocational") {
+		term = ""
+	}
 	return map[string]any{
 		"level_id":          levelID,
+		"term":              term,
 		"title_ar":          "مادة اختبار",
 		"description_ar":    "وصف المادة",
 		"price":             1800,
@@ -131,6 +136,30 @@ func TestAdminSubjects_CreateValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("bachelor_empty_term_rejected", func(t *testing.T) {
+		body := baseSubjectBody("bachelor-y1")
+		body["term"] = ""
+		rec := doAdminJSON(t, s, http.MethodPost, "/internal/admin/subjects", body)
+		if rec.Code != http.StatusBadRequest || adminCode(t, rec) != "invalid_term" {
+			t.Fatalf("expected 400 invalid_term for bachelor empty term, got %d %q", rec.Code, adminCode(t, rec))
+		}
+	})
+
+	t.Run("vocational_with_term_rejected_and_empty_accepted", func(t *testing.T) {
+		body := baseSubjectBody("vocational")
+		body["term"] = "first"
+		rec := doAdminJSON(t, s, http.MethodPost, "/internal/admin/subjects", body)
+		if rec.Code != http.StatusBadRequest || adminCode(t, rec) != "invalid_term" {
+			t.Fatalf("expected 400 invalid_term for vocational with first term, got %d %q", rec.Code, adminCode(t, rec))
+		}
+
+		body["term"] = ""
+		rec2 := doAdminJSON(t, s, http.MethodPost, "/internal/admin/subjects", body)
+		if rec2.Code != http.StatusCreated {
+			t.Fatalf("expected 201 for vocational empty term, got %d", rec2.Code)
+		}
+	})
+
 	t.Run("long_description", func(t *testing.T) {
 		body := baseSubjectBody("bachelor-y1")
 		body["description_ar"] = strings.Repeat("أ", 5001)
@@ -151,7 +180,7 @@ func TestAdminSubjects_CreateValidation(t *testing.T) {
 
 	t.Run("defaults_and_shape", func(t *testing.T) {
 		body := map[string]any{
-			"level_id":          "bachelor-y1",
+			"level_id":          "vocational",
 			"title_ar":          "مادة الشكل",
 			"access_expires_at": futureExpires(),
 		}

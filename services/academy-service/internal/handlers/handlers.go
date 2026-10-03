@@ -34,6 +34,8 @@ type Server struct {
 	InternalToken   string
 	AuthURL         string
 	AuthAdminURL    string
+	NotifyURL       string
+	NotifyToken     string
 	VerifyClient    *http.Client
 	ExposePrice     bool
 	SupportWhatsApp string
@@ -836,6 +838,39 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 	handlerutil.WriteJSON(w, http.StatusOK, resp)
 }
 
+// GetMyEntitlements serves GET /academy/me/entitlements.
+// Returns the list of subject IDs currently owned by the authenticated student.
+// Excludes revoked and expired entitlements. Never leaks financial or admin metadata.
+func (s *Server) GetMyEntitlements(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+		return
+	}
+	claims := StudentClaims(r)
+	if claims == nil || claims.UserID == "" {
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	defer cancel()
+
+	ownedMap, err := s.Store.GetActiveEntitlementSubjectIDs(ctx, claims.UserID)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
+	subjectIDs := make([]string, 0, len(ownedMap))
+	for id := range ownedMap {
+		subjectIDs = append(subjectIDs, id)
+	}
+	sort.Strings(subjectIDs)
+
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+		"subject_ids": subjectIDs,
+	})
+}
+
 // PublicHandler constructs the HTTP handler for the public listener.
 func (s *Server) PublicHandler() http.Handler {
 	mux := http.NewServeMux()
@@ -844,6 +879,7 @@ func (s *Server) PublicHandler() http.Handler {
 	mux.HandleFunc("/academy/subjects", s.EnforceTier(limiter.TierRead, s.ListSubjects))
 	mux.HandleFunc("/academy/subjects/", s.SubjectSubroute)
 	mux.HandleFunc("/academy/videos/", s.VideoSubroute)
+	mux.HandleFunc("/academy/me/entitlements", s.EnforceTier(limiter.TierRead, s.GetMyEntitlements))
 
 	var h http.Handler = mux
 	h = s.StudentAuth(h)

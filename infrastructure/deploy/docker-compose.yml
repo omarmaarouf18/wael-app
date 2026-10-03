@@ -184,6 +184,7 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       AUTH_SERVICE_URL: https://auth-service:3002
       AUTH_ADMIN_URL: https://auth-service:9001
+      NOTIFICATION_SERVICE_URL: https://notification-service:3004
       SUPPORT_WHATSAPP: ${SUPPORT_WHATSAPP:?SUPPORT_WHATSAPP is required}
       # Prices stay hidden from students unless this is "true" (SPEC D3).
       EXPOSE_PRICE_TO_STUDENTS: ${EXPOSE_PRICE_TO_STUDENTS:-false}

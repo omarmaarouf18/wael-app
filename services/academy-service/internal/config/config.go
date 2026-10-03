@@ -9,30 +9,32 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all configuration required by academy-service.
 type Config struct {
-	Port                  string
-	AppEnv                string
-	MongoURI              string
-	MongoDatabase         string
-	RedisURI              string
-	JWTSecret             string
-	GatewaySecret         string
-	InternalServiceToken  string
-	AuthServiceURL        string
-	AuthAdminURL          string
-	TLSCertPath           string
-	TLSKeyPath            string
-	TLSCAPath             string
-	AdminListenAddr       string
-	ExposePriceToStudents bool
-	SupportWhatsApp       string
-	RateLimitRead         int
-	RateLimitPlay         int
-	RateLimitDownload     int
-	RateLimitWrite        int
+	Port                   string
+	AppEnv                 string
+	MongoURI               string
+	MongoDatabase          string
+	RedisURI               string
+	JWTSecret              string
+	GatewaySecret          string
+	InternalServiceToken   string
+	AuthServiceURL         string
+	AuthAdminURL           string
+	NotificationServiceURL string
+	TLSCertPath            string
+	TLSKeyPath             string
+	TLSCAPath              string
+	AdminListenAddr        string
+	ExposePriceToStudents  bool
+	SupportWhatsApp        string
+	RateLimitRead          int
+	RateLimitPlay          int
+	RateLimitDownload      int
+	RateLimitWrite         int
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -66,6 +68,7 @@ func Load() (*Config, error) {
 	tlsCAPath := os.Getenv("TLS_CA_PATH")
 	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
 	authAdminURL := os.Getenv("AUTH_ADMIN_URL")
+	notificationServiceURL := os.Getenv("NOTIFICATION_SERVICE_URL")
 	adminListenAddr := os.Getenv("ADMIN_LISTEN_ADDR")
 
 	jwtSecret := os.Getenv("JWT_SECRET")
@@ -95,6 +98,12 @@ func Load() (*Config, error) {
 		}
 		if authAdminURL == "" {
 			return nil, errors.New("config: required env var AUTH_ADMIN_URL is empty")
+		}
+		if notificationServiceURL == "" {
+			return nil, errors.New("config: required env var NOTIFICATION_SERVICE_URL is empty")
+		}
+		if !strings.HasPrefix(notificationServiceURL, "https://") {
+			return nil, errors.New("config: NOTIFICATION_SERVICE_URL must use https in production")
 		}
 		if jwtSecret == "" {
 			return nil, errors.New("config: required env var JWT_SECRET is empty")
@@ -180,25 +189,26 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Port:                  port,
-		AppEnv:                appEnv,
-		MongoURI:              mongoURI,
-		MongoDatabase:         dbName,
-		RedisURI:              redisURI,
-		JWTSecret:             jwtSecret,
-		GatewaySecret:         gatewaySecret,
-		InternalServiceToken:  internalToken,
-		AuthServiceURL:        authServiceURL,
-		AuthAdminURL:          authAdminURL,
-		TLSCertPath:           tlsCertPath,
-		TLSKeyPath:            tlsKeyPath,
-		TLSCAPath:             tlsCAPath,
-		AdminListenAddr:       adminListenAddr,
-		ExposePriceToStudents: exposePrice,
-		SupportWhatsApp:       supportWhatsApp,
-		RateLimitRead:         rateLimitRead,
-		RateLimitPlay:         rateLimitPlay,
-		RateLimitDownload:     rateLimitDownload,
-		RateLimitWrite:        rateLimitWrite,
+		Port:                   port,
+		AppEnv:                 appEnv,
+		MongoURI:               mongoURI,
+		MongoDatabase:          dbName,
+		RedisURI:               redisURI,
+		JWTSecret:              jwtSecret,
+		GatewaySecret:          gatewaySecret,
+		InternalServiceToken:   internalToken,
+		AuthServiceURL:         authServiceURL,
+		AuthAdminURL:           authAdminURL,
+		NotificationServiceURL: notificationServiceURL,
+		TLSCertPath:            tlsCertPath,
+		TLSKeyPath:             tlsKeyPath,
+		TLSCAPath:              tlsCAPath,
+		AdminListenAddr:        adminListenAddr,
+		ExposePriceToStudents:  exposePrice,
+		SupportWhatsApp:        supportWhatsApp,
+		RateLimitRead:          rateLimitRead,
+		RateLimitPlay:          rateLimitPlay,
+		RateLimitDownload:      rateLimitDownload,
+		RateLimitWrite:         rateLimitWrite,
 	}, nil
 }
