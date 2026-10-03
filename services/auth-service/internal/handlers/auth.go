@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"net/mail"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -54,6 +55,7 @@ type Server struct {
 	Store              store.Store
 	Codes              otp.Store
 	Lockout            Lockout
+	LoginLockout       LoginLockout
 	Sender             mailer.Sender
 	AppEnv             string
 	GatewaySecret      string
@@ -70,6 +72,7 @@ func New(st store.Store, codes otp.Store, lockout Lockout, sender mailer.Sender,
 		Store:              st,
 		Codes:              codes,
 		Lockout:            lockout,
+		LoginLockout:       NewMemoryLoginLockout(),
 		Sender:             sender,
 		AppEnv:             appEnv,
 		GatewaySecret:      gatewaySecret,
@@ -681,7 +684,11 @@ type loginRequest struct {
 	DeviceLabel string `json:"device_label,omitempty"`
 }
 
-// Login authenticates with email+password, enforcing lockout with backoff.
+// Login authenticates with email+password, enforcing the owner-decided lockout:
+// (email, IP) 5 in a row -> 15min, (email) 20 in 1h -> 1h. No IP-wide lock;
+// IP volume is handled only by the gateway rate limit.
+// Locked responses are generic 429 too_many_attempts with Retry-After and do not
+// reveal whether the email exists. Unknown emails go through the same counters.
 // Never discards store read errors (P-3): store outage returns 503, not 401.
 func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
@@ -703,15 +710,19 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ll := s.LoginLockout
+	if ll == nil {
+		ll = NewMemoryLoginLockout()
+	}
 	ip := handlerutil.GetIP(r)
-	emailKey := "login:email:" + email
-	ipKey := "login:ip:" + ip
-	if locked, _ := s.Lockout.IsLocked(emailKey); locked {
-		handlerutil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, retry later", "code": "locked_out"})
+	if locked, retryAfter := ll.IsPairLocked(email, ip); locked {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Round(time.Second).Seconds()+1)))
+		handlerutil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, retry later", "code": "too_many_attempts"})
 		return
 	}
-	if locked, _ := s.Lockout.IsLocked(ipKey); locked {
-		handlerutil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, retry later", "code": "locked_out"})
+	if locked, retryAfter := ll.IsEmailLocked(email); locked {
+		w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Round(time.Second).Seconds()+1)))
+		handlerutil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, retry later", "code": "too_many_attempts"})
 		return
 	}
 
@@ -724,8 +735,8 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if u == nil || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.Password)) != nil {
-		s.Lockout.RecordFailure(emailKey)
-		s.Lockout.RecordFailure(ipKey)
+		ll.RecordPairFailure(email, ip)
+		ll.RecordEmailFailure(email)
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "invalid credentials", nil)
 		return
 	}
@@ -737,8 +748,7 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusForbidden, handlerutil.ErrCodeUnauthorized, "email not verified", nil)
 		return
 	}
-	s.Lockout.Reset(emailKey)
-	s.Lockout.Reset(ipKey)
+	ll.ResetPair(email, ip)
 	access, refresh, err := s.createSessionAndTokens(r.Context(), u, req.DeviceID, deviceLabel)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
@@ -1138,6 +1148,10 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go notify.PasswordChanged(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
+	// Successful password reset clears both login locks for that email.
+	if ll := s.LoginLockout; ll != nil {
+		ll.ResetEmailAll(email)
+	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "password updated"})
 }
 

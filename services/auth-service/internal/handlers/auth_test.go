@@ -425,13 +425,218 @@ func TestLoginLockoutBackoff(t *testing.T) {
 		"phone":     "+201012345680",
 		"password":  "password123",
 	}, "")
-	var last int
+	var last *httptest.ResponseRecorder
 	for i := 0; i < 6; i++ {
-		rec := doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{"email": "lock@example.com", "password": "wrongpass"}, "")
-		last = rec.Code
+		last = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{"email": "lock@example.com", "password": "wrongpass"}, "")
 	}
-	if last != http.StatusTooManyRequests && last != http.StatusUnauthorized {
-		t.Fatalf("expected 401/429 after failures, got %d", last)
+	if last.Code != http.StatusTooManyRequests && last.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401/429 after failures, got %d", last.Code)
+	}
+	if last.Code == http.StatusTooManyRequests {
+		var body map[string]string
+		if err := json.Unmarshal(last.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode lockout: %v", err)
+		}
+		if body["code"] != "too_many_attempts" {
+			t.Fatalf("lockout code = %q, want too_many_attempts", body["code"])
+		}
+		if last.Header().Get("Retry-After") == "" {
+			t.Fatal("lockout response missing Retry-After header")
+		}
+	}
+}
+
+func doLoginWithIP(t *testing.T, s *Server, email, password, ip string) *httptest.ResponseRecorder {
+	t.Helper()
+	body := map[string]string{
+		"email":     email,
+		"password":  password,
+		"device_id": "11111111-1111-4111-8111-111111111111",
+	}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", &buf)
+	req.Header.Set("X-Gateway-Secret", "gw-secret")
+	req.Header.Set("X-Forwarded-For", ip)
+	rec := httptest.NewRecorder()
+	s.GatewayAuth(http.HandlerFunc(s.Login)).ServeHTTP(rec, req)
+	return rec
+}
+
+func TestLoginLockout_PairAndGlobal(t *testing.T) {
+	s := testServer()
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	// Verified user for successful logins.
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Lockout User",
+		"email":     "pairlock@example.com",
+		"phone":     "+201012345691",
+		"password":  "password123",
+	}, "")
+	otpCode := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "pairlock@example.com", "code": otpCode}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify = %d", rec.Code)
+	}
+
+	ipA := "10.0.0.1"
+	// 5 failures from same (email, IP) -> 6th is 429 with Retry-After.
+	for i := 0; i < 5; i++ {
+		rec = doLoginWithIP(t, s, "pairlock@example.com", "wrongpass", ipA)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("failure %d = %d, want 401", i, rec.Code)
+		}
+	}
+	rec = doLoginWithIP(t, s, "pairlock@example.com", "wrongpass", ipA)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("6th failure same pair = %d, want 429", rec.Code)
+	}
+	var locked map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &locked); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if locked["code"] != "too_many_attempts" {
+		t.Fatalf("code = %q, want too_many_attempts", locked["code"])
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("missing Retry-After on pair lockout")
+	}
+
+	// Other email from same IP is not affected (no IP-wide lock).
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Other User",
+		"email":     "otherpair@example.com",
+		"phone":     "+201012345692",
+		"password":  "password123",
+	}, "")
+	otpOther := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "otherpair@example.com", "code": otpOther}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify other = %d", rec.Code)
+	}
+	rec = doLoginWithIP(t, s, "otherpair@example.com", "password123", ipA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("other email same IP login = %d, want 200 (no IP-wide lock)", rec.Code)
+	}
+
+	// Successful login clears the (email, IP) counter: after reset, wrong
+	// password is 401 again, not 429. Use a fresh IP to avoid the existing lock.
+	ipB := "10.0.0.2"
+	rec = doLoginWithIP(t, s, "pairlock@example.com", "password123", ipB)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login from fresh IP = %d, want 200", rec.Code)
+	}
+	// One more failure from ipB is 401 (counter was cleared by success).
+	rec = doLoginWithIP(t, s, "pairlock@example.com", "wrongpass", ipB)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("failure after success = %d, want 401", rec.Code)
+	}
+}
+
+func TestLoginLockout_GlobalAcrossIPs(t *testing.T) {
+	s := testServer()
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Global User",
+		"email":     "globallock@example.com",
+		"phone":     "+201012345693",
+		"password":  "password123",
+	}, "")
+	otpCode := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "globallock@example.com", "code": otpCode}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify = %d", rec.Code)
+	}
+
+	// 20 failures spread across 20 IPs (1 each, so no pair locks).
+	for i := 0; i < 20; i++ {
+		ip := fmt.Sprintf("10.1.0.%d", i+1)
+		rec = doLoginWithIP(t, s, "globallock@example.com", "wrongpass", ip)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("failure %d = %d, want 401", i, rec.Code)
+		}
+	}
+	// 21st from a fresh IP hits the global lock.
+	rec = doLoginWithIP(t, s, "globallock@example.com", "wrongpass", "10.1.0.99")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("21st failure = %d, want 429 global lock", rec.Code)
+	}
+	var locked map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &locked); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if locked["code"] != "too_many_attempts" {
+		t.Fatalf("code = %q, want too_many_attempts", locked["code"])
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("missing Retry-After on global lockout")
+	}
+	// Even the correct password is 429 while globally locked.
+	rec = doLoginWithIP(t, s, "globallock@example.com", "password123", "10.1.0.100")
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("correct password while globally locked = %d, want 429", rec.Code)
+	}
+}
+
+func TestLoginLockout_ResetClearsLocks(t *testing.T) {
+	s := testServer()
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Reset Unlock User",
+		"email":     "resetunlock@example.com",
+		"phone":     "+201012345694",
+		"password":  "password123",
+	}, "")
+	otpCode := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "resetunlock@example.com", "code": otpCode}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify = %d", rec.Code)
+	}
+
+	// Lock the pair with 5 failures.
+	ip := "10.2.0.1"
+	for i := 0; i < 5; i++ {
+		doLoginWithIP(t, s, "resetunlock@example.com", "wrongpass", ip)
+	}
+	rec = doLoginWithIP(t, s, "resetunlock@example.com", "wrongpass", ip)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected pair lock 429, got %d", rec.Code)
+	}
+
+	// Successful password reset clears both locks.
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": "resetunlock@example.com"}, "")
+	devCode := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": "resetunlock@example.com", "code": devCode}, "")
+	resetToken := decodeBody(t, rec)["reset_token"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/confirm", map[string]string{"reset_token": resetToken, "new_password": "newpassword456"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset confirm = %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Login with new password from the same IP works (locks cleared).
+	rec = doLoginWithIP(t, s, "resetunlock@example.com", "newpassword456", ip)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login after reset = %d, want 200 (locks cleared)", rec.Code)
 	}
 }
 
@@ -1397,15 +1602,24 @@ func runStatusGateSuite(t *testing.T, baseStore store.Store) {
 			if body["code"] != "unauthorized" || body["error"] != "invalid credentials" {
 				t.Fatalf("expected invalid credentials on wrong password, got %+v", body)
 			}
-			lockout.mu.Lock()
-			f := lockout.data["login:email:status_suspended@example.com"]
-			var count int
-			if f != nil {
-				count = f.count
+			// New scheme records in LoginLockout (pair + global), not the legacy Lockout.
+			mll, ok := s.LoginLockout.(*MemoryLoginLockout)
+			if !ok {
+				t.Fatalf("LoginLockout is %T, want *MemoryLoginLockout", s.LoginLockout)
 			}
-			lockout.mu.Unlock()
-			if count != 1 {
-				t.Fatalf("expected failure count 1, got %d", count)
+			mll.mu.Lock()
+			pair := mll.pairs[loginPairKey("status_suspended@example.com", "192.0.2.1")]
+			global := mll.global["status_suspended@example.com"]
+			var pairCount, globalCount int
+			if pair != nil {
+				pairCount = pair.count
+			}
+			if global != nil {
+				globalCount = global.count
+			}
+			mll.mu.Unlock()
+			if pairCount != 1 || globalCount != 1 {
+				t.Fatalf("expected pair/global failure count 1/1, got %d/%d", pairCount, globalCount)
 			}
 		})
 	})

@@ -73,6 +73,7 @@ func main() {
 
 	var codes otp.Store
 	var lockout handlers.Lockout
+	var loginLockout handlers.LoginLockout
 	if cfg.RedisURI != "" {
 		rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
 		if err != nil {
@@ -82,6 +83,7 @@ func main() {
 		jwtutil.SetRedisClient(rdb)
 		codes = otp.NewRedisStore(rdb, "auth")
 		lockout = handlers.NewRedisLockout(ratelimit.NewAuthRateLimiter(rdb, "auth"))
+		loginLockout = handlers.NewRedisLoginLockout(rdb, "auth")
 		log.Printf("[AUTH] active OTP and lockout store: Redis (%s)", redact.RedactURI(cfg.RedisURI))
 	} else {
 		if !dev {
@@ -89,6 +91,7 @@ func main() {
 		}
 		codes = otp.NewMemoryStore()
 		lockout = handlers.NewMemoryLockout()
+		loginLockout = handlers.NewMemoryLoginLockout()
 		log.Printf("[AUTH] active OTP and lockout store: in-process memory (localhost dev only)")
 	}
 
@@ -105,6 +108,7 @@ func main() {
 	}
 
 	srv := handlers.New(st, codes, lockout, sender, cfg.AppEnv, cfg.GatewaySecret)
+	srv.LoginLockout = loginLockout
 	srv.BlocklistHMACKey = cfg.BlocklistHMACKey
 	srv.DefaultPhoneRegion = cfg.DefaultPhoneRegion
 	srv.NotifyURL = cfg.NotificationURL
