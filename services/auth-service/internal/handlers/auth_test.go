@@ -300,6 +300,56 @@ func TestTwoPhasePasswordReset(t *testing.T) {
 	}
 }
 
+func TestConfirmReset_ParallelSingleUse(t *testing.T) {
+	s := testServer()
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Parallel User",
+		"email":     "parallel@example.com",
+		"phone":     "+201012345704",
+		"password":  "password123",
+	}, "")
+	rec := doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": "parallel@example.com"}, "")
+	devCode := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": "parallel@example.com", "code": devCode}, "")
+	resetToken := decodeBody(t, rec)["reset_token"]
+	if resetToken == "" {
+		t.Fatal("missing reset_token")
+	}
+
+	// 10 parallel confirms with the same token: exactly one 200 (atomic Take).
+	var mu sync.Mutex
+	results := map[int]int{}
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body, _ := json.Marshal(map[string]string{"reset_token": resetToken, "new_password": "newpassword456"})
+			req := httptest.NewRequest(http.MethodPost, "/auth/reset/confirm", bytes.NewReader(body))
+			req.Header.Set("X-Gateway-Secret", "gw-secret")
+			rec := httptest.NewRecorder()
+			s.GatewayAuth(http.HandlerFunc(s.ConfirmReset)).ServeHTTP(rec, req)
+			mu.Lock()
+			results[rec.Code]++
+			mu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+	if results[http.StatusOK] != 1 {
+		t.Fatalf("parallel confirms: got %v, want exactly one 200", results)
+	}
+	if results[http.StatusUnauthorized] != 9 {
+		t.Fatalf("parallel confirms: got %v, want nine 401", results)
+	}
+}
+
 func TestResetRequestAntiEnumeration(t *testing.T) {
 	s := testServer()
 	rec := doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": "nobody@example.com"}, "")
