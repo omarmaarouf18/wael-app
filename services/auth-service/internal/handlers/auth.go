@@ -861,7 +861,12 @@ type resetConfirmRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
-// ConfirmReset completes phase 2, setting the new password and revoking the token.
+// ConfirmReset completes phase 2, setting the new password and ending every session.
+// Security: revokes ALL of the user's sessions (every Phase 1.7 sid via
+// jwt:sid:<sid> keys in Redis, every refresh token) in the same flow as the
+// password update. If revocation fails, the reset returns 503. No fresh tokens
+// are issued; the user must log in again on every device, including the device
+// that performed the reset.
 func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 	var req resetConfirmRequest
 	if !decodeJSON(w, r, &req) {
@@ -873,17 +878,24 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	key := "reset-token:" + otp.HashToken(req.ResetToken)
-	email, err := s.Codes.Get(ctx, key)
-	if err != nil || email == "" {
+	email, err := s.Codes.Take(ctx, key)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if email == "" {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired reset token", nil)
 		return
 	}
-	_ = s.Codes.Delete(ctx, key)
 
 	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
 	u, err := s.Store.FindByEmail(dbCtx, email)
 	cancel()
-	if err != nil || u == nil {
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if u == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired reset token", nil)
 		return
 	}
@@ -892,15 +904,44 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
+
+	// 1. Revoke all access tokens first (fail-closed). This is the backstop for
+	// individual sid revocations below.
+	if err := jwtutil.RevokeAllUserTokens(u.ID); err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
 	u.PasswordHash = string(hash)
 
 	dbCtx, cancel = context.WithTimeout(ctx, dbTimeout)
 	err = s.Store.Update(dbCtx, u)
 	cancel()
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
+
+	// 2. End all sessions and delete their refresh keys (fail-closed).
+	now := time.Now().UTC()
+	dbCtx, cancel = context.WithTimeout(ctx, dbTimeout)
+	endedSessions, endErr := s.Store.EndAllUserSessions(dbCtx, u.ID, models.EndReasonLogout, now)
+	cancel()
+	if endErr != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", endErr)
+		return
+	}
+	for _, endedSess := range endedSessions {
+		if endedSess.RefreshHash != "" {
+			if delErr := s.Codes.Delete(ctx, "refresh:"+endedSess.RefreshHash); delErr != nil {
+				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", delErr)
+				return
+			}
+		}
+		// Best-effort per-sid revocation; RevokeAllUserTokens above is the backstop.
+		_ = jwtutil.RevokeSession(endedSess.ID)
+	}
+
 	go notify.PasswordChanged(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "password updated"})
 }

@@ -195,6 +195,12 @@ func TestSignupVerifyLoginMeRefresh(t *testing.T) {
 
 func TestTwoPhasePasswordReset(t *testing.T) {
 	s := testServer()
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
 	doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
 		"full_name": "Reset User",
 		"email":     "reset@example.com",
@@ -235,6 +241,94 @@ func TestResetRequestAntiEnumeration(t *testing.T) {
 	}
 	if got := decodeBody(t, rec)["status"]; got != "ok" {
 		t.Fatalf("status = %q", got)
+	}
+}
+
+func TestConfirmReset_RevokesSessions(t *testing.T) {
+	s := testServer()
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	// Signup and verify to get initial tokens (device 1).
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Revoke User",
+		"email":     "revoke@example.com",
+		"phone":     "+201012345681",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup = %d (%s)", rec.Code, rec.Body.String())
+	}
+	signupOTP := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email":     "revoke@example.com",
+		"code":      signupOTP,
+		"device_id": "11111111-1111-4111-8111-111111111111",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify-otp = %d (%s)", rec.Code, rec.Body.String())
+	}
+	oldTokens := decodeBody(t, rec)
+	oldAccess := oldTokens["access_token"]
+	oldRefresh := oldTokens["refresh_token"]
+	if oldAccess == "" || oldRefresh == "" {
+		t.Fatalf("missing tokens: %v", oldTokens)
+	}
+
+	// Old access works before reset.
+	rec = doRequest(t, s, http.MethodGet, "/auth/me", nil, oldAccess)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("me before reset = %d, want 200", rec.Code)
+	}
+
+	// Reset password.
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": "revoke@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset request = %d", rec.Code)
+	}
+	devCode := decodeBody(t, rec)["dev_otp"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/verify", map[string]string{"email": "revoke@example.com", "code": devCode}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset verify = %d (%s)", rec.Code, rec.Body.String())
+	}
+	resetToken := decodeBody(t, rec)["reset_token"]
+	rec = doRequest(t, s, http.MethodPost, "/auth/reset/confirm", map[string]string{"reset_token": resetToken, "new_password": "newpassword456"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reset confirm = %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Old access token gets 401.
+	rec = doRequest(t, s, http.MethodGet, "/auth/me", nil, oldAccess)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("me with old access after reset = %d, want 401 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Old refresh token gets 401.
+	rec = doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": oldRefresh}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("refresh with old token after reset = %d, want 401 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// New login works.
+	rec = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email":     "revoke@example.com",
+		"password":  "newpassword456",
+		"device_id": "22222222-2222-4222-8222-222222222222",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login with new password = %d (%s)", rec.Code, rec.Body.String())
+	}
+	newTokens := decodeBody(t, rec)
+	if newTokens["access_token"] == "" || newTokens["refresh_token"] == "" {
+		t.Fatalf("missing new tokens: %v", newTokens)
+	}
+	rec = doRequest(t, s, http.MethodGet, "/auth/me", nil, newTokens["access_token"])
+	if rec.Code != http.StatusOK {
+		t.Fatalf("me with new access = %d, want 200", rec.Code)
 	}
 }
 
