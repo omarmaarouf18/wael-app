@@ -315,11 +315,12 @@ checked against each service's `config.Load()` and `env.production.example`.
 | `EXPOSE_PRICE_TO_STUDENTS` | academy-service | no (default `false`) | Show subject prices | leave `false` unless the owner decides otherwise |
 | `RATE_LIMIT_READ/PLAY/DOWNLOAD/WRITE` | academy-service | no (defaults 120/60/10/5) | Per-user per-minute tiers | uncomment to override |
 | `STREAM_MAX_CONCURRENT` / `STREAM_OPEN_RATE_LIMIT` | notification-service | no (defaults 3 / 10) | SSE caps | uncomment to override |
+| `NOTIFICATION_SERVICE_URL` | academy-service | yes (production) | Internal mTLS notification push URL for student notifications (request accept/reject, grant/revoke) | fixed in compose: `https://notification-service:3004` (requires https in production) |
 | `*_MEM_LIMIT`, `MONGO_CACHE_GB` | compose only | no | Container memory / WiredTiger cache | §1 table; "1 GB host" block for small hosts |
 
 Fixed by compose (never in `.env.production`): `APP_ENV=production`, `PORT`,
 `ADMIN_LISTEN_ADDR` (`:9001`/`:9002`), `*_MONGO_DATABASE`, internal
-`https://<svc>:<port>` URLs, `TRUSTED_PROXY_IPS=172.30.0.10`,
+`https://<svc>:<port>` URLs (including `NOTIFICATION_SERVICE_URL=https://notification-service:3004` on `academy-service`), `TRUSTED_PROXY_IPS=172.30.0.10`,
 `TLS_*_PATH=/app/certs/...`. Infra-provided (not secrets): `IMAGE_TAG` comes
 from `release.env` (written by publish), `WAEL_HOME` from the runner env.
 
@@ -384,7 +385,12 @@ back from the file, §6):
 - `secrets/redis.conf` is mounted as the redis config (`requirepass` +
   `appendonly yes`); the password never appears on a command line.
 - `--check-env`: all 5 services accept `--check-env` (runs `config.Load()`,
-  exits 0/1 without starting anything). Preflight (§8/§10) runs it for every
+  exits 0/1 without starting anything). For `academy-service`, this validates
+  required production variables including `NOTIFICATION_SERVICE_URL` (must use
+  `https://` outside dev), `SUPPORT_WHATSAPP`, `MONGO_URI`, `REDIS_URI`,
+  `JWT_SECRET`, `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN`, `AUTH_SERVICE_URL`,
+  `AUTH_ADMIN_URL`, and mTLS cert paths (`TLS_CERT_PATH`, `TLS_KEY_PATH`,
+  `TLS_CA_PATH`). Preflight (§8/§10) runs it for every
   service in one-off containers (`compose run --rm --no-deps -T <svc>
   --check-env`) after pulling the new images and before touching anything
   running.
