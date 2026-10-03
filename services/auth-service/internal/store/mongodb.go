@@ -76,12 +76,15 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 	// TTL index for unverified signup expiry (24h): unverified records are
 	// physically deleted 24h after creation. Handlers also treat expired
 	// unverified records as absent (lazy expiry for TTL lag and MemoryStore).
+	// Note: partial filters reject $ne, so legacy docs without the
+	// email_verified field are not TTL-deleted; the lazy code check still
+	// treats them as expired.
 	_, err = coll.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{{Key: "created_at", Value: 1}},
 		Options: options.Index().
 			SetExpireAfterSeconds(24 * 3600).
 			SetPartialFilterExpression(bson.M{
-				"email_verified": bson.M{"$ne": true},
+				"email_verified": false,
 			}),
 	})
 	if err != nil {

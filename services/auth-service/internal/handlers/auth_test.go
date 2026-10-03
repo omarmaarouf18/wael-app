@@ -2692,6 +2692,18 @@ func testResetCode_CooldownAndHourlyCap(t *testing.T, s *Server, sender *countin
 	t.Helper()
 	email := fmt.Sprintf("cooldown-%d@example.com", time.Now().UnixNano())
 
+	// Reset mail is sent in a goroutine (A2); poll for the expected count.
+	waitForCount := func(want int) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for sender.countFor(email) != want && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if got := sender.countFor(email); got != want {
+			t.Fatalf("expected sender count %d, got %d", want, got)
+		}
+	}
+
 	// Create user
 	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
 		"full_name": "Cooldown User",
@@ -2722,9 +2734,7 @@ func testResetCode_CooldownAndHourlyCap(t *testing.T, s *Server, sender *countin
 	if code1 == "" {
 		t.Fatal("expected dev_otp on first reset request")
 	}
-	if sender.countFor(email) != 1 {
-		t.Fatalf("expected sender count 1, got %d", sender.countFor(email))
-	}
+	waitForCount(1)
 
 	// 2. Second reset request within 60s: 200, no email sent (fake sender count remains 1)
 	rec = doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": email}, "")
@@ -2755,9 +2765,7 @@ func testResetCode_CooldownAndHourlyCap(t *testing.T, s *Server, sender *countin
 		if rec.Code != http.StatusOK {
 			t.Fatalf("reset request %d status = %d (%s)", i, rec.Code, rec.Body.String())
 		}
-		if sender.countFor(email) != i {
-			t.Fatalf("expected sender count %d, got %d", i, sender.countFor(email))
-		}
+		waitForCount(i)
 	}
 
 	// 5. 6th code in an hour: 200, nothing sent
@@ -2770,6 +2778,10 @@ func testResetCode_CooldownAndHourlyCap(t *testing.T, s *Server, sender *countin
 	if body6["dev_otp"] != "" {
 		t.Fatalf("expected no dev_otp on hourly limit, got %q", body6["dev_otp"])
 	}
+	// All 5 background sends from step 4 must have landed, and the 6th (capped)
+	// sends nothing more.
+	waitForCount(5)
+	time.Sleep(200 * time.Millisecond)
 	if sender.countFor(email) != 5 {
 		t.Fatalf("expected sender count to stay 5, got %d", sender.countFor(email))
 	}
