@@ -195,10 +195,16 @@ func (s *MemoryStore) Update(_ context.Context, u *models.User) error {
 		}
 		delete(s.byMail, existing.Email)
 	}
-	if u.Phone != "" && u.Phone != existing.Phone && (existing.EffectiveStatus() == models.StatusActive || existing.EffectiveStatus() == models.StatusSuspended) {
-		for id, other := range s.byID {
-			if id != u.ID && other.Phone == u.Phone && other.EmailVerified && (other.EffectiveStatus() == models.StatusActive || other.EffectiveStatus() == models.StatusSuspended) {
-				return ErrDuplicate
+	if u.Phone != "" && (existing.EffectiveStatus() == models.StatusActive || existing.EffectiveStatus() == models.StatusSuspended) {
+		// Enforce verified-phone uniqueness when the record will be verified
+		// (e.g. OTP verification promotes an unverified record while its phone
+		// is unchanged) or when an unverified record takes a new phone.
+		// Verified holders block; unverified holders never block.
+		if u.EmailVerified || u.Phone != existing.Phone {
+			for id, other := range s.byID {
+				if id != u.ID && other.Phone == u.Phone && other.EmailVerified && (other.EffectiveStatus() == models.StatusActive || other.EffectiveStatus() == models.StatusSuspended) {
+					return ErrDuplicate
+				}
 			}
 		}
 	}

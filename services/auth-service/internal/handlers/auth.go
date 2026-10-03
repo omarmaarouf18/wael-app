@@ -392,14 +392,25 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pending signup session id (>=128 bits, stored hashed). It binds OTP
+	// verification to the signup that created it: a replacement signup rotates
+	// it, so the old pending_id plus the new code fails.
+	pendingID, err := otp.GenerateOpaqueToken()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
+		return
+	}
+	pendingHash := otp.HashToken(pendingID)
+
 	if replaceUser != nil {
 		// Replace the live unverified record in place (same ID): new name,
-		// phone, password, fresh CreatedAt (restarts 24h expiry), new OTP
-		// overwrites the old (old becomes invalid).
+		// phone, password, fresh CreatedAt (restarts 24h expiry), rotated
+		// pending_id, new OTP overwrites the old (old becomes invalid).
 		replaceUser.FullName = name
 		replaceUser.Phone = phone
 		replaceUser.PasswordHash = string(hash)
 		replaceUser.CreatedAt = now
+		replaceUser.PendingIDHash = pendingHash
 		dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 		err = s.Store.Update(dbCtx, replaceUser)
 		cancel()
@@ -420,11 +431,12 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.Sender.SendCode(r.Context(), email, code, "signup")
 		resp := map[string]any{
-			"id":        replaceUser.ID,
-			"email":     email,
-			"role":      string(role),
-			"full_name": name,
-			"phone":     phone,
+			"id":         replaceUser.ID,
+			"email":      email,
+			"role":       string(role),
+			"full_name":  name,
+			"phone":      phone,
+			"pending_id": pendingID,
 		}
 		if s.devOTPField() {
 			resp["dev_otp"] = code
@@ -439,14 +451,15 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u := &models.User{
-		ID:           id,
-		Email:        email,
-		PasswordHash: string(hash),
-		Role:         role,
-		FullName:     name,
-		Phone:        phone,
-		Status:       models.StatusActive,
-		CreatedAt:    now,
+		ID:            id,
+		Email:         email,
+		PasswordHash:  string(hash),
+		Role:          role,
+		FullName:      name,
+		Phone:         phone,
+		Status:        models.StatusActive,
+		CreatedAt:     now,
+		PendingIDHash: pendingHash,
 	}
 
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
@@ -464,6 +477,7 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 				winner.Phone = phone
 				winner.PasswordHash = string(hash)
 				winner.CreatedAt = time.Now().UTC()
+				winner.PendingIDHash = pendingHash
 				dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 				updErr := s.Store.Update(dbCtx, winner)
 				cancel()
@@ -474,11 +488,12 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 					if setErr == nil {
 						_ = s.Sender.SendCode(r.Context(), email, code, "signup")
 						resp := map[string]any{
-							"id":        winner.ID,
-							"email":     email,
-							"role":      string(role),
-							"full_name": name,
-							"phone":     phone,
+							"id":         winner.ID,
+							"email":      email,
+							"role":       string(role),
+							"full_name":  name,
+							"phone":      phone,
+							"pending_id": pendingID,
 						}
 						if s.devOTPField() {
 							resp["dev_otp"] = code
@@ -504,11 +519,12 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.Sender.SendCode(r.Context(), email, code, "signup")
 	resp := map[string]any{
-		"id":        id,
-		"email":     email,
-		"role":      string(role),
-		"full_name": name,
-		"phone":     phone,
+		"id":         id,
+		"email":      email,
+		"role":       string(role),
+		"full_name":  name,
+		"phone":      phone,
+		"pending_id": pendingID,
 	}
 	if s.devOTPField() {
 		resp["dev_otp"] = code
@@ -521,9 +537,12 @@ type verifyOTPRequest struct {
 	Code        string `json:"code"`
 	DeviceID    string `json:"device_id"`
 	DeviceLabel string `json:"device_label,omitempty"`
+	PendingID   string `json:"pending_id,omitempty"`
 }
 
 // VerifyOTP consumes a signup OTP, marks the email verified, and issues tokens.
+// Unverified accounts must present the pending_id issued at signup (stored
+// hashed, rotated on replacement, kept on resend, cleared on success).
 func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	var req verifyOTPRequest
 	if !decodeJSON(w, r, &req) {
@@ -555,6 +574,44 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Find the account before consuming the code, so a wrong pending_id never
+	// burns the OTP. All refusals below are the same generic 401.
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	u, err := s.Store.FindByEmail(dbCtx, email)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	failGeneric := func() {
+		if _, recErr := s.Codes.RecordFailure(ctx, "signup", email, time.Hour); recErr != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", recErr)
+			return
+		}
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
+	}
+	if u == nil {
+		failGeneric()
+		return
+	}
+	if u.EffectiveStatus() != models.StatusActive {
+		writeStatusRefusal(w, r)
+		return
+	}
+	if !u.EmailVerified {
+		if isUnverifiedExpired(u, time.Now().UTC()) {
+			failGeneric()
+			return
+		}
+		// Pending-id binding (takeover protection): replacement rotates it,
+		// resend keeps it. Legacy records without a hash fail closed.
+		if u.PendingIDHash == "" || req.PendingID == "" ||
+			subtle.ConstantTimeCompare([]byte(otp.HashToken(req.PendingID)), []byte(u.PendingIDHash)) != 1 {
+			failGeneric()
+			return
+		}
+	}
+
 	ok, err := s.Codes.ConsumeWithAttempts(ctx, "signup-otp:"+email, otp.HashToken(strings.TrimSpace(req.Code)), 5, 10*time.Minute)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
@@ -572,30 +629,19 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	if clearErr := s.Codes.ClearFailures(ctx, "signup", email); clearErr != nil {
 		log.Printf("[AUTH] ClearFailures error: %v", clearErr)
 	}
-	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
-	u, err := s.Store.FindByEmail(dbCtx, email)
-	cancel()
-	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
-	}
-	if u == nil {
-		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
-		return
-	}
-	if u.EffectiveStatus() != models.StatusActive {
-		writeStatusRefusal(w, r)
-		return
-	}
-	if !u.EmailVerified && isUnverifiedExpired(u, time.Now().UTC()) {
-		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
-		return
-	}
 	u.EmailVerified = true
+	u.PendingIDHash = ""
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 	err = s.Store.Update(dbCtx, u)
 	cancel()
 	if err != nil {
+		// Phone taken by a verified account in the meantime (unverified phones
+		// are free, so a concurrent verify can win the phone). Generic 409,
+		// no 500; the account stays unverified.
+		if errors.Is(err, store.ErrDuplicate) {
+			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "unable to complete verification", nil)
+			return
+		}
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}

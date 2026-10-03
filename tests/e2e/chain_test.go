@@ -142,6 +142,7 @@ func TestGatewayChain(t *testing.T) {
 	var (
 		phone       string
 		otp         string
+		pendingID   string
 		access      string
 		refresh     string
 		notifID     string
@@ -176,6 +177,10 @@ func TestGatewayChain(t *testing.T) {
 		if !ok || otp == "" {
 			requireOrSkip(subT, "signup response has no dev_otp; backend is not in local/dev mode")
 		}
+		pendingID, _ = body["pending_id"].(string)
+		if pendingID == "" {
+			subT.Fatal("signup response has no pending_id")
+		}
 	})
 	if otp == "" {
 		stageFailed = true
@@ -183,9 +188,10 @@ func TestGatewayChain(t *testing.T) {
 
 	runStage("verify_otp", func(subT *testing.T) {
 		code, body := c.post(subT, "/api/v1/auth/verify-otp", "", map[string]string{
-			"email":     email,
-			"code":      otp,
-			"device_id": "11111111-1111-4111-8111-111111111111",
+			"email":      email,
+			"code":       otp,
+			"pending_id": pendingID,
+			"device_id":  "11111111-1111-4111-8111-111111111111",
 		})
 		if code != http.StatusOK {
 			subT.Fatalf("verify-otp = %d (%v)", code, body)

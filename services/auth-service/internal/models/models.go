@@ -49,8 +49,13 @@ type User struct {
 	OTPExpiresAt        time.Time  `json:"-" bson:"otp_expires_at,omitempty"`
 	ResetTokenHash      string     `json:"-" bson:"reset_token_hash,omitempty"`
 	ResetTokenExpiresAt time.Time  `json:"-" bson:"reset_token_expires_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at" bson:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at" bson:"updated_at"`
+	// PendingIDHash is the SHA-256 hash of the signup pending_id issued to an
+	// unverified account. It binds OTP verification to the signup session that
+	// created it, so a replacement signup rotates it and the old pending_id
+	// fails. Cleared on verification.
+	PendingIDHash string    `json:"-" bson:"pending_id_hash,omitempty"`
+	CreatedAt     time.Time `json:"created_at" bson:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at" bson:"updated_at"`
 }
 
 // EffectiveStatus returns the account's active status, treating empty as active.

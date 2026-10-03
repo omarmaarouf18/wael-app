@@ -252,6 +252,7 @@ func (s *MongoStore) Update(ctx context.Context, u *models.User) error {
 			"otp_expires_at":         u.OTPExpiresAt,
 			"reset_token_hash":       u.ResetTokenHash,
 			"reset_token_expires_at": u.ResetTokenExpiresAt,
+			"pending_id_hash":        u.PendingIDHash,
 			"updated_at":             now,
 		},
 	}

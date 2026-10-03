@@ -42,6 +42,32 @@ func testServerProd() *Server {
 	return s
 }
 
+var testPendingMu sync.Mutex
+var testPendingIDs = map[string]string{}
+
+// testPendingKey normalizes an email for the pending_id registry.
+func testPendingKey(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// rememberPendingID records the pending_id issued by a successful signup,
+// mimicking a real client that stores it for the OTP step.
+func rememberPendingID(email, pendingID string) {
+	if email == "" || pendingID == "" {
+		return
+	}
+	testPendingMu.Lock()
+	defer testPendingMu.Unlock()
+	testPendingIDs[testPendingKey(email)] = pendingID
+}
+
+// lookupPendingID returns the stored pending_id for email, if any.
+func lookupPendingID(email string) string {
+	testPendingMu.Lock()
+	defer testPendingMu.Unlock()
+	return testPendingIDs[testPendingKey(email)]
+}
+
 func doRequest(t *testing.T, s *Server, method, path string, body any, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	if m, ok := body.(map[string]string); ok && (path == "/auth/login" || path == "/auth/verify-otp") {
@@ -53,6 +79,7 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 				}
 				cp["device_id"] = "11111111-1111-4111-8111-111111111111"
 				body = cp
+				m = cp
 			} else {
 				cp := make(map[string]string, len(m))
 				for k, v := range m {
@@ -61,6 +88,21 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 					}
 				}
 				body = cp
+				m = cp
+			}
+		}
+		// Mimic a real client: attach the stored pending_id to verify-otp
+		// unless the test passes one explicitly (e.g. a stale takeover id).
+		if path == "/auth/verify-otp" {
+			if _, hasPending := m["pending_id"]; !hasPending {
+				if pid := lookupPendingID(m["email"]); pid != "" {
+					cp := make(map[string]string, len(m)+1)
+					for k, v := range m {
+						cp[k] = v
+					}
+					cp["pending_id"] = pid
+					body = cp
+				}
 			}
 		}
 	}
@@ -73,6 +115,7 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 				}
 				cp["device_id"] = "11111111-1111-4111-8111-111111111111"
 				body = cp
+				m = cp
 			} else {
 				cp := make(map[string]any, len(m))
 				for k, v := range m {
@@ -81,6 +124,20 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 					}
 				}
 				body = cp
+				m = cp
+			}
+		}
+		if path == "/auth/verify-otp" {
+			if _, hasPending := m["pending_id"]; !hasPending {
+				email, _ := m["email"].(string)
+				if pid := lookupPendingID(email); pid != "" {
+					cp := make(map[string]any, len(m)+1)
+					for k, v := range m {
+						cp[k] = v
+					}
+					cp["pending_id"] = pid
+					body = cp
+				}
 			}
 		}
 	}
@@ -122,6 +179,14 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 		t.Fatalf("unknown path %s", path)
 	}
 	s.GatewayAuth(h).ServeHTTP(rec, req)
+	// Capture the pending_id issued by a successful signup, like a client.
+	if path == "/auth/signup" && rec.Code == http.StatusCreated {
+		raw := rec.Body.Bytes()
+		var parsed map[string]string
+		if err := json.Unmarshal(raw, &parsed); err == nil {
+			rememberPendingID(parsed["email"], parsed["pending_id"])
+		}
+	}
 	return rec
 }
 
@@ -937,6 +1002,193 @@ func TestSignup_ReplaceUnverified(t *testing.T) {
 	body := decodeBody(t, rec)
 	if body["error"] != "unable to complete registration" || body["code"] != "conflict" {
 		t.Fatalf("expected generic refusal, got %v", body)
+	}
+}
+
+func TestSignup_TakeoverStalePendingFails(t *testing.T) {
+	s := testServer()
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	// Victim signs up (unverified).
+	recV := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Victim User",
+		"email":     "takeover@example.com",
+		"phone":     "+201012345695",
+		"password":  "victimpassword1",
+	}, "")
+	if recV.Code != http.StatusCreated {
+		t.Fatalf("victim signup = %d (%s)", recV.Code, recV.Body.String())
+	}
+	victimBody := decodeBody(t, recV)
+	pidV := victimBody["pending_id"]
+	if pidV == "" {
+		t.Fatal("signup response missing pending_id")
+	}
+
+	// Attacker re-signs up with the victim's unverified email and their own
+	// password (replacement rotates pending_id and OTP).
+	recA := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Attacker User",
+		"email":     "takeover@example.com",
+		"phone":     "+201012345696",
+		"password":  "attackerpassword1",
+	}, "")
+	if recA.Code != http.StatusCreated {
+		t.Fatalf("attacker signup = %d (%s)", recA.Code, recA.Body.String())
+	}
+	attackerBody := decodeBody(t, recA)
+	otpA := attackerBody["dev_otp"]
+	pidA := attackerBody["pending_id"]
+	if otpA == "" || pidA == "" {
+		t.Fatalf("attacker signup missing otp/pending_id: %v", attackerBody)
+	}
+	if pidA == pidV {
+		t.Fatal("replacement must rotate pending_id")
+	}
+
+	// Victim enters the new OTP with the OLD pending_id: generic 401.
+	rec := doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email":      "takeover@example.com",
+		"code":       otpA,
+		"pending_id": pidV,
+	}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("stale pending_id verify = %d, want 401 (%s)", rec.Code, rec.Body.String())
+	}
+	var staleBody map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &staleBody); err != nil {
+		t.Fatalf("decode stale: %v", err)
+	}
+	if staleBody["code"] != "invalid_token" {
+		t.Fatalf("stale pending code = %q, want invalid_token", staleBody["code"])
+	}
+
+	// Correct pending_id verifies (replacement flow is legitimate).
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email":      "takeover@example.com",
+		"code":       otpA,
+		"pending_id": pidA,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("current pending_id verify = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// The account now has the attacker's password, not the victim's.
+	rec = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email":    "takeover@example.com",
+		"password": "attackerpassword1",
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login with replacement password = %d, want 200", rec.Code)
+	}
+}
+
+func TestSignupResend_KeepsPendingID(t *testing.T) {
+	s := testServer()
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Resend Pending User",
+		"email":     "resendpid@example.com",
+		"phone":     "+201012345697",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup = %d (%s)", rec.Code, rec.Body.String())
+	}
+	signupBody := decodeBody(t, rec)
+	pid := signupBody["pending_id"]
+	if pid == "" {
+		t.Fatal("signup missing pending_id")
+	}
+
+	_ = s.Codes.ClearCooldown(context.Background(), "signup", "resendpid@example.com")
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup/resend", map[string]string{"email": "resendpid@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resend = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var resendBody map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resendBody); err != nil {
+		t.Fatalf("decode resend: %v", err)
+	}
+	if _, present := resendBody["pending_id"]; present {
+		t.Fatalf("resend must not issue a pending_id (keeps current), got %v", resendBody)
+	}
+
+	// Verify with the SAME pending_id and the resent code works.
+	newOTP := resendBody["dev_otp"]
+	if newOTP == "" {
+		t.Fatalf("expected dev_otp on resend, got %v", resendBody)
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email":      "resendpid@example.com",
+		"code":       newOTP,
+		"pending_id": pid,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify after resend with same pending_id = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestVerify_PhoneTakenReturns409(t *testing.T) {
+	s := testServer()
+
+	// A and B both sign up unverified with the same phone (free while unverified).
+	recA := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Phone Winner",
+		"email":     "phonewinner@example.com",
+		"phone":     "+201012345698",
+		"password":  "password123",
+	}, "")
+	if recA.Code != http.StatusCreated {
+		t.Fatalf("A signup = %d (%s)", recA.Code, recA.Body.String())
+	}
+	otpA := decodeBody(t, recA)["dev_otp"]
+	recB := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Phone Loser",
+		"email":     "phoneloser@example.com",
+		"phone":     "+201012345698",
+		"password":  "password123",
+	}, "")
+	if recB.Code != http.StatusCreated {
+		t.Fatalf("B signup = %d, want 201 (phone free while unverified) (%s)", recB.Code, recB.Body.String())
+	}
+	otpB := decodeBody(t, recB)["dev_otp"]
+
+	// A verifies first and takes the phone.
+	rec := doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "phonewinner@example.com",
+		"code":  otpA,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("A verify = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// B's verify: generic 409, no 500, B stays unverified.
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "phoneloser@example.com",
+		"code":  otpB,
+	}, "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("B verify = %d, want 409 (%s)", rec.Code, rec.Body.String())
+	}
+	var conflictBody map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &conflictBody); err != nil {
+		t.Fatalf("decode B verify: %v", err)
+	}
+	if conflictBody["code"] != "conflict" {
+		t.Fatalf("B verify code = %q, want conflict", conflictBody["code"])
+	}
+	u, err := s.Store.FindByEmail(context.Background(), "phoneloser@example.com")
+	if err != nil || u == nil {
+		t.Fatalf("B lookup: %v %+v", err, u)
+	}
+	if u.EmailVerified {
+		t.Fatal("B must stay unverified after phone-taken verify")
 	}
 }
 
@@ -2124,9 +2376,21 @@ func TestVerifyOTP_RedisDown_Returns503(t *testing.T) {
 	}
 	s := New(memStore, fCodes, NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
 
+	pid, err := otp.GenerateOpaqueToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = memStore.Create(context.Background(), &models.User{
+		ID:            "u-redisdown",
+		Email:         "redisdown@example.com",
+		Role:          models.RoleUser,
+		Status:        models.StatusActive,
+		PendingIDHash: otp.HashToken(pid),
+	})
 	rec := doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
-		"email": "redisdown@example.com",
-		"code":  "123456",
+		"email":      "redisdown@example.com",
+		"code":       "123456",
+		"pending_id": pid,
 	}, "")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("verify-otp redis down status = %d, want 503 (%s)", rec.Code, rec.Body.String())
@@ -2795,11 +3059,16 @@ func TestResetAndVerify_StoreErrors(t *testing.T) {
 	baseStore := otp.NewMemoryStore()
 	_ = baseStore.Set(context.Background(), "reset-code:err_clear@example.com", otp.HashToken("123456"), time.Hour)
 	_ = baseStore.Set(context.Background(), "signup-otp:err_clear@example.com", otp.HashToken("123456"), time.Hour)
+	pidClear, err := otp.GenerateOpaqueToken()
+	if err != nil {
+		t.Fatal(err)
+	}
 	uClear := &models.User{
-		ID:     "u-err-clear",
-		Email:  "err_clear@example.com",
-		Role:   models.RoleUser,
-		Status: models.StatusActive,
+		ID:            "u-err-clear",
+		Email:         "err_clear@example.com",
+		Role:          models.RoleUser,
+		Status:        models.StatusActive,
+		PendingIDHash: otp.HashToken(pidClear),
 	}
 	_ = memStore.Create(context.Background(), uClear)
 
@@ -2817,9 +3086,10 @@ func TestResetAndVerify_StoreErrors(t *testing.T) {
 	}
 
 	rec = doRequest(t, sClear, http.MethodPost, "/auth/verify-otp", map[string]string{
-		"email":     "err_clear@example.com",
-		"code":      "123456",
-		"device_id": "11111111-1111-4111-8111-111111111111",
+		"email":      "err_clear@example.com",
+		"code":       "123456",
+		"device_id":  "11111111-1111-4111-8111-111111111111",
+		"pending_id": pidClear,
 	}, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("ClearFailures err on verify-otp status = %d, want 200 (%s)", rec.Code, rec.Body.String())
