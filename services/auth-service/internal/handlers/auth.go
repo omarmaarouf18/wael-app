@@ -370,8 +370,11 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Existing account check by email (P-3, P-4; amended: only verified
-	// accounts block signup. Unverified records are replaced, expired
-	// unverified records are treated as absent.)
+	// accounts block signup. An unverified record — live or expired — is
+	// replaced by the new signup (same ID, fresh CreatedAt restarting the 24h
+	// expiry, rotated pending_id). Replacement in place is required because the
+	// unique email index still holds the expired row until the TTL monitor
+	// physically deletes it.
 	now := time.Now().UTC()
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 	existingEmail, err := s.Store.FindByEmail(dbCtx, email)
@@ -386,11 +389,9 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
 			return
 		}
-		if !isUnverifiedExpired(existingEmail, now) {
-			// Live unverified record: replace it below (new OTP, old invalid).
-			replaceUser = existingEmail
-		}
-		// Expired unverified: fall through as if absent (TTL deletes physically).
+		// Live or expired unverified record: replace it below (new OTP, old
+		// invalid, pending_id rotated).
+		replaceUser = existingEmail
 	}
 
 	// 4. Existing account check by phone (P-3, P-4, P-6; amended: only verified
@@ -499,11 +500,12 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
 			// Race: two signups at the same time, exactly one survives.
-			// Re-fetch; if the winner is unverified, replace it.
+			// Re-fetch; if the winner is unverified (live or expired), replace
+			// it in place so the second caller still gets a working OTP.
 			dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 			winner, findErr := s.Store.FindByEmail(dbCtx, email)
 			cancel()
-			if findErr == nil && winner != nil && !winner.EmailVerified && !isUnverifiedExpired(winner, time.Now().UTC()) {
+			if findErr == nil && winner != nil && !winner.EmailVerified {
 				winner.FullName = name
 				winner.Phone = phone
 				winner.PasswordHash = string(hash)

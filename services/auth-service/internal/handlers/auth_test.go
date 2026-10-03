@@ -1105,6 +1105,53 @@ func TestSignup_ReplaceUnverified(t *testing.T) {
 	}
 }
 
+func TestSignup_ReplaceExpiredUnverified(t *testing.T) {
+	s := testServer()
+
+	// Seed an expired unverified record whose row still exists (TTL has not
+	// physically deleted it yet): the unique email index still holds the row,
+	// so a naive create-then-handle-duplicate flow would 409.
+	expiredAt := time.Now().UTC().Add(-25 * time.Hour)
+	_ = s.Store.Create(context.Background(), &models.User{
+		ID:           "u-expired-replace",
+		Email:        "expiredreplace@example.com",
+		PasswordHash: "h",
+		Role:         models.RoleUser,
+		FullName:     "Old Expired",
+		Phone:        "+201012345705",
+		Status:       models.StatusActive,
+		CreatedAt:    expiredAt,
+	})
+
+	// A new signup with the same email replaces it in place (201), with a new
+	// OTP and pending_id — no 409 while the TTL row still exists.
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "New Attempt",
+		"email":     "expiredreplace@example.com",
+		"phone":     "+201012345706",
+		"password":  "newpassword456",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expired replacement signup = %d, want 201 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["dev_otp"] == "" || body["pending_id"] == "" {
+		t.Fatalf("replacement missing otp/pending_id: %v", body)
+	}
+	if body["id"] != "u-expired-replace" {
+		t.Fatalf("replacement must keep the same record id, got %q", body["id"])
+	}
+
+	// The new OTP verifies with the new pending_id.
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "expiredreplace@example.com",
+		"code":  body["dev_otp"],
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify after expired replacement = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestSignup_TakeoverStalePendingFails(t *testing.T) {
 	s := testServer()
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")

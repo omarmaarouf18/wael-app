@@ -10,6 +10,8 @@ import (
 
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/models"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 func runUserStoreSuite(t *testing.T, s Store) {
@@ -963,4 +965,108 @@ func runSessionStoreSuite(t *testing.T, s Store) {
 	if len(activeConc) != 2 {
 		t.Fatalf("expected exactly 2 active sessions after 10 concurrent logins, got %d", len(activeConc))
 	}
+}
+
+// TestMongoStore_IndexMigrationFromPreChangeOptions simulates production data
+// as created by the pre-change EnsureIndexes (phone_1 without email_verified,
+// no TTL index) and proves the new EnsureIndexes migrates cleanly on boot: no
+// IndexOptionsConflict, phone_1 replaced by the verified-only partial index,
+// and the 24h unverified TTL index created. Idempotent: a second boot works.
+func TestMongoStore_IndexMigrationFromPreChangeOptions(t *testing.T) {
+	mongoURI, _ := requireDB(t)
+	dbName := randomDBName("test_auth_migration")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 1. New code creates the new indexes.
+	first, err := NewMongoStore(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("first NewMongoStore: %v", err)
+	}
+	coll := first.coll
+
+	// 2. Roll the users collection back to the pre-change shape.
+	if err := coll.Indexes().DropOne(ctx, "phone_1"); err != nil {
+		t.Fatalf("drop phone_1: %v", err)
+	}
+	if err := coll.Indexes().DropOne(ctx, "created_at_1"); err != nil {
+		t.Fatalf("drop created_at_1: %v", err)
+	}
+	oldPhone, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "phone", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{
+				"phone":  bson.M{"$type": "string", "$gt": ""},
+				"status": bson.M{"$in": []string{"active", "suspended"}},
+			}),
+	})
+	if err != nil {
+		t.Fatalf("recreate old phone index: %v", err)
+	}
+	if oldPhone != "phone_1" {
+		t.Fatalf("old phone index name = %q, want phone_1", oldPhone)
+	}
+
+	// 3. Boot again against the old indexes: must succeed with no conflict.
+	second, err := NewMongoStore(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("second NewMongoStore (migration boot): %v", err)
+	}
+	_ = second
+
+	// 4. Assert the migrated shapes.
+	cursor, err := coll.Indexes().List(ctx)
+	if err != nil {
+		t.Fatalf("list indexes: %v", err)
+	}
+	defer cursor.Close(ctx)
+	type idxDoc struct {
+		Name                    string `bson:"name"`
+		Unique                  bool   `bson:"unique"`
+		ExpireAfterSeconds      *int32 `bson:"expireAfterSeconds"`
+		PartialFilterExpression bson.M `bson:"partialFilterExpression"`
+	}
+	var phoneFilter, ttlFilter bson.M
+	var phoneUnique bool
+	var ttlSeconds int32
+	for cursor.Next(ctx) {
+		var doc idxDoc
+		if err := cursor.Decode(&doc); err != nil {
+			t.Fatalf("decode index: %v", err)
+		}
+		switch doc.Name {
+		case "phone_1":
+			phoneUnique = doc.Unique
+			phoneFilter = doc.PartialFilterExpression
+		case "created_at_1":
+			ttlFilter = doc.PartialFilterExpression
+			if doc.ExpireAfterSeconds != nil {
+				ttlSeconds = *doc.ExpireAfterSeconds
+			}
+		}
+	}
+	if !phoneUnique {
+		t.Fatal("migrated phone_1 is not unique")
+	}
+	if ev, ok := phoneFilter["email_verified"]; !ok || ev != true {
+		t.Fatalf("migrated phone_1 partial filter lacks email_verified:true: %v", phoneFilter)
+	}
+	if ttlSeconds != 86400 {
+		t.Fatalf("migrated created_at_1 expireAfterSeconds = %d, want 86400", ttlSeconds)
+	}
+	if ev, ok := ttlFilter["email_verified"]; !ok || ev != false {
+		t.Fatalf("migrated created_at_1 partial filter lacks email_verified:false: %v", ttlFilter)
+	}
+
+	// 5. Third boot (steady state) is also clean.
+	if _, err := NewMongoStore(ctx, mongoURI, dbName); err != nil {
+		t.Fatalf("third NewMongoStore: %v", err)
+	}
+
+	t.Cleanup(func() {
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dropCancel()
+		_ = first.coll.Database().Drop(dropCtx)
+	})
 }
