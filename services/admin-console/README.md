@@ -20,14 +20,33 @@ route under `/internal/`.
 | `POST /api/accounts/suspend` `{id, reason}` | `POST /internal/admin/accounts/{id}/suspend` `{reason}` |
 | `POST /api/accounts/reactivate` `{id}` | `POST /internal/admin/accounts/{id}/reactivate` |
 | `POST /api/accounts/delete` `{id, reason}` | `DELETE /internal/admin/accounts/{id}` `{reason}` |
-| `GET /api/audit?page&limit` | `GET /internal/admin/audit-log` |
+| `GET /api/audit?source&page&limit` | `source=academy` goes to the academy listener (see below); anything else goes to auth-service. |
+
+| Console route | Upstream (academy-service admin listener) |
+|---|---|
+| `GET /api/levels` | `GET /internal/admin/levels` |
+| `POST /api/levels/create` `{study_type, name_ar, name_en?, order?, published?}` | `POST /internal/admin/levels` |
+| `POST /api/levels/update` `{id, ...}` | `PATCH /internal/admin/levels/{id}` |
+| `POST /api/levels/delete` `{id}` | `DELETE /internal/admin/levels/{id}` |
+| `GET /api/subjects?level_id&published&page&limit` | `GET /internal/admin/subjects` |
+| `POST /api/subjects/create` `{level_id, title_ar, ...}` | `POST /internal/admin/subjects` |
+| `POST /api/subjects/update` `{id, ...}` | `PATCH /internal/admin/subjects/{id}` |
+| `POST /api/subjects/publish` `{id}` | `POST /internal/admin/subjects/{id}/publish` |
+| `POST /api/subjects/unpublish` `{id}` | `POST /internal/admin/subjects/{id}/unpublish` |
+| `GET /api/videos?subject_id` | `GET /internal/admin/subjects/{id}/videos` |
+| `POST /api/videos/create` `{subject_id, title_ar, youtube, ...}` | `POST /internal/admin/subjects/{id}/videos` |
+| `POST /api/videos/update` `{id, ...}` | `PATCH /internal/admin/videos/{id}` |
+| `POST /api/videos/reorder` `{subject_id, video_ids}` | `POST /internal/admin/subjects/{id}/videos/reorder` |
+| `POST /api/videos/delete` `{id, force?}` | `DELETE /internal/admin/videos/{id}[?force=true]` (`?force=true` only when `force` is true) |
 
 `GET /healthz` is unauthenticated and calls nothing. Everything else is the
 embedded static UI (`web/`).
 
-The academy-service routes (requests, catalog, files) and the academy half of
-the audit log are added as SPEC Phase 4 lands. Until then `/api/audit` returns
-auth-service's log only.
+The academy-service requests routes and the files routes do not exist in this
+task: there is no catch-all and nothing under `/internal/`. The audit log is
+served per source (`source=auth`, the default, or `source=academy`); the two
+logs are never merged into one page, because merged pagination over two
+sources is wrong without a shared cursor.
 
 Every handler: requires `X-Admin-Token` (401 with no upstream call when
 missing or malformed), validates input (UUID id, reason 1-1000 characters with
@@ -51,7 +70,7 @@ anything; an empty `APP_ENV` is production and an unknown value is refused.
 |---|---|---|
 | `INTERNAL_SERVICE_TOKEN` | always | Sent as `X-Internal-Token`. Empty or blank fails startup. |
 | `AUTH_ADMIN_URL` | outside local/test | `https://auth-service:9001`. Must be `https` outside dev, `scheme://host[:port]` only. |
-| `ACADEMY_ADMIN_URL` | outside local/test | `https://academy-service:9002`. Validated now; used once the academy admin routes exist. |
+| `ACADEMY_ADMIN_URL` | outside local/test | `https://academy-service:9002`. The catalog routes forward to it. |
 | `TLS_CERT_PATH`, `TLS_KEY_PATH`, `TLS_CA_PATH` | outside local/test | Server certificate for the listener, and the mTLS client certificate and local CA for calls to the admin listeners. |
 | `TRUSTED_PROXY_IPS` | outside local/test | Comma-separated IPs or CIDRs (Caddy). `/0` is refused. |
 | `PORT` | no | Default `3005`. |
@@ -65,8 +84,17 @@ or URL), so reloading the page signs the admin out. Any `401` clears the token
 and returns to the sign-in page. The page is Arabic first (right-to-left) with
 an English toggle; the choice is kept in the URL hash only.
 
-Requests, Catalog and Files tabs exist in `web/js/tabs.js` but are hidden until
-their APIs exist.
+Requests, Catalog and Files tabs exist in `web/js/tabs.js`; Catalog is
+visible since SPEC 6.3 part 1, Requests and Files stay hidden until the
+4.5/4.6 and Phase 5 APIs exist.
+
+The Catalog tab (levels, subjects, videos) is split into small ES modules
+(`web/js/catalog.js`, `levels.js`, `subjects.js`, `subject-dialog.js`,
+`videos.js`, `video-dialog.js`, `confirm.js`). Server error codes are mapped
+to Arabic/English text in one map in `web/js/i18n.js` (`err.<code>`);
+`web/test/errors.test.mjs` fails when a code the academy admin handlers can
+return (the checked-in list in `internal/proxy/catalog_codes_test.go`) has no
+message.
 
 ## Tests
 

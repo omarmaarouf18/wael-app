@@ -105,6 +105,14 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 4. **Audit log merge (Section 9.4)**: until the academy-service admin endpoints exist (SPEC Phase 4.1), the console serves auth-service's audit log only. Merging both logs by `created_at` descending is added with Phase 4.1; the academy routes (requests, catalog, files) are added as Phase 4 lands. Their tabs exist in the code and stay hidden until then.
 5. **Held from `main`**: this is an admin-authorization surface (SPEC Section 12, rule 6). It stays off `main` until the owner confirms. *(2026-10-02: owner confirmed; the console released to `main` as `b6a11fe`.)*
 
+### 11. Note (2026-10-03, Console Catalog Pages, SPEC 6.3 Part 1)
+
+*Records the academy half of the console. It changes none of the decisions above.*
+
+1. **Academy routes**: the allowlist gains fourteen catalog routes, all to `ACADEMY_ADMIN_URL` over mTLS with the same guarantees as the 6.1 routes: levels list/create/update/delete, subjects list/create/update/publish/unpublish, videos list/create/update/reorder/delete (with `?force=true` only when `force` is true). Ids travel in the body, like the account routes; only the fields the academy accepts are forwarded.
+2. **Audit source switch**: `GET /api/audit` gains a `source` parameter (`auth`, the default, or `academy`). The page shows one source at a time behind a الحسابات / المحتوى switch; the two logs are not merged into one page, because merged pagination over two sources is wrong without a shared cursor. This supersedes the merge plan in Section 10 item 4, pending owner review.
+3. **Catalog tab**: levels in the fixed بكالوريوس / دبلومات / تعليم مهني order, subjects with draft/published filter and pagination, videos with reorder and the force-delete flow; every mutation reloads from the server. Server error codes map to one Arabic/English map in `web/js/i18n.js`. Requests and Files stay hidden (4.5/4.6 and Phase 5).
+
 ## Consequences
 
 
