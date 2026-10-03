@@ -320,7 +320,7 @@ func (s *Server) RevokeAdminEntitlement(w http.ResponseWriter, r *http.Request, 
 			titleEn = subj.TitleEn
 		}
 		s.notifyStudent(r.Context(), ent.UserID, "entitlement_revoke", func(ctx context.Context) error {
-			return notify.SubjectRevoked(ctx, s.NotifyURL, s.NotifyToken, ent.UserID, titleAr, titleEn, reason)
+			return notify.SubjectRevoked(ctx, s.NotifyURL, s.NotifyToken, ent.UserID, titleAr, titleEn)
 		})
 	}
 

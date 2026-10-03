@@ -121,19 +121,17 @@ func SubjectRejected(ctx context.Context, baseURL, internalToken, userID, titleA
 }
 
 // SubjectRevoked notifies a student that access to a subject was revoked.
-func SubjectRevoked(ctx context.Context, baseURL, internalToken, userID, titleAr, titleEn, reason string) error {
+// The reason is internal (it may concern a refund or sensitive administrative detail)
+// and is preserved in the entitlement and audit log only; the student notification
+// carries no reason.
+func SubjectRevoked(ctx context.Context, baseURL, internalToken, userID, titleAr, titleEn string) error {
 	nameEn := titleEn
 	if nameEn == "" {
 		nameEn = titleAr
 	}
-	bodyEn := fmt.Sprintf("Access to %s was revoked", nameEn)
-	bodyAr := fmt.Sprintf("تم سحب مادة %s", titleAr)
-	if reason != "" {
-		bodyEn = fmt.Sprintf("Access to %s was revoked: %s", nameEn, reason)
-		bodyAr = fmt.Sprintf("تم سحب مادة %s: %s", titleAr, reason)
-	}
 	return Push(ctx, baseURL, internalToken, userID,
 		"Subject revoked", "تم سحب المادة",
-		bodyEn, bodyAr,
+		fmt.Sprintf("Access to %s was revoked", nameEn),
+		fmt.Sprintf("تم سحب مادة %s", titleAr),
 		"security", "/main")
 }

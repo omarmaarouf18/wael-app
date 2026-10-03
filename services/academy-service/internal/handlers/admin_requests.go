@@ -311,11 +311,8 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request, reqID str
 		return
 	}
 	if !ok {
-		checkReq, cErr := s.Store.GetRequestByID(dbCtx, pr.ID)
-		if cErr != nil || checkReq == nil || checkReq.Status != models.RequestStatusAccepted {
-			handlerutil.WriteSafeError(w, r, http.StatusConflict, "request_not_pending", "request is not pending", nil)
-			return
-		}
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, "request_not_pending", "request is not pending", nil)
+		return
 	}
 
 	// 5. Write the audit entry.

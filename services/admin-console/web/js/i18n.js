@@ -187,7 +187,7 @@ export const MESSAGES = Object.freeze({
     'dialog.accept.note': 'هيتسجل دفع {price} ج.م وهيتفتح للطالب لحد {expiry}.',
     'dialog.reject.title': 'رفض الطلب',
     'dialog.reject.confirm': 'تأكيد الرفض',
-    'dialog.reject.note': 'سيتم إشعار الطالب بسبب الرفض ويمكنه تقديم طلب جديد لاحقًا.',
+    'dialog.reject.note': 'سيصل السبب للطالب في إشعار (تجنب كلمات الدفع أو الأسعار لحماية المتجر). يمكن للطالب تقديم طلب جديد لاحقًا.',
 
     'entitlements.title': 'مواد الطالب: {name}',
     'entitlements.grantBtn': 'منح مادة',
@@ -218,7 +218,7 @@ export const MESSAGES = Object.freeze({
     'dialog.grant.note': 'هيتسجل دفع {price} ج.م وهيتفتح للطالب لحد {expiry}.',
     'dialog.revoke.title': 'سحب المادة من الطالب',
     'dialog.revoke.confirm': 'تأكيد السحب',
-    'dialog.revoke.note': 'سيتم إيقاف وصول الطالب فورًا وإشعاره بالسبب. سيبقى سجل الدفع محفوظًا.',
+    'dialog.revoke.note': 'سيتم إيقاف وصول الطالب فورًا وإشعاره. سيبقى سجل الدفع محفوظًا.',
 
     'idle.warnTitle': 'تنبيه انتهاء الجلسة',
     'idle.warnBody': 'سيتم قفل الجلسة بعد {seconds} ثانية بسبب عدم النشاط.',
@@ -481,7 +481,7 @@ export const MESSAGES = Object.freeze({
     'dialog.accept.note': 'A payment of {price} EGP will be recorded and access granted until {expiry}.',
     'dialog.reject.title': 'Reject request',
     'dialog.reject.confirm': 'Confirm rejection',
-    'dialog.reject.note': 'The student will be notified of the reason and can submit a new request later.',
+    'dialog.reject.note': 'The student will be notified of the reason (avoid payment or price wording for store safety) and can submit a new request later.',
 
     'entitlements.title': 'Student subjects: {name}',
     'entitlements.grantBtn': 'Grant subject',
