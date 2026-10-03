@@ -474,6 +474,100 @@ td.detail {
   margin-block-end: 0.15rem;
 }
 
+.section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Two-way switch (audit source). The pressed button reads as selected. */
+.segment {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-1);
+}
+
+.segment .btn[aria-pressed="true"] {
+  background: var(--crimson);
+  border-color: transparent;
+}
+
+/* Catalog: breadcrumb, level sections and cards. */
+
+.crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.4rem;
+  margin-block-end: 0.75rem;
+  color: var(--text-2);
+}
+
+.level-group {
+  margin-block-end: 1.25rem;
+}
+
+.level-group h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.level-card {
+  margin-block-end: 0.75rem;
+}
+
+.level-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-block-end: 0.4rem;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-block-start: 0.6rem;
+}
+
+.badge-published {
+  color: var(--approved);
+  background: var(--approved-bg);
+}
+
+.badge-draft {
+  color: var(--pending);
+  background: var(--pending-bg);
+}
+
+.link {
+  color: var(--text-2);
+  text-decoration: underline;
+}
+
+/* Success toast: one short note at the foot of the viewport. */
+
+.toast {
+  position: fixed;
+  inset-block-end: 1rem;
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: fit-content;
+  max-inline-size: calc(100% - 2rem);
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--approved);
+  background: var(--surface-2);
+  color: var(--approved);
+  font-weight: 600;
+  z-index: 50;
+}
+
 .pager {
   display: flex;
   flex-wrap: wrap;

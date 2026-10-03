@@ -25,7 +25,7 @@ function stripJsComments(src) {
 const jsCode = Object.fromEntries(Object.entries(jsSources).map(([f, s]) => [f, stripJsComments(s)]));
 
 test('the expected modules are present', () => {
-  for (const name of ['api', 'auth', 'i18n', 'accounts', 'audit', 'app', 'account-dialog', 'tabs', 'ui', 'dom']) {
+  for (const name of ['api', 'auth', 'i18n', 'accounts', 'audit', 'app', 'account-dialog', 'tabs', 'ui', 'dom', 'catalog', 'levels', 'subjects', 'subject-dialog', 'videos', 'video-dialog', 'confirm']) {
     assert.ok(jsFiles.includes(`${name}.js`), `${name}.js`);
   }
 });
@@ -92,15 +92,36 @@ test('only api.js talks to the network, and only to the console itself', () => {
     assert.ok(!/\bfetch\b/.test(src), `${name} uses fetch`);
   }
   const apiPaths = [...new Set([...Object.values(jsCode).join('\n').matchAll(/['"`](\/api\/[\w/]*)['"`]/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(apiPaths, ['/api/accounts', '/api/accounts/delete', '/api/accounts/reactivate', '/api/accounts/suspend', '/api/audit', '/api/whoami']);
+  assert.deepEqual(apiPaths, [
+    '/api/accounts', '/api/accounts/delete', '/api/accounts/reactivate', '/api/accounts/suspend', '/api/audit',
+    '/api/levels', '/api/levels/create', '/api/levels/delete', '/api/levels/update',
+    '/api/subjects', '/api/subjects/create', '/api/subjects/publish', '/api/subjects/unpublish', '/api/subjects/update',
+    '/api/videos', '/api/videos/create', '/api/videos/delete', '/api/videos/reorder', '/api/videos/update',
+    '/api/whoami',
+  ]);
+});
+
+// The watch link is the single allowed third-party URL: a plain anchor the
+// page never fetches, embeds or previews. Everything else stays first-party.
+const YOUTUBE_WATCH = 'https://www.youtube.com/watch?v=';
+
+test('the YouTube watch link is one constant, used only for an anchor href after id validation', () => {
+  const users = Object.entries(jsCode).filter(([, src]) => src.includes(YOUTUBE_WATCH));
+  assert.deepEqual(users.map(([name]) => name), ['videos.js']);
+  const videos = jsCode['videos.js'];
+  assert.ok(videos.includes('A-Za-z0-9_-]{11}'), 'id shape is validated before the link is built');
+  assert.ok(/attrs:\s*\{[^}]*href/.test(videos), 'the link is an anchor href, not fetched content');
+  assert.ok(videos.includes("rel: 'noopener noreferrer'") || videos.includes('rel: "noopener noreferrer"'), 'the link is noopener');
+  assert.ok(videos.includes("target: '_blank'") || videos.includes('target: "_blank"'), 'the link opens in a new tab');
 });
 
 test('no third-party request: no absolute URL in HTML, CSS or scripts; imports are relative', () => {
   assert.ok(!/https?:\/\//i.test(html), 'absolute URL in index.html');
   assert.ok(!/https?:\/\//i.test(css), 'absolute URL in style.css');
   for (const [name, src] of Object.entries(jsCode)) {
-    assert.ok(!/https?:\/\//i.test(src), `${name} has an absolute URL`);
-    assert.ok(!/(^|[^\w.])\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(src), `${name} has a protocol-relative URL`);
+    const stripped = src.split(YOUTUBE_WATCH).join('');
+    assert.ok(!/https?:\/\//i.test(stripped), `${name} has an absolute URL other than the watch link`);
+    assert.ok(!/(^|[^\w.])\/\/[a-z0-9.-]+\.[a-z]{2,}/i.test(stripped), `${name} has a protocol-relative URL`);
     for (const m of src.matchAll(/^\s*import\b[^'"]*['"]([^'"]+)['"]/gm)) {
       assert.match(m[1], /^\.\/[\w-]+\.js$/, `${name} imports ${m[1]}`);
     }

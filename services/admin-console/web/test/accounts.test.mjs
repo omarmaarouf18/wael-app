@@ -115,6 +115,8 @@ test('audit action labels exist only for known actions', () => {
   assert.equal(actionLabelKey('account_suspend'), 'audit.action.account_suspend');
   assert.equal(actionLabelKey('account_reactivate'), 'audit.action.account_reactivate');
   assert.equal(actionLabelKey('account_delete'), 'audit.action.account_delete');
-  assert.equal(actionLabelKey('subject_publish'), null);
+  assert.equal(actionLabelKey('subject_publish'), 'audit.action.subject_publish');
+  assert.equal(actionLabelKey('video_reorder'), 'audit.action.video_reorder');
+  assert.equal(actionLabelKey('something_new'), null);
   assert.equal(actionLabelKey(undefined), null);
 });

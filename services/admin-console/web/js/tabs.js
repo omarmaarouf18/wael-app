@@ -1,12 +1,12 @@
-// The tab registry. Requests, Catalog and Files are declared but not enabled:
-// their buttons stay hidden until the APIs behind them exist (SPEC Phase 4 and
-// later). Enabling one means adding its module and flipping `enabled`.
+// The tab registry. Requests and Files are declared but not enabled: their
+// buttons stay hidden until the APIs behind them exist (SPEC Phase 4.5/4.6
+// and Phase 5). Enabling one means adding its module and flipping `enabled`.
 
 export const TABS = Object.freeze([
   Object.freeze({ id: 'accounts', enabled: true }),
   Object.freeze({ id: 'audit', enabled: true }),
   Object.freeze({ id: 'requests', enabled: false, badge: true }),
-  Object.freeze({ id: 'catalog', enabled: false }),
+  Object.freeze({ id: 'catalog', enabled: true }),
   Object.freeze({ id: 'files', enabled: false }),
 ]);
 

@@ -4,6 +4,7 @@
 import { mountAccounts } from './accounts.js';
 import { api } from './api.js';
 import { mountAudit } from './audit.js';
+import { mountCatalog } from './catalog.js';
 import { clearSession, getAdminName, onSessionChange, signIn } from './auth.js';
 import {
   applyTranslations,
@@ -31,6 +32,7 @@ export function main(doc = document, win = window) {
   const modules = {
     accounts: mountAccounts({ api, doc }),
     audit: mountAudit({ api, doc }),
+    catalog: mountCatalog({ api, doc }),
   };
   let activeTab = 'accounts';
   let signingIn = false;

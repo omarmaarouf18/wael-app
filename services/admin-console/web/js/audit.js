@@ -1,5 +1,7 @@
-// Audit log tab: newest first, paginated. Only the auth-service log is served
-// today; the academy log is merged in when its endpoint exists (ADR-0008 s9).
+// Audit log tab: newest first, paginated. The page shows one source at a
+// time: the auth-service log (accounts) or the academy log (content). The two
+// are never merged: merged pagination over two sources is wrong without a
+// shared cursor.
 
 import { clear, h } from './dom.js';
 import { MESSAGES, t } from './i18n.js';
@@ -15,6 +17,11 @@ export function actionLabelKey(action) {
   return key in MESSAGES.en ? key : null;
 }
 
+/** Query for GET /api/audit; the source is always sent explicitly. */
+export function auditQuery({ source, page, limit }) {
+  return { source, page, limit };
+}
+
 export function mountAudit({ api, doc = document }) {
   const banner = doc.getElementById('audit-banner');
   const tbody = doc.querySelector('#audit-table tbody');
@@ -23,9 +30,16 @@ export function mountAudit({ api, doc = document }) {
     load();
   });
   const refreshButton = doc.getElementById('audit-refresh');
+  const sourceAuth = doc.getElementById('audit-source-auth');
+  const sourceAcademy = doc.getElementById('audit-source-academy');
 
-  const state = { page: 1, total: 0, items: [], loaded: false, error: null };
+  const state = { source: 'auth', page: 1, total: 0, items: [], loaded: false, error: null };
   let seq = 0;
+
+  function renderSource() {
+    sourceAuth.setAttribute('aria-pressed', String(state.source === 'auth'));
+    sourceAcademy.setAttribute('aria-pressed', String(state.source === 'academy'));
+  }
 
   function row(entry) {
     const key = actionLabelKey(entry.action);
@@ -43,6 +57,7 @@ export function mountAudit({ api, doc = document }) {
   }
 
   function render() {
+    renderSource();
     clear(tbody);
     if (!state.loaded && !state.error) tbody.append(messageRow(COLUMNS, t('common.loading')));
     else if (state.loaded && state.items.length === 0) tbody.append(messageRow(COLUMNS, t('common.empty')));
@@ -56,7 +71,7 @@ export function mountAudit({ api, doc = document }) {
     const mine = ++seq;
     state.error = null;
     render();
-    const res = await api.get('/api/audit', { page: state.page, limit: PAGE_SIZE });
+    const res = await api.get('/api/audit', auditQuery({ source: state.source, page: state.page, limit: PAGE_SIZE }));
     if (mine !== seq || !isSignedIn()) return;
     if (!res.ok) {
       state.error = res.kind;
@@ -74,13 +89,25 @@ export function mountAudit({ api, doc = document }) {
     state.page = 1;
     load();
   });
+  sourceAuth.addEventListener('click', () => {
+    if (state.source === 'auth') return;
+    state.source = 'auth';
+    state.page = 1;
+    load();
+  });
+  sourceAcademy.addEventListener('click', () => {
+    if (state.source === 'academy') return;
+    state.source = 'academy';
+    state.page = 1;
+    load();
+  });
 
   return {
     load,
     rerender: render,
     reset() {
       seq += 1;
-      Object.assign(state, { page: 1, total: 0, items: [], loaded: false, error: null });
+      Object.assign(state, { source: 'auth', page: 1, total: 0, items: [], loaded: false, error: null });
       render();
     },
   };

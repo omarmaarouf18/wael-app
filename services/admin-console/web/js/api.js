@@ -35,16 +35,35 @@ function withQuery(path, query) {
 }
 
 /**
+ * Reads the server's error code from a failed response. Only a plain
+ * lowercase token is kept; anything else (including the human message) is
+ * dropped so raw server text never reaches the page.
+ */
+async function errorCode(res) {
+  try {
+    const body = await res.json();
+    const code = body && typeof body.code === 'string' ? body.code : null;
+    return code && /^[a-z_]{1,64}$/.test(code) ? code : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * createApi builds the client. All three collaborators are injected so the
  * flows can be tested without a browser.
  */
 export function createApi({ fetchFn, getToken: tokenOf, onUnauthorized }) {
-  /** Resolves { ok, status, kind, data }. data is set only when ok. Never throws on HTTP or network errors. */
+  /**
+   * Resolves { ok, status, kind, code, data }. data is set only when ok. code
+   * is the server's error code when it is a plain token (a-z and _); raw
+   * error text is never kept. Never throws on HTTP or network errors.
+   */
   async function request(method, path, { query, body } = {}) {
     const token = tokenOf();
     if (!token) {
       onUnauthorized();
-      return { ok: false, status: 401, kind: 'unauthorized', data: null };
+      return { ok: false, status: 401, kind: 'unauthorized', code: 'unauthorized', data: null };
     }
     const headers = { Accept: 'application/json', 'X-Admin-Token': token };
     const init = {
@@ -63,22 +82,22 @@ export function createApi({ fetchFn, getToken: tokenOf, onUnauthorized }) {
     try {
       res = await fetchFn(withQuery(path, query), init);
     } catch {
-      return { ok: false, status: 0, kind: 'unavailable', data: null };
+      return { ok: false, status: 0, kind: 'unavailable', code: null, data: null };
     }
     if (res.status === 401) {
       onUnauthorized();
-      return { ok: false, status: 401, kind: 'unauthorized', data: null };
+      return { ok: false, status: 401, kind: 'unauthorized', code: 'unauthorized', data: null };
     }
     if (!res.ok) {
-      return { ok: false, status: res.status, kind: kindForStatus(res.status), data: null };
+      return { ok: false, status: res.status, kind: kindForStatus(res.status), code: await errorCode(res), data: null };
     }
     let data;
     try {
       data = await res.json();
     } catch {
-      return { ok: false, status: res.status, kind: 'unavailable', data: null };
+      return { ok: false, status: res.status, kind: 'unavailable', code: null, data: null };
     }
-    return { ok: true, status: res.status, kind: null, data };
+    return { ok: true, status: res.status, kind: null, code: null, data };
   }
 
   return {

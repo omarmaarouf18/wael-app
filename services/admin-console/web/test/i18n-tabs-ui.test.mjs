@@ -123,10 +123,11 @@ test('date and time formatting tolerates bad input and is split in two', () => {
   assert.notEqual(formatDate('2026-10-02T10:00:00Z'), formatTime('2026-10-02T10:00:00Z'));
 });
 
-test('Requests, Catalog and Files exist in code but stay hidden until their APIs exist', () => {
+test('Requests and Files exist in code but stay hidden until their APIs exist', () => {
   assert.deepEqual(TABS.map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'files']);
-  assert.deepEqual(visibleTabs().map((x) => x.id), ['accounts', 'audit']);
-  for (const id of ['requests', 'catalog', 'files']) assert.equal(isTabEnabled(id), false, id);
+  assert.deepEqual(visibleTabs().map((x) => x.id), ['accounts', 'audit', 'catalog']);
+  assert.equal(isTabEnabled('catalog'), true);
+  for (const id of ['requests', 'files']) assert.equal(isTabEnabled(id), false, id);
   assert.equal(isTabEnabled('accounts'), true);
   assert.equal(isTabEnabled('nope'), false);
   assert.equal(TABS.find((x) => x.id === 'requests').badge, true);

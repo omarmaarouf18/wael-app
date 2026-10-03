@@ -88,8 +88,8 @@ async function signInOk() {
 // The real page tags these in index.html; the fake document is not parsed from it.
 $('sign-out').dataset.i18n = 'top.signOut';
 $('lang-toggle').dataset.i18n = 'top.language';
-$('audit-note').dataset.i18n = 'audit.academyNote';
-$('panel-audit').append($('audit-note'));
+$('audit-source-academy').dataset.i18n = 'audit.source.academy';
+$('panel-audit').append($('audit-source-academy'));
 
 const app = main(doc, win);
 
@@ -98,8 +98,8 @@ test('starts on the sign-in page, Arabic and right-to-left, with the unfinished 
   assert.equal($('app-view').hidden, true);
   assert.equal(doc.documentElement.lang, 'ar');
   assert.equal(doc.documentElement.dir, 'rtl');
-  for (const id of ['requests', 'catalog', 'files']) assert.equal($(`tab-${id}`).hidden, true, id);
-  for (const id of ['accounts', 'audit']) assert.equal($(`tab-${id}`).hidden, false, id);
+  for (const id of ['requests', 'files']) assert.equal($(`tab-${id}`).hidden, true, id);
+  for (const id of ['accounts', 'audit', 'catalog']) assert.equal($(`tab-${id}`).hidden, false, id);
   assert.equal(getToken(), '');
 });
 
@@ -356,7 +356,7 @@ test('the audit tab loads newest first with localized labels and falls back to t
   globalThis.fetch.calls.length = 0;
   $('tab-audit').click();
   await flush();
-  assert.equal(globalThis.fetch.calls[0].url, '/api/audit?page=1&limit=20');
+  assert.equal(globalThis.fetch.calls[0].url, '/api/audit?source=auth&page=1&limit=20');
   assert.equal($('panel-audit').hidden, false);
   assert.equal($('panel-accounts').hidden, true);
   assert.equal($('tab-audit').getAttribute('aria-selected'), 'true');
@@ -367,14 +367,26 @@ test('the audit tab loads newest first with localized labels and falls back to t
   assert.ok(rows[0].textContent.includes('spam'));
   assert.ok(rows[1].textContent.includes('something_new'));
   assert.ok(rows[1].textContent.includes('widget'));
-  assert.ok($('panel-audit').textContent.includes(MESSAGES.ar['audit.academyNote']));
+});
+
+test('the audit source switch loads the academy log without merging pages', async () => {
+  globalThis.fetch.calls.length = 0;
+  $('audit-source-academy').click();
+  await flush();
+  const call = globalThis.fetch.calls.find((c) => c.path === '/api/audit');
+  assert.equal(call.url, '/api/audit?source=academy&page=1&limit=20');
+  assert.equal($('audit-source-academy').getAttribute('aria-pressed'), 'true');
+  assert.equal($('audit-source-auth').getAttribute('aria-pressed'), 'false');
+  $('audit-source-auth').click();
+  await flush();
+  const back = globalThis.fetch.calls.filter((c) => c.path === '/api/audit').pop();
+  assert.equal(back.url, '/api/audit?source=auth&page=1&limit=20');
 });
 
 test('hidden tabs cannot be activated', () => {
   const before = globalThis.fetch.calls.length;
   app.activate('requests');
   app.activate('files');
-  app.activate('catalog');
   assert.equal(globalThis.fetch.calls.length, before);
   assert.equal(app.activeTab, 'audit');
 });
@@ -385,12 +397,12 @@ test('the language toggle flips direction and keeps the choice in the URL hash o
   assert.equal(doc.documentElement.dir, 'ltr');
   assert.equal(win.location.hash, '#en');
   assert.equal($('sign-out').textContent, MESSAGES.en['top.signOut']);
-  assert.ok($('panel-audit').textContent.includes(MESSAGES.en['audit.academyNote']));
+  assert.ok($('panel-audit').textContent.includes(MESSAGES.en['audit.source.academy']));
   $('lang-toggle').click();
   assert.equal(doc.documentElement.dir, 'rtl');
   assert.equal(win.location.hash, '#ar');
   assert.equal($('sign-out').textContent, MESSAGES.ar['top.signOut']);
-  assert.ok($('panel-audit').textContent.includes(MESSAGES.ar['audit.academyNote']));
+  assert.ok($('panel-audit').textContent.includes(MESSAGES.ar['audit.source.academy']));
 });
 
 test('sign out clears the token and everything on screen', async () => {

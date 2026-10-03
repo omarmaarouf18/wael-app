@@ -2,7 +2,7 @@
 // badge. Messages come from i18n by error kind; server text is never shown.
 
 import { clear, h } from './dom.js';
-import { formatDate, formatNumber, formatTime, t } from './i18n.js';
+import { errorText, formatDate, formatNumber, formatTime, t } from './i18n.js';
 
 export function pageCount(total, limit) {
   if (!(total > 0) || !(limit > 0)) return 1;
@@ -11,8 +11,17 @@ export function pageCount(total, limit) {
 
 /** Fills and shows a banner. A retry button is offered unless the session ended. */
 export function showBanner(container, kind, onRetry) {
+  showError(container, { kind }, onRetry);
+}
+
+/**
+ * Fills and shows a banner for a failed request. A known server error code
+ * wins over the status kind; raw server text is never shown. A retry button
+ * is offered unless the session ended.
+ */
+export function showError(container, { code = null, kind = 'unavailable' } = {}, onRetry) {
   clear(container);
-  container.append(h('span', { class: 'banner-text', text: t(`err.${kind}`) }));
+  container.append(h('span', { class: 'banner-text', text: errorText(code, kind) }));
   if (onRetry && kind !== 'unauthorized') {
     container.append(
       h('button', { class: 'btn small', text: t('common.retry'), attrs: { type: 'button' }, on: { click: onRetry } }),
@@ -76,4 +85,37 @@ export function dateCell(value) {
     h('div', { text: formatDate(value) }),
     h('div', { class: 'muted small', text: formatTime(value) }),
   );
+}
+
+let toastTimer = 0;
+
+/** Shows a short success note. It replaces any previous toast. */
+export function toast(doc, text) {
+  const box = doc.getElementById('toast');
+  if (!box) return;
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = 0;
+  }
+  clear(box);
+  box.append(h('span', { text }));
+  box.hidden = false;
+  toastTimer = setTimeout(() => {
+    toastTimer = 0;
+    clear(box);
+    box.hidden = true;
+  }, 4000);
+}
+
+/** Hides the toast immediately. */
+export function hideToast(doc) {
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = 0;
+  }
+  const box = doc.getElementById('toast');
+  if (box) {
+    clear(box);
+    box.hidden = true;
+  }
 }
