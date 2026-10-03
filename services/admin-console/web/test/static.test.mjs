@@ -30,6 +30,51 @@ test('the expected modules are present', () => {
   }
 });
 
+test('dialogs are balanced, unnested, and directly under body when opened by script', () => {
+  const dialogTags = [...html.matchAll(/<\/?dialog\b[^>]*>/gi)].map((m) => m[0]);
+  assert.equal(dialogTags.filter((tag) => /^<dialog\b/i.test(tag)).length,
+    dialogTags.filter((tag) => /^<\/dialog\s*>$/i.test(tag)).length,
+    'opening and closing dialog tag counts match');
+
+  const voidElements = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+  const stack = [];
+  const dialogDepths = new Map();
+  const tagPattern = /<!--[\s\S]*?-->|<![^>]*>|<\/?[a-z][\w:-]*\b[^>]*>/gi;
+  for (const match of html.matchAll(tagPattern)) {
+    const tag = match[0];
+    if (tag.startsWith('<!--') || tag.startsWith('<!')) continue;
+    const closing = /^<\//.test(tag);
+    const name = tag.match(/^<\/?([a-z][\w:-]*)\b/i)[1].toLowerCase();
+    if (closing) {
+      assert.equal(stack.at(-1), name, `unexpected closing </${name}>`);
+      stack.pop();
+      continue;
+    }
+    if (name === 'dialog') {
+      dialogDepths.set(match.index, { depth: stack.filter((entry) => entry === 'dialog').length + 1, parent: stack.at(-1) });
+      assert.ok(!stack.includes('dialog'), 'a dialog opens before the previous dialog closes');
+    }
+    if (!voidElements.has(name) && !/\/\s*>$/.test(tag)) stack.push(name);
+  }
+  assert.equal(stack.length, 0, `unclosed HTML elements: ${stack.join(', ')}`);
+
+  const openedDialogIds = new Set();
+  for (const source of Object.values(jsCode)) {
+    for (const declaration of source.matchAll(/(?:const|let)\s+([\w$]+)\s*=\s*doc\.getElementById\(\s*['"]([\w-]+)['"]\s*\)/g)) {
+      if (new RegExp(`\\b${declaration[1]}\\.showModal\\s*\\(`).test(source)) openedDialogIds.add(declaration[2]);
+    }
+  }
+
+  for (const id of openedDialogIds) {
+    const tag = new RegExp(`<dialog\\b(?=[^>]*\\bid="${id}")[^>]*>`, 'i').exec(html);
+    assert.ok(tag, `showModal() target #${id} is a dialog in the HTML`);
+    const context = dialogDepths.get(tag.index);
+    assert.ok(context, `dialog #${id} was included in the structural scan`);
+    assert.equal(context.depth, 1, `dialog #${id} is not nested in another dialog`);
+    assert.equal(context.parent, 'body', `dialog #${id} is a direct child of body`);
+  }
+});
+
 test('no inline script: every script is an external module under /js/', () => {
   const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
   assert.ok(scripts.length >= 1);
