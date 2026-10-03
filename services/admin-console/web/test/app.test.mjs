@@ -49,6 +49,7 @@ function routes(overrides = {}) {
   return {
     'GET /api/whoami': { body: { name: 'Wael' } },
     'GET /api/accounts': { body: accountsBody },
+    'GET /api/requests': { body: { items: [], total: 0, pending_count: 0 } },
     'GET /api/audit': {
       body: {
         items: [
@@ -98,8 +99,8 @@ test('starts on the sign-in page, Arabic and right-to-left, with the unfinished 
   assert.equal($('app-view').hidden, true);
   assert.equal(doc.documentElement.lang, 'ar');
   assert.equal(doc.documentElement.dir, 'rtl');
-  for (const id of ['requests', 'files']) assert.equal($(`tab-${id}`).hidden, true, id);
-  for (const id of ['accounts', 'audit', 'catalog']) assert.equal($(`tab-${id}`).hidden, false, id);
+  for (const id of ['files']) assert.equal($(`tab-${id}`).hidden, true, id);
+  for (const id of ['accounts', 'audit', 'requests', 'catalog']) assert.equal($(`tab-${id}`).hidden, false, id);
   assert.equal(getToken(), '');
 });
 
@@ -158,8 +159,8 @@ test('signing in shows the app, the admin name and the accounts list; the field 
   for (const call of globalThis.fetch.calls) assert.ok(!call.url.includes('admin-token-xyz'));
 
   assert.equal(accountsBody$().children.length, 3);
-  assert.deepEqual(rowButtons(0), [MESSAGES.ar['action.suspend'], MESSAGES.ar['action.delete']]);
-  assert.deepEqual(rowButtons(1), [MESSAGES.ar['action.reactivate'], MESSAGES.ar['action.delete']]);
+  assert.deepEqual(rowButtons(0), [MESSAGES.ar['action.suspend'], MESSAGES.ar['action.delete'], MESSAGES.ar['action.subjects']]);
+  assert.deepEqual(rowButtons(1), [MESSAGES.ar['action.reactivate'], MESSAGES.ar['action.delete'], MESSAGES.ar['action.subjects']]);
   assert.deepEqual(rowButtons(2), []);
   assert.equal(accountsBody$().children[0].textContent.includes('علي أحمد'), true);
   assert.equal(accountsBody$().children[0].textContent.includes(IDS.active), true);
@@ -385,7 +386,6 @@ test('the audit source switch loads the academy log without merging pages', asyn
 
 test('hidden tabs cannot be activated', () => {
   const before = globalThis.fetch.calls.length;
-  app.activate('requests');
   app.activate('files');
   assert.equal(globalThis.fetch.calls.length, before);
   assert.equal(app.activeTab, 'audit');

@@ -177,6 +177,31 @@ func (p *Proxy) Accounts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
+	if rawIDs := strings.TrimSpace(in.Get("ids")); rawIDs != "" {
+		parts := strings.Split(rawIDs, ",")
+		if len(parts) > 100 {
+			writeError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		cleaned := make([]string, 0, len(parts))
+		seen := make(map[string]bool, len(parts))
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if !idPattern.MatchString(trimmed) {
+				writeError(w, http.StatusBadRequest, "bad_request")
+				return
+			}
+			if !seen[trimmed] {
+				seen[trimmed] = true
+				cleaned = append(cleaned, trimmed)
+			}
+		}
+		if len(cleaned) == 0 {
+			writeError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		q.Set("ids", strings.Join(cleaned, ","))
+	}
 	p.relayCall(w, r, token, upstreamCall{
 		route: "accounts.list", method: http.MethodGet, path: "/internal/admin/accounts", query: q,
 	})

@@ -134,6 +134,7 @@ export class FakeDocument {
 }
 
 export function fakeWindow(hash = '') {
+  const listeners = new Map();
   const win = {
     location: { hash },
     history: {
@@ -141,6 +142,27 @@ export function fakeWindow(hash = '') {
         win.location.hash = url;
       },
     },
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+    removeEventListener(type, fn) {
+      const list = listeners.get(type) ?? [];
+      const idx = list.indexOf(fn);
+      if (idx !== -1) list.splice(idx, 1);
+    },
+    setTimeout(...args) {
+      const t = setTimeout(...args);
+      if (t && typeof t.unref === 'function') t.unref();
+      return t;
+    },
+    clearTimeout(...args) { return clearTimeout(...args); },
+    setInterval(...args) {
+      const t = setInterval(...args);
+      if (t && typeof t.unref === 'function') t.unref();
+      return t;
+    },
+    clearInterval(...args) { return clearInterval(...args); },
   };
   return win;
 }

@@ -52,7 +52,7 @@
       <button id="tab-accounts" class="tab" type="button" role="tab" aria-controls="panel-accounts" aria-selected="true" data-tab="accounts"><span data-i18n="tabs.accounts"></span></button>
       <button id="tab-audit" class="tab" type="button" role="tab" aria-controls="panel-audit" aria-selected="false" tabindex="-1" data-tab="audit"><span data-i18n="tabs.audit"></span></button>
       <!-- Hidden until their APIs exist (see js/tabs.js). -->
-      <button id="tab-requests" class="tab" type="button" role="tab" aria-controls="panel-requests" aria-selected="false" tabindex="-1" data-tab="requests" hidden><span data-i18n="tabs.requests"></span> <span id="badge-requests" class="count" hidden></span></button>
+      <button id="tab-requests" class="tab" type="button" role="tab" aria-controls="panel-requests" aria-selected="false" tabindex="-1" data-tab="requests"><span data-i18n="tabs.requests"></span> <span id="badge-requests" class="count" hidden></span></button>
       <button id="tab-catalog" class="tab" type="button" role="tab" aria-controls="panel-catalog" aria-selected="false" tabindex="-1" data-tab="catalog"><span data-i18n="tabs.catalog"></span></button>
       <button id="tab-files" class="tab" type="button" role="tab" aria-controls="panel-files" aria-selected="false" tabindex="-1" data-tab="files" hidden><span data-i18n="tabs.files"></span></button>
     </nav>
@@ -141,8 +141,54 @@
       </div>
     </section>
 
-    <!-- Panels for tabs that are not available yet. -->
-    <section id="panel-requests" role="tabpanel" aria-labelledby="tab-requests" hidden></section>
+    <section id="panel-requests" role="tabpanel" aria-labelledby="tab-requests" hidden>
+      <h2 data-i18n="requests.title"></h2>
+      <form id="requests-filter" class="toolbar">
+        <div class="field">
+          <label for="requests-status" data-i18n="requests.filterStatus"></label>
+          <select id="requests-status">
+            <option value="pending" data-i18n="requests.status.pending" selected></option>
+            <option value="accepted" data-i18n="requests.status.accepted"></option>
+            <option value="rejected" data-i18n="requests.status.rejected"></option>
+            <option value="" data-i18n="requests.statusAll"></option>
+          </select>
+        </div>
+        <div class="field grow">
+          <label for="requests-subject" data-i18n="requests.filterSubject"></label>
+          <select id="requests-subject">
+            <option value="" data-i18n="requests.filterAllSubjects"></option>
+          </select>
+        </div>
+        <button class="btn primary" type="submit" data-i18n="accounts.filter"></button>
+        <button id="requests-reset" class="btn secondary" type="button" data-i18n="accounts.reset"></button>
+      </form>
+      <div id="requests-banner" class="banner" role="alert" hidden></div>
+      <div class="table-wrap">
+        <table id="requests-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="requests.col.student"></th>
+              <th scope="col" data-i18n="requests.col.phone"></th>
+              <th scope="col" data-i18n="requests.col.email"></th>
+              <th scope="col" data-i18n="requests.col.subject"></th>
+              <th scope="col" data-i18n="requests.col.price"></th>
+              <th scope="col" data-i18n="requests.col.requested"></th>
+              <th scope="col" data-i18n="requests.col.status"></th>
+              <th scope="col" data-i18n="requests.col.actions"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="requests-pager" class="pager">
+        <span class="muted" data-role="total"></span>
+        <div class="pager-controls">
+          <button class="btn secondary small" type="button" data-role="prev" data-i18n="common.prev"></button>
+          <span data-role="info"></span>
+          <button class="btn secondary small" type="button" data-role="next" data-i18n="common.next"></button>
+        </div>
+      </div>
+    </section>
     <section id="panel-catalog" role="tabpanel" aria-labelledby="tab-catalog" hidden>
       <h2 data-i18n="catalog.title"></h2>
       <nav id="catalog-crumb" class="crumb" aria-label="breadcrumb"></nav>
@@ -182,6 +228,118 @@
         <button id="dialog-confirm" class="btn danger" type="submit"></button>
       </div>
     </form>
+  <dialog id="request-accept-dialog" class="dialog" aria-labelledby="accept-dialog-title">
+    <form id="request-accept-form" novalidate>
+      <h2 id="accept-dialog-title" data-i18n="dialog.accept.title"></h2>
+      <p id="accept-dialog-target" class="muted ltr-block"></p>
+      <p id="accept-dialog-note" class="callout"></p>
+      <div id="accept-dialog-banner" class="banner" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button id="accept-dialog-cancel" class="btn secondary" type="button" data-i18n="common.cancel"></button>
+        <button id="accept-dialog-confirm" class="btn primary" type="submit" data-i18n="dialog.accept.confirm"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="request-reject-dialog" class="dialog" aria-labelledby="reject-dialog-title">
+    <form id="request-reject-form" novalidate>
+      <h2 id="reject-dialog-title" data-i18n="dialog.reject.title"></h2>
+      <p id="reject-dialog-target" class="muted ltr-block"></p>
+      <p id="reject-dialog-note" class="callout" data-i18n="dialog.reject.note"></p>
+      <div class="field">
+        <label for="reject-dialog-reason" data-i18n="dialog.reason"></label>
+        <textarea id="reject-dialog-reason" rows="4" maxlength="1000" required></textarea>
+        <div class="field-foot">
+          <span id="reject-dialog-hint" class="muted small"></span>
+          <span id="reject-dialog-count" class="muted small"></span>
+        </div>
+      </div>
+      <div id="reject-dialog-banner" class="banner" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button id="reject-dialog-cancel" class="btn secondary" type="button" data-i18n="common.cancel"></button>
+        <button id="reject-dialog-confirm" class="btn danger" type="submit" data-i18n="dialog.reject.confirm"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="entitlements-dialog" class="dialog dialog-wide" aria-labelledby="entitlements-dialog-title">
+    <div class="dialog-card">
+      <div class="section-head">
+        <h2 id="entitlements-dialog-title"></h2>
+        <div class="section-actions">
+          <button id="entitlements-grant-btn" class="btn primary small" type="button" data-i18n="entitlements.grantBtn"></button>
+          <button id="entitlements-close" class="btn secondary small" type="button" data-i18n="common.cancel"></button>
+        </div>
+      </div>
+      <div id="entitlements-banner" class="banner" role="alert" hidden></div>
+      <div class="table-wrap">
+        <table id="entitlements-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="entitlements.col.subject"></th>
+              <th scope="col" data-i18n="entitlements.col.status"></th>
+              <th scope="col" data-i18n="entitlements.col.source"></th>
+              <th scope="col" data-i18n="entitlements.col.granted"></th>
+              <th scope="col" data-i18n="entitlements.col.expires"></th>
+              <th scope="col" data-i18n="entitlements.col.actions"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="entitlement-grant-dialog" class="dialog" aria-labelledby="grant-dialog-title">
+    <form id="entitlement-grant-form" novalidate>
+      <h2 id="grant-dialog-title" data-i18n="dialog.grant.title"></h2>
+      <p id="grant-dialog-target" class="muted ltr-block"></p>
+      <div class="field">
+        <label for="grant-level-select" data-i18n="dialog.grant.levelLabel"></label>
+        <select id="grant-level-select" required></select>
+      </div>
+      <div class="field">
+        <label for="grant-subject-select" data-i18n="dialog.grant.subjectLabel"></label>
+        <select id="grant-subject-select" required></select>
+      </div>
+      <p id="grant-dialog-note" class="callout" hidden></p>
+      <div id="grant-dialog-banner" class="banner" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button id="grant-dialog-cancel" class="btn secondary" type="button" data-i18n="common.cancel"></button>
+        <button id="grant-dialog-confirm" class="btn primary" type="submit" data-i18n="dialog.grant.confirm"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="entitlement-revoke-dialog" class="dialog" aria-labelledby="revoke-dialog-title">
+    <form id="entitlement-revoke-form" novalidate>
+      <h2 id="revoke-dialog-title" data-i18n="dialog.revoke.title"></h2>
+      <p id="revoke-dialog-target" class="muted ltr-block"></p>
+      <p id="revoke-dialog-note" class="callout" data-i18n="dialog.revoke.note"></p>
+      <div class="field">
+        <label for="revoke-dialog-reason" data-i18n="dialog.reason"></label>
+        <textarea id="revoke-dialog-reason" rows="4" maxlength="1000" required></textarea>
+        <div class="field-foot">
+          <span id="revoke-dialog-hint" class="muted small"></span>
+          <span id="revoke-dialog-count" class="muted small"></span>
+        </div>
+      </div>
+      <div id="revoke-dialog-banner" class="banner" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button id="revoke-dialog-cancel" class="btn secondary" type="button" data-i18n="common.cancel"></button>
+        <button id="revoke-dialog-confirm" class="btn danger" type="submit" data-i18n="dialog.revoke.confirm"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="idle-dialog" class="dialog" aria-labelledby="idle-title">
+    <div class="card">
+      <h2 id="idle-title" data-i18n="idle.warnTitle"></h2>
+      <p id="idle-message" class="callout"></p>
+      <div class="dialog-actions">
+        <button id="idle-stay" class="btn primary" type="button" data-i18n="idle.staySignedIn"></button>
+      </div>
+    </div>
   </dialog>
 </body>
 </html>

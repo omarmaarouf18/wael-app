@@ -33,6 +33,7 @@ function routes(overrides = {}) {
   return {
     'GET /api/whoami': { body: { name: 'Wael' } },
     'GET /api/accounts': { body: { items: [], total: 0 } },
+    'GET /api/requests': { body: { items: [], total: 0, pending_count: 0 } },
     'GET /api/audit': { body: { items: [], total: 0 } },
     'GET /api/levels': { body: { levels: LEVELS } },
     'POST /api/levels/create': { status: 201, body: { key: 'dip-b' } },

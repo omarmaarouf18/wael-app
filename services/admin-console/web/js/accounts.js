@@ -1,6 +1,7 @@
 // Accounts tab: search, status filter, pagination, and the three actions.
 
 import { createAccountDialog } from './account-dialog.js';
+import { createEntitlementsDialog } from './entitlements-dialog.js';
 import { clear, h } from './dom.js';
 import { t } from './i18n.js';
 import { isSignedIn } from './auth.js';
@@ -46,6 +47,7 @@ export function mountAccounts({ api, doc = document }) {
   let seq = 0;
 
   const dialog = createAccountDialog({ api, doc, onDone: load });
+  const entitlementsDialog = createEntitlementsDialog({ api, doc, onDone: load });
 
   function renderRows() {
     clear(tbody);
@@ -70,6 +72,16 @@ export function mountAccounts({ api, doc = document }) {
           text: t(`action.${action}`),
           attrs: { type: 'button' },
           on: { click: () => dialog.open(action, account) },
+        }),
+      );
+    }
+    if (account.status !== 'deleted') {
+      actions.append(
+        h('button', {
+          class: 'btn small secondary',
+          text: t('action.subjects'),
+          attrs: { type: 'button' },
+          on: { click: () => entitlementsDialog.open(account) },
         }),
       );
     }
@@ -131,11 +143,13 @@ export function mountAccounts({ api, doc = document }) {
     rerender() {
       render();
       dialog.rerender();
+      entitlementsDialog.rerender();
     },
     /** Drops everything shown, used when the session ends. */
     reset() {
       seq += 1;
       dialog.close();
+      entitlementsDialog.close();
       Object.assign(state, { page: 1, search: '', status: '', total: 0, items: [], loaded: false, error: null });
       searchInput.value = '';
       statusSelect.value = '';

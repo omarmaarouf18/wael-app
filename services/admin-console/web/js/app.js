@@ -5,6 +5,8 @@ import { mountAccounts } from './accounts.js';
 import { api } from './api.js';
 import { mountAudit } from './audit.js';
 import { mountCatalog } from './catalog.js';
+import { mountRequests } from './requests.js';
+import { createIdleLock } from './idle.js';
 import { clearSession, getAdminName, onSessionChange, signIn } from './auth.js';
 import {
   applyTranslations,
@@ -32,8 +34,11 @@ export function main(doc = document, win = window) {
   const modules = {
     accounts: mountAccounts({ api, doc }),
     audit: mountAudit({ api, doc }),
+    requests: mountRequests({ api, doc, win }),
     catalog: mountCatalog({ api, doc }),
   };
+  const idleLock = createIdleLock({ doc, win });
+  let badgePollTimer = null;
   let activeTab = 'accounts';
   let signingIn = false;
 
@@ -73,6 +78,9 @@ export function main(doc = document, win = window) {
       if (panel) panel.hidden = !selected;
     }
     modules[id].load();
+    if (modules.requests && typeof modules.requests.refreshBadge === 'function') {
+      modules.requests.refreshBadge();
+    }
   }
 
   for (const tab of visibleTabs()) {
@@ -96,6 +104,11 @@ export function main(doc = document, win = window) {
   }
 
   function showLogin(message) {
+    idleLock.stop();
+    if (badgePollTimer) {
+      win.clearInterval(badgePollTimer);
+      badgePollTimer = null;
+    }
     appView.hidden = true;
     loginView.hidden = false;
     adminName.textContent = '';
@@ -114,12 +127,32 @@ export function main(doc = document, win = window) {
     appView.hidden = false;
     adminName.textContent = getAdminName();
     hideBanner(loginBanner);
+    idleLock.start();
+    if (modules.requests && typeof modules.requests.refreshBadge === 'function') {
+      modules.requests.refreshBadge();
+    }
+    if (!badgePollTimer && win && typeof win.setInterval === 'function') {
+      badgePollTimer = win.setInterval(() => {
+        if (modules.requests && typeof modules.requests.refreshBadge === 'function') {
+          modules.requests.refreshBadge();
+        }
+      }, 60 * 1000);
+      if (badgePollTimer && typeof badgePollTimer.unref === 'function') {
+        badgePollTimer.unref();
+      }
+    }
     activate('accounts');
   }
 
   onSessionChange((event) => {
-    if (event.signedIn) showApp();
-    else showLogin(event.reason === 'unauthorized' ? t('login.expired') : '');
+    if (event.signedIn) {
+      showApp();
+    } else {
+      let msg = '';
+      if (event.reason === 'unauthorized') msg = t('login.expired');
+      else if (event.reason === 'idle_lock') msg = t('login.idleLocked');
+      showLogin(msg);
+    }
   });
 
   loginForm.addEventListener('submit', async (event) => {
