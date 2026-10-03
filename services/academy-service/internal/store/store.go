@@ -31,6 +31,14 @@ type SubjectFilter struct {
 	Limit    int
 }
 
+// RequestFilter specifies criteria for the admin request queue.
+type RequestFilter struct {
+	Status    string
+	SubjectID string
+	Page      int
+	Limit     int
+}
+
 // Store is the academy persistence contract.
 type Store interface {
 	Ping(ctx context.Context) error
@@ -62,11 +70,29 @@ type Store interface {
 	GetActiveEntitlements(ctx context.Context, userID string) (map[string]*models.Entitlement, error)
 	GetActiveEntitlementSubjectIDs(ctx context.Context, userID string) (map[string]bool, error)
 	ListEntitlementsByUser(ctx context.Context, userID string) ([]*models.Entitlement, error)
+	GetEntitlementByID(ctx context.Context, id string) (*models.Entitlement, error)
+	// RevokeEntitlement ends access now (active=false plus revoke fields).
+	// It reports whether the row changed; an already-revoked row is a
+	// no-op success (false, nil), a missing row is ErrNotFound.
+	RevokeEntitlement(ctx context.Context, id, revokedBy, reason string, now time.Time) (bool, error)
 
 	// Purchase Requests (Phase 3.3)
 	CreateOrGetPendingRequest(ctx context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error)
 	GetPendingRequest(ctx context.Context, userID, subjectID string) (*models.PurchaseRequest, error)
 	ListRequestsByUser(ctx context.Context, userID string) ([]*models.PurchaseRequest, error)
+	GetRequestByID(ctx context.Context, id string) (*models.PurchaseRequest, error)
+	ListRequests(ctx context.Context, filter RequestFilter) ([]*models.PurchaseRequest, int, error)
+	CountPendingRequests(ctx context.Context) (int, error)
+	// DecideRequest compare-and-sets a request from fromStatus to toStatus.
+	// It reports whether the row changed; a row in another status is a
+	// no-op (false, nil), a missing row is ErrNotFound.
+	DecideRequest(ctx context.Context, id, fromStatus, toStatus, decidedBy string, decidedAt time.Time, reason string) (bool, error)
+
+	// Payment records (Phase 4.5, append-only: no update and no delete).
+	// A duplicate entitlement_id is ErrDuplicate: the activation was
+	// already recorded, which the caller treats as success.
+	CreatePaymentRecord(ctx context.Context, rec *models.PaymentRecord) error
+	ListPaymentRecordsByUser(ctx context.Context, userID string) ([]*models.PaymentRecord, error)
 
 	// Video Plays (Phase 3.5 fix)
 	RecordVideoPlay(ctx context.Context, play *models.VideoPlay) error
@@ -88,6 +114,7 @@ type MemoryStore struct {
 	files            map[string]*models.SubjectFile
 	entitlements     []*models.Entitlement
 	purchaseRequests []*models.PurchaseRequest
+	paymentRecords   []*models.PaymentRecord
 	videoPlays       []*models.VideoPlay
 	auditLogs        []*models.AuditLog
 }
@@ -101,6 +128,7 @@ func NewMemoryStore() *MemoryStore {
 		files:            make(map[string]*models.SubjectFile),
 		entitlements:     make([]*models.Entitlement, 0),
 		purchaseRequests: make([]*models.PurchaseRequest, 0),
+		paymentRecords:   make([]*models.PaymentRecord, 0),
 		videoPlays:       make([]*models.VideoPlay, 0),
 		auditLogs:        make([]*models.AuditLog, 0),
 	}
@@ -506,7 +534,7 @@ func (s *MemoryStore) Grant(ctx context.Context, e *models.Entitlement) error {
 
 	// Check if an unexpired active entitlement already exists
 	for _, ent := range s.entitlements {
-		if ent.UserID == e.UserID && ent.SubjectID == e.SubjectID && ent.Active && ent.ExpiresAt.After(now) {
+		if ent.UserID == e.UserID && ent.SubjectID == e.SubjectID && ent.Active && !ent.IsRevoked() && ent.ExpiresAt.After(now) {
 			return ErrDuplicate
 		}
 	}
@@ -517,14 +545,14 @@ func (s *MemoryStore) Grant(ctx context.Context, e *models.Entitlement) error {
 	return nil
 }
 
-// HasActiveEntitlement reports whether user owns the subject with expires_at > now.
+// HasActiveEntitlement reports whether user owns the subject with expires_at > now and not revoked.
 func (s *MemoryStore) HasActiveEntitlement(_ context.Context, userID, subjectID string) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	now := time.Now()
 	for _, e := range s.entitlements {
-		if e.UserID == userID && e.SubjectID == subjectID && e.Active && e.ExpiresAt.After(now) {
+		if e.UserID == userID && e.SubjectID == subjectID && e.Active && !e.IsRevoked() && e.ExpiresAt.After(now) {
 			return true, nil
 		}
 	}
@@ -538,7 +566,7 @@ func (s *MemoryStore) GetActiveEntitlement(_ context.Context, userID, subjectID 
 
 	now := time.Now()
 	for _, e := range s.entitlements {
-		if e.UserID == userID && e.SubjectID == subjectID && e.Active && e.ExpiresAt.After(now) {
+		if e.UserID == userID && e.SubjectID == subjectID && e.Active && !e.IsRevoked() && e.ExpiresAt.After(now) {
 			cp := *e
 			return &cp, nil
 		}
@@ -554,7 +582,7 @@ func (s *MemoryStore) GetActiveEntitlements(_ context.Context, userID string) (m
 	now := time.Now()
 	result := make(map[string]*models.Entitlement)
 	for _, e := range s.entitlements {
-		if e.UserID == userID && e.Active && e.ExpiresAt.After(now) {
+		if e.UserID == userID && e.Active && !e.IsRevoked() && e.ExpiresAt.After(now) {
 			cp := *e
 			result[e.SubjectID] = &cp
 		}
@@ -570,14 +598,14 @@ func (s *MemoryStore) GetActiveEntitlementSubjectIDs(_ context.Context, userID s
 	now := time.Now()
 	result := make(map[string]bool)
 	for _, e := range s.entitlements {
-		if e.UserID == userID && e.Active && e.ExpiresAt.After(now) {
+		if e.UserID == userID && e.Active && !e.IsRevoked() && e.ExpiresAt.After(now) {
 			result[e.SubjectID] = true
 		}
 	}
 	return result, nil
 }
 
-// ListEntitlementsByUser returns all entitlements for a user (including expired history).
+// ListEntitlementsByUser returns all entitlements for a user (including expired and revoked history), newest first.
 func (s *MemoryStore) ListEntitlementsByUser(_ context.Context, userID string) ([]*models.Entitlement, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -589,7 +617,47 @@ func (s *MemoryStore) ListEntitlementsByUser(_ context.Context, userID string) (
 			result = append(result, &cp)
 		}
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].GrantedAt.After(result[j].GrantedAt)
+	})
 	return result, nil
+}
+
+// GetEntitlementByID returns an entitlement by its primary key id.
+func (s *MemoryStore) GetEntitlementByID(_ context.Context, id string) (*models.Entitlement, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, e := range s.entitlements {
+		if e.ID == id {
+			cp := *e
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+// RevokeEntitlement ends access now (active=false plus revoke fields).
+// It reports whether the row changed; an already-revoked row is a
+// no-op success (false, nil), a missing row is ErrNotFound.
+func (s *MemoryStore) RevokeEntitlement(_ context.Context, id, revokedBy, reason string, now time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, e := range s.entitlements {
+		if e.ID == id {
+			if e.IsRevoked() {
+				return false, nil
+			}
+			e.Active = false
+			revAt := now
+			e.RevokedAt = &revAt
+			e.RevokedBy = revokedBy
+			e.RevokeReason = reason
+			return true, nil
+		}
+	}
+	return false, ErrNotFound
 }
 
 // CreateOrGetPendingRequest atomically creates a pending request or returns the existing pending request (R5).
@@ -648,6 +716,145 @@ func (s *MemoryStore) ListRequestsByUser(_ context.Context, userID string) ([]*m
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
+	return result, nil
+}
+
+// GetRequestByID returns a purchase request by its primary key ID.
+func (s *MemoryStore) GetRequestByID(_ context.Context, id string) (*models.PurchaseRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.ID == id {
+			cp := *r
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+// ListRequests returns filtered purchase requests, newest first.
+func (s *MemoryStore) ListRequests(_ context.Context, filter RequestFilter) ([]*models.PurchaseRequest, int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var matched []*models.PurchaseRequest
+	for _, r := range s.purchaseRequests {
+		if filter.Status != "" && r.Status != filter.Status {
+			continue
+		}
+		if filter.SubjectID != "" && r.SubjectID != filter.SubjectID {
+			continue
+		}
+		cp := *r
+		matched = append(matched, &cp)
+	}
+
+	// Newest first: created_at descending
+	sort.Slice(matched, func(i, j int) bool {
+		return matched[i].CreatedAt.After(matched[j].CreatedAt)
+	})
+
+	total := len(matched)
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	start := (page - 1) * limit
+	if start >= total {
+		return []*models.PurchaseRequest{}, total, nil
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	return matched[start:end], total, nil
+}
+
+// CountPendingRequests returns the number of requests currently pending.
+func (s *MemoryStore) CountPendingRequests(_ context.Context) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	count := 0
+	for _, r := range s.purchaseRequests {
+		if r.Status == models.RequestStatusPending {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// DecideRequest compare-and-sets a request from fromStatus to toStatus.
+// It reports whether the row changed; a row in another status is a
+// no-op (false, nil), a missing row is ErrNotFound.
+func (s *MemoryStore) DecideRequest(_ context.Context, id, fromStatus, toStatus, decidedBy string, decidedAt time.Time, reason string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.ID == id {
+			if r.Status != fromStatus {
+				return false, nil
+			}
+			r.Status = toStatus
+			decAt := decidedAt
+			r.DecidedAt = &decAt
+			r.DecidedBy = decidedBy
+			if reason != "" {
+				r.RejectReason = reason
+			}
+			return true, nil
+		}
+	}
+	return false, ErrNotFound
+}
+
+// CreatePaymentRecord appends a payment record. A duplicate entitlement_id returns ErrDuplicate.
+func (s *MemoryStore) CreatePaymentRecord(_ context.Context, rec *models.PaymentRecord) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, p := range s.paymentRecords {
+		if p.EntitlementID == rec.EntitlementID {
+			return ErrDuplicate
+		}
+	}
+
+	if rec.ID == "" {
+		rec.ID = generateID()
+	}
+	if rec.RecordedAt.IsZero() {
+		rec.RecordedAt = time.Now().UTC()
+	}
+
+	cp := *rec
+	s.paymentRecords = append(s.paymentRecords, &cp)
+	return nil
+}
+
+// ListPaymentRecordsByUser returns payment records for a user, newest first.
+func (s *MemoryStore) ListPaymentRecordsByUser(_ context.Context, userID string) ([]*models.PaymentRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.PaymentRecord
+	for _, p := range s.paymentRecords {
+		if p.UserID == userID {
+			cp := *p
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].RecordedAt.After(result[j].RecordedAt)
 	})
 	return result, nil
 }

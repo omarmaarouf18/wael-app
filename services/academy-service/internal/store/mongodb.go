@@ -205,6 +205,38 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 		return fmt.Errorf("store: ensure admin_audit_log target index: %w", err)
 	}
 
+	// Indexes on payment_records (Phase 4.5, decision 19):
+	// unique on entitlement_id, plus (subject_id, recorded_at) and (user_id, recorded_at).
+	_, err = s.db.Collection("payment_records").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "entitlement_id", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("uniq_payment_records_entitlement_id"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure payment_records entitlement_id unique index: %w", err)
+	}
+
+	_, err = s.db.Collection("payment_records").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "subject_id", Value: 1},
+			{Key: "recorded_at", Value: -1},
+		},
+		Options: options.Index().SetName("idx_payment_records_subject_recorded"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure payment_records subject_recorded index: %w", err)
+	}
+
+	_, err = s.db.Collection("payment_records").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "recorded_at", Value: -1},
+		},
+		Options: options.Index().SetName("idx_payment_records_user_recorded"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure payment_records user_recorded index: %w", err)
+	}
+
 	return nil
 }
 
@@ -726,6 +758,55 @@ func (s *MongoStore) ListEntitlementsByUser(ctx context.Context, userID string) 
 	return result, nil
 }
 
+// GetEntitlementByID retrieves a single entitlement by its ID.
+func (s *MongoStore) GetEntitlementByID(ctx context.Context, id string) (*models.Entitlement, error) {
+	var ent models.Entitlement
+	err := s.db.Collection("entitlements").FindOne(ctx, bson.M{"_id": id}).Decode(&ent)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: get entitlement: %w", err)
+	}
+	return &ent, nil
+}
+
+// RevokeEntitlement ends access now (active=false plus revoke fields).
+// It reports whether the row changed; an already-revoked row is a
+// no-op success (false, nil), a missing row is ErrNotFound.
+func (s *MongoStore) RevokeEntitlement(ctx context.Context, id, revokedBy, reason string, now time.Time) (bool, error) {
+	col := s.db.Collection("entitlements")
+	filter := bson.M{
+		"_id": id,
+		"$or": []bson.M{
+			{"revoked_at": nil},
+			{"revoked_at": bson.M{"$exists": false}},
+		},
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"active":        false,
+			"revoked_at":    now,
+			"revoked_by":    revokedBy,
+			"revoke_reason": reason,
+		},
+	}
+	res, err := col.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return false, fmt.Errorf("store: revoke entitlement: %w", err)
+	}
+	if res.ModifiedCount > 0 {
+		return true, nil
+	}
+	// Either already revoked or not found
+	var dummy bson.M
+	err = col.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1})).Decode(&dummy)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, ErrNotFound
+	}
+	return false, nil
+}
+
 // CreateOrGetPendingRequest creates a pending request or retrieves the existing pending request (R5).
 // Enforces partial unique index on (user_id, subject_id) where status = "pending".
 // Concurrent callers are guaranteed to receive the same pending request.
@@ -811,6 +892,147 @@ func (s *MongoStore) ListRequestsByUser(ctx context.Context, userID string) ([]*
 		results = []*models.PurchaseRequest{}
 	}
 	return results, nil
+}
+
+// GetRequestByID returns a purchase request by its primary key ID.
+func (s *MongoStore) GetRequestByID(ctx context.Context, id string) (*models.PurchaseRequest, error) {
+	var pr models.PurchaseRequest
+	err := s.db.Collection("purchase_requests").FindOne(ctx, bson.M{"_id": id}).Decode(&pr)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: get purchase request: %w", err)
+	}
+	return &pr, nil
+}
+
+// ListRequests returns filtered purchase requests, newest first.
+func (s *MongoStore) ListRequests(ctx context.Context, filter RequestFilter) ([]*models.PurchaseRequest, int, error) {
+	q := bson.M{}
+	if filter.Status != "" {
+		q["status"] = filter.Status
+	}
+	if filter.SubjectID != "" {
+		q["subject_id"] = filter.SubjectID
+	}
+
+	col := s.db.Collection("purchase_requests")
+	total, err := col.CountDocuments(ctx, q)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: count requests: %w", err)
+	}
+
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	skip := int64((page - 1) * limit)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(limit))
+
+	cursor, err := col.Find(ctx, q, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: find requests: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []*models.PurchaseRequest
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, 0, fmt.Errorf("store: decode requests: %w", err)
+	}
+	if results == nil {
+		results = []*models.PurchaseRequest{}
+	}
+	return results, int(total), nil
+}
+
+// CountPendingRequests returns the count of requests currently pending.
+func (s *MongoStore) CountPendingRequests(ctx context.Context) (int, error) {
+	n, err := s.db.Collection("purchase_requests").CountDocuments(ctx, bson.M{"status": models.RequestStatusPending})
+	if err != nil {
+		return 0, fmt.Errorf("store: count pending requests: %w", err)
+	}
+	return int(n), nil
+}
+
+// DecideRequest compare-and-sets a request from fromStatus to toStatus.
+// It reports whether the row changed; a row in another status is a
+// no-op (false, nil), a missing row is ErrNotFound.
+func (s *MongoStore) DecideRequest(ctx context.Context, id, fromStatus, toStatus, decidedBy string, decidedAt time.Time, reason string) (bool, error) {
+	col := s.db.Collection("purchase_requests")
+	setFields := bson.M{
+		"status":     toStatus,
+		"decided_at": decidedAt,
+		"decided_by": decidedBy,
+	}
+	if reason != "" {
+		setFields["reject_reason"] = reason
+	}
+	res, err := col.UpdateOne(ctx,
+		bson.M{"_id": id, "status": fromStatus},
+		bson.M{"$set": setFields},
+	)
+	if err != nil {
+		return false, fmt.Errorf("store: decide request: %w", err)
+	}
+	if res.ModifiedCount > 0 {
+		return true, nil
+	}
+	// Check whether the row exists in another status or is missing
+	var dummy bson.M
+	err = col.FindOne(ctx, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1})).Decode(&dummy)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, ErrNotFound
+	}
+	return false, nil
+}
+
+// CreatePaymentRecord inserts an append-only financial row. A duplicate entitlement_id is ErrDuplicate.
+func (s *MongoStore) CreatePaymentRecord(ctx context.Context, rec *models.PaymentRecord) error {
+	if rec.ID == "" {
+		rec.ID = generateID()
+	}
+	if rec.RecordedAt.IsZero() {
+		rec.RecordedAt = time.Now().UTC()
+	}
+
+	_, err := s.db.Collection("payment_records").InsertOne(ctx, rec)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert payment record: %w", err)
+	}
+	return nil
+}
+
+// ListPaymentRecordsByUser returns payment records for a user, newest first.
+func (s *MongoStore) ListPaymentRecordsByUser(ctx context.Context, userID string) ([]*models.PaymentRecord, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "recorded_at", Value: -1}})
+	cursor, err := s.db.Collection("payment_records").Find(ctx, bson.M{"user_id": userID}, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: list payment records: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var result []*models.PaymentRecord
+	if err := cursor.All(ctx, &result); err != nil {
+		return nil, fmt.Errorf("store: decode payment records: %w", err)
+	}
+	if result == nil {
+		result = []*models.PaymentRecord{}
+	}
+	return result, nil
 }
 
 // RecordVideoPlay writes an append-only video playback event log.

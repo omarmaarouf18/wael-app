@@ -815,6 +815,175 @@ func runStoreSuite(t *testing.T, s Store) {
 	if err != nil || stillThere == nil || !stillThere.Deleted {
 		t.Fatalf("expected GetVideoByID to return the soft-deleted video, got %+v err=%v", stillThere, err)
 	}
+
+	// Phase 4.5: Payment Records (append-only, unique entitlement_id)
+	rec1 := &models.PaymentRecord{
+		ID:            "pay-1",
+		UserID:        "user-pay-1",
+		SubjectID:     "subj-order-b",
+		EntitlementID: "ent-pay-1",
+		Amount:        150,
+		PriceAtGrant:  150,
+		Source:        models.PaymentSourceRequest,
+		RecordedBy:    "admin-1",
+		RecordedAt:    time.Now().UTC().Add(-time.Hour),
+	}
+	if err := s.CreatePaymentRecord(ctx, rec1); err != nil {
+		t.Fatalf("CreatePaymentRecord failed: %v", err)
+	}
+	// Duplicate entitlement_id must fail with ErrDuplicate
+	rec1Dup := &models.PaymentRecord{
+		ID:            "pay-2",
+		UserID:        "user-pay-1",
+		SubjectID:     "subj-order-b",
+		EntitlementID: "ent-pay-1",
+		Amount:        150,
+		PriceAtGrant:  150,
+		Source:        models.PaymentSourceRequest,
+		RecordedBy:    "admin-1",
+		RecordedAt:    time.Now().UTC(),
+	}
+	if err := s.CreatePaymentRecord(ctx, rec1Dup); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("expected ErrDuplicate for duplicate entitlement_id, got %v", err)
+	}
+	rec2 := &models.PaymentRecord{
+		ID:            "pay-3",
+		UserID:        "user-pay-1",
+		SubjectID:     "subj-order-b",
+		EntitlementID: "ent-pay-2",
+		Amount:        200,
+		PriceAtGrant:  200,
+		Source:        models.PaymentSourceAdminGrant,
+		RecordedBy:    "admin-1",
+		RecordedAt:    time.Now().UTC(),
+	}
+	if err := s.CreatePaymentRecord(ctx, rec2); err != nil {
+		t.Fatalf("CreatePaymentRecord rec2 failed: %v", err)
+	}
+	userPays, err := s.ListPaymentRecordsByUser(ctx, "user-pay-1")
+	if err != nil {
+		t.Fatalf("ListPaymentRecordsByUser failed: %v", err)
+	}
+	if len(userPays) != 2 {
+		t.Fatalf("expected 2 payment records, got %d", len(userPays))
+	}
+	if userPays[0].ID != "pay-3" {
+		t.Fatalf("expected newest payment record first, got %s", userPays[0].ID)
+	}
+
+	// Phase 4.6: Entitlement Revocation
+	entToRevoke := &models.Entitlement{
+		ID:        "ent-revoke-1",
+		UserID:    "user-revoke-1",
+		SubjectID: "subj-order-b",
+	}
+	if err := s.Grant(ctx, entToRevoke); err != nil {
+		t.Fatalf("Grant entToRevoke failed: %v", err)
+	}
+	activeBefore, err := s.HasActiveEntitlement(ctx, "user-revoke-1", "subj-order-b")
+	if err != nil || !activeBefore {
+		t.Fatalf("expected active entitlement before revocation, got %v, err=%v", activeBefore, err)
+	}
+	gotEnt, err := s.GetEntitlementByID(ctx, "ent-revoke-1")
+	if err != nil || gotEnt == nil {
+		t.Fatalf("GetEntitlementByID failed: got %+v err=%v", gotEnt, err)
+	}
+	revokeNow := time.Now().UTC()
+	changed, err := s.RevokeEntitlement(ctx, "ent-revoke-1", "admin-1", "chargeback violation", revokeNow)
+	if err != nil || !changed {
+		t.Fatalf("RevokeEntitlement failed: changed=%v err=%v", changed, err)
+	}
+	// Second revoke on the same entitlement is a no-op success (false, nil)
+	changedSecond, err := s.RevokeEntitlement(ctx, "ent-revoke-1", "admin-1", "chargeback violation", revokeNow)
+	if err != nil || changedSecond {
+		t.Fatalf("expected second revoke to return (false, nil), got (%v, %v)", changedSecond, err)
+	}
+	// Unknown entitlement returns ErrNotFound
+	_, err = s.RevokeEntitlement(ctx, "ent-nonexistent", "admin-1", "reason", revokeNow)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown entitlement, got %v", err)
+	}
+	activeAfter, err := s.HasActiveEntitlement(ctx, "user-revoke-1", "subj-order-b")
+	if err != nil || activeAfter {
+		t.Fatalf("expected entitlement to not be active after revocation, got %v, err=%v", activeAfter, err)
+	}
+	gotActiveAfter, err := s.GetActiveEntitlement(ctx, "user-revoke-1", "subj-order-b")
+	if err != nil || gotActiveAfter != nil {
+		t.Fatalf("expected nil active entitlement after revocation, got %+v err=%v", gotActiveAfter, err)
+	}
+	revokedList, err := s.ListEntitlementsByUser(ctx, "user-revoke-1")
+	if err != nil || len(revokedList) != 1 || !revokedList[0].IsRevoked() {
+		t.Fatalf("expected 1 revoked entitlement in list, got %+v err=%v", revokedList, err)
+	}
+
+	// Phase 4.5: Request Decisions and Queue Queries
+	req1 := &models.PurchaseRequest{
+		ID:        "req-decide-1",
+		UserID:    "user-req-1",
+		SubjectID: "subj-order-b",
+		Status:    models.RequestStatusPending,
+		CreatedAt: time.Now().UTC().Add(-10 * time.Minute),
+	}
+	_, _, err = s.CreateOrGetPendingRequest(ctx, req1)
+	if err != nil {
+		t.Fatalf("CreateOrGetPendingRequest failed: %v", err)
+	}
+	gotReq, err := s.GetRequestByID(ctx, "req-decide-1")
+	if err != nil || gotReq == nil {
+		t.Fatalf("GetRequestByID failed: got %+v err=%v", gotReq, err)
+	}
+	pendingCount, err := s.CountPendingRequests(ctx)
+	if err != nil || pendingCount < 1 {
+		t.Fatalf("CountPendingRequests expected >= 1, got %d, err=%v", pendingCount, err)
+	}
+	// DecideRequest: compare-and-set pending -> accepted
+	decidedNow := time.Now().UTC()
+	changed, err = s.DecideRequest(ctx, "req-decide-1", models.RequestStatusPending, models.RequestStatusAccepted, "admin-1", decidedNow, "")
+	if err != nil || !changed {
+		t.Fatalf("DecideRequest pending->accepted failed: changed=%v err=%v", changed, err)
+	}
+	// Second attempt with fromStatus=pending returns false, nil (no-op)
+	changedRetry, err := s.DecideRequest(ctx, "req-decide-1", models.RequestStatusPending, models.RequestStatusAccepted, "admin-1", decidedNow, "")
+	if err != nil || changedRetry {
+		t.Fatalf("expected retry with fromStatus=pending to return false, got %v err=%v", changedRetry, err)
+	}
+	decidedReq, err := s.GetRequestByID(ctx, "req-decide-1")
+	if err != nil || decidedReq.Status != models.RequestStatusAccepted || decidedReq.DecidedBy != "admin-1" {
+		t.Fatalf("unexpected decided request state: %+v err=%v", decidedReq, err)
+	}
+
+	// Reject flow: pending -> rejected with reason
+	req2 := &models.PurchaseRequest{
+		ID:        "req-decide-2",
+		UserID:    "user-req-2",
+		SubjectID: "subj-order-b",
+		Status:    models.RequestStatusPending,
+		CreatedAt: time.Now().UTC(),
+	}
+	_, _, err = s.CreateOrGetPendingRequest(ctx, req2)
+	if err != nil {
+		t.Fatalf("CreateOrGetPendingRequest req2 failed: %v", err)
+	}
+	changed, err = s.DecideRequest(ctx, "req-decide-2", models.RequestStatusPending, models.RequestStatusRejected, "admin-1", decidedNow, "invalid payment proof")
+	if err != nil || !changed {
+		t.Fatalf("DecideRequest pending->rejected failed: changed=%v err=%v", changed, err)
+	}
+	rejectedReq, err := s.GetRequestByID(ctx, "req-decide-2")
+	if err != nil || rejectedReq.Status != models.RequestStatusRejected || rejectedReq.RejectReason != "invalid payment proof" {
+		t.Fatalf("unexpected rejected request state: %+v err=%v", rejectedReq, err)
+	}
+
+	// Unknown request returns ErrNotFound
+	_, err = s.DecideRequest(ctx, "req-unknown", models.RequestStatusPending, models.RequestStatusAccepted, "admin-1", decidedNow, "")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for unknown request, got %v", err)
+	}
+
+	// ListRequests filter
+	filteredReqs, totalReqs, err := s.ListRequests(ctx, RequestFilter{Status: models.RequestStatusRejected})
+	if err != nil || totalReqs < 1 || len(filteredReqs) < 1 || filteredReqs[0].ID != "req-decide-2" {
+		t.Fatalf("ListRequests status=rejected failed: total=%d len=%d err=%v", totalReqs, len(filteredReqs), err)
+	}
 }
 
 func TestMemoryStore(t *testing.T) {

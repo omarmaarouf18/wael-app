@@ -10,15 +10,23 @@ const (
 
 // Entitlement represents a student's access grant to a subject.
 type Entitlement struct {
-	ID        string    `bson:"_id" json:"id"`
-	UserID    string    `bson:"user_id" json:"user_id"`
-	SubjectID string    `bson:"subject_id" json:"subject_id"`
-	ExpiresAt time.Time `bson:"expires_at" json:"expires_at"`
-	GrantedAt time.Time `bson:"granted_at" json:"granted_at"`
-	Source    string    `bson:"source" json:"source"` // "request" or "admin_grant"
-	GrantedBy string    `bson:"granted_by" json:"granted_by"`
-	RequestID string    `bson:"request_id,omitempty" json:"request_id,omitempty"`
-	Active    bool      `bson:"active" json:"active"` // true for current active entitlement
+	ID           string     `bson:"_id" json:"id"`
+	UserID       string     `bson:"user_id" json:"user_id"`
+	SubjectID    string     `bson:"subject_id" json:"subject_id"`
+	ExpiresAt    time.Time  `bson:"expires_at" json:"expires_at"`
+	GrantedAt    time.Time  `bson:"granted_at" json:"granted_at"`
+	Source       string     `bson:"source" json:"source"` // "request" or "admin_grant"
+	GrantedBy    string     `bson:"granted_by" json:"granted_by"`
+	RequestID    string     `bson:"request_id,omitempty" json:"request_id,omitempty"`
+	Active       bool       `bson:"active" json:"active"` // true for current active entitlement
+	RevokedAt    *time.Time `bson:"revoked_at,omitempty" json:"revoked_at,omitempty"`
+	RevokedBy    string     `bson:"revoked_by,omitempty" json:"revoked_by,omitempty"`
+	RevokeReason string     `bson:"revoke_reason,omitempty" json:"revoke_reason,omitempty"`
+}
+
+// IsRevoked reports whether the admin ended this entitlement early.
+func (e *Entitlement) IsRevoked() bool {
+	return e.RevokedAt != nil && !e.RevokedAt.IsZero()
 }
 
 // IsExpired reports whether the entitlement has passed its expiration time.
