@@ -1043,7 +1043,12 @@ type resetRequestRequest struct {
 	Email string `json:"email"`
 }
 
-// RequestReset starts phase 1: always 200 (anti-enumeration), emailing a code only when the account exists.
+// RequestReset starts phase 1: always 200 (anti-enumeration). A code is
+// emailed only for accounts with status active (suspended and deleted get the
+// same 200 and no email; expired unverified records are treated as absent).
+// The email is sent in a goroutine with a detached 10s-timeout context, so the
+// HTTP answer never waits for the mail provider. Send failures are logged
+// without the email address or the code.
 func (s *Server) RequestReset(w http.ResponseWriter, r *http.Request) {
 	var req resetRequestRequest
 	if !decodeJSON(w, r, &req) {
@@ -1051,6 +1056,12 @@ func (s *Server) RequestReset(w http.ResponseWriter, r *http.Request) {
 	}
 	email := normalizeEmail(req.Email)
 	ctx := r.Context()
+
+	// Invalid email format: same 200, nothing sent.
+	if !validEmail(email) {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
 
 	allowed, err := s.Codes.AllowIssue(ctx, "reset", email)
 	if err != nil {
@@ -1066,20 +1077,34 @@ func (s *Server) RequestReset(w http.ResponseWriter, r *http.Request) {
 	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
 	u, _ := s.Store.FindByEmail(dbCtx, email)
 	cancel()
-	if u != nil {
-		code, err := otp.GenerateNumericCode(6)
-		if err == nil {
-			if setErr := s.Codes.Set(ctx, "reset-code:"+email, otp.HashToken(code), 10*time.Minute); setErr != nil {
-				log.Printf("[AUTH] Set reset-code error: %v", setErr)
-				handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-				return
-			}
-			_ = s.Sender.SendCode(ctx, email, code, "password-reset")
-			if s.devOTPField() {
-				handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "dev_otp": code})
-				return
-			}
+	if u == nil || u.EffectiveStatus() != models.StatusActive ||
+		(!u.EmailVerified && isUnverifiedExpired(u, time.Now().UTC())) {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	code, err := otp.GenerateNumericCode(6)
+	if err != nil {
+		log.Printf("[AUTH] GenerateNumericCode error: %v", err)
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if setErr := s.Codes.Set(ctx, "reset-code:"+email, otp.HashToken(code), 10*time.Minute); setErr != nil {
+		log.Printf("[AUTH] Set reset-code error: %v", setErr)
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	sender := s.Sender
+	devOTP := s.devOTPField()
+	go func() {
+		sendCtx, sendCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer sendCancel()
+		if sendErr := sender.SendCode(sendCtx, email, code, "password-reset"); sendErr != nil {
+			log.Printf("[AUTH] password-reset send failed: %v", sendErr)
 		}
+	}()
+	if devOTP {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "dev_otp": code})
+		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

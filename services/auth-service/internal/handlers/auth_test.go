@@ -2503,6 +2503,141 @@ func (c *countingSender) reset() {
 	c.total = 0
 }
 
+// blockingSender blocks inside SendCode until released, proving the handler
+// does not wait for the mail provider.
+type blockingSender struct {
+	entered chan struct{}
+	release chan struct{}
+	done    chan struct{}
+	mu      sync.Mutex
+	calls   int
+}
+
+func newBlockingSender() *blockingSender {
+	return &blockingSender{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+}
+
+func (b *blockingSender) SendCode(_ context.Context, _, _, _ string) error {
+	close(b.entered)
+	<-b.release
+	b.mu.Lock()
+	b.calls++
+	b.mu.Unlock()
+	close(b.done)
+	return nil
+}
+
+func TestRequestReset_ActiveOnlyAndBackground(t *testing.T) {
+	newResetServer := func(sender mailer.Sender) *Server {
+		jwtutil.Init("test-jwt-secret-0123456789abcdef")
+		s := New(store.NewMemoryStore(), otp.NewMemoryStore(), NewMemoryLockout(), sender, "test", "gw-secret")
+		s.BlocklistHMACKey = "test-blocklist-hmac-key"
+		s.DefaultPhoneRegion = "EG"
+		return s
+	}
+	mustSignupVerify := func(t *testing.T, s *Server, email, phone string) {
+		t.Helper()
+		rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+			"full_name": "Reset Target",
+			"email":     email,
+			"phone":     phone,
+			"password":  "password123",
+		}, "")
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("signup %s = %d (%s)", email, rec.Code, rec.Body.String())
+		}
+		code := decodeBody(t, rec)["dev_otp"]
+		rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+			"email": email, "code": code,
+		}, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("verify %s = %d (%s)", email, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Suspended account: same 200, no email.
+	sender := &countingSender{}
+	s := newResetServer(sender)
+	mustSignupVerify(t, s, "reset-suspended@example.com", "+201012345701")
+	before := sender.countFor("reset-suspended@example.com")
+	ctx := context.Background()
+	u, err := s.Store.FindByEmail(ctx, "reset-suspended@example.com")
+	if err != nil || u == nil {
+		t.Fatalf("lookup: %v %+v", err, u)
+	}
+	if err := s.Store.SetStatus(ctx, u.ID, string(models.StatusActive), string(models.StatusSuspended), "test", time.Now()); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	rec := doRequest(t, s, http.MethodPost, "/auth/reset/request", map[string]string{"email": "reset-suspended@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("suspended reset = %d, want 200", rec.Code)
+	}
+	// Background send never happens for suspended; poll briefly to be sure.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := sender.countFor("reset-suspended@example.com"); got != before {
+		t.Fatalf("suspended account emails = %d, want %d (signup only)", got, before)
+	}
+
+	// Deleted account: same 200, no email.
+	sender2 := &countingSender{}
+	s2 := newResetServer(sender2)
+	mustSignupVerify(t, s2, "reset-deleted@example.com", "+201012345702")
+	before2 := sender2.countFor("reset-deleted@example.com")
+	u2, err := s2.Store.FindByEmail(ctx, "reset-deleted@example.com")
+	if err != nil || u2 == nil {
+		t.Fatalf("lookup: %v %+v", err, u2)
+	}
+	if err := s2.Store.SetStatus(ctx, u2.ID, store.FromActiveOrSuspended, string(models.StatusDeleted), "test", time.Now()); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	rec = doRequest(t, s2, http.MethodPost, "/auth/reset/request", map[string]string{"email": "reset-deleted@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("deleted reset = %d, want 200", rec.Code)
+	}
+	deadline = time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := sender2.countFor("reset-deleted@example.com"); got != before2 {
+		t.Fatalf("deleted account emails = %d, want %d (signup only)", got, before2)
+	}
+
+	// Handler returns before the sender finishes.
+	s3 := newResetServer(&countingSender{})
+	mustSignupVerify(t, s3, "reset-blocking@example.com", "+201012345703")
+	blocker := newBlockingSender()
+	s3.Sender = blocker
+	rec = doRequest(t, s3, http.MethodPost, "/auth/reset/request", map[string]string{"email": "reset-blocking@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("blocking reset = %d, want 200", rec.Code)
+	}
+	// The handler already returned; the sender must be in-flight (entered)
+	// but not finished (done open).
+	select {
+	case <-blocker.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sender goroutine did not start")
+	}
+	select {
+	case <-blocker.done:
+		t.Fatal("handler waited for the sender to finish")
+	default:
+	}
+	close(blocker.release)
+	select {
+	case <-blocker.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sender did not finish after release")
+	}
+}
+
 func testResetCode_CooldownAndHourlyCap(t *testing.T, s *Server, sender *countingSender, clearCooldown func(purpose, email string)) {
 	t.Helper()
 	email := fmt.Sprintf("cooldown-%d@example.com", time.Now().UnixNano())
