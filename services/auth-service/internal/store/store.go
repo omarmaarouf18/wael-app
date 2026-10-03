@@ -114,8 +114,9 @@ func cloneUser(u *models.User) *models.User {
 	return &cp
 }
 
-// Create inserts a new user; emails and active/suspended phones must be unique.
-// Status defaults to "active" explicitly for new users.
+// Create inserts a new user; emails must be unique, and phones must be unique
+// across verified active/suspended accounts (unverified signups do not reserve
+// phones). Status defaults to "active" explicitly for new users.
 func (s *MemoryStore) Create(_ context.Context, u *models.User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,7 +134,7 @@ func (s *MemoryStore) Create(_ context.Context, u *models.User) error {
 
 	if u.Phone != "" && (u.EffectiveStatus() == models.StatusActive || u.EffectiveStatus() == models.StatusSuspended) {
 		for _, existing := range s.byID {
-			if existing.Phone == u.Phone && (existing.EffectiveStatus() == models.StatusActive || existing.EffectiveStatus() == models.StatusSuspended) {
+			if existing.Phone == u.Phone && existing.EmailVerified && (existing.EffectiveStatus() == models.StatusActive || existing.EffectiveStatus() == models.StatusSuspended) {
 				return ErrDuplicate
 			}
 		}
@@ -196,7 +197,7 @@ func (s *MemoryStore) Update(_ context.Context, u *models.User) error {
 	}
 	if u.Phone != "" && u.Phone != existing.Phone && (existing.EffectiveStatus() == models.StatusActive || existing.EffectiveStatus() == models.StatusSuspended) {
 		for id, other := range s.byID {
-			if id != u.ID && other.Phone == u.Phone && (other.EffectiveStatus() == models.StatusActive || other.EffectiveStatus() == models.StatusSuspended) {
+			if id != u.ID && other.Phone == u.Phone && other.EmailVerified && (other.EffectiveStatus() == models.StatusActive || other.EffectiveStatus() == models.StatusSuspended) {
 				return ErrDuplicate
 			}
 		}
@@ -256,7 +257,7 @@ func (s *MemoryStore) SetStatus(_ context.Context, userID, from, to, reason stri
 
 	if existing.Phone != "" && (models.UserStatus(to) == models.StatusActive || models.UserStatus(to) == models.StatusSuspended) {
 		for id, other := range s.byID {
-			if id != userID && other.Phone == existing.Phone && (other.EffectiveStatus() == models.StatusActive || other.EffectiveStatus() == models.StatusSuspended) {
+			if id != userID && other.Phone == existing.Phone && other.EmailVerified && (other.EffectiveStatus() == models.StatusActive || other.EffectiveStatus() == models.StatusSuspended) {
 				return ErrDuplicate
 			}
 		}

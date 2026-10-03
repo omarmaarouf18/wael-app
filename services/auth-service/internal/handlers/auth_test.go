@@ -100,6 +100,8 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 	switch path {
 	case "/auth/signup":
 		h = s.Signup
+	case "/auth/signup/resend":
+		h = s.ResendSignupOTP
 	case "/auth/verify-otp":
 		h = s.VerifyOTP
 	case "/auth/login":
@@ -577,7 +579,7 @@ func TestSignup_FullNameValidation(t *testing.T) {
 func TestSignup_DuplicatePhone(t *testing.T) {
 	s := testServer()
 
-	// Register user 1
+	// Register and verify user 1 (verified phones are reserved).
 	rec1 := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
 		"full_name": "User One",
 		"email":     "user1@example.com",
@@ -586,6 +588,14 @@ func TestSignup_DuplicatePhone(t *testing.T) {
 	}, "")
 	if rec1.Code != http.StatusCreated {
 		t.Fatalf("first signup status = %d (%s)", rec1.Code, rec1.Body.String())
+	}
+	otp1 := decodeBody(t, rec1)["dev_otp"]
+	rec := doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "user1@example.com",
+		"code":  otp1,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify user1 = %d (%s)", rec.Code, rec.Body.String())
 	}
 
 	// Register user 2 with same phone in local format (01012345678)
@@ -601,6 +611,32 @@ func TestSignup_DuplicatePhone(t *testing.T) {
 	body := decodeBody(t, rec2)
 	if body["error"] != "unable to complete registration" || body["code"] != "conflict" {
 		t.Fatalf("expected generic refusal error, got %v", body)
+	}
+}
+
+func TestSignup_UnverifiedPhoneIsFree(t *testing.T) {
+	s := testServer()
+
+	// Unverified user 1 does not reserve the phone.
+	rec1 := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Unverified One",
+		"email":     "unverified1@example.com",
+		"phone":     "+201012345685",
+		"password":  "password123",
+	}, "")
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("first signup = %d (%s)", rec1.Code, rec1.Body.String())
+	}
+
+	// User 2 with the same phone succeeds.
+	rec2 := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Unverified Two",
+		"email":     "unverified2@example.com",
+		"phone":     "+201012345685",
+		"password":  "password123",
+	}, "")
+	if rec2.Code != http.StatusCreated {
+		t.Fatalf("unverified phone reuse = %d, want 201 (%s)", rec2.Code, rec2.Body.String())
 	}
 }
 
@@ -632,6 +668,182 @@ func TestSignup_BlockedEmail(t *testing.T) {
 	u, err := s.Store.FindByEmail(context.Background(), blockedEmail)
 	if err != nil || u != nil {
 		t.Fatalf("expected no user created for blocked email, got %+v (err: %v)", u, err)
+	}
+}
+
+func TestSignup_ReplaceUnverified(t *testing.T) {
+	s := testServer()
+
+	// First unverified signup.
+	rec1 := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "First Attempt",
+		"email":     "replace@example.com",
+		"phone":     "+201012345686",
+		"password":  "password123",
+	}, "")
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("first signup = %d (%s)", rec1.Code, rec1.Body.String())
+	}
+	otp1 := decodeBody(t, rec1)["dev_otp"]
+
+	// Second signup with the same unverified email works (replaces).
+	rec2 := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Second Attempt",
+		"email":     "replace@example.com",
+		"phone":     "+201012345687",
+		"password":  "newpassword456",
+	}, "")
+	if rec2.Code != http.StatusCreated {
+		t.Fatalf("second signup same unverified email = %d, want 201 (%s)", rec2.Code, rec2.Body.String())
+	}
+	otp2 := decodeBody(t, rec2)["dev_otp"]
+	if otp2 == "" || otp2 == otp1 {
+		t.Fatalf("expected a new OTP after replacement, got %q (old %q)", otp2, otp1)
+	}
+
+	// Old OTP is invalid.
+	rec := doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "replace@example.com",
+		"code":  otp1,
+	}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("verify with old OTP = %d, want 401 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// New OTP verifies.
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "replace@example.com",
+		"code":  otp2,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify with new OTP = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Verified duplicate is still refused with generic message.
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Third Attempt",
+		"email":     "replace@example.com",
+		"phone":     "+201012345688",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("verified duplicate signup = %d, want 409 (%s)", rec.Code, rec.Body.String())
+	}
+	body := decodeBody(t, rec)
+	if body["error"] != "unable to complete registration" || body["code"] != "conflict" {
+		t.Fatalf("expected generic refusal, got %v", body)
+	}
+}
+
+func TestSignupResend_ExpiredOTPThenVerify(t *testing.T) {
+	s := testServer()
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Resend User",
+		"email":     "resend@example.com",
+		"phone":     "+201012345689",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup = %d (%s)", rec.Code, rec.Body.String())
+	}
+	oldOTP := decodeBody(t, rec)["dev_otp"]
+
+	// Expire the OTP by deleting it (simulates 10min expiry); resend issues a new one.
+	ctx := context.Background()
+	if err := s.Codes.Delete(ctx, "signup-otp:resend@example.com"); err != nil {
+		t.Fatalf("delete otp: %v", err)
+	}
+	// Clear resend cooldown bucket so the test resend is allowed (signup does not
+	// consume the resend bucket, but a prior resend in the same test would).
+	_ = s.Codes.ClearCooldown(ctx, "signup", "resend@example.com")
+
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup/resend", map[string]string{"email": "resend@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resend = %d (%s)", rec.Code, rec.Body.String())
+	}
+	newOTP := decodeBody(t, rec)["dev_otp"]
+	if newOTP == "" || newOTP == oldOTP {
+		t.Fatalf("expected new OTP after resend, got %q (old %q)", newOTP, oldOTP)
+	}
+
+	// Old OTP invalid, new OTP verifies.
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "resend@example.com", "code": oldOTP}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("verify old OTP = %d, want 401", rec.Code)
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{"email": "resend@example.com", "code": newOTP}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify resent OTP = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSignupResend_CooldownAndCap(t *testing.T) {
+	s := testServer()
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Cap User",
+		"email":     "cap@example.com",
+		"phone":     "+201012345690",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup = %d (%s)", rec.Code, rec.Body.String())
+	}
+	firstOTP := decodeBody(t, rec)["dev_otp"]
+
+	// First resend works.
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup/resend", map[string]string{"email": "cap@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first resend = %d", rec.Code)
+	}
+	secondOTP := decodeBody(t, rec)["dev_otp"]
+	if secondOTP == "" {
+		t.Fatal("expected dev_otp on first resend")
+	}
+
+	// Immediate second resend is throttled (cooldown): generic ok, no new OTP.
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup/resend", map[string]string{"email": "cap@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("throttled resend = %d, want 200", rec.Code)
+	}
+	var throttled map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &throttled); err != nil {
+		t.Fatalf("decode throttled: %v", err)
+	}
+	if _, hasOTP := throttled["dev_otp"]; hasOTP {
+		t.Fatalf("throttled resend must not issue OTP, got %v", throttled)
+	}
+
+	// Unknown email gets the same generic response (no oracle).
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup/resend", map[string]string{"email": "nobody-resend@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resend unknown = %d, want 200", rec.Code)
+	}
+	if got := decodeBody(t, rec)["status"]; got != "ok" {
+		t.Fatalf("resend unknown status = %q, want ok", got)
+	}
+
+	// Hourly cap: clear cooldown and exhaust to 5/hour, 6th is throttled.
+	ctx := context.Background()
+	for i := 0; i < 4; i++ {
+		_ = s.Codes.ClearCooldown(ctx, "signup", "cap@example.com")
+		rec = doRequest(t, s, http.MethodPost, "/auth/signup/resend", map[string]string{"email": "cap@example.com"}, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("resend %d = %d", i, rec.Code)
+		}
+	}
+	_ = s.Codes.ClearCooldown(ctx, "signup", "cap@example.com")
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup/resend", map[string]string{"email": "cap@example.com"}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("capped resend = %d, want 200", rec.Code)
+	}
+	var capped map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &capped); err != nil {
+		t.Fatalf("decode capped: %v", err)
+	}
+	if _, hasOTP := capped["dev_otp"]; hasOTP {
+		t.Fatalf("capped resend must not issue OTP (first %q)", firstOTP)
 	}
 }
 

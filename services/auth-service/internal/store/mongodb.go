@@ -55,18 +55,37 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		return nil, fmt.Errorf("store: ensure email index: %w", err)
 	}
 
-	// Ensure partial unique index on phone (P-6)
+	// Ensure partial unique index on phone (P-6, amended: only verified
+	// active/suspended accounts reserve phones; unverified signups do not).
+	// Drop the pre-amendment index first so the changed partial filter applies.
+	_ = coll.Indexes().DropOne(ctx, "phone_1")
 	_, err = coll.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{{Key: "phone", Value: 1}},
 		Options: options.Index().
 			SetUnique(true).
 			SetPartialFilterExpression(bson.M{
-				"phone":  bson.M{"$type": "string", "$gt": ""},
-				"status": bson.M{"$in": []string{"active", "suspended"}},
+				"phone":          bson.M{"$type": "string", "$gt": ""},
+				"status":         bson.M{"$in": []string{"active", "suspended"}},
+				"email_verified": true,
 			}),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("store: ensure phone index: %w", err)
+	}
+
+	// TTL index for unverified signup expiry (24h): unverified records are
+	// physically deleted 24h after creation. Handlers also treat expired
+	// unverified records as absent (lazy expiry for TTL lag and MemoryStore).
+	_, err = coll.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "created_at", Value: 1}},
+		Options: options.Index().
+			SetExpireAfterSeconds(24 * 3600).
+			SetPartialFilterExpression(bson.M{
+				"email_verified": bson.M{"$ne": true},
+			}),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: ensure unverified ttl index: %w", err)
 	}
 
 	// Ensure unique compound index on blocklist (kind, hash)

@@ -310,26 +310,50 @@ func runUserStoreSuite(t *testing.T, s Store) {
 		t.Fatalf("Create user with empty phone 2: %v", err)
 	}
 
-	// - duplicate phone between two active users is refused
+	// - duplicate phone between two verified active users is refused;
+	// unverified signups do not reserve phones.
 	uPhone1 := &models.User{
-		ID:           "u-phone-1",
-		Email:        "phone1@example.com",
-		PasswordHash: "h1",
-		Role:         models.RoleUser,
-		Phone:        "+201012345678",
+		ID:            "u-phone-1",
+		Email:         "phone1@example.com",
+		PasswordHash:  "h1",
+		Role:          models.RoleUser,
+		Phone:         "+201012345678",
+		EmailVerified: true,
 	}
 	if err := s.Create(ctx, uPhone1); err != nil {
 		t.Fatalf("Create user with phone 1: %v", err)
 	}
 	uPhone2 := &models.User{
-		ID:           "u-phone-2",
-		Email:        "phone2@example.com",
-		PasswordHash: "h2",
-		Role:         models.RoleUser,
-		Phone:        "+201012345678",
+		ID:            "u-phone-2",
+		Email:         "phone2@example.com",
+		PasswordHash:  "h2",
+		Role:          models.RoleUser,
+		Phone:         "+201012345678",
+		EmailVerified: true,
 	}
 	if err := s.Create(ctx, uPhone2); err == nil {
-		t.Fatal("expected duplicate phone error on Create between two active users, got nil")
+		t.Fatal("expected duplicate phone error on Create between two verified active users, got nil")
+	}
+	// - two unverified signups may share a phone (unverified does not reserve).
+	uUnverifiedA := &models.User{
+		ID:           "u-phone-unverified-a",
+		Email:        "phone-unverified-a@example.com",
+		PasswordHash: "h3",
+		Role:         models.RoleUser,
+		Phone:        "+201012345699",
+	}
+	if err := s.Create(ctx, uUnverifiedA); err != nil {
+		t.Fatalf("Create unverified A: %v", err)
+	}
+	uUnverifiedB := &models.User{
+		ID:           "u-phone-unverified-b",
+		Email:        "phone-unverified-b@example.com",
+		PasswordHash: "h4",
+		Role:         models.RoleUser,
+		Phone:        "+201012345699",
+	}
+	if err := s.Create(ctx, uUnverifiedB); err != nil {
+		t.Fatalf("expected unverified phone reuse to succeed, got: %v", err)
 	}
 
 	// - a deleted user's phone can be reused

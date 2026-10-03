@@ -126,6 +126,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handlers.Health)
 	mux.HandleFunc("/auth/signup", srv.Signup)
+	mux.HandleFunc("/auth/signup/resend", srv.ResendSignupOTP)
 	mux.HandleFunc("/auth/verify-otp", srv.VerifyOTP)
 	mux.HandleFunc("/auth/login", srv.Login)
 	mux.HandleFunc("/auth/logout", srv.Logout)

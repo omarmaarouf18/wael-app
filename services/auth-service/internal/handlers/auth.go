@@ -32,6 +32,23 @@ import (
 
 const dbTimeout = 5 * time.Second
 
+// unverifiedExpiry is how long an unverified signup record survives before it
+// no longer blocks a new signup. Physical deletion is via a Mongo TTL index;
+// handlers also treat expired records as absent (lazy expiry for MemoryStore
+// and for TTL lag).
+const unverifiedExpiry = 24 * time.Hour
+
+// isUnverifiedExpired reports whether u is an unverified signup older than 24h.
+func isUnverifiedExpired(u *models.User, now time.Time) bool {
+	if u == nil || u.EmailVerified {
+		return false
+	}
+	if u.CreatedAt.IsZero() {
+		return false
+	}
+	return now.Sub(u.CreatedAt) > unverifiedExpiry
+}
+
 // Server wires auth dependencies.
 type Server struct {
 	Store              store.Store
@@ -318,7 +335,10 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Existing account check by email (P-3, P-4)
+	// 3. Existing account check by email (P-3, P-4; amended: only verified
+	// accounts block signup. Unverified records are replaced, expired
+	// unverified records are treated as absent.)
+	now := time.Now().UTC()
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 	existingEmail, err := s.Store.FindByEmail(dbCtx, email)
 	cancel()
@@ -326,12 +346,21 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
+	replaceUser := (*models.User)(nil)
 	if existingEmail != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
-		return
+		if existingEmail.EmailVerified {
+			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+			return
+		}
+		if !isUnverifiedExpired(existingEmail, now) {
+			// Live unverified record: replace it below (new OTP, old invalid).
+			replaceUser = existingEmail
+		}
+		// Expired unverified: fall through as if absent (TTL deletes physically).
 	}
 
-	// 4. Existing account check by phone (P-3, P-4, P-6)
+	// 4. Existing account check by phone (P-3, P-4, P-6; amended: only verified
+	// active/suspended accounts block signup; unverified phones are free).
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 	existingPhone, err := s.Store.FindByPhone(dbCtx, phone)
 	cancel()
@@ -339,9 +368,12 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	if existingPhone != nil && existingPhone.EffectiveStatus() != models.StatusDeleted {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
-		return
+	if existingPhone != nil && existingPhone.EmailVerified && existingPhone.EffectiveStatus() != models.StatusDeleted {
+		// Same-record phone reuse on replacement is allowed.
+		if replaceUser == nil || existingPhone.ID != replaceUser.ID {
+			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+			return
+		}
 	}
 
 	role := models.RoleUser
@@ -350,6 +382,54 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
+
+	code, err := otp.GenerateNumericCode(6)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
+		return
+	}
+
+	if replaceUser != nil {
+		// Replace the live unverified record in place (same ID): new name,
+		// phone, password, fresh CreatedAt (restarts 24h expiry), new OTP
+		// overwrites the old (old becomes invalid).
+		replaceUser.FullName = name
+		replaceUser.Phone = phone
+		replaceUser.PasswordHash = string(hash)
+		replaceUser.CreatedAt = now
+		dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+		err = s.Store.Update(dbCtx, replaceUser)
+		cancel()
+		if err != nil {
+			if errors.Is(err, store.ErrDuplicate) {
+				handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, err)
+				return
+			}
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+		dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+		err = s.Codes.Set(dbCtx, "signup-otp:"+email, otp.HashToken(code), 10*time.Minute)
+		cancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
+			return
+		}
+		_ = s.Sender.SendCode(r.Context(), email, code, "signup")
+		resp := map[string]any{
+			"id":        replaceUser.ID,
+			"email":     email,
+			"role":      string(role),
+			"full_name": name,
+			"phone":     phone,
+		}
+		if s.devOTPField() {
+			resp["dev_otp"] = code
+		}
+		handlerutil.WriteJSON(w, http.StatusCreated, resp)
+		return
+	}
+
 	id, err := jwtutil.GenerateUUID()
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
@@ -363,6 +443,7 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		FullName:     name,
 		Phone:        phone,
 		Status:       models.StatusActive,
+		CreatedAt:    now,
 	}
 
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
@@ -370,6 +451,40 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 	cancel()
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
+			// Race: two signups at the same time, exactly one survives.
+			// Re-fetch; if the winner is unverified, replace it.
+			dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+			winner, findErr := s.Store.FindByEmail(dbCtx, email)
+			cancel()
+			if findErr == nil && winner != nil && !winner.EmailVerified && !isUnverifiedExpired(winner, time.Now().UTC()) {
+				winner.FullName = name
+				winner.Phone = phone
+				winner.PasswordHash = string(hash)
+				winner.CreatedAt = time.Now().UTC()
+				dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+				updErr := s.Store.Update(dbCtx, winner)
+				cancel()
+				if updErr == nil {
+					dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+					setErr := s.Codes.Set(dbCtx, "signup-otp:"+email, otp.HashToken(code), 10*time.Minute)
+					cancel()
+					if setErr == nil {
+						_ = s.Sender.SendCode(r.Context(), email, code, "signup")
+						resp := map[string]any{
+							"id":        winner.ID,
+							"email":     email,
+							"role":      string(role),
+							"full_name": name,
+							"phone":     phone,
+						}
+						if s.devOTPField() {
+							resp["dev_otp"] = code
+						}
+						handlerutil.WriteJSON(w, http.StatusCreated, resp)
+						return
+					}
+				}
+			}
 			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, err)
 			return
 		}
@@ -377,11 +492,6 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code, err := otp.GenerateNumericCode(6)
-	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
-		return
-	}
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 	err = s.Codes.Set(dbCtx, "signup-otp:"+email, otp.HashToken(code), 10*time.Minute)
 	cancel()
@@ -474,6 +584,10 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		writeStatusRefusal(w, r)
 		return
 	}
+	if !u.EmailVerified && isUnverifiedExpired(u, time.Now().UTC()) {
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid or expired code", nil)
+		return
+	}
 	u.EmailVerified = true
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
 	err = s.Store.Update(dbCtx, u)
@@ -489,6 +603,75 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	go notify.Welcome(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": refresh})
+}
+
+type resendSignupRequest struct {
+	Email string `json:"email"`
+}
+
+// ResendSignupOTP sends a new signup OTP only for an unverified pending signup.
+// The answer is always the same generic response, so it does not reveal whether
+// the email exists. Cooldown 60s per email, at most 5 per hour per email (plus
+// the gateway per-IP tier). OTP valid 10min; per-code attempt limits still apply.
+func (s *Server) ResendSignupOTP(w http.ResponseWriter, r *http.Request) {
+	var req resendSignupRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	email := normalizeEmail(req.Email)
+	ctx := r.Context()
+
+	const genericOK = true
+	// Always generic, even for invalid format (anti-enumeration, like RequestReset).
+	if !validEmail(email) {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+
+	allowed, err := s.Codes.AllowIssue(ctx, "signup", email)
+	if err != nil {
+		log.Printf("[AUTH] AllowIssue error: %v", err)
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if !allowed {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+
+	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+	u, err := s.Store.FindByEmail(dbCtx, email)
+	cancel()
+	if err != nil || u == nil {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if u.EmailVerified || u.EffectiveStatus() != models.StatusActive {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if isUnverifiedExpired(u, time.Now().UTC()) {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+
+	code, err := otp.GenerateNumericCode(6)
+	if err != nil {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	if setErr := s.Codes.Set(ctx, "signup-otp:"+email, otp.HashToken(code), 10*time.Minute); setErr != nil {
+		log.Printf("[AUTH] Set signup-otp error: %v", setErr)
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		return
+	}
+	_ = s.Sender.SendCode(ctx, email, code, "signup")
+	_ = genericOK
+	if s.devOTPField() {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "dev_otp": code})
+		return
+	}
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 type loginRequest struct {
