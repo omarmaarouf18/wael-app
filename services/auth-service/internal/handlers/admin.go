@@ -216,11 +216,29 @@ func (s *Server) Accounts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var idsList []string
+	if rawIDs := strings.TrimSpace(q.Get("ids")); rawIDs != "" {
+		parts := strings.Split(rawIDs, ",")
+		if len(parts) > 100 {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "bad_request", "at most 100 ids allowed", nil)
+			return
+		}
+		seen := make(map[string]bool, len(parts))
+		for _, p := range parts {
+			trimmed := strings.TrimSpace(p)
+			if trimmed != "" && !seen[trimmed] {
+				seen[trimmed] = true
+				idsList = append(idsList, trimmed)
+			}
+		}
+	}
+
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	users, total, err := s.Store.ListUsers(dbCtx, store.UserFilter{
 		Search:          search,
 		NormalizedPhone: normPhone,
 		Status:          statusFilter,
+		IDs:             idsList,
 		Page:            page,
 		Limit:           limit,
 	})

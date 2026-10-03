@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -697,6 +698,72 @@ func TestAdmin_Accounts_ListAndSearch(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestAdmin_Accounts_FilterByIDs(t *testing.T) {
+	s, validTok, _ := setupAdminTestEnv(t, nil)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	for i := 1; i <= 5; i++ {
+		u := &models.User{
+			ID:        fmt.Sprintf("user-%d", i),
+			FullName:  fmt.Sprintf("User %d", i),
+			Email:     fmt.Sprintf("u%d@example.com", i),
+			Phone:     fmt.Sprintf("+20109999000%d", i),
+			Status:    models.StatusActive,
+			CreatedAt: now.Add(time.Duration(i) * time.Minute),
+		}
+		if err := s.Store.Create(ctx, u); err != nil {
+			t.Fatalf("Create user: %v", err)
+		}
+	}
+
+	t.Run("filter_exact_ids", func(t *testing.T) {
+		rec := doAdminRequest(s, http.MethodGet, "/internal/admin/accounts?ids=user-2,user-4", "internal-test-token", validTok, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+		}
+		var res struct {
+			Items []*models.UserDTO `json:"items"`
+			Total int               `json:"total"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &res)
+		if res.Total != 2 || len(res.Items) != 2 {
+			t.Fatalf("expected 2 items, got total=%d items=%d", res.Total, len(res.Items))
+		}
+		for _, item := range res.Items {
+			if item.ID != "user-2" && item.ID != "user-4" {
+				t.Fatalf("unexpected item ID: %s", item.ID)
+			}
+		}
+	})
+
+	t.Run("filter_non_existent_id", func(t *testing.T) {
+		rec := doAdminRequest(s, http.MethodGet, "/internal/admin/accounts?ids=user-unknown", "internal-test-token", validTok, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+		var res struct {
+			Items []*models.UserDTO `json:"items"`
+			Total int               `json:"total"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &res)
+		if res.Total != 0 || len(res.Items) != 0 {
+			t.Fatalf("expected 0 items, got total=%d items=%d", res.Total, len(res.Items))
+		}
+	})
+
+	t.Run("more_than_100_ids_rejected", func(t *testing.T) {
+		var ids []string
+		for i := 0; i < 101; i++ {
+			ids = append(ids, fmt.Sprintf("id-%d", i))
+		}
+		rec := doAdminRequest(s, http.MethodGet, "/internal/admin/accounts?ids="+strings.Join(ids, ","), "internal-test-token", validTok, nil)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for >100 ids, got %d", rec.Code)
+		}
+	})
 }
 
 func TestAdmin_Accounts_SearchCap_Arabic_And_Regex(t *testing.T) {

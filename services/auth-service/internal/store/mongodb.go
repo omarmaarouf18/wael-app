@@ -497,6 +497,12 @@ func (s *MongoStore) ListUsers(ctx context.Context, filter UserFilter) ([]*model
 		andConditions = append(andConditions, bson.M{"$or": searchOr})
 	}
 
+	if len(filter.IDs) > 0 {
+		andConditions = append(andConditions, bson.M{
+			"_id": bson.M{"$in": filter.IDs},
+		})
+	}
+
 	query := bson.M{}
 	if len(andConditions) == 1 {
 		query = andConditions[0]

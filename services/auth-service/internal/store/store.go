@@ -38,6 +38,7 @@ type UserFilter struct {
 	Search          string
 	NormalizedPhone string
 	Status          string
+	IDs             []string
 	Page            int
 	Limit           int
 }
@@ -395,6 +396,19 @@ func (s *MemoryStore) ListUsers(_ context.Context, filter UserFilter) ([]*models
 	for _, u := range s.byID {
 		if filter.Status != "" {
 			if string(u.EffectiveStatus()) != filter.Status {
+				continue
+			}
+		}
+
+		if len(filter.IDs) > 0 {
+			found := false
+			for _, id := range filter.IDs {
+				if u.ID == id {
+					found = true
+					break
+				}
+			}
+			if !found {
 				continue
 			}
 		}
