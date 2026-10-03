@@ -349,17 +349,6 @@ func RevokeAllUserTokens(userID string) error {
 	return nil
 }
 
-// IsUserRevoked checks if a user's tokens have been invalidated in Redis (F-03).
-func IsUserRevoked(userID string) bool {
-	if redisClient == nil || userID == "" {
-		return false
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	val, err := redisClient.Get(ctx, "jwt:invalidated_before:"+userID).Result()
-	return err == nil && val != ""
-}
-
 // RevokeToken denylists a token's jti in Redis.
 // Expired tokens are held in the denylist until the end of their 7-day refresh window.
 func RevokeToken(tokenStr string) error {

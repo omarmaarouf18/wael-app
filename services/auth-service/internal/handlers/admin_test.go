@@ -878,10 +878,9 @@ func TestAdmin_Suspend_Flow_And_R7(t *testing.T) {
 		t.Fatalf("expected stripped audit detail %q, got %q", expectedReason, audit.Detail)
 	}
 
-	// 5. Verify jwtutil revocation
-	if !jwtutil.IsUserRevoked("u-suspend-r7") {
-		t.Fatalf("expected jwtutil.IsUserRevoked(u-suspend-r7) to be true")
-	}
+	// 5. Revocation is enforced behaviorally (R7 below): pre-suspend tokens
+	// carry the old IssuedAt and ValidateToken rejects them via the
+	// jwt:invalidated_before marker set by RevokeAllUserTokens (fail-closed).
 
 	// 6. R7 enforcement: Login, Refresh, VerifyOTP refused (401)
 	// Login refused
@@ -1019,10 +1018,9 @@ func TestAdmin_Delete_Flow_And_Blocklist_SignupRefusal(t *testing.T) {
 		t.Fatalf("expected DeletedAt to be set")
 	}
 
-	// 3. Verify jwtutil revocation
-	if !jwtutil.IsUserRevoked("u-del-test") {
-		t.Fatalf("expected jwtutil.IsUserRevoked(u-del-test) to be true")
-	}
+	// 3. Revocation marker is set by RevokeAllUserTokens (fail-closed); its
+	// effect is enforced behaviorally (suspended/deleted tokens rejected via
+	// ValidateToken, login/refresh refused by the status gate).
 
 	// 4. Verify audit log entry
 	logs, _, err := s.Store.ListAuditLogs(ctx, 1, 10)
