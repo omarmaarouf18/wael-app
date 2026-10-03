@@ -1,6 +1,7 @@
 // Login lockout with owner-decided scheme (no IP-wide lock):
 //   - Key (email, IP): 5 failed logins in a row lock that pair for 15 min.
 //   - Key (email) across all IPs: 20 failures in 1 h lock that account for 1 h.
+//
 // IP volume is handled only by the gateway rate limit, never by a hard lockout.
 package handlers
 
@@ -229,7 +230,7 @@ func (l *RedisLoginLockout) ResetEmailAll(email string) {
 }
 
 type loginPairState struct {
-	count    int
+	count     int
 	lockedTil time.Time
 }
 
