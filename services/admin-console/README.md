@@ -16,7 +16,7 @@ route under `/internal/`.
 | Console route | Upstream (auth-service admin listener) |
 |---|---|
 | `GET /api/whoami` | `POST /internal/admin/verify`. Returns `{"name"}` only. |
-| `GET /api/accounts?search&status&page&limit` | `GET /internal/admin/accounts` |
+| `GET /api/accounts?search&status&ids&page&limit` | `GET /internal/admin/accounts` (supports `ids` batch lookup) |
 | `POST /api/accounts/suspend` `{id, reason}` | `POST /internal/admin/accounts/{id}/suspend` `{reason}` |
 | `POST /api/accounts/reactivate` `{id}` | `POST /internal/admin/accounts/{id}/reactivate` |
 | `POST /api/accounts/delete` `{id, reason}` | `DELETE /internal/admin/accounts/{id}` `{reason}` |
@@ -38,15 +38,20 @@ route under `/internal/`.
 | `POST /api/videos/update` `{id, ...}` | `PATCH /internal/admin/videos/{id}` |
 | `POST /api/videos/reorder` `{subject_id, video_ids}` | `POST /internal/admin/subjects/{id}/videos/reorder` |
 | `POST /api/videos/delete` `{id, force?}` | `DELETE /internal/admin/videos/{id}[?force=true]` (`?force=true` only when `force` is true) |
+| `GET /api/requests?status&subject_id&page&limit` | `GET /internal/admin/requests` |
+| `POST /api/requests/accept` `{id}` | `POST /internal/admin/requests/{id}/accept` |
+| `POST /api/requests/reject` `{id, reason}` | `POST /internal/admin/requests/{id}/reject` |
+| `GET /api/entitlements?user_id` | `GET /internal/admin/entitlements` |
+| `POST /api/entitlements/grant` `{user_id, subject_id}` | `POST /internal/admin/entitlements` |
+| `POST /api/entitlements/revoke` `{id, reason}` | `DELETE /internal/admin/entitlements/{id}` |
 
 `GET /healthz` is unauthenticated and calls nothing. Everything else is the
 embedded static UI (`web/`).
 
-The academy-service requests routes and the files routes do not exist in this
-task: there is no catch-all and nothing under `/internal/`. The audit log is
-served per source (`source=auth`, the default, or `source=academy`); the two
-logs are never merged into one page, because merged pagination over two
-sources is wrong without a shared cursor.
+The files routes do not exist in this task: there is no catch-all and nothing
+under `/internal/`. The audit log is served per source (`source=auth`, the
+default, or `source=academy`); the two logs are never merged into one page,
+because merged pagination over two sources is wrong without a shared cursor.
 
 Every handler: requires `X-Admin-Token` (401 with no upstream call when
 missing or malformed), validates input (UUID id, reason 1-1000 characters with
@@ -84,17 +89,17 @@ or URL), so reloading the page signs the admin out. Any `401` clears the token
 and returns to the sign-in page. The page is Arabic first (right-to-left) with
 an English toggle; the choice is kept in the URL hash only.
 
-Requests, Catalog and Files tabs exist in `web/js/tabs.js`; Catalog is
-visible since SPEC 6.3 part 1, Requests and Files stay hidden until the
-4.5/4.6 and Phase 5 APIs exist.
+Requests, Catalog, Accounts, and Audit tabs are active in `web/js/tabs.js`;
+Files stays hidden until the Phase 5 APIs exist.
 
-The Catalog tab (levels, subjects, videos) is split into small ES modules
-(`web/js/catalog.js`, `levels.js`, `subjects.js`, `subject-dialog.js`,
-`videos.js`, `video-dialog.js`, `confirm.js`). Server error codes are mapped
-to Arabic/English text in one map in `web/js/i18n.js` (`err.<code>`);
-`web/test/errors.test.mjs` fails when a code the academy admin handlers can
-return (the checked-in list in `internal/proxy/catalog_codes_test.go`) has no
-message.
+The UI is split into small ES modules:
+- Accounts: search, status filter, pagination, suspend/reactivate/delete dialogs (`accounts.js`, `account-dialog.js`), and "المواد" button opening the student entitlements modal (`entitlements-dialog.js`) for active/expired/revoked lists, manual grant, and revoke with mandatory reason.
+- Requests: purchase requests queue with student identity join via auth-service, Cairo date formatting, live `pending_count` badge with 60-second polling, accept dialog, and reject dialog with mandatory reason (`requests.js`).
+- Catalog: levels, subjects, videos, publish/unpublish, reorder, and force-delete (`catalog.js`, `levels.js`, `subjects.js`, `subject-dialog.js`, `videos.js`, `video-dialog.js`, `confirm.js`).
+- Audit: per-source audit log switch (`audit.js`).
+- Idle Lock: 19-minute idle warning with 60-second live countdown dialog and automatic 20-minute logout (`idle.js`).
+
+Server error codes are mapped to Arabic/English text in one map in `web/js/i18n.js` (`err.<code>`); `web/test/errors.test.mjs` fails when a code the academy admin handlers can return (the checked-in list in `internal/proxy/catalog_codes_test.go`) has no message.
 
 ## Tests
 

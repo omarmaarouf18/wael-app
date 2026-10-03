@@ -4,9 +4,9 @@
 Monorepo (`github.com/omarmaarouf18/wael-app`, public): api-gateway,
 auth-service (single role `user`, no tenants), notification-service (SSE,
 list, mark-read, internal push), academy-service (catalog, entitlements, purchase
-requests, admin 4.1-4.4, live since 2026-10-03), admin-console
-(thin admin proxy and static pages, SPEC Phase 6.1 Accounts/Audit plus 6.3
-part 1 Catalog over the academy admin API with the academy audit source,
+requests, request review and manual grant/revoke 4.5-4.6, live since 2026-10-03), admin-console
+(thin admin proxy and static pages, SPEC Phase 6.1 Accounts/Audit, 6.3
+part 1 Catalog, plus 6.3 part 2 Requests and student entitlements modal,
 live since 2026-10-03), shared/infra,
 Flutter app with real gateway auth, local compose (mongo:7, redis:7, mTLS),
 pre-push hook, CI. Branch: `develop` (work), `main` (fast-forward merges after CI).
@@ -149,6 +149,10 @@ SPEC Phase 4.1-4.4 academy admin (released to main 9e0c8b2, live 2026-10-03): ac
 
 Auth hardening + QA Lane A (branch `fix/auth-qa`, unpushed, owner review pending, 2026-10-03): password reset ends every session (RevokeAll first, password update, EndAll + refresh deletion, per-sid revoke best-effort; no fresh tokens); 72-byte password limit with 400 `password_too_long` validated before token consumption; unverified signup replacement + `POST /auth/signup/resend` (generic 200, 60 s cooldown, 5/hour, 10 min OTP) with 24 h unverified expiry (Mongo TTL + lazy check) and verified-only phone uniqueness; `pending_id` signup binding (stored hashed, rotated on replacement, kept on resend, cleared on verify; stale id + new code fails generic 401); phone-taken-at-verify returns generic 409 with the account staying unverified; login lockout `(email,IP)` 5/15 min + `(email)` 20/1 h with no IP-wide lock, reset clears both, 429 `too_many_attempts` + `Retry-After`, dummy bcrypt compare for unknown emails; reset mail sent in background (detached 10 s context) only for `active` accounts; reset token redeemed with atomic `Take` (10-parallel test); dead fail-open `jwtutil.IsUserRevoked` removed; SPEC D24-D26, R7 amendment and Section 6 auth table record the rules; CONTENT-GAPS #26 resolved (consent unticked, submit disabled).
 
+SPEC Phase 4.5/4.6 & SPEC 6.3 Part 2 (branch `feat/requests-review`, 2026-10-03):
+- Part A (academy-service): `payment_records` append-only store and models (Memory + Mongo) with unique index on `entitlement_id`, immutable `amount` equals `price_at_grant`, no update/delete methods; request review admin endpoints (`GET /internal/admin/requests`, `POST /accept`, `POST /reject` with reason 1-1000 runes), 409 `subject_expired` guard; student notifications via `notification-service` over mTLS; manual grant (`POST /internal/admin/entitlements`) and revoke (`DELETE /internal/admin/entitlements/{id}` with reason), revocation leaves payment record intact; study type term validation (bachelor/diploma: "first"/"second"; vocational: empty); contracts 13 & 14 pinned in `tests/contracts`.
+- Part B (auth-service & admin-console): auth-service `GET /internal/admin/accounts` gains `ids` filter (comma-separated UUIDs, max 100); admin-console adds 6 proxy routes (`/api/requests`, `/api/requests/accept`, `/api/requests/reject`, `/api/entitlements`, `/api/entitlements/grant`, `/api/entitlements/revoke`); Requests tab unhidden with student identity join, Cairo date-time format, live badge counter for `pending_count` with 60s background polling, accept/reject dialogs; Accounts tab gains "المواد" button and student entitlements modal (active/expired/revoked, grant flow, revoke flow with mandatory reason); 20-minute idle lock with 60s warning dialog and memory wipe; complete error mapping matching Go error catalog.
+
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy/mobile pipeline live on production with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true` (ADR-0011).
 RUNBOOK (at `infrastructure/deploy/RUNBOOK.md`, now the short day-2 checklist) and SERVER-MANUAL (same folder, full install/run/operate manual, 2026-10-02), DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
@@ -165,14 +169,12 @@ Pipeline hardening & required checks decisions (owner 2026-10-02): (1) E2E as re
 - [ADR-0005: Study Notes (Mozakkerat) Delivered Inside the App](docs/adr/0005-in-app-study-notes.md)
 - [ADR-0006: Support Only Through a WhatsApp Number](docs/adr/0006-whatsapp-only-support.md)
 - [ADR-0007: Core Academy Service Design](docs/adr/0007-core-academy-service.md) (Status Proposed; revised: catalog tree, PDFs, admin tokens; amended 2026-09-30: admin diplomas, vocational training)
-- [ADR-0008: Admin Identity and Console Boundaries](docs/adr/0008-admin-identity.md) (Status Accepted; admin subdomain, thin proxy, admins collection, CLI lifecycle, verification without caching; amended 2026-10-01: trusted header, IP extraction, lockout prefixes, listener addr, per-service audit log ownership; note 2026-10-02: console implementation, differences from the reviewer console)
+- [ADR-0008: Admin Identity and Console Boundaries](docs/adr/0008-admin-identity.md) (Status Accepted; admin subdomain, thin proxy, admins collection, CLI lifecycle, verification without caching; amended 2026-10-01: trusted header, IP extraction, lockout prefixes, listener addr, per-service audit log ownership; note 2026-10-02: console implementation; note 2026-10-03: catalog; note 2026-10-03: requests review, student entitlements, identity join, idle lock)
 - [ADR-0009: File Storage (Local Encrypted Storage at Rest)](docs/adr/0009-file-storage.md) (Status Proposed; local disk, AES-256-GCM at rest, fail-closed key policy, symlink-proof containment, atomic upload, streaming via academy-service OpenFile, no signed URLs)
 - [ADR-0011: Separate Deploy and Mobile Repositories](docs/adr/0011-deploy-and-mobile-repositories.md) (Status Accepted; deploy-only and mobile mirror repos, publish and mobile sync after CI Gate, live in production since 557f367 with PUBLISH_ENABLED and DEPLOY_ENABLED on, pull-only runner, preflight before any change, rollback to last recorded good release)
 
 ## Next task
-SPEC Phase 4.5/4.6 (purchase-request admin: accept/reject, manual grant/revoke),
-then admin-console Requests (SPEC 6.3 part 2). Catalog is live since 2026-10-03
-(70ec845). Phase 5 files after that.
+Phase 5 - Files: upload (Section 8 item 6), download streaming with R3 and R6, delete.
 
 
 

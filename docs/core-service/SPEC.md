@@ -152,14 +152,14 @@ Field names are snake_case everywhere, including `youtube_video_id`.
 | `subjects` | `_id`, `level_key`, `term` (`first`/`second`/empty), `title_ar`, `title_en`, `description_ar`, `description_en`, `price`, `status` (`draft`/`published`), `created_at`, `updated_at` | (`level_key`, `status`) |
 | `videos` | `_id`, `subject_id`, `position`, `title_ar`, `title_en`, `description_ar`, `description_en`, `youtube_video_id` | (`subject_id`, `position`) non-unique |
 | `subject_files` | `_id`, `subject_id`, `kind` (`book`/`note`), `title_ar`, `title_en`, `size_bytes`, `storage_key`, `created_at` | `subject_id` |
-| `entitlements` | `_id`, `user_id`, `subject_id`, `granted_at`, `source` (`request`/`admin_grant`), `granted_by`, `request_id` | **unique** (`user_id`, `subject_id`); `user_id` |
-| `payment_records` *(added 2026-10-01, decision 19)* | `_id`, `user_id`, `subject_id`, `entitlement_id`, `request_id` (optional), `amount` (integer EGP, equals `price_at_grant`), `price_at_grant`, `source` (`request`/`admin_grant`), `recorded_by`, `recorded_at`, `corrects_id` (optional) | (`subject_id`, `recorded_at`); (`user_id`, `recorded_at`) |
+| `entitlements` | `_id`, `user_id`, `subject_id`, `granted_at`, `expires_at`, `source` (`request`/`admin_grant`), `granted_by`, `request_id`, `active`, `revoked_at` (optional), `revoked_by` (optional), `revoke_reason` (optional) | **partial unique** (`user_id`, `subject_id`) where `active = true`; (`user_id`, `subject_id`, `expires_at`) non-unique; `user_id` |
+| `payment_records` *(added 2026-10-01, decision 19)* | `_id`, `user_id`, `subject_id`, `entitlement_id`, `request_id` (optional), `amount` (integer EGP, equals `price_at_grant`), `price_at_grant`, `source` (`request`/`admin_grant`), `recorded_by`, `recorded_at`, `corrects_id` (optional) | **unique** `entitlement_id`; (`subject_id`, `recorded_at`); (`user_id`, `recorded_at`) |
 | `purchase_requests` | `_id`, `user_id`, `subject_id`, `status` (`pending`/`accepted`/`rejected`), `created_at`, `decided_at`, `decided_by`, `reject_reason` | **partial unique** (`user_id`, `subject_id`) where `status = pending`; `status` |
 | `video_plays` *(added 2026-10-01, decision 21)* | `_id`, `user_id`, `video_id`, `subject_id`, `played_at` | (`user_id`, `played_at`); (`video_id`, `played_at`) |
 | `admin_audit_log` | `_id`, `actor_id`, `actor_name`, `action`, `target_type`, `target_id`, `detail`, `created_at` | (`actor_id`, `created_at`); (`target_type`, `target_id`) |
 
 Notes:
-- *Amended 2026-10-01 (decisions 18-19, D20-D21):* `subjects` gains `access_expires_at` (date-time, Africa/Cairo, required on create, editable). `entitlements` gains `expires_at` (copied from the subject at activation); the unique (`user_id`, `subject_id`) index above is replaced by a non-unique (`user_id`, `subject_id`, `expires_at`) index, and the store guarantees at most one unexpired entitlement per (`user_id`, `subject_id`). `payment_records` is append-only: rows are never edited or deleted; a correction is a new row with `corrects_id` plus an audit-log entry. Students never see `payment_records`.
+- *Amended 2026-10-01 (decisions 18-19, D20-D21) & 2026-10-03 (SPEC Phase 4.5/4.6):* `subjects` gains `access_expires_at` (date-time, Africa/Cairo, required on create, editable). `entitlements` gains `expires_at` (copied from the subject at activation), an `active` flag, and revocation tracking (`revoked_at`, `revoked_by`, `revoke_reason`); active access requires `active = true`, no `revoked_at` marker, and `expires_at > now`, and the store guarantees at most one such entitlement per (`user_id`, `subject_id`) via the partial unique index on `active`. `payment_records` is strictly append-only: rows are never edited or deleted; a unique index on `entitlement_id` prevents duplicate payment records on activation retries. Revoking an entitlement never touches or deletes the payment record. Students never see `payment_records`.
 - `video_plays` is an append-only playback log written on every 200 from `POST /academy/videos/{id}/play`. It stores **no IP addresses** (privacy). Failures to write the play log are logged (IDs only) and never block student playback.
 - `levels` is no longer purely seeded (amended 2026-09-30): bachelor years 1-4 and the vocational level are seeded, while diplomas are created, edited, and deleted by the admin (`study_type = diploma`, server-generated `key`). Deleting a diploma is blocked while it has subjects.
 - `storage_key` is a server-generated UUID. Never derive it from a user-supplied filename.
@@ -244,9 +244,12 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 | `POST /subjects/{id}/videos/reorder` | Body is the full ordered video-id list; missing/extra/foreign/duplicate ids return 400 `invalid_video_order` |
 | `DELETE /videos/{id}` | Soft delete (hidden from students and `/play`). Deleting the last video of a published subject needs `?force=true` (409 `last_video_of_published_subject`), which also unpublishes the subject |
 | `POST /subjects/{id}/files` (multipart), `PATCH/DELETE /files/{id}` | PDF files |
-| `GET /requests?status=&page=&limit=` | Review queue (limit at most 100) |
-| `POST /requests/{id}/accept`, `POST /requests/{id}/reject` | Reject requires a reason (1-1000). Both notify the student |
-| `POST /entitlements` (grant), `DELETE /entitlements/{id}` (revoke, reason required) | Manual grant and revoke |
+| `GET /requests?status=&subject_id=&page=&limit=` | Review queue (limit at most 100), newest first, subject details (title, level, price, `access_expires_at`), and `pending_count`. The item carries `user_id` only; the console joins student identity via auth-service (ADR-0008 Section 12) |
+| `POST /requests/{id}/accept` | Accept request, create entitlement, append payment record, notify student. 409 `subject_expired` if subject expired |
+| `POST /requests/{id}/reject` | Reject request with mandatory reason (1-1000 runes), notify student |
+| `GET /entitlements?user_id=` | List student entitlements with active, expired, and revoked status |
+| `POST /entitlements` | Manual grant (`user_id`, `subject_id`), creates entitlement, appends payment record, notifies student |
+| `DELETE /entitlements/{id}` | Manual revoke with mandatory reason (1-1000 runes), keeps payment record, notifies student |
 | `GET /audit-log?page=&limit=` | Audit trail (same `{items,total,page,limit}` shape as auth-service, newest first, limit at most 100) |
 
 ### Admin (auth-service, `/internal/admin/...`)
@@ -254,7 +257,7 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 | Method and path | Purpose |
 |---|---|
 | `POST /verify` | Validate `X-Admin-Token`, return `{admin_id, name}`. Lockout after repeated failures, keyed on client IP and on the token hash (saas-core `authenticateReviewer` pattern) |
-| `GET /accounts?search=&status=&page=&limit=` | Search by name, email, phone, or id |
+| `GET /accounts?search=&status=&ids=&page=&limit=` | Search by name, email, phone, or id; or batch lookup by comma-separated `ids` (up to 100) |
 | `POST /accounts/{id}/suspend` (reason 1-1000), `POST /accounts/{id}/reactivate` | Atomic compare-and-set. Same-state change returns 409 |
 | `DELETE /accounts/{id}` (reason required) | Soft delete plus blocklist entries (D8) |
 | `GET /audit-log?page=&limit=` | Audit trail (auth actions, newest first) |
@@ -262,12 +265,12 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 ## 7. Access rules (the heart)
 
 - **R1 Ownership.** A student owns a subject if and only if an `entitlements` row exists for (`user_id`, `subject_id`).
-  - *Amended 2026-10-01 (decision 18, D21):* a student owns a subject if and only if an `entitlements` row exists for (`user_id`, `subject_id`) whose `expires_at` is in the future. Checked on every request, never cached. After expiry the subject behaves exactly like an unowned subject (R2, R3, R6 apply), and the student can request it again.
+  - *Amended 2026-10-01 (decision 18, D21) & 2026-10-03 (SPEC Phase 4.5/4.6):* a student owns a subject if and only if an `entitlements` row exists for (`user_id`, `subject_id`) that is unexpired and unrevoked (`active = true`, no `revoked_at` marker, `expires_at > now`). Checked on every request, never cached. After expiry or revocation the subject behaves exactly like an unowned subject (R2, R3, R6 apply), and the student can request it again.
 - **R2 Gating.** `youtube_video_id` is returned only when R1 holds. Never on listing endpoints, never in error bodies, never in logs.
   - *Amended 2026-10-01 (decision 21):* YouTube video IDs are never returned on catalog or subject detail listing endpoints (which return `playable: bool` where `playable = owned now AND video published AND youtube_video_id non-empty`). YouTube video IDs are released only at play time via `POST /academy/videos/{id}/play` when R1 holds, the subject is published and unexpired, and `youtube_video_id` is non-empty. Never in error bodies, never in logs. Responses for 200 and 404 set `Cache-Control: private, no-store`.
 - **R3 Every download re-checks R1.** No cached decision, no public or signed URL that outlives the check.
-- **R4 Accept order (no Mongo transactions on a standalone node).** Upsert the entitlement first (idempotent), then compare-and-set the request from `pending` to `accepted`. If the second step fails, calling accept again is safe and completes it.
-- **R5 One pending request per (student, subject).** The partial unique index enforces it; the endpoint returns the existing request instead of erroring.
+- **R4 Accept order (no Mongo transactions on a standalone node).** Upsert the entitlement first (idempotent), append the payment record (`payment_records` with unique index on `entitlement_id`), then compare-and-set the request from `pending` to `accepted`, and push student notification over mTLS. If a later step fails, calling accept again is safe and completes it without duplicate payment records. Manual grant and revoke follow the same notification and audit guarantees.
+- **R5 One pending request per (student, subject).** The partial unique index enforces it; the endpoint returns the existing request instead of erroring. Requests for old-term subjects stay pending until decided.
 - **R6 Downloads stream through academy-service** (`Content-Disposition: attachment`, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`). Do not hand out static URLs, so a per-user watermark can be added later without changing the API.
 - **R7 Suspension.** A non-`active` account is refused on **all three token-issuing paths**: `Login`, `Refresh`, `VerifyOTP`. (`ConfirmReset` only changes the password; it issues no tokens.) Suspend also calls `jwtutil.RevokeAllUserTokens`. Because the refresh key is `refresh:<hash>` -> user id with no per-user index, the refresh gate is the status check, not deleting entries. Verify that the revocation marker TTL is at least the refresh lifetime plus the access lifetime.
   - *Amended 2026-10-03 (owner brief):* a successful `ConfirmReset` additionally ends **every** session of that user: `RevokeAllUserTokens` first (fail-closed backstop), then password update, then `EndAllUserSessions` with refresh-key deletion (fail-closed) and per-`sid` revocation. No fresh tokens are issued; the user logs in again on every device. The reset token itself is redeemed with atomic `Take` (exactly one winner under concurrency) after length validation, so a bad password never burns it.
@@ -343,8 +346,8 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 - 4.2 Diploma create/edit/delete admin endpoints with an audit log entry per mutation (server-generated `key`; delete blocked while diploma has subjects).
 - 4.3 Subject CRUD and publish.
 - 4.4 Video CRUD, reorder, YouTube ID extraction.
-- 4.5 Request review (R4 order), reject with reason, student notification.
-- 4.6 Manual grant and revoke.
+- 4.5 Request review (R4 order), reject with reason, student notification. *(Done 2026-10-03, `feat/requests-review`)*
+- 4.6 Manual grant and revoke. *(Done 2026-10-03, `feat/requests-review`)*
 
 **Phase 5 - files**
 - 5.1 Upload (Section 8 item 6).
@@ -354,7 +357,7 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 **Phase 6 - admin console and deployment**
 - 6.1 `services/admin-console` skeleton: static shell, proxy that adds the internal token, no authorization logic. *(Done 2026-10-02, held from `main` pending owner confirmation (rule 6 of Section 12). Built as the owner directed: Go standard library plus static pages modelled on the reviewer console, see ADR-0008 Section 10. It already serves the Accounts and Audit pages; the compose service, Caddy admin host, preflight checks and memory limit that Section 6.2 lists were added with it, and 6.2 is otherwise not reviewed.) (2026-10-02: owner confirmed; released to `main` as `b6a11fe`.)*
 - 6.2 Compose: Caddy with a persistent certificate volume, `api.` and `admin.` hosts, `--check-env` preflight, memory limits sized for the small host, Mongo cache size set.
-- 6.3 Console pages (separate spec). *(2026-10-02: the Accounts and Audit pages were built with 6.1 at the owner's direction; Requests, Catalog and Files remain, hidden in the console until their APIs exist.) (2026-10-03: the Catalog part is done on `feat/console-catalog` — diplomas/levels, subjects and videos over the Phase 4.2–4.4 academy admin API, plus the academy half of the audit log behind a source switch; Requests and Files remain hidden.)*
+- 6.3 Console pages (separate spec). *(2026-10-02: the Accounts and Audit pages were built with 6.1 at the owner's direction; 2026-10-03: Catalog part released to main on 70ec845; 2026-10-03: Requests tab, student identity join, student entitlements modal, and 20-min idle lock built on `feat/requests-review`; Files tab remains hidden until Phase 5.)*
 
 **Phase 7 - broadcast (write a short ADR first)**
 - Admin creates a broadcast with audience `all` or `subject:<id>`. Fan-out pages through target user ids and pushes per user in bounded batches, idempotent per (broadcast, user). Failures are logged and retryable. Per-user rows are kept, because the existing list, read, and SSE path serves per-user rows.

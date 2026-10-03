@@ -113,6 +113,18 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 2. **Audit source switch**: `GET /api/audit` gains a `source` parameter (`auth`, the default, or `academy`). The page shows one source at a time behind a الحسابات / المحتوى switch; the two logs are not merged into one page, because merged pagination over two sources is wrong without a shared cursor. This supersedes the merge plan in Section 10 item 4, pending owner review.
 3. **Catalog tab**: levels in the fixed بكالوريوس / دبلومات / تعليم مهني order, subjects with draft/published filter and pagination, videos with reorder and the force-delete flow; every mutation reloads from the server. Server error codes map to one Arabic/English map in `web/js/i18n.js`. Requests and Files stay hidden (4.5/4.6 and Phase 5).
 
+### 12. Note (2026-10-03, Requests Review, Student Entitlements, Identity Join, and Idle Lock, SPEC 4.5, 4.6, 6.3 Part 2)
+
+*Records the purchase-request review and entitlement management surface in the console. It changes none of the decisions above.*
+
+1. **Proxy routes**: the allowlist gains six routes to `ACADEMY_ADMIN_URL` over mTLS with identical security guarantees (admin token verification, input validation, no raw server text exposure, 10s timeout, safe 503):
+   - Requests: `GET /api/requests?status&subject_id&page&limit`, `POST /api/requests/accept` `{id}`, `POST /api/requests/reject` `{id, reason}`.
+   - Entitlements: `GET /api/entitlements?user_id`, `POST /api/entitlements/grant` `{user_id, subject_id}`, `POST /api/entitlements/revoke` `{id, reason}`.
+2. **Student identity join**: `GET /api/accounts` gains an `ids` query parameter (validated comma-separated UUIDs, max 100). The Requests tab loads requests from `academy-service`, extracts unique `user_id`s, and batches a single lookup to `auth-service` to display the student's full name, email, and phone. If the lookup fails, the tab falls back to displaying the raw user ID and a localized note ("تعذر تحميل بيانات الطالب").
+3. **Requests tab**: unhidden, displays purchase requests (pending by default) formatted with Cairo date-time, live badge counter for `pending_count` with 60-second background polling, accept dialog showing subject price and Cairo expiry, and reject dialog with a mandatory reason (1-1000 runes).
+4. **Student entitlements modal**: Accounts tab rows gain a "المواد" button opening a student-specific modal that lists active, expired, and revoked entitlements with revocation details, manual grant (level and published subject cascading select), and manual revoke with a mandatory reason. Revoking an entitlement leaves the underlying payment record intact.
+5. **Idle lock (UI/UX audit A1)**: After 19 minutes of inactivity across mouse, keyboard, touch, and scroll events, a modal warning appears with a live 60-second countdown. User interaction dismisses the warning and resets the timer. If 20 minutes elapse without activity, the admin token is wiped from memory and the console returns to the sign-in screen with an idle-lock notice.
+
 ## Consequences
 
 
