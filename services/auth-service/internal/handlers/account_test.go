@@ -1070,3 +1070,60 @@ func TestAccount_LoginPhoneTakenConflict(t *testing.T) {
 		t.Fatalf("tokens issued on phone-taken login: %s", rec.Body.String())
 	}
 }
+
+// TestAccount_ChangePasswordRevokeFailure503 proves password change fails
+// closed when per-session revocation fails: the change answers 503 with the
+// password untouched (the retry uses the same current password), the other
+// session is left unusable (DB-ended, so session-checked endpoints refuse it,
+// and its refresh key is gone), and the current session survives.
+func TestAccount_ChangePasswordRevokeFailure503(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb, err := ratelimit.NewRedisClient("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatalf("connect miniredis: %v", err)
+	}
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	jwtutil.SetRedisClient(rdb)
+	sender := &captureSender{}
+	s := New(store.NewMemoryStore(), otp.NewMemoryStore(), NewMemoryLockout(), sender, "test", "gw-secret")
+	s.BlocklistHMACKey = "test-blocklist-hmac-key"
+	s.DefaultPhoneRegion = "EG"
+	t.Cleanup(func() {
+		jwtutil.SetRedisClient(nil)
+		_ = rdb.Close()
+	})
+
+	accessA, _ := signupVerifyTokens(t, s, "revfail@example.com", "+201012345740", "Password123!", devA)
+	accessB, refreshB := loginTokens(t, s, "revfail@example.com", "Password123!", devB)
+
+	// Break revocation only: with no Redis client ValidateToken skips its
+	// checks (auth still works) while RevokeSession errors.
+	jwtutil.SetRedisClient(nil)
+	rec := doRequest(t, s, http.MethodPost, "/auth/password/change", map[string]string{
+		"current_password": "Password123!",
+		"new_password":     "NewPassword123!",
+	}, accessA)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("change with broken revocation = %d, want 503 (%s)", rec.Code, rec.Body.String())
+	}
+	jwtutil.SetRedisClient(rdb)
+
+	// The other session is not left valid: session-checked endpoints refuse
+	// its access token (the session row is ended) and its refresh token is
+	// dead (key deleted).
+	rec = doRequest(t, s, http.MethodGet, "/auth/sessions", nil, accessB)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("other session sessions-list after failed change = %d, want 401 (%s)", rec.Code, rec.Body.String())
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": refreshB}, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("other session refresh after failed change = %d, want 401 (%s)", rec.Code, rec.Body.String())
+	}
+	// The password is untouched, so the retry uses the same current password,
+	// and the current session was never touched.
+	loginTokens(t, s, "revfail@example.com", "Password123!", devC)
+	rec = doRequest(t, s, http.MethodGet, "/auth/sessions", nil, accessA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("current session sessions-list after failed change = %d (%s)", rec.Code, rec.Body.String())
+	}
+}

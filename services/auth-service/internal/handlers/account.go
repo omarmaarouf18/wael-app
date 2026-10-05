@@ -146,8 +146,9 @@ func (s *Server) recordAccountEvent(ctx context.Context, userID, eventType strin
 }
 
 // endOtherSessions terminates every session except exceptSID: end_reason,
-// refresh-key deletion (fail-closed), per-sid revocation (best-effort; the
-// RevokeAllUserTokens backstop the caller runs first covers revocation).
+// refresh-key deletion (fail-closed), then per-sid revocation (fail-closed:
+// a revocation error aborts with an error and the caller answers 503, so a
+// half-revoked change can never report success).
 func (s *Server) endOtherSessions(ctx context.Context, userID, exceptSID string, reason models.SessionEndReason, at time.Time) error {
 	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
 	ended, err := s.Store.EndAllUserSessionsExcept(dbCtx, userID, exceptSID, reason, at)
@@ -161,7 +162,9 @@ func (s *Server) endOtherSessions(ctx context.Context, userID, exceptSID string,
 				return delErr
 			}
 		}
-		_ = jwtutil.RevokeSession(sess.ID)
+		if revErr := jwtutil.RevokeSession(sess.ID); revErr != nil {
+			return revErr
+		}
 	}
 	return nil
 }
@@ -344,16 +347,20 @@ func (s *Server) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
 		return
 	}
+	now := s.now()
+	// End the other sessions before persisting the new hash, so a failure
+	// below answers 503 with the password untouched and the retry uses the
+	// same current password. Any revocation error fails the change: a
+	// half-revoked change never reports success.
+	if err := s.endOtherSessions(r.Context(), sc.user.ID, sc.claims.SID, models.EndReasonLogout, now); err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
 	sc.user.PasswordHash = string(hash)
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	err = s.Store.Update(dbCtx, sc.user)
 	cancel()
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
-	}
-	now := s.now()
-	if err := s.endOtherSessions(r.Context(), sc.user.ID, sc.claims.SID, models.EndReasonLogout, now); err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
