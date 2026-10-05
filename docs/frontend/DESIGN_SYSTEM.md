@@ -67,8 +67,10 @@ the per-file baseline).
 | `textPrimary` | `0xFFFFFFFF` |
 | `textSecondary` | `0xFFB8B8B8` |
 | `textMuted` | `0xFF9A9A9A` |
-| `textTertiary` | `0xFF666666` |
-| `textPlaceholder` | `0xFF4A4A4A` |
+| `textTertiary` | `0xFF8A8A8A` |
+| `textPlaceholder` | `0xFF808080` |
+
+*(Corrected 2026-10-06: F-UX4 lightened `textTertiary` from `0xFF666666` and `textPlaceholder` from `0xFF4A4A4A`, same hue, to reach 4.5:1 on the surfaces they are used on; `test/theme_tokens_test.dart` checks every text token against its backgrounds.)*
 
 ### Status
 
@@ -94,8 +96,8 @@ on `voidCanvas`, `surfaceLayer1`, `surfaceElevated` and `surfaceHigh`, and on it
 | `successBg` | `0x2610B981` | Alias of `statusApprovedBg` |
 | `warning` | `0xFFF59E0B` | Alias of `statusPending` |
 | `warningBg` | `0x26F59E0B` | Alias of `statusPendingBg` |
-| `danger` | `0xFFF4707A` | Lighter than `crimson` on purpose |
-| `dangerBg` | `0x26F4707A` | |
+| `danger` | `0xFFF67E86` | Lighter than `crimson` on purpose. *(Corrected 2026-10-06: was `0xFFF4707A` until F-UX4.)* |
+| `dangerBg` | `0x26F4707A` | Unchanged: still the old tint. |
 | `info` | `0xFF60A5FA` | |
 | `infoBg` | `0x2660A5FA` | |
 
@@ -105,8 +107,10 @@ Contrast ratios (foreground / foreground on its `*Bg` over the surface):
 |-------|-------------:|----------------:|------------------:|--------------:|
 | `success` | 7.90 / 6.59 | 7.44 / 6.01 | 7.00 / 5.56 | 6.42 / 5.04 |
 | `warning` | 9.33 / 7.57 | 8.79 / 6.86 | 8.27 / 6.33 | 7.59 / 5.72 |
-| `danger` | 7.10 / 6.01 | 6.69 / 5.48 | 6.30 / 5.07 | 5.78 / 4.61 |
+| `danger` | 7.87 / 6.65 | 7.42 / 6.07 | 6.97 / 5.62 | 6.40 / 5.10 |
 | `info` | 7.88 / 6.53 | 7.43 / 5.93 | 6.98 / 5.48 | 6.41 / 4.96 |
+
+The `danger` row was recomputed on 2026-10-06 for `0xFFF67E86` (the previous row, 7.10 / 6.01 to 5.78 / 4.61, was for `0xFFF4707A`); the method reproduced the old figures exactly.
 
 `crimson` (and so `statusRejected`) is only 3.03:1 on `surfaceLayer1`. Use it for brand
 fills, borders and large display text; use `danger` for red body text and small icons.
@@ -189,6 +193,8 @@ Static methods taking `{bool isArabic = false}`. Latin uses Syne (display and
 headings) and Plus Jakarta Sans (body and labels); Arabic uses Cairo throughout.
 "LS" is letter spacing; "-" means the style does not set it.
 
+All three families are bundled as assets (`frontend/assets/fonts/`, declared under `fonts:` in `pubspec.yaml`: Cairo 400/600/700/800, Syne 600/700/800, Plus Jakarta Sans 400/600/700, with their OFL licences), and `main()` sets `GoogleFonts.config.allowRuntimeFetching = false`, so no font is downloaded at run time (F-UX4, 2026-10-05; added to this file 2026-10-06).
+
 | Style | Latin: font, size, weight, height, LS | Arabic (Cairo): size, weight, height, LS | Colour |
 |-------|---------------------------------------|------------------------------------------|--------|
 | `displayHero` | Syne, 36, w800, 1.15, -0.5 | 34, w800, 1.2, - | `textPrimary` |
@@ -238,6 +244,8 @@ file for their exact values.
 | `ThemedErrorBanner` | `themed_error_banner.dart` | Persistent inline error (no auto-dismiss, live region) with an optional localised retry. |
 | `ThemedEmptyState` | `themed_empty_state.dart` | Centered icon, optional title, message and optional action. |
 | `ThemedLoadingIndicator` | `themed_loading_indicator.dart` | Centered crimson spinner with a localised semantic label and optional visible label. |
+| `ThemedSkeleton`, `ThemedSkeletonCard`, `ThemedSkeletonList` | `themed_skeleton.dart` | Static placeholder blocks for loading lists (home, courses, subject detail) instead of spinners. Tokens only, no animation package; the region carries a loading semantic label. Added with F-UX4. |
+| `PasswordRules` | `password_rules.dart` | Live rules under a new-password field: 8+ characters and the 72-byte limit (measured in UTF-8, so Arabic counts as several bytes). Each rule shows a check, so the state is not colour-only. Added with F-UX4. |
 | `ThemedSectionHeader` | `themed_section_header.dart` | Eyebrow section title (upper-cased via `uppercaseLabel` for Latin, no letter spacing for Arabic) with an optional end-aligned action. |
 | `HeroBackdrop` | `hero_backdrop.dart` | Full-width hero art (fraction of screen height) dissolving into `voidCanvas` with a linear fade and radial vignette; image, then fallback image, then flat surface. Place under `PositionedDirectional` in a `Stack`. |
 | `FramedPosterCard` | `framed_poster_card.dart` | A poster in a rounded card with a 1px crimson-tinted border and a soft crimson glow; shows the whole image (`BoxFit.contain`), sized from its aspect ratio and capped at a fraction of the screen height. Used by the login screen. |
@@ -253,7 +261,7 @@ file for their exact values.
 | `AccentTitle` | `accent_title.dart` | Section title with a crimson bar at the start edge and an optional trailing widget. |
 | `SearchField` | `search_field.dart` | Rounded search box; the clear button appears once there is text. |
 | `HomeHeroBanner` | `home_hero_banner.dart` | Home hero: art at the end edge fading in from its start side, text and Explore button at the start edge; directional gradients. |
-| `InstructorDossierCard` | `instructor_dossier_card.dart` | Academy director card: portrait, founder tag, title, credential chips, expandable biography. |
+| `InstructorDossierCard` | `instructor_dossier_card.dart` | Academy director card: portrait, name, one chip per title, and an expandable biography only when the profile has one (the "founder" tag was removed 2026-10-02; corrected 2026-10-06). |
 | `OwnedSubjectTile` | `owned_subject_tile.dart` | Home row for an owned subject: icon tile, title, video / book counts, access end date or "Ready to Start". |
 | `CatalogLevelHeader` | `catalog_level_header.dart` | Summary card above the subject list: level, study type, subject count. |
 | `CatalogSubjectCard` | `catalog_subject_card.dart` | Subject card: term, title, director name, description, video / book / note counts, View subject / Continue. |

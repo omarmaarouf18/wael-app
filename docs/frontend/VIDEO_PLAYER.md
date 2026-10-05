@@ -24,6 +24,8 @@ Backend contract (from the backend lane, **not verified against the real
 service yet**): subject detail has `videos[].playable`; the play endpoint answers
 200 `{"video_id","youtube_video_id"}` or a generic 404.
 
+*(Amended 2026-10-06: the endpoint is implemented in academy-service (SPEC Phase 3.5, on `main`) and covered by its handler tests, including the student-visibility and no-leak suites. The app's player has been exercised against fakes in tests, and the owner's phone check below is still pending, so the player is not verified end to end on a device.)*
+
 ## The YouTube id
 
 Held in one field of the player screen for as long as that screen exists
