@@ -13,6 +13,7 @@
 # 11. Restore with --yes stops apps, runs mongorestore --drop, restarts and health-gates
 # 12. Restore --skip-restart restores without touching services (rehearsal path)
 # 13. pull-backups.sh validates env, pulls via rsync, keeps newest N at 600
+# 14. preflight.sh redis memory checks: cap + noeviction passes; either alone fails
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -364,6 +365,95 @@ check "pull-backups requires WAEL_HOST" 1 "WAEL_HOST"
 RC=0
 OUT="$(PATH="$BOX13/bin:$PATH" MOCK_SSH_EXIT=1 WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX13/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
 check "pull-backups explains the sudoers rule" 1 "NOPASSWD"
+
+# ---------------------------------------------------------------------------
+# Test 14: preflight redis memory checks (real preflight.sh, mock docker)
+# ---------------------------------------------------------------------------
+# The rendered compose carries the redis command as a YAML list, exactly as
+# `docker compose config` prints it, so the fixtures use that shape.
+render_redis() { # render_redis [--maxmemory VALUE] [--policy VALUE] -> fixture text
+	local cap="" policy=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--maxmemory) cap="$2" ;;
+		--policy) policy="$2" ;;
+		esac
+		shift 2
+	done
+	printf 'services:\n  redis:\n    command:\n      - redis-server\n      - /run/secrets/redis_conf\n'
+	[ -z "$cap" ] || printf '      - --maxmemory\n      - %s\n' "$cap"
+	[ -z "$policy" ] || printf '      - --maxmemory-policy\n      - %s\n' "$policy"
+	printf '    image: redis:7-alpine\n'
+}
+
+# run_preflight NAME FIXTURE_TEXT: builds a sandbox that passes every check
+# before 5b, then runs the real preflight.sh with the fixture as the output of
+# `docker compose config`. Sets OUT and RC.
+run_preflight() {
+	local name="$1" fixture="$2" box c
+	box="$(setup_sandbox "$name")"
+	cp "$REPO_ROOT/infrastructure/deploy/scripts/preflight.sh" "$box/repo/scripts/preflight.sh"
+	printf 'IMAGE_TAG=%s\n' "1414141414141414141414141414141414141414" > "$box/repo/release.env"
+	# Built at runtime: a literal long token trips the gitleaks generic rule.
+	local secret
+	secret="$(printf 's%.0s' {1..40})"
+	{
+		for v in API_DOMAIN ADMIN_DOMAIN ACME_EMAIL ALLOWED_ORIGIN AUTH_MONGO_URI NOTIFICATION_MONGO_URI \
+			ACADEMY_MONGO_URI REDIS_URI RESEND_API_KEY RESEND_FROM_EMAIL SUPPORT_WHATSAPP MONGO_ROOT_USERNAME; do
+			printf '%s=value-for-%s\n' "$v" "$v"
+		done
+		for v in JWT_SECRET GATEWAY_SECRET INTERNAL_SERVICE_TOKEN BLOCKLIST_HMAC_KEY; do
+			printf '%s=%s\n' "$v" "$secret"
+		done
+	} > "$box/wael/.env.production"
+	chmod 600 "$box/wael/.env.production"
+	mkdir -p "$box/wael/secrets" "$box/wael/certs"
+	chmod 700 "$box/wael/secrets" "$box/wael/certs"
+	printf 'pw' > "$box/wael/secrets/mongo_root_password"
+	printf 'requirepass pw-for-preflight-test\n' > "$box/wael/secrets/redis.conf"
+	openssl req -x509 -newkey rsa:2048 -nodes -days 60 -subj /CN=test \
+		-keyout "$box/key.pem" -out "$box/crt.pem" >/dev/null 2>&1
+	for c in ca api-gateway auth-service notification-service academy-service admin-console; do
+		cp "$box/crt.pem" "$box/wael/certs/$c.crt"
+	done
+	for c in api-gateway auth-service notification-service academy-service admin-console; do
+		cp "$box/key.pem" "$box/wael/certs/$c.key"
+	done
+	printf '%s' "$fixture" > "$box/rendered.yml"
+	# Mock docker: `compose config --quiet` renders fine, plain `compose
+	# config` prints the fixture, everything else (pull, run --check-env) is ok.
+	cat > "$box/bin/docker" << 'EOF'
+#!/usr/bin/env bash
+case "$*" in
+*"config --quiet"*) exit 0 ;;
+*"config --images"*) exit 0 ;;
+*" config"*) cat "$RENDERED_FIXTURE"; exit 0 ;;
+esac
+exit 0
+EOF
+	chmod +x "$box/bin/docker"
+	RC=0
+	OUT="$(PATH="$box/bin:$PATH" WAEL_HOME="$box/wael" RENDERED_FIXTURE="$box/rendered.yml" \
+		bash "$box/repo/scripts/preflight.sh" 2>&1)" || RC=$?
+}
+
+run_preflight pf-ok "$(render_redis --maxmemory 96mb --policy noeviction)"
+check "preflight passes with maxmemory cap and noeviction" 0 "pre-flight passed"
+check "preflight reports the cap as ok" 0 "ok: redis maxmemory is capped"
+
+run_preflight pf-nocap "$(render_redis --policy noeviction)"
+check "preflight fails with policy only (no maxmemory cap)" 1 "FAIL: redis maxmemory is capped"
+assert "policy-only run still sees noeviction as ok" grep -qF "ok: redis maxmemory-policy is noeviction" <<<"$OUT"
+
+run_preflight pf-nopolicy "$(render_redis --maxmemory 96mb)"
+check "preflight fails with cap only (no noeviction policy)" 1 "FAIL: redis maxmemory-policy is noeviction"
+assert "cap-only run sees the cap as ok" grep -qF "ok: redis maxmemory is capped" <<<"$OUT"
+
+run_preflight pf-zero "$(render_redis --maxmemory 0 --policy noeviction)"
+check "preflight fails when maxmemory is 0 (unlimited)" 1 "FAIL: redis maxmemory is capped"
+
+run_preflight pf-evict "$(render_redis --maxmemory 96mb --policy allkeys-lru)"
+check "preflight fails when an eviction policy is set" 1 "must not use an eviction policy"
 
 # ---------------------------------------------------------------------------
 # Summary

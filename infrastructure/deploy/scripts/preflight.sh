@@ -65,7 +65,16 @@ check "compose config renders" compose config --quiet
 # noeviction. Any eviction policy could drop denylist keys (jti/sid/user
 # revocation) and revive revoked tokens (see docker-compose.yml).
 rendered="$(compose config 2>/dev/null)"
-check "redis maxmemory is capped" grep -q -- '--maxmemory' <<<"$rendered"
+# has_maxmemory_cap needs the cap flag WITH a non-zero value (0 means
+# unlimited). A bare '--maxmemory' substring also matches '--maxmemory-policy'.
+# compose renders the command as a YAML list ("- --maxmemory" then "- 96mb" on
+# the next line), so flatten lines first; '--maxmemory=96mb' and
+# '--maxmemory 96mb' match too.
+has_maxmemory_cap() {
+	tr '\n' ' ' <<<"$1" | grep -Eq -- \
+		'(^|[[:space:]])--maxmemory([[:space:]]+-)?([[:space:]]+|=)[1-9][0-9]*([kKmMgG][bB]?)?([[:space:]]|$)'
+}
+check "redis maxmemory is capped" has_maxmemory_cap "$rendered"
 check "redis maxmemory-policy is noeviction" grep -q 'noeviction' <<<"$rendered"
 if grep -Eq 'allkeys-lru|allkeys-lfu|allkeys-random|volatile-lru|volatile-lfu|volatile-random|volatile-ttl' <<<"$rendered"; then
 	log "FAIL: redis must not use an eviction policy (denylist keys would be dropped)"
