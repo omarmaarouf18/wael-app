@@ -371,3 +371,58 @@ func TestContract_AcademyLevelsShape(t *testing.T) {
 		}
 	}
 }
+
+// 4c. Account-settings route contract (F-UX2 Part A): the new student routes
+// reach their backends through the existing gateway prefixes, and the auth
+// sessions endpoints expose no sensitive fields.
+func TestContract_AccountSettingsRoutes(t *testing.T) {
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^TestGateway_AccountSettingsRoutes$", "github.com/omarmaarouf18/wael-app/api-gateway/internal/proxy")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("account settings gateway contract verification failed: %v\nOutput:\n%s", err, string(out))
+	}
+	if !strings.Contains(string(out), "PASS: TestGateway_AccountSettingsRoutes") {
+		t.Errorf("contract verification missing TestGateway_AccountSettingsRoutes pass:\n%s", string(out))
+	}
+}
+
+// 6b. Auth sessions contract (F-UX2 Part A, A1): the device list carries
+// only sid, device_label, created_at, last_used_at and current.
+func TestContract_AuthSessionsShape(t *testing.T) {
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestAccount_SessionsListShape|TestAccount_DeleteSession)$", "github.com/omarmaarouf18/wael-app/auth-service/internal/handlers")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("auth sessions contract verification failed: %v\nOutput:\n%s", err, string(out))
+	}
+	outStr := string(out)
+	for _, name := range []string{
+		"TestAccount_SessionsListShape",
+		"TestAccount_DeleteSession",
+	} {
+		if !strings.Contains(outStr, "PASS: "+name) {
+			t.Errorf("contract verification missing %s pass:\n%s", name, outStr)
+		}
+	}
+}
+
+// 7b. App-config and subject pending-request contract (F-UX2 Part A, A7+A8):
+// public config shape and cacheability, whatsapp_url only with a pending
+// request, https-only links.
+func TestContract_AppConfigShape(t *testing.T) {
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestAppConfig_PublicShape|TestAppConfig_EmptyOptionalsOmitted|TestSubjectDetail_WhatsAppURLPresentWhenPending|TestWhatsAppURL_HTTPSOnly)$", "github.com/omarmaarouf18/wael-app/academy-service/internal/handlers")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("app-config contract verification failed: %v\nOutput:\n%s", err, string(out))
+	}
+	outStr := string(out)
+	for _, name := range []string{
+		"TestAppConfig_PublicShape",
+		"TestAppConfig_EmptyOptionalsOmitted",
+		"TestSubjectDetail_WhatsAppURLPresentWhenPending",
+		"TestWhatsAppURL_HTTPSOnly",
+	} {
+		if !strings.Contains(outStr, "PASS: "+name) {
+			t.Errorf("contract verification missing %s pass:\n%s", name, outStr)
+		}
+	}
+}

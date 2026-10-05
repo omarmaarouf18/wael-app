@@ -202,3 +202,58 @@ func TestGateway_AuthLogoutRoute(t *testing.T) {
 		t.Errorf("backend received token = %q, want Bearer sample-token", receivedToken)
 	}
 }
+
+// TestGateway_AccountSettingsRoutes verifies the F-UX2 Part A student routes
+// reach their backends through the existing prefix routes (no gateway change
+// was needed): /api/v1/auth/* -> auth-service, /api/v1/academy/* ->
+// academy-service, with /api/v1 stripped and the gateway secret set.
+func TestGateway_AccountSettingsRoutes(t *testing.T) {
+	cases := []struct {
+		name       string
+		prefix     string
+		method     string
+		gatewayURL string
+		wantPath   string
+	}{
+		{"sessions_list", "/api/v1/auth/", http.MethodGet, "http://gateway/api/v1/auth/sessions", "/auth/sessions"},
+		{"session_delete", "/api/v1/auth/", http.MethodDelete, "http://gateway/api/v1/auth/sessions/abc-sid", "/auth/sessions/abc-sid"},
+		{"password_change", "/api/v1/auth/", http.MethodPost, "http://gateway/api/v1/auth/password/change", "/auth/password/change"},
+		{"profile_patch", "/api/v1/auth/", http.MethodPatch, "http://gateway/api/v1/auth/me", "/auth/me"},
+		{"email_change", "/api/v1/auth/", http.MethodPost, "http://gateway/api/v1/auth/email/change", "/auth/email/change"},
+		{"email_confirm", "/api/v1/auth/", http.MethodPost, "http://gateway/api/v1/auth/email/confirm", "/auth/email/confirm"},
+		{"account_delete", "/api/v1/auth/", http.MethodPost, "http://gateway/api/v1/auth/account/delete", "/auth/account/delete"},
+		{"app_config", "/api/v1/academy/", http.MethodGet, "http://gateway/api/v1/academy/app-config", "/academy/app-config"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var receivedPath string
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedPath = r.URL.Path
+				if got := r.Header.Get("X-Gateway-Secret"); got != "gw-secret" {
+					t.Errorf("X-Gateway-Secret = %q, want gw-secret", got)
+				}
+				if got := r.Header.Get("X-Internal-Token"); got != "" {
+					t.Errorf("backend received client X-Internal-Token %q", got)
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer backend.Close()
+
+			route := config.ServiceRoute{Prefix: tc.prefix, Target: backend.URL, StripPrefix: "/api/v1"}
+			h, err := New(route, "gw-secret", nil, backend.Client().Transport)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(tc.method, tc.gatewayURL, nil)
+			req.Header.Set("X-Internal-Token", "attacker-token")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			if receivedPath != tc.wantPath {
+				t.Errorf("backend received path = %q, want %q", receivedPath, tc.wantPath)
+			}
+		})
+	}
+}

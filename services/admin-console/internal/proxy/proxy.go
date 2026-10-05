@@ -52,7 +52,7 @@ var (
 	// User IDs are lower-case UUIDv4 strings (jwtutil.GenerateUUID).
 	idPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-	statusFilters = map[string]bool{"active": true, "suspended": true, "deleted": true}
+	statusFilters = map[string]bool{"active": true, "suspended": true, "deleted": true, "pending_deletion": true}
 )
 
 // Options configures a Proxy.

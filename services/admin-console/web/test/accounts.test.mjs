@@ -96,6 +96,7 @@ test('every action targets one of the console routes the server allows', () => {
 test('actionsFor offers only what the account status allows', () => {
   assert.deepEqual(actionsFor('active'), ['suspend', 'delete']);
   assert.deepEqual(actionsFor('suspended'), ['reactivate', 'delete']);
+  assert.deepEqual(actionsFor('pending_deletion'), ['suspend', 'delete']);
   assert.deepEqual(actionsFor('deleted'), []);
   assert.deepEqual(actionsFor(''), []);
   assert.deepEqual(actionsFor(undefined), []);

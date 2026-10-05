@@ -580,6 +580,18 @@ func TestAccounts_QueryIsRebuiltFromAllowlistedParams(t *testing.T) {
 	}
 }
 
+func TestAccounts_PendingDeletionStatusPassesThrough(t *testing.T) {
+	up := newUpstream(t, 200, `{"items":[]}`)
+	p := newProxy(t, up)
+	w := do(p.Accounts, http.MethodGet, "/api/accounts?status=pending_deletion", "", withToken())
+	if w.Code != 200 {
+		t.Fatalf("status = %d %q", w.Code, w.Body.String())
+	}
+	if got := up.calls()[0].RawQuery; got != "status=pending_deletion" {
+		t.Fatalf("upstream query = %q, want status=pending_deletion", got)
+	}
+}
+
 func TestAccounts_EmptyAndWhitespaceFiltersAreOmitted(t *testing.T) {
 	up := newUpstream(t, 200, `{"items":[]}`)
 	p := newProxy(t, up)

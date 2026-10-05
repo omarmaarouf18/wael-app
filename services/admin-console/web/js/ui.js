@@ -36,7 +36,7 @@ export function hideBanner(container) {
 }
 
 export function statusBadge(status) {
-  const known = status === 'active' || status === 'suspended' || status === 'deleted';
+  const known = status === 'active' || status === 'suspended' || status === 'deleted' || status === 'pending_deletion';
   return h('span', {
     class: `badge ${known ? `badge-${status}` : 'badge-unknown'}`,
     text: known ? t(`status.${status}`) : String(status ?? ''),

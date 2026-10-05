@@ -17,6 +17,8 @@ export function actionsFor(status) {
       return ['suspend', 'delete'];
     case 'suspended':
       return ['reactivate', 'delete'];
+    case 'pending_deletion':
+      return ['suspend', 'delete'];
     default:
       return [];
   }
