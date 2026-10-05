@@ -71,6 +71,10 @@ type Server struct {
 	// BcryptCompare compares a bcrypt hash with a password. Injectable for
 	// tests (call counting); defaults to bcrypt.CompareHashAndPassword.
 	BcryptCompare func(hashed, password []byte) error
+	// PurgeRevokeAllTokens is called by PurgeExpiredDeletions after the CAS
+	// to revoke all tokens for a purged user. Injectable for tests; nil
+	// defaults to jwtutil.RevokeAllUserTokens.
+	PurgeRevokeAllTokens func(userID string) error
 }
 
 // dummyBcryptHash is a fixed bcrypt hash generated once with the same cost as

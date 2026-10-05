@@ -904,11 +904,16 @@ func (s *Server) RequestDeletion(w http.ResponseWriter, r *http.Request) {
 
 // PurgeExpiredDeletions anonymizes every pending_deletion account past
 // purge_after (A5 purge job, run hourly by the service ticker). Order per
-// account: RevokeAllUserTokens (fail-closed backstop; a failure skips the
-// account for this round), then the atomic compare-and-set purge (a login
-// that won the race makes it a no-op conflict), then session and refresh-key
-// cleanup. A self-purged identity is NOT blocklisted, so it may sign up again
-// (SPEC D2 amendment, F-UX2 A6); admin bans keep the blocklist (R9).
+// account: first the atomic compare-and-set purge (a login that won the race
+// makes it a no-op conflict, and its tokens stay valid, as they should),
+// then RevokeAllUserTokens. Revoking after the CAS is safe because no tokens
+// can be issued while the account is pending_deletion: Refresh and VerifyOTP
+// refuse the status, and a grace Login that issues tokens flips the status
+// to active first (turning a concurrent purge into a conflict). A revoke
+// failure after the purge is logged with IDs only and counted in firstErr;
+// session and refresh-key cleanup stays best-effort. A self-purged identity
+// is NOT blocklisted, so it may sign up again (SPEC D8/R9 amendment, F-UX2
+// A6); admin bans keep the blocklist (R9).
 func (s *Server) PurgeExpiredDeletions(ctx context.Context) (int, error) {
 	now := s.now()
 	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
@@ -920,13 +925,6 @@ func (s *Server) PurgeExpiredDeletions(ctx context.Context) (int, error) {
 	purged := 0
 	var firstErr error
 	for _, u := range due {
-		if err := jwtutil.RevokeAllUserTokens(u.ID); err != nil {
-			log.Printf("[AUTH] purge revoke failed user %s: %v", u.ID, err)
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
 		anon := fmt.Sprintf("deleted-%s@deleted.local", u.ID)
 		dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
 		err = s.Store.PurgeDeletion(dbCtx, u.ID, anon, now)
@@ -940,6 +938,16 @@ func (s *Server) PurgeExpiredDeletions(ctx context.Context) (int, error) {
 				firstErr = err
 			}
 			continue
+		}
+		revoker := jwtutil.RevokeAllUserTokens
+		if s.PurgeRevokeAllTokens != nil {
+			revoker = s.PurgeRevokeAllTokens
+		}
+		if revErr := revoker(u.ID); revErr != nil {
+			log.Printf("[AUTH] purge revoke failed user %s: %v", u.ID, revErr)
+			if firstErr == nil {
+				firstErr = revErr
+			}
 		}
 		dbCtx, cancel = context.WithTimeout(ctx, dbTimeout)
 		ended, endErr := s.Store.EndAllUserSessions(dbCtx, u.ID, models.EndReasonLogout, now)

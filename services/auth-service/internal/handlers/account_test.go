@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -785,12 +786,22 @@ func TestAccount_PurgeRacesLogin(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("request deletion = %d (%s)", rec.Code, rec.Body.String())
 	}
-	// Login wins the race first: purge afterwards finds nothing due.
+	// Login wins the race first: purge afterwards finds nothing due, and the
+	// winner's tokens stay valid.
 	rec = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
 		"email": "purgerace@example.com", "password": "Password123!", "device_id": devB,
 	}, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("cancel login = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var cancelTokens map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &cancelTokens); err != nil {
+		t.Fatalf("decode cancel login: %v", err)
+	}
+	accessTok, _ := cancelTokens["access_token"].(string)
+	refreshTok, _ := cancelTokens["refresh_token"].(string)
+	if accessTok == "" || refreshTok == "" {
+		t.Fatalf("cancel login issued no tokens: %s", rec.Body.String())
 	}
 	s.Clock = func() time.Time { return t0.Add(31 * 24 * time.Hour) }
 	n, err := s.PurgeExpiredDeletions(context.Background())
@@ -801,6 +812,14 @@ func TestAccount_PurgeRacesLogin(t *testing.T) {
 		t.Fatalf("purge after cancel purged %d accounts", n)
 	}
 	s.Clock = nil
+	rec = doRequest(t, s, http.MethodGet, "/auth/me", nil, accessTok)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("race winner me = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/refresh", map[string]string{"refresh_token": refreshTok}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("race winner refresh = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
 }
 
 func TestAccount_PurgeLoginAfterPurgeRefused(t *testing.T) {
@@ -1237,5 +1256,63 @@ func TestAccount_NoticeEmailsArabicFirst(t *testing.T) {
 	}
 	if strings.Contains(changedText, "newaddr@example.com") {
 		t.Errorf("changed notice leaks the full address:\n%s", changedText)
+	}
+}
+
+// TestAccount_PurgeRevokeFailure injects a RevokeAllUserTokens failure after
+// the PurgeDeletion CAS and verifies: (1) the purge count is 1 (account was
+// anonymized), (2) the injected error is returned as firstErr, and (3)
+// session and refresh-key cleanup still ran (the session is ended even when
+// the revoke failed, because cleanup is best-effort after the CAS).
+func TestAccount_PurgeRevokeFailure(t *testing.T) {
+	s, _, cleanup := accountTestServer(t)
+	defer cleanup()
+
+	t0 := time.Now().UTC().Truncate(time.Second)
+	s.Clock = func() time.Time { return t0 }
+
+	accessA, _ := signupVerifyTokens(t, s, "purgefail@example.com", "+201012345732", "Password123!", devA)
+	rec := doRequest(t, s, http.MethodPost, "/auth/account/delete", map[string]string{
+		"current_password": "Password123!", "confirm": "حذف",
+	}, accessA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("request deletion = %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Inject a revoke failure: the function returns an error but must not
+	// prevent the CAS purge from completing.
+	revokeErr := errors.New("injected revoke failure")
+	s.PurgeRevokeAllTokens = func(_ string) error { return revokeErr }
+
+	s.Clock = func() time.Time { return t0.Add(31 * 24 * time.Hour) }
+	n, err := s.PurgeExpiredDeletions(context.Background())
+	s.PurgeRevokeAllTokens = nil
+	s.Clock = nil
+
+	// The account must be purged (count = 1) even though the revoke failed.
+	if n != 1 {
+		t.Fatalf("purge count = %d, want 1", n)
+	}
+	// The revoke error must be returned as firstErr.
+	if !errors.Is(err, revokeErr) {
+		t.Fatalf("purge error = %v, want injected revoke failure", err)
+	}
+	// The account is anonymized: the old email is gone.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	u, findErr := s.Store.FindByEmail(ctx, "purgefail@example.com")
+	if findErr != nil {
+		t.Fatalf("find after purge: %v", findErr)
+	}
+	if u != nil {
+		t.Fatalf("purged account still reachable by old email: %+v", u)
+	}
+	// Sessions were ended (best-effort cleanup still runs after revoke failure).
+	due, listErr := s.Store.ListDeletionsDue(ctx, time.Now().UTC().Add(60*24*time.Hour))
+	if listErr != nil {
+		t.Fatalf("list due after purge: %v", listErr)
+	}
+	if len(due) != 0 {
+		t.Fatalf("purged account still in due list: %d", len(due))
 	}
 }
