@@ -170,6 +170,23 @@ Landing record for `develop` (work of 2026-10-05, recorded 2026-10-06; all of it
 - Player overlay masks `90edff3` and `79e1962`: the logo corner is no longer masked; the title mask shows while the video is not playing and for 4 seconds after every start, resume, replay and seek, with a height that scales with the player. Frontend suite at `90edff3`: 823 passing, ~22 live-gated skips unchanged. Not verified: whether 4 seconds and that height fully cover YouTube's title bar on a real phone (owner to send screenshots at play start and on pause).
 - Deferred by the owner (2026-10-05): video progress, push notifications (SPEC Phase 7), crash reporting.
 
+## Pending release (develop ahead of main)
+Written 2026-10-06 from `git log origin/main..origin/develop` (31 commits, `8e71d72`..`79e1962`, plus the docs refresh of this date). Production is `main` = `32d185e`. Update this section when `main` is fast-forwarded.
+
+What reaches production on the next fast-forward of `main`:
+- auth-service self-service account endpoints (F-UX2 Part A): sessions list and end, password change (ends the other sessions), profile edit with a 30-day per-field limit, email change, and account deletion with a 30-day grace period and an hourly purge job. This is a gating change.
+- academy-service `GET /academy/app-config` (terms and privacy URLs, update metadata) and `whatsapp_url` in subject detail while a request is pending; admin-console `pending_deletion` accounts view and the account-settings gateway routes.
+- Deploy: production Redis capped at `REDIS_MAXMEMORY` (default `96mb`) with `noeviction`, `GOMEMLIMIT` on the Go services (`8e71d72`); preflight requires a non-zero redis `--maxmemory` (`b79aaaa`); the compose file requires `TERMS_URL` and `PRIVACY_URL`.
+- App (needs a new APK): F-UX1 session resilience, F-UX4 offline cache, bundled fonts, forms and accessibility, the e-book coming-soon tab, and the player overlay masks.
+- Repository: the Dependabot configuration (S2) and the D1/D3 records; docs only.
+
+Pre-deploy checklist:
+1. The server `.env.production` has `TERMS_URL` and `PRIVACY_URL` (https). The compose file refuses to render without them (`${TERMS_URL:?...}`), so preflight fails at "compose config renders". The pages must exist at those URLs; the terms and privacy text is owner content (`docs/frontend/CONTENT-GAPS.md`). `MIN_VERSION`, `LATEST_VERSION` and `UPDATE_URL` are optional (empty means no update prompt; `UPDATE_URL` must be https when set).
+2. No manual Redis step: the cap is on the compose `command:` line, not in `secrets/redis.conf`. Preflight now fails if the rendered compose has no non-zero cap or uses an eviction policy.
+3. Gating change (account self-deletion): after deploy the owner tests a delete request, cancelling by logging in during the grace period, a password change ending the other sessions, and the 30-day profile edit limit.
+4. After the fast-forward: close the Dependabot redis-8 PR that targets `main`; check the repository's Dependabot page for configuration errors in the new `dependabot.yml`; dismiss the 16 stale `x/crypto` alerts if GitHub still shows them open (dismissing is the owner's call).
+5. Build and distribute a new APK for the frontend changes (`frontend/.github/workflows/build-apk.yml`, run in the wael-app-mobile mirror).
+
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy/mobile pipeline live on production with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true` (ADR-0011). *(Amended 2026-10-06: the academy service is built through SPEC Phase 4 and live since 2026-10-03, and the app providers are rebound to `AcademyRepository`; the remaining order is under "Next task".)*
 RUNBOOK (at `infrastructure/deploy/RUNBOOK.md`, now the short day-2 checklist) and SERVER-MANUAL (same folder, full install/run/operate manual, 2026-10-02), DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
