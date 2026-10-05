@@ -31,6 +31,11 @@ type Config struct {
 	AdminListenAddr        string
 	ExposePriceToStudents  bool
 	SupportWhatsApp        string
+	TermsURL               string
+	PrivacyURL             string
+	MinVersion             string
+	LatestVersion          string
+	UpdateURL              string
 	RateLimitRead          int
 	RateLimitPlay          int
 	RateLimitDownload      int
@@ -121,6 +126,30 @@ func Load() (*Config, error) {
 		supportWhatsApp = "+201000000000"
 	}
 
+	// Public app config (F-UX2 A7): terms and privacy URLs are https-only and
+	// required outside local/test; version metadata is optional (empty means
+	// no update prompt).
+	termsURL := strings.TrimSpace(os.Getenv("TERMS_URL"))
+	privacyURL := strings.TrimSpace(os.Getenv("PRIVACY_URL"))
+	minVersion := strings.TrimSpace(os.Getenv("MIN_VERSION"))
+	latestVersion := strings.TrimSpace(os.Getenv("LATEST_VERSION"))
+	updateURL := strings.TrimSpace(os.Getenv("UPDATE_URL"))
+	for _, v := range []struct {
+		name, val string
+	}{{"TERMS_URL", termsURL}, {"PRIVACY_URL", privacyURL}, {"UPDATE_URL", updateURL}} {
+		if v.val != "" && !strings.HasPrefix(v.val, "https://") {
+			return nil, fmt.Errorf("config: %s must use https", v.name)
+		}
+	}
+	if !dev {
+		if termsURL == "" {
+			return nil, errors.New("config: required env var TERMS_URL is empty")
+		}
+		if privacyURL == "" {
+			return nil, errors.New("config: required env var PRIVACY_URL is empty")
+		}
+	}
+
 	if adminListenAddr == "" {
 		adminListenAddr = ":9002"
 	}
@@ -206,6 +235,11 @@ func Load() (*Config, error) {
 		AdminListenAddr:        adminListenAddr,
 		ExposePriceToStudents:  exposePrice,
 		SupportWhatsApp:        supportWhatsApp,
+		TermsURL:               termsURL,
+		PrivacyURL:             privacyURL,
+		MinVersion:             minVersion,
+		LatestVersion:          latestVersion,
+		UpdateURL:              updateURL,
 		RateLimitRead:          rateLimitRead,
 		RateLimitPlay:          rateLimitPlay,
 		RateLimitDownload:      rateLimitDownload,

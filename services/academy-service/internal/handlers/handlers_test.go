@@ -1680,8 +1680,8 @@ func TestPurchaseRequests_SubjectDetailPendingStatus(t *testing.T) {
 	if detailA2.Request.Status != models.RequestStatusPending {
 		t.Errorf("request.status = %q, want pending", detailA2.Request.Status)
 	}
-	if !strings.Contains(recA2.Body.String(), `"request":{"status":"pending"}`) {
-		t.Errorf("expected JSON to contain request pending, got %s", recA2.Body.String())
+	if !strings.Contains(recA2.Body.String(), `"request":{"status":"pending","whatsapp_url":"https://wa.me/201000000000"}`) {
+		t.Errorf("expected JSON to contain request pending with whatsapp_url, got %s", recA2.Body.String())
 	}
 
 	// 4. Detail for student B still has no request field

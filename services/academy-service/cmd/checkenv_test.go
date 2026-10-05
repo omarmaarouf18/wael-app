@@ -23,6 +23,8 @@ func setAcademyProdEnv(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-jwt-secret")
 	t.Setenv("REDIS_URI", "redis://localhost:6379")
 	t.Setenv("SUPPORT_WHATSAPP", "+201000000000")
+	t.Setenv("TERMS_URL", "https://elmetracademy.app/terms")
+	t.Setenv("PRIVACY_URL", "https://elmetracademy.app/privacy")
 }
 
 func setAcademyLocalEnv(t *testing.T) {
@@ -68,6 +70,8 @@ func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 		"JWT_SECRET",
 		"REDIS_URI",
 		"SUPPORT_WHATSAPP",
+		"TERMS_URL",
+		"PRIVACY_URL",
 	}
 	for _, v := range requiredVars {
 		t.Run("missing_"+v, func(t *testing.T) {

@@ -47,6 +47,8 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "JWT_SECRET", "test-jwt-secret")
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
 	setEnv(t, "SUPPORT_WHATSAPP", "+201000000000")
+	setEnv(t, "TERMS_URL", "https://elmetracademy.app/terms")
+	setEnv(t, "PRIVACY_URL", "https://elmetracademy.app/privacy")
 }
 
 func TestLoad_MinimalDev(t *testing.T) {
@@ -295,5 +297,71 @@ func TestLoad_RateLimitTiers(t *testing.T) {
 				t.Fatalf("expected error to contain %q, got %q", tc.envVar, err.Error())
 			}
 		})
+	}
+}
+
+func TestLoad_AppConfigURLs(t *testing.T) {
+	baseEnv(t)
+	_ = os.Unsetenv("TERMS_URL")
+	_ = os.Unsetenv("PRIVACY_URL")
+	_ = os.Unsetenv("MIN_VERSION")
+	_ = os.Unsetenv("LATEST_VERSION")
+	_ = os.Unsetenv("UPDATE_URL")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("dev Load without app-config env: %v", err)
+	}
+	if cfg.TermsURL != "" || cfg.PrivacyURL != "" {
+		t.Fatalf("expected empty terms/privacy in dev, got %q %q", cfg.TermsURL, cfg.PrivacyURL)
+	}
+	if cfg.MinVersion != "" || cfg.LatestVersion != "" || cfg.UpdateURL != "" {
+		t.Fatalf("expected empty versions in dev, got %+v", cfg)
+	}
+
+	setEnv(t, "TERMS_URL", "https://elmetracademy.app/terms")
+	setEnv(t, "PRIVACY_URL", "https://elmetracademy.app/privacy")
+	setEnv(t, "MIN_VERSION", "1.4.0")
+	setEnv(t, "LATEST_VERSION", "1.5.0")
+	setEnv(t, "UPDATE_URL", "https://elmetracademy.app/app")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("dev Load with app-config env: %v", err)
+	}
+	if cfg.TermsURL != "https://elmetracademy.app/terms" || cfg.PrivacyURL != "https://elmetracademy.app/privacy" {
+		t.Fatalf("terms/privacy = %q %q", cfg.TermsURL, cfg.PrivacyURL)
+	}
+	if cfg.MinVersion != "1.4.0" || cfg.LatestVersion != "1.5.0" || cfg.UpdateURL != "https://elmetracademy.app/app" {
+		t.Fatalf("versions = %+v", cfg)
+	}
+}
+
+func TestLoad_AppConfigHTTPSOnly(t *testing.T) {
+	for _, v := range []struct{ key, val string }{
+		{"TERMS_URL", "http://elmetracademy.app/terms"},
+		{"PRIVACY_URL", "http://elmetracademy.app/privacy"},
+		{"UPDATE_URL", "http://elmetracademy.app/app"},
+	} {
+		t.Run(v.key, func(t *testing.T) {
+			baseEnv(t)
+			setEnv(t, "TERMS_URL", "https://elmetracademy.app/terms")
+			setEnv(t, "PRIVACY_URL", "https://elmetracademy.app/privacy")
+			setEnv(t, v.key, v.val)
+			if _, err := Load(); err == nil {
+				t.Fatalf("expected https-only error for %s=%q", v.key, v.val)
+			}
+		})
+	}
+}
+
+func TestLoad_AppConfigRequiredOutsideDev(t *testing.T) {
+	fullProdEnv(t)
+	_ = os.Unsetenv("TERMS_URL")
+	_ = os.Unsetenv("PRIVACY_URL")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for missing TERMS_URL/PRIVACY_URL in production")
+	}
+	setEnv(t, "TERMS_URL", "https://elmetracademy.app/terms")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for missing PRIVACY_URL in production")
 	}
 }

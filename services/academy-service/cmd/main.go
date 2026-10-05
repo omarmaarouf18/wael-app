@@ -93,6 +93,11 @@ func main() {
 	srv.AuthAdminURL = cfg.AuthAdminURL
 	srv.NotifyURL = cfg.NotificationServiceURL
 	srv.NotifyToken = cfg.InternalServiceToken
+	srv.TermsURL = cfg.TermsURL
+	srv.PrivacyURL = cfg.PrivacyURL
+	srv.MinVersion = cfg.MinVersion
+	srv.LatestVersion = cfg.LatestVersion
+	srv.UpdateURL = cfg.UpdateURL
 
 	if err := notify.InitClient(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath); err != nil {
 		log.Fatalf("[ACADEMY] notify client: %v", err)

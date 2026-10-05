@@ -28,6 +28,10 @@ type PurchaseRequest struct {
 // SubjectRequestDTO is included in SubjectDetailDTO when unowned and a request exists.
 type SubjectRequestDTO struct {
 	Status string `json:"status"`
+	// WhatsappURL is the support chat link, present only while a pending
+	// request exists (F-UX2 A8). Same value and https-only rule as the
+	// access-request response; absent otherwise.
+	WhatsappURL string `json:"whatsapp_url,omitempty"`
 }
 
 // AccessRequestResponseDTO is the student-facing response for POST /academy/subjects/{id}/access-request.
@@ -38,6 +42,19 @@ type AccessRequestResponseDTO struct {
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	WhatsAppURL string    `json:"whatsapp_url"`
+}
+
+// FormatWhatsAppURLStrict converts a phone number or URL into a WhatsApp
+// click-to-chat URL and enforces the https-only rule: it returns "" unless
+// the result starts with "https://", so the app never opens an insecure
+// link. Used by the access-request response, the subject detail pending
+// request (F-UX2 A8), and the public app config (F-UX2 A7).
+func FormatWhatsAppURLStrict(phone string) string {
+	u := FormatWhatsAppURL(phone)
+	if strings.HasPrefix(u, "https://") {
+		return u
+	}
+	return ""
 }
 
 // FormatWhatsAppURL converts a phone number or URL into a WhatsApp click-to-chat URL (https://wa.me/<digits>).

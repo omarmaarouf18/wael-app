@@ -39,7 +39,13 @@ type Server struct {
 	VerifyClient    *http.Client
 	ExposePrice     bool
 	SupportWhatsApp string
-	Limiter         limiter.TierLimiter
+	// Public app-config values (F-UX2 A7), set from config after New.
+	TermsURL      string
+	PrivacyURL    string
+	MinVersion    string
+	LatestVersion string
+	UpdateURL     string
+	Limiter       limiter.TierLimiter
 }
 
 // New creates a Server with dependencies.
@@ -78,9 +84,11 @@ func (s *Server) GatewayAuth(next http.Handler) http.Handler {
 
 // StudentAuth verifies Bearer JWT using jwtutil.ValidateToken on every request.
 // This ensures suspension takes immediate effect and token revocation is checked against Redis.
+// The public app config (/academy/app-config) bypasses StudentAuth: it carries
+// no per-user data (F-UX2 A7).
 func (s *Server) StudentAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
+		if r.URL.Path == "/health" || r.URL.Path == "/academy/app-config" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -566,7 +574,10 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id str
 			return
 		}
 		if pr != nil && pr.Status == models.RequestStatusPending {
-			dto.Request = &models.SubjectRequestDTO{Status: models.RequestStatusPending}
+			dto.Request = &models.SubjectRequestDTO{
+				Status:      models.RequestStatusPending,
+				WhatsappURL: models.FormatWhatsAppURLStrict(s.SupportWhatsApp),
+			}
 		}
 	}
 
@@ -643,9 +654,56 @@ func (s *Server) CreateAccessRequest(w http.ResponseWriter, r *http.Request, id 
 		SubjectID:   pr.SubjectID,
 		Status:      pr.Status,
 		CreatedAt:   pr.CreatedAt,
-		WhatsAppURL: models.FormatWhatsAppURL(s.SupportWhatsApp),
+		WhatsAppURL: models.FormatWhatsAppURLStrict(s.SupportWhatsApp),
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, resp)
+}
+
+// EnforceIPTier wraps a public (unauthenticated) handler with tiered rate
+// limiting keyed on the client IP (F-UX2 A7 app-config). It fails closed with
+// 503 on backend failure (limiter unconfigured outside dev), and 429 +
+// Retry-After only when over limit.
+func (s *Server) EnforceIPTier(tier string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.Limiter == nil {
+			if s.AppEnv == "local" || s.AppEnv == "test" {
+				next(w, r)
+				return
+			}
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", errors.New("rate limiter unconfigured"))
+			return
+		}
+		limited, retryAfter, err := s.Limiter.CheckAndRecord(tier, "ip:"+handlerutil.GetIP(r))
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+		if limited {
+			limiter.WriteRateLimitedResponse(w, retryAfter)
+			return
+		}
+		next(w, r)
+	}
+}
+
+// GetAppConfig serves GET /academy/app-config (F-UX2 A7). Public (no student
+// JWT), read tier (per-IP), cacheable for 5 min. It returns the support
+// WhatsApp URL, the terms/privacy URLs, and the optional update metadata
+// (empty means no update prompt). No payment wording.
+func (s *Server) GetAppConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	handlerutil.WriteJSON(w, http.StatusOK, models.AppConfigDTO{
+		SupportWhatsAppURL: models.FormatWhatsAppURLStrict(s.SupportWhatsApp),
+		TermsURL:           s.TermsURL,
+		PrivacyURL:         s.PrivacyURL,
+		MinVersion:         s.MinVersion,
+		LatestVersion:      s.LatestVersion,
+		UpdateURL:          s.UpdateURL,
+	})
 }
 
 // EnforceTier wraps an HTTP handler with tiered rate limiting per SPEC Section 2 (D13).
@@ -875,6 +933,7 @@ func (s *Server) GetMyEntitlements(w http.ResponseWriter, r *http.Request) {
 func (s *Server) PublicHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", Health)
+	mux.HandleFunc("/academy/app-config", s.EnforceIPTier(limiter.TierRead, s.GetAppConfig))
 	mux.HandleFunc("/academy/levels", s.EnforceTier(limiter.TierRead, s.GetLevels))
 	mux.HandleFunc("/academy/subjects", s.EnforceTier(limiter.TierRead, s.ListSubjects))
 	mux.HandleFunc("/academy/subjects/", s.SubjectSubroute)
