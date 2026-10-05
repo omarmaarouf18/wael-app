@@ -189,7 +189,7 @@ func (s *MemoryStore) Create(_ context.Context, u *models.User) error {
 		return ErrDuplicate
 	}
 
-	if u.Phone != "" && reservesPhone(u.EffectiveStatus()) {
+	if u.Phone != "" && u.EmailVerified && reservesPhone(u.EffectiveStatus()) {
 		for _, existing := range s.byID {
 			if existing.Phone == u.Phone && existing.EmailVerified && reservesPhone(existing.EffectiveStatus()) {
 				return ErrDuplicate

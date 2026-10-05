@@ -56,7 +56,7 @@ func runDeletionSuite(t *testing.T, s Store) {
 	if err := s.Create(ctx, dupEmail); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("duplicate email during grace: err = %v, want ErrDuplicate", err)
 	}
-	dupPhone := &models.User{ID: "del-dup-phone", Email: "other@example.com", PasswordHash: "h", Role: models.RoleUser, FullName: "Dup", Phone: "+201012345799", Status: models.StatusActive}
+	dupPhone := &models.User{ID: "del-dup-phone", Email: "other@example.com", PasswordHash: "h", Role: models.RoleUser, FullName: "Dup", Phone: "+201012345799", Status: models.StatusActive, EmailVerified: true}
 	if err := s.Create(ctx, dupPhone); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("duplicate phone during grace: err = %v, want ErrDuplicate", err)
 	}
@@ -308,7 +308,17 @@ func TestMongoStore_PhoneIndexMigrationToPendingDeletion(t *testing.T) {
 			t.Fatalf("decode index: %v", err)
 		}
 		if doc.Name == "phone_1" {
-			statuses, _ := doc.PartialFilterExpression["status"].(bson.M)["$in"].(bson.A)
+			var statuses bson.A
+			switch v := doc.PartialFilterExpression["status"].(type) {
+			case bson.M:
+				statuses, _ = v["$in"].(bson.A)
+			case bson.D:
+				for _, elem := range v {
+					if elem.Key == "$in" {
+						statuses, _ = elem.Value.(bson.A)
+					}
+				}
+			}
 			for _, st := range statuses {
 				if st == "pending_deletion" {
 					found = true
