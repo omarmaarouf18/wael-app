@@ -61,6 +61,20 @@ done
 check "compose config renders" compose config --quiet
 [ "$errors" -eq 0 ] || fail "compose config failed; nothing was changed"
 
+# 5b. Redis memory policy: the rendered compose must cap redis with
+# noeviction. Any eviction policy could drop denylist keys (jti/sid/user
+# revocation) and revive revoked tokens (see docker-compose.yml).
+rendered="$(compose config 2>/dev/null)"
+check "redis maxmemory is capped" grep -q -- '--maxmemory' <<<"$rendered"
+check "redis maxmemory-policy is noeviction" grep -q 'noeviction' <<<"$rendered"
+if grep -Eq 'allkeys-lru|allkeys-lfu|allkeys-random|volatile-lru|volatile-lfu|volatile-random|volatile-ttl' <<<"$rendered"; then
+	log "FAIL: redis must not use an eviction policy (denylist keys would be dropped)"
+	errors=$((errors + 1))
+else
+	log "ok: redis uses no eviction policy"
+fi
+[ "$errors" -eq 0 ] || fail "redis memory policy check failed; nothing was changed"
+
 # 6. Get the new images (does not affect running containers).
 #    SKIP_PULL=1 is for a manual trial deploy where the app images were
 #    loaded with `docker load` instead of coming from GHCR (RUNBOOK.md,

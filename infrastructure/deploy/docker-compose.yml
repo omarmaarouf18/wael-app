@@ -74,6 +74,9 @@ services:
       - "8080"
     environment:
       APP_ENV: production
+      # Go runtime heap cap (~85% of the container mem_limit, overridable).
+      # Unknown env vars are ignored by config.Load(), so this needs no code.
+      GOMEMLIMIT: ${GATEWAY_GOMEMLIMIT:-108MiB}
       PORT: "8080"
       APP_DOMAIN: ${API_DOMAIN}
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:?ALLOWED_ORIGIN is required}
@@ -107,6 +110,8 @@ services:
       - "3002"
     environment:
       APP_ENV: production
+      # Go runtime heap cap (~85% of the container mem_limit, overridable).
+      GOMEMLIMIT: ${AUTH_GOMEMLIMIT:-160MiB}
       PORT: "3002"
       MONGO_URI: ${AUTH_MONGO_URI:?AUTH_MONGO_URI is required}
       AUTH_MONGO_DATABASE: auth_db
@@ -143,6 +148,8 @@ services:
       - "3004"
     environment:
       APP_ENV: production
+      # Go runtime heap cap (~85% of the container mem_limit, overridable).
+      GOMEMLIMIT: ${NOTIFICATION_GOMEMLIMIT:-160MiB}
       PORT: "3004"
       MONGO_URI: ${NOTIFICATION_MONGO_URI:?NOTIFICATION_MONGO_URI is required}
       NOTIFICATION_MONGO_DATABASE: notification_db
@@ -175,6 +182,8 @@ services:
       - "3003"
     environment:
       APP_ENV: production
+      # Go runtime heap cap (~85% of the container mem_limit, overridable).
+      GOMEMLIMIT: ${ACADEMY_GOMEMLIMIT:-160MiB}
       PORT: "3003"
       MONGO_URI: ${ACADEMY_MONGO_URI:?ACADEMY_MONGO_URI is required}
       ACADEMY_MONGO_DATABASE: academy_db
@@ -224,6 +233,8 @@ services:
       - "3005"
     environment:
       APP_ENV: production
+      # Go runtime heap cap (~85% of the container mem_limit, overridable).
+      GOMEMLIMIT: ${ADMIN_GOMEMLIMIT:-54MiB}
       PORT: "3005"
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
       # Admin listeners: internal only, called over mTLS (ADR-0008).
@@ -281,7 +292,16 @@ services:
     restart: unless-stopped
     logging: *logging
     # Password lives in redis.conf (requirepass), never on the command line (W-09).
-    command: ["redis-server", "/run/secrets/redis_conf"]
+    # Memory cap is passed as CLI args (not in secrets/redis.conf, which lives
+    # only on the server): CLI args after the config file override it, so a
+    # normal deploy picks this up with no manual server step. The cap sits
+    # below REDIS_MEM_LIMIT (128m) to leave headroom for AOF-rewrite fork
+    # copy-on-write and client buffers (appendonly yes is on).
+    # Policy MUST stay noeviction: any eviction policy could drop denylist
+    # keys (jti/sid/user revocation) and revive revoked tokens. At the limit
+    # writes fail with OOM errors (new logins/refresh/OTP fail) while reads
+    # keep working — degraded, not dead, and fail-closed.
+    command: ["redis-server", "/run/secrets/redis_conf", "--maxmemory", "${REDIS_MAXMEMORY:-96mb}", "--maxmemory-policy", "noeviction"]
     secrets:
       - redis_conf
     volumes:

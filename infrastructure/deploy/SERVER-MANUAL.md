@@ -103,6 +103,13 @@ add swap first, run nothing else on the host, and watch
 `docker stats --no-stream` and OOM kills after the first deploy. The 1 GB
 profile has not been tried.
 
+Inside those containers: Redis data is capped at `REDIS_MAXMEMORY`
+(default `96mb`, below the 128m container limit) with a fixed `noeviction`
+policy, and each Go service carries a `GOMEMLIMIT` at ~85% of its container
+`mem_limit` so the runtime garbage-collects before the container OOMs
+(defaults: gateway `108MiB`, auth/notification/academy `160MiB` each,
+admin-console `54MiB`). Details and the OOM checklist: §5 "Redis memory".
+
 Measured reference (owner-measured, not re-measured here): on Azure B2ats_v2
 (887 MB RAM) the running stack uses about 320–400 MB and needs swap.
 
@@ -317,6 +324,8 @@ checked against each service's `config.Load()` and `env.production.example`.
 | `STREAM_MAX_CONCURRENT` / `STREAM_OPEN_RATE_LIMIT` | notification-service | no (defaults 3 / 10) | SSE caps | uncomment to override |
 | `NOTIFICATION_SERVICE_URL` | academy-service | yes (production) | Internal mTLS notification push URL for student notifications (request accept/reject, grant/revoke) | fixed in compose: `https://notification-service:3004` (requires https in production) |
 | `*_MEM_LIMIT`, `MONGO_CACHE_GB` | compose only | no | Container memory / WiredTiger cache | §1 table; "1 GB host" block for small hosts |
+| `REDIS_MAXMEMORY` | redis (compose `command:`) | no (default `96mb`) | Redis data cap, kept below `REDIS_MEM_LIMIT` (128m) for AOF-rewrite fork copy-on-write and client buffers | `96mb` (2 GB host) / `48mb` ("1 GB host" block); see "Redis memory" below |
+| `GATEWAY_GOMEMLIMIT`, `AUTH_GOMEMLIMIT`, `NOTIFICATION_GOMEMLIMIT`, `ACADEMY_GOMEMLIMIT`, `ADMIN_GOMEMLIMIT` | compose only (Go runtime) | no (defaults `108MiB` / `160MiB` / `160MiB` / `160MiB` / `54MiB`, ~85% of each container `mem_limit`) | Go heap caps so the runtime GCs before the container OOMs; read by the Go runtime itself, ignored by `config.Load()` | uncomment to override per service |
 
 Fixed by compose (never in `.env.production`): `APP_ENV=production`, `PORT`,
 `ADMIN_LISTEN_ADDR` (`:9001`/`:9002`), `*_MONGO_DATABASE`, internal
@@ -403,9 +412,44 @@ tuning overrides, `IMAGE_TAG` (from `release.env`) and `WAEL_HOME` (host env):
 ```bash
 [laptop] grep -o -E '\$\{[A-Z_][A-Z_0-9]*' docker-compose.yml Caddyfile | sed 's/.*\${//' | sort -u > /tmp/used
 [laptop] grep -E '^[A-Z_]+=' env.production.example | cut -d= -f1 | sort -u > /tmp/set
-[laptop] grep -E '^# (RATE_LIMIT|STREAM_[A-Z_]+|[A-Z]+_MEM_LIMIT|MONGO_CACHE_GB)=' env.production.example | cut -d= -f1 | sed 's/^# //' | sort -u > /tmp/tuning
+[laptop] grep -E '^# (RATE_LIMIT_[A-Z]+|STREAM_[A-Z_]+|[A-Z]+_MEM_LIMIT|MONGO_CACHE_GB|REDIS_MAXMEMORY|[A-Z]+_GOMEMLIMIT)=' env.production.example | cut -d= -f1 | sed 's/^# //' | sort -u > /tmp/tuning
 [laptop] comm -23 /tmp/used <(sort -u /tmp/set /tmp/tuning); echo "only IMAGE_TAG and WAEL_HOME may remain"
 ```
+
+### Redis memory
+
+Without a cap, Redis grows until the kernel OOM-kills the 128m container —
+and because JWT checks are fail-closed (Redis down = every authenticated
+call refused), the whole platform goes down with it. The compose file caps
+Redis on the `command:` line (`--maxmemory ${REDIS_MAXMEMORY:-96mb}`), NOT in
+`secrets/redis.conf` (that file lives only on the server; a repo change must
+not need a manual server step — CLI args after the config file override it,
+so a normal deploy picks the cap up).
+
+The eviction policy is fixed to `noeviction` in the same `command:` line and
+preflight refuses any rendered compose without it. Never change it to an
+LRU/LFU/random/volatile policy: eviction could drop denylist keys
+(jti/sid/user revocation) and revive revoked tokens.
+
+At the limit, writes fail with OOM errors while reads keep working: new
+logins, refreshes and OTP issues fail, existing sessions keep being
+validated. That is intended — degraded, not dead, and fail-closed.
+
+If Redis reports OOM (write errors in service logs, `auth-service` 503s on
+login/refresh), check usage from the server:
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'R="$(sed -n "s/^requirepass //p" ~/wael/secrets/redis.conf)"; docker exec -i -e REDISCLI_AUTH="$R" wael-redis-1 redis-cli INFO memory' | grep -E 'used_memory_human|maxmemory_human|evicted_keys|expired_keys'
+[server azureuser] sudo -u deploybot bash -c 'R="$(sed -n "s/^requirepass //p" ~/wael/secrets/redis.conf)"; docker exec -i -e REDISCLI_AUTH="$R" wael-redis-1 redis-cli CONFIG GET "maxmemory*"'
+```
+
+Expect `maxmemory_human:96.00M` (or the `REDIS_MAXMEMORY` override),
+`maxmemory_policy:noeviction`, and `evicted_keys:0` always — a non-zero
+`evicted_keys` means an eviction policy is active and must be fixed
+immediately. If `used_memory_human` sits at the cap, find what grew (key
+count by prefix, TTLs on OTP/attempt keys) before raising the cap; raising
+`REDIS_MAXMEMORY` without raising `REDIS_MEM_LIMIT` headroom risks the
+container OOM-kill this cap exists to prevent.
 
 ## 6. Mongo first-time init
 
@@ -769,6 +813,7 @@ unavailability, dominated by DNS propagation and Caddy's first ACME issuance.
 | Fresh DNS record looks missing locally | Negative caching | Check the authoritative NS directly; wait out the TTL (§2). |
 | 404s for random paths in logs | Internet scanners | Expected noise; access logs stay off by design (§10). |
 | Deploy refuses a tag ("was rolled back") | `state/failed-releases` guard | Fix forward with a new commit; force only via the workflow input (§10). |
+| Logins/refresh/OTP fail with Redis OOM errors, reads still work | Redis hit `maxmemory` (writes refused, fail-closed) | Degraded-by-design, not dead: see §5 "Redis memory" (`INFO memory`, `used_memory_human`) and RUNBOOK "Redis at maxmemory". |
 | Containers OOM-killed on a small host | Limits exceed RAM | 1 GB block + 2 GB swap + zram (§1, §3), or a bigger host. |
 
 ## Appendix A — cost and size reference

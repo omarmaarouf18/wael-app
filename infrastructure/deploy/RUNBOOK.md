@@ -145,6 +145,37 @@ Sizing table, the "1 GB host" block, swap and the measured reference:
 run nothing else on the host, and watch for OOM kills after the first
 deploy. This profile has not been tried.
 
+## Redis at maxmemory
+
+Redis is capped at `REDIS_MAXMEMORY` (default `96mb`, below the 128m
+container limit) with a fixed `noeviction` policy — eviction is forbidden
+because it could drop denylist keys (jti/sid/user revocation) and revive
+revoked tokens. Full procedure and rationale: `SERVER-MANUAL.md` §5 "Redis
+memory".
+
+**Symptoms.** New logins, token refreshes and OTP issues fail (write OOM;
+services log Redis OOM errors, `auth-service` returns 503 on
+login/refresh) while reads keep working — existing sessions keep validating.
+Degraded, not dead, and fail-closed. The redis container itself stays up
+(`docker compose -p wael ps` shows it healthy); do NOT restart it — a
+restart does not free a full dataset served from AOF, and the cap, not the
+process, is refusing the writes.
+
+**Response.**
+
+1. Confirm: `INFO memory` shows `used_memory_human` at the cap and
+   `evicted_keys:0` (commands: `SERVER-MANUAL.md` §5 "Redis memory"). A
+   non-zero `evicted_keys` means an eviction policy is active — fix the
+   compose `command:` back to `noeviction` and redeploy instead.
+2. Find what grew before raising anything: key count by prefix and TTLs on
+   OTP/attempt keys. A leak (keys without TTL, unbounded growth) must be
+   fixed in code and shipped; raising the cap only buys time.
+3. If the data is legitimate, raise `REDIS_MAXMEMORY` in
+   `$WAEL_HOME/.env.production` **together with** `REDIS_MEM_LIMIT` headroom
+   (data cap must stay clearly below the container limit for AOF-rewrite
+   fork copy-on-write and client buffers), then deploy the current
+   `release.env` so the container picks it up.
+
 ## Manual trial deploy (no GHCR)
 
 Full procedure with copy-paste commands: `SERVER-MANUAL.md` §8 Path 2
