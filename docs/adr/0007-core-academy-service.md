@@ -249,3 +249,15 @@ text is kept above):
 4. Consequence: a student can see a level before anything is published in it;
    nothing about unpublished content is exposed, only that the level exists.
 
+
+## Amendment (2026-10-03, owner decision D3): content protection is an accepted risk
+
+Amended 2026-10-03 (owner decision D3), recorded 2026-10-05. This adds to the
+Negative and Tradeoffs above; the earlier text is unchanged.
+
+`POST /academy/videos/{id}/play` returns the YouTube id to students who own the
+subject (SPEC Section 1 decision 21). A leaked id can be watched outside the
+app. Current mitigations: the 2-device session cap, the moving watermark,
+`FLAG_SECURE`, ids never in catalog, detail, route arguments or logs, and the
+append-only `video_plays` audit. The risk is accepted for launch. Revisit after
+launch: a private or signed player, or a protected host.

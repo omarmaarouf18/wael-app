@@ -58,3 +58,20 @@ When a lesson video leaks, the response is to **replace the video and change
 `youtube_video_id`**. The same leak-response note goes into `RUNBOOK.md`
 when it is written (`docs/core-service/SPEC.md`, Phase 8); no RUNBOOK exists
 yet as of this date.
+
+## Amendment (2026-10-03, owner decision D3): leaked ids are an accepted risk
+
+Amended 2026-10-03 (owner decision D3), recorded 2026-10-05. This adds to
+Negative and Tradeoffs and To verify above; the earlier text is unchanged.
+
+The backend releases the YouTube id to a student who owns the subject (ADR-0007,
+`POST /academy/videos/{id}/play`), so a leaked id can be watched outside the app.
+Current mitigations: the 2-device session cap, the moving watermark,
+`FLAG_SECURE`, ids never in catalog, detail, route arguments or logs, and the
+append-only `video_plays` audit. The risk is accepted for launch; revisit after
+launch with a private or signed player, or a protected host.
+
+Obscuring YouTube's player UI is a ToS risk. The top-overlay mask stays
+cosmetic and keeps the YouTube logo. Today the app also masks the logo corner
+(`frontend/lib/widgets/protected_video_surface.dart`); that is not yet aligned
+with this decision.
