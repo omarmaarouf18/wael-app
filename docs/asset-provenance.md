@@ -57,6 +57,18 @@ that has not been recorded; treat all as UNCONFIRMED.
 | `frontend/web/favicon.png`, `frontend/web/icons/*` (5 files) | Web | UNCONFIRMED | UNCONFIRMED |
 | `frontend/windows/runner/resources/app_icon.ico` | Windows app icon | UNCONFIRMED | UNCONFIRMED |
 
+## Bundled fonts — `frontend/assets/fonts/` (F-UX4 Commit 2, 2026-10-05)
+
+Only the weights the app uses (see `frontend/pubspec.yaml` `fonts:`).
+Runtime fetching is disabled (`GoogleFonts.config.allowRuntimeFetching =
+false` in `lib/main.dart`), so nothing is requested from Google at runtime.
+
+| Path (set) | Source | License |
+|---|---|---|
+| `Cairo-Regular.ttf` (400), `Cairo-SemiBold.ttf` (600), `Cairo-Bold.ttf` (700), `Cairo-ExtraBold.ttf` (800); `OFL-Cairo.txt` | Google Fonts (`fonts.google.com/specimen/Cairo`), static TTF instances via the `fonts.googleapis.com/css2` API | SIL Open Font License 1.1 (`OFL-Cairo.txt`) |
+| `Syne-SemiBold.ttf` (600), `Syne-Bold.ttf` (700), `Syne-ExtraBold.ttf` (800); `OFL-Syne.txt` | Google Fonts (`fonts.google.com/specimen/Syne`), static TTF instances via the `fonts.googleapis.com/css2` API | SIL Open Font License 1.1 (`OFL-Syne.txt`) |
+| `PlusJakartaSans-Regular.ttf` (400), `PlusJakartaSans-SemiBold.ttf` (600), `PlusJakartaSans-Bold.ttf` (700); `OFL-PlusJakartaSans.txt` | Google Fonts (`fonts.google.com/specimen/Plus+Jakarta+Sans`), static TTF instances via the `fonts.googleapis.com/css2` API | SIL Open Font License 1.1 (`OFL-PlusJakartaSans.txt`) |
+
 ## Removed assets
 
 Deleted on 2026-10-02 because nothing referenced them any more (they belonged
