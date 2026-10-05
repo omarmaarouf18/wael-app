@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -45,6 +46,23 @@ func runDeletionSuite(t *testing.T, s Store) {
 	}
 	if !got.DeletionRequestedAt.Equal(now) || !got.PurgeAfter.Equal(purgeAfter) {
 		t.Fatalf("grace fields = %v %v", got.DeletionRequestedAt, got.PurgeAfter)
+	}
+
+	// Identifiers stay reserved during the grace period (owner decision D2):
+	// the email unique index covers every status, and the phone partial
+	// index covers pending_deletion, so neither can be taken until the
+	// purge finalizes the deletion.
+	dupEmail := &models.User{ID: "del-dup-email", Email: "del1@example.com", PasswordHash: "h", Role: models.RoleUser, FullName: "Dup", Phone: "+201012345791", Status: models.StatusActive}
+	if err := s.Create(ctx, dupEmail); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("duplicate email during grace: err = %v, want ErrDuplicate", err)
+	}
+	dupPhone := &models.User{ID: "del-dup-phone", Email: "other@example.com", PasswordHash: "h", Role: models.RoleUser, FullName: "Dup", Phone: "+201012345799", Status: models.StatusActive}
+	if err := s.Create(ctx, dupPhone); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("duplicate phone during grace: err = %v, want ErrDuplicate", err)
+	}
+	holder, err := s.FindByPhone(ctx, "+201012345799")
+	if err != nil || holder == nil || holder.ID != u.ID {
+		t.Fatalf("FindByPhone during grace: holder=%+v err=%v", holder, err)
 	}
 
 	// Not due yet.
@@ -191,4 +209,115 @@ func TestMongoStore_AccountIndexes(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("purge scan count = %d, want 0", count)
 	}
+}
+
+// TestMemoryStore_CancelDeletionPhoneTaken plants a second verified account
+// on the same phone (bypassing the checks CancelDeletion itself relies on)
+// and proves the restore refuses with the distinct ErrPhoneTaken instead of
+// creating a duplicate. Unreachable while the grace period reserves the
+// phone; Login answers it with 409, never a retry loop.
+func TestMemoryStore_CancelDeletionPhoneTaken(t *testing.T) {
+	st := NewMemoryStore()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	a := &models.User{ID: "pt-a", Email: "pta@example.com", PasswordHash: "h", Role: models.RoleUser, FullName: "A", Phone: "+201012345792", EmailVerified: true}
+	if err := st.Create(ctx, a); err != nil {
+		t.Fatalf("create A: %v", err)
+	}
+	if err := st.RequestDeletion(ctx, "pt-a", now, now.Add(30*24*time.Hour)); err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	b := &models.User{ID: "pt-b", Email: "ptb@example.com", PasswordHash: "h", Role: models.RoleUser, FullName: "B", Phone: "+201012345792", EmailVerified: true, Status: models.StatusActive, CreatedAt: now, UpdatedAt: now}
+	st.byID["pt-b"] = b
+	st.byMail["ptb@example.com"] = b
+
+	if err := st.CancelDeletion(ctx, "pt-a", now); !errors.Is(err, ErrPhoneTaken) {
+		t.Fatalf("CancelDeletion: err = %v, want ErrPhoneTaken", err)
+	}
+	still, err := st.FindByID(ctx, "pt-a")
+	if err != nil || still == nil || still.Status != models.StatusPendingDeletion {
+		t.Fatalf("account left in %+v (err %v), want still pending_deletion", still, err)
+	}
+}
+
+// TestMongoStore_PhoneIndexMigrationToPendingDeletion simulates production
+// data as created by the pre-change EnsureIndexes (phone_1 covering only
+// active/suspended, plus live rows) and proves the new EnsureIndexes migrates
+// cleanly on boot: no IndexOptionsConflict, phone_1 replaced by the filter
+// that also covers pending_deletion. Idempotent: a second boot works.
+func TestMongoStore_PhoneIndexMigrationToPendingDeletion(t *testing.T) {
+	mongoURI, _ := requireDB(t)
+	dbName := randomDBName("test_auth_phonemig")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 1. New code creates the new indexes.
+	first, err := NewMongoStore(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("first NewMongoStore: %v", err)
+	}
+	coll := first.coll
+
+	// 2. Seed representative rows under the new shape.
+	now := time.Now().UTC()
+	active := &models.User{ID: "mig-active", Email: "migactive@example.com", PasswordHash: "h", Role: models.RoleUser, FullName: "Mig", Phone: "+201012345793", EmailVerified: true, Status: models.StatusActive, CreatedAt: now, UpdatedAt: now}
+	if err := first.Create(ctx, active); err != nil {
+		t.Fatalf("create active: %v", err)
+	}
+
+	// 3. Roll the phone index back to the pre-change shape.
+	if err := coll.Indexes().DropOne(ctx, "phone_1"); err != nil {
+		t.Fatalf("drop phone_1: %v", err)
+	}
+	oldPhone, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "phone", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{
+				"phone":          bson.M{"$type": "string", "$gt": ""},
+				"status":         bson.M{"$in": []string{"active", "suspended"}},
+				"email_verified": true,
+			}),
+	})
+	if err != nil {
+		t.Fatalf("recreate old phone index: %v", err)
+	}
+	if oldPhone != "phone_1" {
+		t.Fatalf("old phone index name = %q, want phone_1", oldPhone)
+	}
+
+	// 4. Boot again against the old index with data present: must succeed.
+	second, err := NewMongoStore(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("second NewMongoStore (migration boot): %v", err)
+	}
+
+	// 5. The migrated filter covers pending_deletion; the seeded row reads back.
+	cursor, err := coll.Indexes().List(ctx)
+	if err != nil {
+		t.Fatalf("list indexes: %v", err)
+	}
+	defer cursor.Close(ctx)
+	found := false
+	for cursor.Next(ctx) {
+		var doc struct {
+			Name                    string `bson:"name"`
+			PartialFilterExpression bson.M `bson:"partialFilterExpression"`
+		}
+		if err := cursor.Decode(&doc); err != nil {
+			t.Fatalf("decode index: %v", err)
+		}
+		if doc.Name == "phone_1" {
+			statuses, _ := doc.PartialFilterExpression["status"].(bson.M)["$in"].(bson.A)
+			for _, st := range statuses {
+				if st == "pending_deletion" {
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("migrated phone_1 filter does not cover pending_deletion")
+	}
+	_ = second
 }

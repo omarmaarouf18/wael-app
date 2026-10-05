@@ -24,6 +24,11 @@ var (
 	ErrStatusConflict = errors.New("store: status conflict")
 	// ErrInvalidStatus is returned when SetStatus is called with an invalid destination status.
 	ErrInvalidStatus = errors.New("store: invalid status")
+	// ErrPhoneTaken is returned when an operation would leave two accounts
+	// holding one phone (e.g. restoring a pending_deletion account whose
+	// phone was taken in the meantime). Distinct from ErrDuplicate so callers
+	// can answer without a retry loop.
+	ErrPhoneTaken = errors.New("store: phone taken")
 	// ErrDuplicate is returned when a unique constraint (email or phone) is violated.
 	ErrDuplicate = errors.New("store: duplicate key")
 	// ErrAdminNotFound is returned when an operation references a non-existent admin.
@@ -130,8 +135,21 @@ func cloneUser(u *models.User) *models.User {
 	return &cp
 }
 
+// reservesPhone reports whether a status reserves its phone number: active,
+// suspended, and pending_deletion accounts all hold their identifiers until
+// deletion is final (owner decision D2, F-UX2 review). Deleted and purged
+// accounts free them.
+func reservesPhone(st models.UserStatus) bool {
+	switch st {
+	case models.StatusActive, models.StatusSuspended, models.StatusPendingDeletion:
+		return true
+	default:
+		return false
+	}
+}
+
 // Create inserts a new user; emails must be unique, and phones must be unique
-// across verified active/suspended accounts (unverified signups do not reserve
+// across verified phone-reserving accounts (unverified signups do not reserve
 // phones). Status defaults to "active" explicitly for new users.
 func (s *MemoryStore) Create(_ context.Context, u *models.User) error {
 	s.mu.Lock()
@@ -148,9 +166,9 @@ func (s *MemoryStore) Create(_ context.Context, u *models.User) error {
 		return ErrDuplicate
 	}
 
-	if u.Phone != "" && (u.EffectiveStatus() == models.StatusActive || u.EffectiveStatus() == models.StatusSuspended) {
+	if u.Phone != "" && reservesPhone(u.EffectiveStatus()) {
 		for _, existing := range s.byID {
-			if existing.Phone == u.Phone && existing.EmailVerified && (existing.EffectiveStatus() == models.StatusActive || existing.EffectiveStatus() == models.StatusSuspended) {
+			if existing.Phone == u.Phone && existing.EmailVerified && reservesPhone(existing.EffectiveStatus()) {
 				return ErrDuplicate
 			}
 		}
@@ -181,7 +199,8 @@ func (s *MemoryStore) FindByID(_ context.Context, id string) (*models.User, erro
 	return cloneUser(s.byID[id]), nil
 }
 
-// FindByPhone returns an active or suspended user with the given phone, or nil when absent.
+// FindByPhone returns a phone-reserving (active, suspended, or
+// pending_deletion) user with the given phone, or nil when absent.
 func (s *MemoryStore) FindByPhone(_ context.Context, phone string) (*models.User, error) {
 	if phone == "" {
 		return nil, nil
@@ -189,7 +208,7 @@ func (s *MemoryStore) FindByPhone(_ context.Context, phone string) (*models.User
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, u := range s.byID {
-		if u.Phone == phone && (u.EffectiveStatus() == models.StatusActive || u.EffectiveStatus() == models.StatusSuspended) {
+		if u.Phone == phone && reservesPhone(u.EffectiveStatus()) {
 			return cloneUser(u), nil
 		}
 	}
@@ -211,14 +230,14 @@ func (s *MemoryStore) Update(_ context.Context, u *models.User) error {
 		}
 		delete(s.byMail, existing.Email)
 	}
-	if u.Phone != "" && (existing.EffectiveStatus() == models.StatusActive || existing.EffectiveStatus() == models.StatusSuspended) {
+	if u.Phone != "" && reservesPhone(existing.EffectiveStatus()) {
 		// Enforce verified-phone uniqueness when the record will be verified
 		// (e.g. OTP verification promotes an unverified record while its phone
 		// is unchanged) or when an unverified record takes a new phone.
 		// Verified holders block; unverified holders never block.
 		if u.EmailVerified || u.Phone != existing.Phone {
 			for id, other := range s.byID {
-				if id != u.ID && other.Phone == u.Phone && other.EmailVerified && (other.EffectiveStatus() == models.StatusActive || other.EffectiveStatus() == models.StatusSuspended) {
+				if id != u.ID && other.Phone == u.Phone && other.EmailVerified && reservesPhone(other.EffectiveStatus()) {
 					return ErrDuplicate
 				}
 			}
@@ -280,7 +299,7 @@ func (s *MemoryStore) SetStatus(_ context.Context, userID, from, to, reason stri
 
 	if existing.Phone != "" && (models.UserStatus(to) == models.StatusActive || models.UserStatus(to) == models.StatusSuspended) {
 		for id, other := range s.byID {
-			if id != userID && other.Phone == existing.Phone && other.EmailVerified && (other.EffectiveStatus() == models.StatusActive || other.EffectiveStatus() == models.StatusSuspended) {
+			if id != userID && other.Phone == existing.Phone && other.EmailVerified && reservesPhone(other.EffectiveStatus()) {
 				return ErrDuplicate
 			}
 		}
@@ -741,7 +760,11 @@ func (s *MemoryStore) RequestDeletion(_ context.Context, userID string, at, purg
 }
 
 // CancelDeletion compare-and-sets a pending_deletion account back to active
-// (login during the grace period) and clears the grace-period fields.
+// (login during the grace period) and clears the grace-period fields. If
+// another verified phone-reserving account holds the phone in the meantime,
+// restoring would create a duplicate, so it returns ErrPhoneTaken instead
+// (unreachable while the grace period reserves the phone; Login answers it
+// with 409, never a retry loop).
 func (s *MemoryStore) CancelDeletion(_ context.Context, userID string, at time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -751,6 +774,13 @@ func (s *MemoryStore) CancelDeletion(_ context.Context, userID string, at time.T
 	}
 	if existing.Status != models.StatusPendingDeletion {
 		return ErrStatusConflict
+	}
+	if existing.Phone != "" {
+		for id, other := range s.byID {
+			if id != userID && other.Phone == existing.Phone && other.EmailVerified && reservesPhone(other.EffectiveStatus()) {
+				return ErrPhoneTaken
+			}
+		}
 	}
 	if at.IsZero() {
 		at = time.Now().UTC()

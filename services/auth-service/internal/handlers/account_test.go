@@ -15,6 +15,7 @@ import (
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 	"github.com/omarmaarouf18/wael-app/shared/infra/ratelimit"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type mailNotice struct {
@@ -914,5 +915,158 @@ func TestAccount_AdminSuspendDuringGrace(t *testing.T) {
 		if d.ID == u.ID {
 			t.Fatal("suspended account still due for purge")
 		}
+	}
+}
+
+// TestAccount_GracePhoneReserved proves identifiers stay reserved while a
+// deletion is pending (owner decision D2): another account cannot sign up
+// with the pending phone or email, nor PATCH to the pending phone — yet the
+// owner's login during the grace period still cancels.
+func TestAccount_GracePhoneReserved(t *testing.T) {
+	s, _, cleanup := accountTestServer(t)
+	defer cleanup()
+
+	accessA, _ := signupVerifyTokens(t, s, "graceowner@example.com", "+201012345734", "Password123!", devA)
+	rec := doRequest(t, s, http.MethodPost, "/auth/account/delete", map[string]string{
+		"current_password": "Password123!", "confirm": "حذف",
+	}, accessA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("request deletion = %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Signup with the pending phone: generic 409.
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Grace Squatter", "email": "squatter@example.com",
+		"phone": "+201012345734", "password": "Password123!",
+	}, "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("signup with pending phone = %d, want 409 (%s)", rec.Code, rec.Body.String())
+	}
+	// Signup with the pending email: generic 409.
+	rec = doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Grace Squatter", "email": "graceowner@example.com",
+		"phone": "+201012345735", "password": "Password123!",
+	}, "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("signup with pending email = %d, want 409 (%s)", rec.Code, rec.Body.String())
+	}
+	// PATCH to the pending phone: generic 409.
+	accessC, _ := signupVerifyTokens(t, s, "graceother@example.com", "+201012345736", "Password123!", devB)
+	rec = doRequest(t, s, http.MethodPatch, "/auth/me", map[string]string{
+		"phone": "+201012345734", "current_password": "Password123!",
+	}, accessC)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("PATCH to pending phone = %d, want 409 (%s)", rec.Code, rec.Body.String())
+	}
+	// The owner's login during the grace period still cancels.
+	rec = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email": "graceowner@example.com", "password": "Password123!", "device_id": devC,
+	}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("owner login during grace = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var loginResp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &loginResp); err != nil || loginResp["deletion_cancelled"] != true {
+		t.Fatalf("no deletion_cancelled=true: %s", rec.Body.String())
+	}
+}
+
+// TestAccount_VerifyBlockedByPendingPhone: an unverified signup made while
+// the phone was free cannot complete verification once a verified account
+// holds that phone in pending_deletion; the record stays unverified.
+func TestAccount_VerifyBlockedByPendingPhone(t *testing.T) {
+	s, _, cleanup := accountTestServer(t)
+	defer cleanup()
+
+	// B signs up unverified while the phone is free.
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Verify Waiter", "email": "waiter@example.com",
+		"phone": "+201012345737", "password": "Password123!",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("B signup = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var bSignup map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &bSignup); err != nil {
+		t.Fatalf("decode B signup: %v", err)
+	}
+	// A verifies another number, PATCHes to the same phone (B is unverified,
+	// so it does not block), then requests deletion.
+	signupVerifyTokens(t, s, "holdera@example.com", "+201012345738", "Password123!", devB)
+	accessA, _ := loginTokens(t, s, "holdera@example.com", "Password123!", devB)
+	rec = doRequest(t, s, http.MethodPatch, "/auth/me", map[string]string{
+		"phone": "+201012345737", "current_password": "Password123!",
+	}, accessA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("A PATCH to unverified-held phone = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/account/delete", map[string]string{
+		"current_password": "Password123!", "confirm": "حذف",
+	}, accessA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("A deletion request = %d (%s)", rec.Code, rec.Body.String())
+	}
+	// B's verification now fails with the generic 409; B stays unverified.
+	rec = doRequest(t, s, http.MethodPost, "/auth/verify-otp", map[string]string{
+		"email": "waiter@example.com", "code": bSignup["dev_otp"], "device_id": devC,
+	}, "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("B verify vs pending phone = %d, want 409 (%s)", rec.Code, rec.Body.String())
+	}
+	rec = doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email": "waiter@example.com", "password": "Password123!", "device_id": devC,
+	}, "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("B login after refused verify = %d, want 403 (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// cancelTakenStore simulates the unreachable state where another account took
+// the phone of a pending_deletion record: CancelDeletion answers the distinct
+// ErrPhoneTaken.
+type cancelTakenStore struct {
+	store.Store
+	pending *models.User
+}
+
+func (f *cancelTakenStore) FindByEmail(_ context.Context, _ string) (*models.User, error) {
+	cp := *f.pending
+	return &cp, nil
+}
+
+func (f *cancelTakenStore) CancelDeletion(_ context.Context, _ string, _ time.Time) error {
+	return store.ErrPhoneTaken
+}
+
+// TestAccount_LoginPhoneTakenConflict proves Login maps the distinct
+// ErrPhoneTaken to a single 409 (no 503, no retry loop, no tokens).
+func TestAccount_LoginPhoneTakenConflict(t *testing.T) {
+	s, _, cleanup := accountTestServer(t)
+	defer cleanup()
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("Password123!"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	pending := &models.User{
+		ID: "pt-login", Email: "ptlogin@example.com", PasswordHash: string(hash),
+		Role: models.RoleUser, FullName: "Taken", Phone: "+201012345739",
+		EmailVerified: true, Status: models.StatusPendingDeletion,
+		CreatedAt: time.Now().UTC(),
+	}
+	s.Store = &cancelTakenStore{Store: s.Store, pending: pending}
+
+	rec := doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+		"email": "ptlogin@example.com", "password": "Password123!", "device_id": devA,
+	}, "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("login with taken phone = %d, want 409 (%s)", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["code"] != "conflict" {
+		t.Fatalf("expected generic code conflict, got %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "access_token") {
+		t.Fatalf("tokens issued on phone-taken login: %s", rec.Body.String())
 	}
 }

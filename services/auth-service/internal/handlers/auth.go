@@ -849,6 +849,17 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		cancelErr := s.Store.CancelDeletion(dbCtx, u.ID, now)
 		cancel()
 		if cancelErr != nil {
+			if errors.Is(cancelErr, store.ErrPhoneTaken) {
+				// Another account holds the phone, so the deletion cannot
+				// be cancelled by restoring this record. Unreachable while
+				// the grace period reserves the phone; answer 409 without
+				// a retry loop, logging IDs only.
+				cleanID := strings.ReplaceAll(strings.ReplaceAll(u.ID, "\r", ""), "\n", "")
+				// #nosec G706 -- cleanID sanitized of CR/LF
+				log.Printf("[AUTH] cancel deletion phone taken user %s", cleanID)
+				handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "unable to complete sign-in", nil)
+				return
+			}
 			if errors.Is(cancelErr, store.ErrStatusConflict) {
 				dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 				fresh, findErr := s.Store.FindByEmail(dbCtx, email)

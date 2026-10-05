@@ -58,8 +58,11 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 	}
 
 	// Ensure partial unique index on phone (P-6, amended: only verified
-	// active/suspended accounts reserve phones; unverified signups do not).
-	// Drop the pre-amendment index first so the changed partial filter applies.
+	// phone-reserving accounts hold phones; unverified signups do not).
+	// Phone-reserving statuses are active, suspended, and pending_deletion
+	// (owner decision D2, F-UX2 review: identifiers free only when deletion
+	// is final). Drop the pre-amendment index first so the changed partial
+	// filter applies.
 	_ = coll.Indexes().DropOne(ctx, "phone_1")
 	_, err = coll.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{{Key: "phone", Value: 1}},
@@ -67,7 +70,7 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 			SetUnique(true).
 			SetPartialFilterExpression(bson.M{
 				"phone":          bson.M{"$type": "string", "$gt": ""},
-				"status":         bson.M{"$in": []string{"active", "suspended"}},
+				"status":         bson.M{"$in": []string{"active", "suspended", "pending_deletion"}},
 				"email_verified": true,
 			}),
 	})
@@ -246,14 +249,15 @@ func (s *MongoStore) FindByID(ctx context.Context, id string) (*models.User, err
 	return &u, nil
 }
 
-// FindByPhone returns an active or suspended user with the given phone, or nil when absent.
+// FindByPhone returns a phone-reserving (active, suspended, or
+// pending_deletion) user with the given phone, or nil when absent.
 func (s *MongoStore) FindByPhone(ctx context.Context, phone string) (*models.User, error) {
 	if phone == "" {
 		return nil, nil
 	}
 	filter := bson.M{
 		"phone":  phone,
-		"status": bson.M{"$in": []string{string(models.StatusActive), string(models.StatusSuspended)}},
+		"status": bson.M{"$in": []string{string(models.StatusActive), string(models.StatusSuspended), string(models.StatusPendingDeletion)}},
 	}
 	var u models.User
 	err := s.coll.FindOne(ctx, filter).Decode(&u)
@@ -945,10 +949,39 @@ func (s *MongoStore) RequestDeletion(ctx context.Context, userID string, at, pur
 }
 
 // CancelDeletion compare-and-sets a pending_deletion account back to active
-// (login during the grace period) and clears the grace-period fields.
+// (login during the grace period) and clears the grace-period fields. If
+// another verified phone-reserving account holds the phone in the meantime,
+// restoring would create a duplicate, so it returns ErrPhoneTaken instead
+// (unreachable while the grace period reserves the phone; Login answers it
+// with 409, never a retry loop).
 func (s *MongoStore) CancelDeletion(ctx context.Context, userID string, at time.Time) error {
 	if at.IsZero() {
 		at = time.Now().UTC()
+	}
+	existing, err := s.FindByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("store: cancel deletion: %w", err)
+	}
+	if existing == nil {
+		return ErrUserNotFound
+	}
+	if existing.Status != models.StatusPendingDeletion {
+		return ErrStatusConflict
+	}
+	if existing.Phone != "" {
+		var holder models.User
+		holderErr := s.coll.FindOne(ctx, bson.M{
+			"phone":          existing.Phone,
+			"_id":            bson.M{"$ne": userID},
+			"email_verified": true,
+			"status":         bson.M{"$in": []string{string(models.StatusActive), string(models.StatusSuspended), string(models.StatusPendingDeletion)}},
+		}).Decode(&holder)
+		if holderErr == nil {
+			return ErrPhoneTaken
+		}
+		if !errors.Is(holderErr, mongo.ErrNoDocuments) {
+			return fmt.Errorf("store: cancel deletion phone check: %w", holderErr)
+		}
 	}
 	res, err := s.coll.UpdateOne(ctx,
 		bson.M{"_id": userID, "status": string(models.StatusPendingDeletion)},
@@ -964,6 +997,9 @@ func (s *MongoStore) CancelDeletion(ctx context.Context, userID string, at time.
 			},
 		})
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrPhoneTaken
+		}
 		return fmt.Errorf("store: cancel deletion: %w", err)
 	}
 	if res.MatchedCount == 0 {
