@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1125,5 +1126,51 @@ func TestAccount_ChangePasswordRevokeFailure503(t *testing.T) {
 	rec = doRequest(t, s, http.MethodGet, "/auth/sessions", nil, accessA)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("current session sessions-list after failed change = %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestAccount_ConcurrentProfileNameEdit fires 10 concurrent PATCH name edits:
+// the 30-day limit lives in the store filter, so exactly one wins (200) and
+// the rest get 429 change_too_soon.
+func TestAccount_ConcurrentProfileNameEdit(t *testing.T) {
+	s, _, cleanup := accountTestServer(t)
+	defer cleanup()
+
+	accessA, _ := signupVerifyTokens(t, s, "racer@example.com", "+201012345741", "Password123!", devA)
+
+	const n = 10
+	var ok200, tooSoon, other int64
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			rec := doRequest(t, s, http.MethodPatch, "/auth/me", map[string]string{
+				"full_name":        "Racer " + string(rune('A'+i)),
+				"current_password": "Password123!",
+			}, accessA)
+			switch rec.Code {
+			case http.StatusOK:
+				atomic.AddInt64(&ok200, 1)
+			case http.StatusTooManyRequests:
+				var body map[string]string
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["code"] != "change_too_soon" {
+					t.Errorf("racer %d: 429 without change_too_soon: %s", i, rec.Body.String())
+					return
+				}
+				if rec.Header().Get("Retry-After") == "" {
+					t.Errorf("racer %d: 429 without Retry-After", i)
+					return
+				}
+				atomic.AddInt64(&tooSoon, 1)
+			default:
+				t.Errorf("racer %d: code = %d (%s)", i, rec.Code, rec.Body.String())
+				atomic.AddInt64(&other, 1)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if ok200 != 1 || tooSoon != n-1 || other != 0 {
+		t.Fatalf("200=%d change_too_soon=%d other=%d, want 1/%d/0", ok200, tooSoon, other, n-1)
 	}
 }

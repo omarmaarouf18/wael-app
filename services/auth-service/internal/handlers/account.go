@@ -34,8 +34,10 @@ import (
 // changed too soon. The Retry-After header carries seconds until allowed.
 const ErrCodeChangeTooSoon = "change_too_soon"
 
-// changeCooldown is the owner-decided per-field edit limit (F-UX2).
-const changeCooldown = 30 * 24 * time.Hour
+// changeCooldown mirrors the store's owner-decided per-field edit limit
+// (F-UX2) for the fast-path pre-checks; the atomic enforcement lives in the
+// store update filter.
+const changeCooldown = store.ProfileChangeCooldown
 
 // deletionGrace is the owner-decided self-deletion grace period (F-UX2).
 const deletionGrace = 30 * 24 * time.Hour
@@ -356,12 +358,13 @@ func (s *Server) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	sc.user.PasswordHash = string(hash)
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
-	err = s.Store.Update(dbCtx, sc.user)
+	err = s.Store.UpdatePassword(dbCtx, sc.user.ID, string(hash), now)
 	cancel()
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		// The account stopped being active between the session check and
+		// the write (suspend, deletion request, or purge).
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", err)
 		return
 	}
 	if ll := s.LoginLockout; ll != nil {
@@ -469,23 +472,28 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The atomic write below $set-touches only the supplied fields, guarded
+	// by the active status and the 30-day limit in the store filter, so a
+	// concurrent edit or deletion request cannot clobber these fields.
+	var namePtr, phonePtr *string
+	appliedName, appliedPhone := sc.user.FullName, sc.user.Phone
 	if wantName {
-		sc.user.FullName = newName
-		sc.user.NameChangedAt = now
+		namePtr = &newName
+		appliedName = newName
 	}
 	if wantPhone && newPhone != sc.user.Phone {
-		sc.user.Phone = newPhone
-		sc.user.PhoneChangedAt = now
+		phonePtr = &newPhone
+		appliedPhone = newPhone
 	}
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
-	err := s.Store.Update(dbCtx, sc.user)
+	err := s.Store.UpdateProfileFields(dbCtx, sc.user.ID, store.ProfileFields{Name: namePtr, Phone: phonePtr}, now)
 	cancel()
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
 			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, err)
 			return
 		}
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		s.resolveProfileWriteError(w, r, sc.user.ID, store.ProfileFields{Name: namePtr, Phone: phonePtr}, now)
 		return
 	}
 	s.recordAccountEvent(r.Context(), sc.user.ID, models.AccountEventProfileChanged, now)
@@ -493,9 +501,45 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"id":        sc.user.ID,
 		"email":     sc.user.Email,
-		"full_name": sc.user.FullName,
-		"phone":     sc.user.Phone,
+		"full_name": appliedName,
+		"phone":     appliedPhone,
 	})
+}
+
+// resolveProfileWriteError maps a failed atomic profile write by refetching
+// the record: a missing or non-active account answers 401; a 30-day limit
+// now in force answers 429 change_too_soon with Retry-After; anything else
+// (e.g. a lost phone race that the refetch cannot explain) answers the
+// generic 409. A store read failure answers 503.
+func (s *Server) resolveProfileWriteError(w http.ResponseWriter, r *http.Request, userID string, f store.ProfileFields, now time.Time) {
+	const refusalMsg = "unable to complete the change"
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	fresh, err := s.Store.FindByID(dbCtx, userID)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if fresh == nil || fresh.EffectiveStatus() != models.StatusActive {
+		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+		return
+	}
+	var wait time.Duration
+	if f.Name != nil && *f.Name != fresh.FullName && !fresh.NameChangedAt.IsZero() {
+		if d := fresh.NameChangedAt.Add(store.ProfileChangeCooldown).Sub(now); d > wait {
+			wait = d
+		}
+	}
+	if f.Phone != nil && *f.Phone != fresh.Phone && !fresh.PhoneChangedAt.IsZero() {
+		if d := fresh.PhoneChangedAt.Add(store.ProfileChangeCooldown).Sub(now); d > wait {
+			wait = d
+		}
+	}
+	if wait > 0 {
+		writeChangeTooSoon(w, r, wait)
+		return
+	}
+	handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
 }
 
 // writeChangeTooSoon writes 429 change_too_soon with Retry-After (seconds,
@@ -701,24 +745,41 @@ func (s *Server) ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	oldEmail := sc.user.Email
-	sc.user.Email = newEmail
 	now := s.now()
-	// End all sessions first (fail-closed backstop), then persist the email,
-	// then end sessions and refresh keys. No fresh tokens: the app shows login.
+	// End all sessions first (fail-closed backstop), then compare-and-set the
+	// email, then end sessions and refresh keys. No fresh tokens: the app
+	// shows login.
 	if err := jwtutil.RevokeAllUserTokens(sc.user.ID); err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 	dbCtx, cancel = context.WithTimeout(ctx, dbTimeout)
-	err = s.Store.Update(dbCtx, sc.user)
+	err = s.Store.SetEmail(dbCtx, sc.user.ID, oldEmail, newEmail, now)
 	cancel()
 	if err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
 			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, err)
 			return
 		}
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		// Status or email mismatch: refetch to answer precisely. A missing
+		// or non-active account answers 401; an already-applied change
+		// (idempotent double-submit) continues to success; anything else
+		// is the generic 409.
+		dbCtx, cancel = context.WithTimeout(ctx, dbTimeout)
+		fresh, findErr := s.Store.FindByID(dbCtx, sc.user.ID)
+		cancel()
+		if findErr != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", findErr)
+			return
+		}
+		if fresh == nil || fresh.EffectiveStatus() != models.StatusActive {
+			handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
+			return
+		}
+		if fresh.Email != newEmail {
+			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, err)
+			return
+		}
 	}
 	dbCtx, cancel = context.WithTimeout(ctx, dbTimeout)
 	endedSessions, endErr := s.Store.EndAllUserSessions(dbCtx, sc.user.ID, models.EndReasonLogout, now)

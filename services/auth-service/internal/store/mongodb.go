@@ -1097,3 +1097,136 @@ func (s *MongoStore) ListDeletionsDue(ctx context.Context, now time.Time) ([]*mo
 	}
 	return users, nil
 }
+
+// statusMismatch maps a no-match write to ErrUserNotFound (record gone) or
+// ErrStatusConflict (record present but the status guard failed) via refetch.
+func (s *MongoStore) statusMismatch(ctx context.Context, userID, op string) error {
+	existing, findErr := s.FindByID(ctx, userID)
+	if findErr != nil {
+		return fmt.Errorf("store: %s: %w", op, findErr)
+	}
+	if existing == nil {
+		return ErrUserNotFound
+	}
+	return ErrStatusConflict
+}
+
+// UpdatePassword sets only the password hash (plus updated_at) and only
+// while the account is active.
+func (s *MongoStore) UpdatePassword(ctx context.Context, userID, hash string, at time.Time) error {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	res, err := s.coll.UpdateOne(ctx, activeStatusFilter(userID), bson.M{"$set": bson.M{
+		"password_hash": hash,
+		"updated_at":    at,
+	}})
+	if err != nil {
+		return fmt.Errorf("store: update password: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return s.statusMismatch(ctx, userID, "update password")
+	}
+	return nil
+}
+
+// UpdateProfileFields sets only the supplied name/phone fields (plus their
+// change stamps and updated_at) and only while the account is active. The
+// 30-day per-field limit is part of the update filter (change stamp absent
+// or at most now-30d), so two concurrent edits cannot both pass; the loser
+// refetches as ErrChangeTooSoon. A phone claimed by another verified
+// phone-reserving account surfaces as ErrDuplicate via the partial unique
+// index. Same-value fields are dropped before the write, so a no-op never
+// restarts the 30-day clock.
+func (s *MongoStore) UpdateProfileFields(ctx context.Context, userID string, f ProfileFields, at time.Time) error {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	existing, err := s.FindByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("store: update profile: %w", err)
+	}
+	if existing == nil {
+		return ErrUserNotFound
+	}
+	if existing.EffectiveStatus() != models.StatusActive {
+		return ErrStatusConflict
+	}
+	set := bson.M{"updated_at": at}
+	var and []bson.M
+	if f.Name != nil && *f.Name != existing.FullName {
+		and = append(and, bson.M{"$or": []bson.M{
+			{"name_changed_at": bson.M{"$exists": false}},
+			{"name_changed_at": bson.M{"$lte": at.Add(-ProfileChangeCooldown)}},
+		}})
+		set["full_name"] = *f.Name
+		set["name_changed_at"] = at
+	}
+	if f.Phone != nil && *f.Phone != existing.Phone {
+		and = append(and, bson.M{"$or": []bson.M{
+			{"phone_changed_at": bson.M{"$exists": false}},
+			{"phone_changed_at": bson.M{"$lte": at.Add(-ProfileChangeCooldown)}},
+		}})
+		set["phone"] = *f.Phone
+		set["phone_changed_at"] = at
+	}
+	filter := activeStatusFilter(userID)
+	if len(and) > 0 {
+		filter = bson.M{"$and": append([]bson.M{filter}, and...)}
+	}
+	res, err := s.coll.UpdateOne(ctx, filter, bson.M{"$set": set})
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: update profile: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		fresh, findErr := s.FindByID(ctx, userID)
+		if findErr != nil {
+			return fmt.Errorf("store: update profile: %w", findErr)
+		}
+		if fresh == nil {
+			return ErrUserNotFound
+		}
+		if fresh.EffectiveStatus() != models.StatusActive {
+			return ErrStatusConflict
+		}
+		if f.Name != nil && *f.Name != fresh.FullName && !fresh.NameChangedAt.IsZero() &&
+			at.Before(fresh.NameChangedAt.Add(ProfileChangeCooldown)) {
+			return ErrChangeTooSoon
+		}
+		if f.Phone != nil && *f.Phone != fresh.Phone && !fresh.PhoneChangedAt.IsZero() &&
+			at.Before(fresh.PhoneChangedAt.Add(ProfileChangeCooldown)) {
+			return ErrChangeTooSoon
+		}
+		return ErrStatusConflict
+	}
+	return nil
+}
+
+// SetEmail compare-and-sets the email from oldEmail to newEmail (plus
+// updated_at) and only while the account is active. A stale oldEmail or any
+// other status is ErrStatusConflict; a newEmail held by another account is
+// ErrDuplicate via the unique index.
+func (s *MongoStore) SetEmail(ctx context.Context, userID, oldEmail, newEmail string, at time.Time) error {
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	filter := activeStatusFilter(userID)
+	filter["email"] = oldEmail
+	res, err := s.coll.UpdateOne(ctx, filter, bson.M{"$set": bson.M{
+		"email":      newEmail,
+		"updated_at": at,
+	}})
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: set email: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return s.statusMismatch(ctx, userID, "set email")
+	}
+	return nil
+}

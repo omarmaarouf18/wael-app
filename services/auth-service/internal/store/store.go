@@ -29,11 +29,25 @@ var (
 	// phone was taken in the meantime). Distinct from ErrDuplicate so callers
 	// can answer without a retry loop.
 	ErrPhoneTaken = errors.New("store: phone taken")
+	// ErrChangeTooSoon is returned when a 30-day-limited profile field is
+	// changed too soon.
+	ErrChangeTooSoon = errors.New("store: change too soon")
 	// ErrDuplicate is returned when a unique constraint (email or phone) is violated.
 	ErrDuplicate = errors.New("store: duplicate key")
 	// ErrAdminNotFound is returned when an operation references a non-existent admin.
 	ErrAdminNotFound = errors.New("store: admin not found")
 )
+
+// ProfileChangeCooldown is the owner-decided per-field profile edit limit
+// (F-UX2): name and phone each change at most once per 30 days.
+const ProfileChangeCooldown = 30 * 24 * time.Hour
+
+// ProfileFields describes one atomic self-service profile edit. A nil
+// pointer means "don't change this field".
+type ProfileFields struct {
+	Name  *string
+	Phone *string
+}
 
 // FromActiveOrSuspended matches active (incl. legacy empty) or suspended.
 const FromActiveOrSuspended = "active|suspended"
@@ -91,6 +105,15 @@ type Store interface {
 	CancelDeletion(ctx context.Context, userID string, at time.Time) error
 	PurgeDeletion(ctx context.Context, userID, anonymizedEmail string, at time.Time) error
 	ListDeletionsDue(ctx context.Context, now time.Time) ([]*models.User, error)
+
+	// Targeted self-service writes (F-UX2 review): each $set-touches only the
+	// fields its action changes and matches only when the account is active,
+	// so concurrent actions cannot clobber each other's fields. A status
+	// mismatch surfaces as ErrStatusConflict (callers answer 401 when the
+	// account is gone or no longer active, else 409).
+	UpdatePassword(ctx context.Context, userID, hash string, at time.Time) error
+	UpdateProfileFields(ctx context.Context, userID string, f ProfileFields, at time.Time) error
+	SetEmail(ctx context.Context, userID, oldEmail, newEmail string, at time.Time) error
 }
 
 type blockEntry struct {
@@ -854,4 +877,102 @@ func (s *MemoryStore) ListDeletionsDue(_ context.Context, now time.Time) ([]*mod
 		return due[i].PurgeAfter.Before(due[j].PurgeAfter)
 	})
 	return due, nil
+}
+
+// UpdatePassword sets only the password hash (plus updated_at) and only
+// while the account is active. Any other status is ErrStatusConflict.
+func (s *MemoryStore) UpdatePassword(_ context.Context, userID, hash string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	if existing.EffectiveStatus() != models.StatusActive {
+		return ErrStatusConflict
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	existing.PasswordHash = hash
+	existing.UpdatedAt = at
+	return nil
+}
+
+// UpdateProfileFields sets only the supplied name/phone fields (plus their
+// change stamps and updated_at) and only while the account is active. The
+// 30-day per-field limit is enforced inside the same critical section, so two
+// concurrent edits cannot both pass; the loser gets ErrChangeTooSoon. A phone
+// claimed by another verified phone-reserving account is ErrDuplicate. A
+// no-op (same values) changes nothing and succeeds.
+func (s *MemoryStore) UpdateProfileFields(_ context.Context, userID string, f ProfileFields, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	if existing.EffectiveStatus() != models.StatusActive {
+		return ErrStatusConflict
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	changeName := f.Name != nil && *f.Name != existing.FullName
+	changePhone := f.Phone != nil && *f.Phone != existing.Phone
+	if changeName {
+		if !existing.NameChangedAt.IsZero() && at.Before(existing.NameChangedAt.Add(ProfileChangeCooldown)) {
+			return ErrChangeTooSoon
+		}
+	}
+	if changePhone {
+		if !existing.PhoneChangedAt.IsZero() && at.Before(existing.PhoneChangedAt.Add(ProfileChangeCooldown)) {
+			return ErrChangeTooSoon
+		}
+		for id, other := range s.byID {
+			if id != userID && other.Phone == *f.Phone && other.EmailVerified && reservesPhone(other.EffectiveStatus()) {
+				return ErrDuplicate
+			}
+		}
+	}
+	if changeName {
+		existing.FullName = *f.Name
+		existing.NameChangedAt = at
+	}
+	if changePhone {
+		existing.Phone = *f.Phone
+		existing.PhoneChangedAt = at
+	}
+	existing.UpdatedAt = at
+	return nil
+}
+
+// SetEmail compare-and-sets the email from oldEmail to newEmail (plus
+// updated_at) and only while the account is active. A stale oldEmail (the
+// change already applied) or any other status is ErrStatusConflict; a
+// newEmail held by another account is ErrDuplicate.
+func (s *MemoryStore) SetEmail(_ context.Context, userID, oldEmail, newEmail string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	if existing.EffectiveStatus() != models.StatusActive {
+		return ErrStatusConflict
+	}
+	if existing.Email != oldEmail {
+		return ErrStatusConflict
+	}
+	if other, taken := s.byMail[newEmail]; taken && other.ID != userID {
+		return ErrDuplicate
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	delete(s.byMail, existing.Email)
+	existing.Email = newEmail
+	existing.UpdatedAt = at
+	s.byMail[newEmail] = existing
+	return nil
 }

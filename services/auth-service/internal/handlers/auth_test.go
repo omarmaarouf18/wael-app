@@ -1559,6 +1559,15 @@ func (f *failingStore) EndAllUserSessions(ctx context.Context, userID string, re
 func (f *failingStore) EndAllUserSessionsExcept(ctx context.Context, userID, exceptSID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
 	return nil, f.err
 }
+func (f *failingStore) UpdatePassword(ctx context.Context, userID, hash string, at time.Time) error {
+	return f.err
+}
+func (f *failingStore) UpdateProfileFields(ctx context.Context, userID string, f2 store.ProfileFields, at time.Time) error {
+	return f.err
+}
+func (f *failingStore) SetEmail(ctx context.Context, userID, oldEmail, newEmail string, at time.Time) error {
+	return f.err
+}
 func (f *failingStore) ListActiveSessions(ctx context.Context, userID string) ([]*models.Session, error) {
 	return nil, f.err
 }
