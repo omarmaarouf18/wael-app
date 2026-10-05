@@ -57,3 +57,13 @@ say explicitly where nothing is built yet.
 *   [ADR-0008: Admin Identity and Console Boundaries](0008-admin-identity.md)
 *   [ADR-0009: File Storage (Local Encrypted Storage at Rest)](0009-file-storage.md)
 *   [ADR-0011: Separate Deploy and Mobile Repositories](0011-deploy-and-mobile-repositories.md)
+*   [ADR-0012: Academy Admin Content API (Phase 4.1-4.4)](0012-academy-admin-content.md)
+
+### Numbering notes (added 2026-10-06)
+
+- **There is no ADR-0010 file.** ADR-0007 and `docs/core-service/SPEC.md` Section 15 reserved
+  0010 for the app-content model (admin-editable UI text and images); it has not been written.
+  New ADRs use the next free number after 0012, and the missing 0010 stays reserved for that topic.
+- `docs/BOOTSTRAP-REFERENCE.md` cites "ADR-0010" and "ADR-0012", and ADR-0011 mentions "its
+  ADR-0010". Those are numbers from saas-core, the reference project that document describes
+  (its header says so), not wael-app's ADRs.

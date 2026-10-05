@@ -14,7 +14,7 @@ Applied 2026-09-30 through the GitHub web UI (owner session).
 | Secret Protection | Enabled (secret scanning alerts) |
 | Push protection | Enabled |
 | Dependency graph / Dependabot alerts | Enabled |
-| Dependabot version updates, CodeQL | Partial (2026-10-02: weekly docker updates for `infrastructure/deploy` via `.github/dependabot.yml`; no gomod/github-actions updates, no CodeQL) |
+| Dependabot version updates, CodeQL | Partial (2026-10-02: weekly docker updates for `infrastructure/deploy` via `.github/dependabot.yml`; no gomod/github-actions updates, no CodeQL; *amended 2026-10-06: `.github/dependabot.yml` now has 17 weekly entries (docker-compose, gomod per module, pub, github-actions, docker per service), all targeting `develop`. GitHub reads that file from the default branch, so it takes effect only after `main` is fast-forwarded to a `develop` that contains it. Still no CodeQL.*) |
 | Branches | `main`, `develop`. `wire/existing-services` deleted on GitHub (fully merged into `develop`). |
 
 ### Required check architecture (owner decision 2026-10-02, Q2 — DECIDED, NOT YET APPLIED)
