@@ -60,7 +60,7 @@ This is the build contract for the core of the application. It is written for im
 | D5 | File kinds | `subject_files.kind` is `book` or `note`; format is PDF only. "Classes" (حصص) is not modeled: it means videos. |
 | D6 | Video duration | Not stored. |
 | D7 | Phone | Normalized to E.164, default region `EG` (config). Unique per active account. |
-| D8 | Account delete | Soft delete (`status = deleted`) plus a blocklist of SHA-256 hashes of normalized email and phone so an abused identity cannot re-register. |
+| D8 | Account delete | Soft delete (`status = deleted`) plus a blocklist of SHA-256 hashes of normalized email and phone so an abused identity cannot re-register. *(Amended 2026-10-05, owner, F-UX2 A6: the blocklist applies to ADMIN deletion (a ban, R9). A SELF-deleted account (after the 30-day purge) does NOT blocklist its email or phone, so both can sign up again.)* |
 | D9 | Entitlement revocation | Allowed by admin, reason mandatory, audited. |
 | D10 | Learning progress | Local to the device only; no server field. |
 | D11 | Video ordering | `position` integer, no unique index (reorder rewrites positions in one bulk write; code enforces contiguity). This replaces the unique compound index in ADR-0007 decision 12. |
@@ -169,6 +169,7 @@ Notes:
 ### auth-service additions
 
 - `users`: `full_name`, `phone` (normalized), `status` (`active`/`suspended`/`deleted`), `status_reason`, `suspended_at`, `reactivated_at`, `deleted_at`. Unique partial index on `phone` for non-deleted accounts. Existing documents with no `status` are treated as `active` via a helper such as `EffectiveStatus()`.
+- *Amended 2026-10-05 (owner: F-UX2 launched 2026-10-05, lifting the 2026-10-03 hold; settings and account management):* `status` gains `pending_deletion` (self-deletion grace period); `users` gains `name_changed_at`, `phone_changed_at` (30-day per-field edit limits), `deletion_requested_at`, `purge_after` (30-day grace); new append-only `account_events` collection (`_id`, `user_id`, `type`, `created_at`; no PII values; index on (`user_id`, `created_at`)); `sessions` `end_reason` gains `user` (ended from the student's own device list, same behavior as `logout`).
 - `admins`: `_id` (admin id), `name`, `token_hash` (SHA-256, never plaintext), `created_at`, `expires_at`, `revoked_at`.
 - `blocklist`: `kind` (`email`/`phone`), `hash`, `reason`, `created_at`; unique (`kind`, `hash`).
 - `admin_audit_log` *(added 2026-10-01, owner)*: `_id`, `actor_id`, `actor_name`, `action`, `target_type`, `target_id`, `detail`, `created_at`; no IP. Compound indexes on (`actor_id`, `created_at`) and (`target_type`, `target_id`).
@@ -191,6 +192,13 @@ Student routes are served through the gateway as `/api/v1/auth/...` and `/api/v1
 | `POST /auth/reset/confirm` | Set new password | Validates length before consuming the token (atomic `Take`); ends all sessions, no tokens issued (R7 amendment) |
 | `POST /auth/refresh` | Rotate refresh token | Keeps session, updates `last_used_at` and `refresh_hash`. Returns 401 code `session_replaced` if session ended with reason `replaced` |
 | `POST /auth/logout` | End current session | Authenticated (student JWT Bearer). Ends caller's session (`end_reason=logout`), deletes its refresh key, revokes session via `RevokeSession(sid)`. 204 No Content |
+| `GET /auth/sessions` | Own active sessions (F-UX2 A1) | Student JWT + active session (`sid`). Items: `sid` (opaque), `device_label`, `created_at`, `last_used_at`, `current`. Never refresh hash, IP or raw `device_id` |
+| `DELETE /auth/sessions/{sid}` | End one own session (F-UX2 A1) | Same as logout with `end_reason=user`. Ending the current session is logout. Another user's, unknown, or already-ended sid returns 404. 204 |
+| `POST /auth/password/change` | Change password (F-UX2 A2) | `{current_password, new_password}` (8+ chars, at most 72 bytes). Wrong current password counts toward D26 lockout keys. Ends every OTHER session; current stays |
+| `PATCH /auth/me` | Change name/phone (F-UX2 A3) | `{full_name?, phone?, current_password}`. Same validation as signup. Once per 30 days per field; too soon is 429 `change_too_soon` + `Retry-After` (seconds). Phone must not be held by another verified account nor blocklisted (generic 409); duplicate key maps to 409 |
+| `POST /auth/email/change` | Start email change (F-UX2 A4) | `{new_email, current_password}`. Sends a 6-digit code to the NEW email only (10 min, same attempt cap and resend cooldown as signup). Taken/blocklisted emails get the same generic 200 with no code sent |
+| `POST /auth/email/confirm` | Confirm email change (F-UX2 A4) | `{code}`. Compare-and-set the email; notify the OLD email (masked new address, no code); end ALL sessions including current. Duplicate key at confirm time is a generic 409 |
+| `POST /auth/account/delete` | Request self-deletion (F-UX2 A5) | `{current_password, confirm:"حذف"}`. Status becomes `pending_deletion` with `purge_after` = now + 30 days; all sessions end; an email states the deletion date and that signing in before then cancels it |
 
 ### Student (academy-service)
 
@@ -203,6 +211,7 @@ Student routes are served through the gateway as `/api/v1/auth/...` and `/api/v1
 | `POST /academy/videos/{id}/play` | Play video | Returns `{"video_id", "youtube_video_id"}` with `Cache-Control: private, no-store`. 404 if unowned, expired, unpublished, or empty ID. Appends to `video_plays` (best-effort, fail-open for playback). Play tier |
 | `GET /academy/subjects/{id}/files/{fileId}/download` | Stream a PDF | 403 unless owned. Entitlement checked on every call. Download tier |
 | `GET /academy/me/entitlements` | Owned subject ids | |
+| `GET /academy/app-config` | Public app config (F-UX2 A7) | Public (no student JWT), read tier (per-IP), cacheable 5 min. Returns `support_whatsapp_url` (`https://wa.me/<SUPPORT_WHATSAPP digits>`), `terms_url` and `privacy_url` (`TERMS_URL`/`PRIVACY_URL`, https only, required outside local/test), optional `min_version`, `latest_version`, `update_url` (empty means no update prompt). No payment wording |
 
 *Amended 2026-10-02 (owner decision, Section 1 decision 2):* `GET /academy/levels` always returns the three study types, `bachelor`, `diploma`, `vocational`, in that order, each as `{"key", "title": {"ar","en"}, "levels": [...]}` with all of its levels ordered by `position`, then `key`; `levels` is an empty array (never `null`) for a study type with none. The flat `levels` list holds the same levels in that tree order. A level appears whether or not it has published subjects; the table's earlier "Fixed tree" wording stands. The response carries no subject, count, price or ownership data. Subject lists and details are unchanged (published subjects only).
 
@@ -221,6 +230,7 @@ Subject detail, owned:
 ```
 
 Subject detail, not owned: same, but `videos[]` items carry `playable: false`, `files[]` carry no download capability, `owned` is false, and `request` is `{"status": "pending"}` or absent. `price` and `currency` appear only when `EXPOSE_PRICE_TO_STUDENTS=true`. Neither owned nor unowned detail ever includes `youtube_video_id` (amended 2026-10-01, decision 21).
+  - *Amended 2026-10-05 (owner, F-UX2 A8):* while a pending request exists, `request` also carries `whatsapp_url` (same value and https-only rule as the access-request response). It is absent when there is no pending request.
 
 The access-request response carries the request status and the support link (`whatsapp_url` built from `SUPPORT_WHATSAPP`). It contains no payment wording.
 
@@ -257,9 +267,9 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 | Method and path | Purpose |
 |---|---|
 | `POST /verify` | Validate `X-Admin-Token`, return `{admin_id, name}`. Lockout after repeated failures, keyed on client IP and on the token hash (saas-core `authenticateReviewer` pattern) |
-| `GET /accounts?search=&status=&ids=&page=&limit=` | Search by name, email, phone, or id; or batch lookup by comma-separated `ids` (up to 100) |
-| `POST /accounts/{id}/suspend` (reason 1-1000), `POST /accounts/{id}/reactivate` | Atomic compare-and-set. Same-state change returns 409 |
-| `DELETE /accounts/{id}` (reason required) | Soft delete plus blocklist entries (D8) |
+| `GET /accounts?search=&status=&ids=&page=&limit=` | Search by name, email, phone, or id; or batch lookup by comma-separated `ids` (up to 100). Status filter accepts `active`, `suspended`, `deleted`, `pending_deletion` (F-UX2 A5) |
+| `POST /accounts/{id}/suspend` (reason 1-1000), `POST /accounts/{id}/reactivate` | Atomic compare-and-set. Same-state change returns 409. Suspend also accepts `pending_deletion` (F-UX2 A5) and clears the grace fields; reactivate refuses `pending_deletion` (the student cancels by signing in) |
+| `DELETE /accounts/{id}` (reason required) | Soft delete plus blocklist entries (D8). Accepts `pending_deletion` (admin ban overrides the grace request and still blocklists, R9) |
 | `GET /audit-log?page=&limit=` | Audit trail (auth actions, newest first) |
 
 ## 7. Access rules (the heart)
@@ -274,8 +284,10 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 - **R6 Downloads stream through academy-service** (`Content-Disposition: attachment`, `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`). Do not hand out static URLs, so a per-user watermark can be added later without changing the API.
 - **R7 Suspension.** A non-`active` account is refused on **all three token-issuing paths**: `Login`, `Refresh`, `VerifyOTP`. (`ConfirmReset` only changes the password; it issues no tokens.) Suspend also calls `jwtutil.RevokeAllUserTokens`. Because the refresh key is `refresh:<hash>` -> user id with no per-user index, the refresh gate is the status check, not deleting entries. Verify that the revocation marker TTL is at least the refresh lifetime plus the access lifetime.
   - *Amended 2026-10-03 (owner brief):* a successful `ConfirmReset` additionally ends **every** session of that user: `RevokeAllUserTokens` first (fail-closed backstop), then password update, then `EndAllUserSessions` with refresh-key deletion (fail-closed) and per-`sid` revocation. No fresh tokens are issued; the user logs in again on every device. The reset token itself is redeemed with atomic `Take` (exactly one winner under concurrency) after length validation, so a bad password never burns it.
+  - *Amended 2026-10-05 (owner, F-UX2 A5):* `pending_deletion` is refused on all three token-issuing paths (`Login`, `Refresh`, `VerifyOTP`) exactly like a non-`active` account — except that `Login` with the correct password restores the account to `active` (compare-and-set, clearing the grace fields), sends the cancellation email, and returns `deletion_cancelled=true` with fresh tokens. A purge job (hourly ticker in auth-service, single-instance Redis lock) anonymizes accounts past `purge_after`: clears name, email, phone and password hash, sets `deleted`, keeps the user id; done as a compare-and-set so a racing login cannot restore a half-purged account. The console accounts list shows `pending_deletion`; an admin can still suspend (which clears the grace fields) or ban (which blocklists) such an account.
 - **R8 Unpublished subjects** are invisible to students (404), including their files.
 - **R9 Deleted or suspended accounts** cannot register again with the same email or phone (blocklist), and the error is generic (no oracle).
+  - *Amended 2026-10-05 (owner, F-UX2 A6):* the blocklist applies to ADMIN deletion (a ban, R9). A SELF-deleted account (after the 30-day purge) does NOT blocklist its email or phone, so both can sign up again.
 
 ## 8. Security requirements
 
@@ -295,7 +307,7 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 ## 9. Configuration (academy-service)
 
 Follow the naming already used in `services/auth-service/internal/config`. Required unless a default is stated:
-`APP_ENV`, listen address, `ADMIN_LISTEN_ADDR`, Mongo URI and database name, Redis URL, `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN`, `AUTH_SERVICE_URL`, `NOTIFICATION_SERVICE_URL`, `STORAGE_DIR`, `DOCUMENT_ENCRYPTION_KEY`, `MAX_PDF_BYTES` (default 50 MB), `SUPPORT_WHATSAPP`, `EXPOSE_PRICE_TO_STUDENTS` (default `false`), `DEFAULT_PHONE_REGION` (default `EG`, auth-service).
+`APP_ENV`, listen address, `ADMIN_LISTEN_ADDR`, Mongo URI and database name, Redis URL, `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN`, `AUTH_SERVICE_URL`, `NOTIFICATION_SERVICE_URL`, `STORAGE_DIR`, `DOCUMENT_ENCRYPTION_KEY`, `MAX_PDF_BYTES` (default 50 MB), `SUPPORT_WHATSAPP`, `EXPOSE_PRICE_TO_STUDENTS` (default `false`), `DEFAULT_PHONE_REGION` (default `EG`, auth-service), `TERMS_URL` and `PRIVACY_URL` (https only, required outside local/test, F-UX2 A7), `MIN_VERSION`, `LATEST_VERSION`, `UPDATE_URL` (optional, F-UX2 A7).
 
 ## 10. Testing requirements
 

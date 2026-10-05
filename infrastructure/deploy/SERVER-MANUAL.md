@@ -319,6 +319,9 @@ checked against each service's `config.Load()` and `env.production.example`.
 | `BLOCKLIST_HMAC_KEY` | auth-service | yes (production) | HMAC key for blocked email/phone identities — do NOT rotate casually: existing entries stop matching | `<GENERATE: openssl rand -hex 32>` |
 | `DEFAULT_PHONE_REGION` | auth-service | no (default `EG`) | Phone normalization region | `EG` |
 | `SUPPORT_WHATSAPP` | academy-service | yes (production) | Support link shown after access requests | international format, e.g. `+20...` |
+| `TERMS_URL` | academy-service | yes (production) | Terms page in the public app config (F-UX2 A7) | `https://` required outside dev |
+| `PRIVACY_URL` | academy-service | yes (production) | Privacy page in the public app config (F-UX2 A7) | `https://` required outside dev |
+| `MIN_VERSION` / `LATEST_VERSION` / `UPDATE_URL` | academy-service | no (empty = no update prompt) | Update metadata in the public app config (F-UX2 A7) | `UPDATE_URL` must use `https://` when set |
 | `EXPOSE_PRICE_TO_STUDENTS` | academy-service | no (default `false`) | Show subject prices | leave `false` unless the owner decides otherwise |
 | `RATE_LIMIT_READ/PLAY/DOWNLOAD/WRITE` | academy-service | no (defaults 120/60/10/5) | Per-user per-minute tiers | uncomment to override |
 | `STREAM_MAX_CONCURRENT` / `STREAM_OPEN_RATE_LIMIT` | notification-service | no (defaults 3 / 10) | SSE caps | uncomment to override |
@@ -373,6 +376,8 @@ echo "BLOCKLIST_HMAC_KEY=$(openssl rand -hex 32)"
 echo "DEFAULT_PHONE_REGION=EG"
 echo "SUPPORT_WHATSAPP=${OPERATOR_WHATSAPP}"
 echo "EXPOSE_PRICE_TO_STUDENTS=false"
+echo "TERMS_URL=https://${OPERATOR_API_DOMAIN#api.}/terms"
+echo "PRIVACY_URL=https://${OPERATOR_API_DOMAIN#api.}/privacy"
 } > "$WAEL_HOME/.env.production"
 chmod 600 "$WAEL_HOME/.env.production"
 SCRIPT
@@ -402,7 +407,8 @@ back from the file, §6):
   `TLS_CA_PATH`). Preflight (§8/§10) runs it for every
   service in one-off containers (`compose run --rm --no-deps -T <svc>
   --check-env`) after pulling the new images and before touching anything
-  running.
+  running. For `academy-service` this also validates `TERMS_URL` and
+  `PRIVACY_URL` (required, `https://` outside dev).
 
 Completeness proof (run from `wael-app/infrastructure/deploy/`): every name
 set in `env.production.example` is referenced by `docker-compose.yml`, and the

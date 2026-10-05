@@ -195,6 +195,12 @@ services:
       AUTH_ADMIN_URL: https://auth-service:9001
       NOTIFICATION_SERVICE_URL: https://notification-service:3004
       SUPPORT_WHATSAPP: ${SUPPORT_WHATSAPP:?SUPPORT_WHATSAPP is required}
+      # Public app config (F-UX2 A7): terms/privacy pages and update metadata.
+      TERMS_URL: ${TERMS_URL:?TERMS_URL is required}
+      PRIVACY_URL: ${PRIVACY_URL:?PRIVACY_URL is required}
+      MIN_VERSION: ${MIN_VERSION:-}
+      LATEST_VERSION: ${LATEST_VERSION:-}
+      UPDATE_URL: ${UPDATE_URL:-}
       # Prices stay hidden from students unless this is "true" (SPEC D3).
       EXPOSE_PRICE_TO_STUDENTS: ${EXPOSE_PRICE_TO_STUDENTS:-false}
       # Optional per-minute tier limits; empty means the service default.
