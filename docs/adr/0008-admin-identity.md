@@ -148,3 +148,53 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 
 - **Admin mode inside the mobile app**: Rejected in ADR-0002; bundling elevated capabilities into the student binary exposes them to reverse engineering.
 - **Admin endpoints on the student routes with checks**: Rejected in ADR-0002 and ADR-0007; elevated endpoints must not exist on the student-reachable surface.
+
+## Planned: internal trust hardening (D1)
+
+Amended 2026-10-03 (owner decision D1), recorded 2026-10-05. **Status: planned,
+not built.** Nothing below is implemented; the Decision section above is
+unchanged.
+
+**Today (checked against the code on 2026-10-05):**
+
+- One shared secret, `INTERNAL_SERVICE_TOKEN`, is read by auth-service,
+  academy-service, notification-service and admin-console
+  (`services/*/internal/config/config.go`). Callers send it as
+  `X-Internal-Token`: admin-console to the auth and academy admin listeners
+  (`services/admin-console/internal/proxy/proxy.go`), academy-service to the
+  auth admin listener for admin-token verification
+  (`services/academy-service/internal/handlers/admin.go`), and academy-service
+  and auth-service to `POST /internal/push` on notification-service
+  (`services/academy-service/internal/notify/notify.go`,
+  `services/auth-service/internal/notify/notify.go`). Receivers compare it in
+  constant time and reject an empty value (auth and academy also guard an empty
+  configured secret; notification-service relies on its config refusing an empty
+  `INTERNAL_SERVICE_TOKEN`)
+  (`services/auth-service/internal/handlers/admin.go`,
+  `services/academy-service/internal/handlers/handlers.go`,
+  `services/notification-service/internal/handlers/notifications.go`).
+  Every receiver accepts the same token from any caller.
+- The admin listeners (auth `:9001`, academy `:9002`) and notification-service
+  use `tlsutil.LoadServerTLSConfig` (`shared/infra/tlsutil/tlsutil.go`):
+  `ClientAuth: tls.RequireAndVerifyClientCert` against the one internal CA, with
+  no `VerifyPeerCertificate` and no check of the peer's name. Outside
+  `APP_ENV=local|test`, mTLS is required (`buildServer` in each service's
+  `cmd/main.go`). So any peer holding a certificate signed by that CA, plus the
+  shared token, is accepted.
+
+**Planned steps (owner decision D1):**
+
+1. **Client identity allowlist** on the admin listeners, using
+   `VerifyPeerCertificate` on the peer certificate's SAN DNS name: auth-service
+   `:9001` accepts only `admin-console` and `academy-service`; academy-service
+   `:9002` accepts only `admin-console`. Each service certificate already
+   carries `DNS:<service-name>` (`infrastructure/certs/generate-certs.sh`); it
+   also carries `DNS:localhost`, which the allowlist must not accept.
+2. **A separate internal token per pair of calling services**, replacing the
+   single `INTERNAL_SERVICE_TOKEN`, including `/internal/push` on
+   notification-service. This needs new secrets in `.env.production` and a
+   deploy-config change.
+3. **Later, not scheduled:** asymmetric service JWTs.
+
+Until step 1 and step 2 are built and verified, the Today description above is
+the actual trust model.

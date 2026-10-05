@@ -239,6 +239,8 @@ The access-request response carries the request status and the support link (`wh
 
 Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is verified through auth-service (`POST {AUTH_ADMIN_URL}/internal/admin/verify` over mTLS, 3 s timeout, no caching so revocation is immediate). **If auth-service is unreachable, fail closed (503).** Every mutation writes one `admin_audit_log` entry in the same operation flow; an audit write failure is logged at error level and does not fail the call (same as auth-service). Audit entries follow the Section 5 schema and store no IP addresses. Levels carry a `published` flag: students see published levels only (seeded levels are published; admin diplomas start unpublished).
 
+*Planned, not built (owner decision D1, 2026-10-03, recorded 2026-10-05): internal trust hardening (a client-identity allowlist on the admin listeners, then a separate internal token per pair of calling services); see ADR-0008, "Planned: internal trust hardening (D1)". Today there is one shared `INTERNAL_SERVICE_TOKEN` plus mTLS with any peer signed by the internal CA.*
+
 | Method and path | Purpose |
 |---|---|
 | `GET /levels` | All levels including unpublished, with subject counts |
