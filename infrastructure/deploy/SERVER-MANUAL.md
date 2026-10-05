@@ -435,7 +435,10 @@ so a normal deploy picks the cap up).
 The eviction policy is fixed to `noeviction` in the same `command:` line and
 preflight refuses any rendered compose without it. Never change it to an
 LRU/LFU/random/volatile policy: eviction could drop denylist keys
-(jti/sid/user revocation) and revive revoked tokens.
+(jti/sid/user revocation) and revive revoked tokens. Preflight also refuses a
+rendered compose that has no non-zero `--maxmemory` cap (amended 2026-10-06,
+`b79aaaa`: the earlier check matched any `--maxmemory` text, including
+`--maxmemory-policy`, so it passed with no cap).
 
 At the limit, writes fail with OOM errors while reads keep working: new
 logins, refreshes and OTP issues fail, existing sessions keep being
@@ -546,6 +549,34 @@ a login before pulls (`docker login ghcr.io -u <user>` with a
 Either way the tag is always the full commit sha.
 
 ## 8. First deploy
+
+### What preflight checks
+
+`scripts/preflight.sh` changes nothing that is running. It exits non-zero when any
+check fails; items 1 to 5 fail before any image is pulled, and no check touches a
+running container (added 2026-10-06 from the script; the items are in its order):
+
+1. Files and permissions: `.env.production` exists with mode `600`; `secrets/` and
+   `certs/` have mode `700`; `secrets/mongo_root_password` is non-empty;
+   `secrets/redis.conf` has a `requirepass` line.
+2. `IMAGE_TAG` in `release.env` is a full 40-character commit sha (no `:latest`).
+3. Required values are set and are not placeholders (`PASTE_`, `CHANGE_ME`,
+   `devpassword123`): `API_DOMAIN`, `ADMIN_DOMAIN`, `ACME_EMAIL`, `ALLOWED_ORIGIN`,
+   `JWT_SECRET`, `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN`, `MONGO_ROOT_USERNAME`,
+   the three `*_MONGO_URI`, `REDIS_URI`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`,
+   `BLOCKLIST_HMAC_KEY`, `SUPPORT_WHATSAPP`; `JWT_SECRET`, `GATEWAY_SECRET`,
+   `INTERNAL_SERVICE_TOKEN` and `BLOCKLIST_HMAC_KEY` are at least 32 characters;
+   `APP_ENV` is absent.
+4. Certificates: the CA and the five service certificates are valid for 14 more
+   days, and the five service keys exist.
+5. The compose file renders with this env. `TERMS_URL` and `PRIVACY_URL` are not in
+   the list in item 3; compose itself refuses to render without them (`${VAR:?}`),
+   which fails here as "compose config renders". Then the rendered Redis command
+   must have a non-zero `--maxmemory` cap and `noeviction`, and no LRU, LFU, random
+   or volatile policy.
+6. The images are pulled (with `SKIP_PULL=1`, the app images must already be loaded
+   locally, and only mongo, redis and caddy are pulled).
+7. Each app service passes `--check-env` in a one-off container.
 
 ### Path 1 — pipeline (normal)
 
@@ -780,7 +811,10 @@ in `docker-compose.yml` (W-07 resolved 2026-10-02), with weekly Dependabot
 docker updates for `/infrastructure/deploy`. Bump the digest (and tag) in
 `docker-compose.yml`, run preflight + deploy on a test host first, then ship
 via the pipeline and review the Dependabot PRs (they target `develop`, never
-`main`; amended 2026-10-05).
+`main`; amended 2026-10-05). *(Amended 2026-10-06: `.github/dependabot.yml` now
+also covers gomod, pub, github-actions and the service Dockerfiles, weekly; GitHub
+reads that file from the default branch, so it takes effect only after `main` is
+fast-forwarded to a `develop` that contains it.)*
 
 ## 11. Moving to a new server
 

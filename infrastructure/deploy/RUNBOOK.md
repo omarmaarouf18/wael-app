@@ -150,8 +150,9 @@ deploy. This profile has not been tried.
 Redis is capped at `REDIS_MAXMEMORY` (default `96mb`, below the 128m
 container limit) with a fixed `noeviction` policy — eviction is forbidden
 because it could drop denylist keys (jti/sid/user revocation) and revive
-revoked tokens. Full procedure and rationale: `SERVER-MANUAL.md` §5 "Redis
-memory".
+revoked tokens. Preflight refuses a rendered compose with no non-zero
+`--maxmemory` cap or with an eviction policy. Full procedure and rationale:
+`SERVER-MANUAL.md` §5 "Redis memory".
 
 **Symptoms.** New logins, token refreshes and OTP issues fail (write OOM;
 services log Redis OOM errors, `auth-service` returns 503 on
