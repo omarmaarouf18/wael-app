@@ -884,9 +884,8 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 				return
 			}
-			_ = s.Sender.SendNotice(context.WithoutCancel(r.Context()), email,
-				"Account deletion cancelled",
-				"Your account deletion request was cancelled because you signed in. Your account is active again.")
+			subj, body := deletionCancelledNotice()
+			_ = s.Sender.SendNotice(context.WithoutCancel(r.Context()), email, subj, body)
 			s.recordAccountEvent(r.Context(), u.ID, models.AccountEventDeletionCancelled, now)
 			go notify.DeletionCancelled(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
 			handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"access_token": access, "refresh_token": refresh, "deletion_cancelled": true})

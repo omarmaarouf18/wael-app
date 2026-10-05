@@ -1174,3 +1174,68 @@ func TestAccount_ConcurrentProfileNameEdit(t *testing.T) {
 		t.Fatalf("200=%d change_too_soon=%d other=%d, want 1/%d/0", ok200, tooSoon, other, n-1)
 	}
 }
+
+// forbiddenNoticeWords extends the academy store-safety list with the refund
+// term: no self-service notice email may carry payment, price or refund
+// wording in either language.
+var forbiddenNoticeWords = []string{
+	"دفع", "سعر", "ج.م", "جنيه", "شراء", "استرداد",
+	"payment", "price", "purchase", "refund", "pay",
+}
+
+func containsArabic(s string) bool {
+	for _, r := range s {
+		if r >= 0x0600 && r <= 0x06FF {
+			return true
+		}
+	}
+	return false
+}
+
+// TestAccount_NoticeEmailsArabicFirst scans every self-service notice email
+// (deletion scheduled with the date, deletion cancelled, email changed with
+// the masked address): Arabic text first, English below, plain text, and no
+// payment, price or refund wording.
+func TestAccount_NoticeEmailsArabicFirst(t *testing.T) {
+	dateStr := "2026-11-04"
+	masked := "n***@example.com"
+	scheduledSubj, scheduledText := deletionScheduledNotice(dateStr)
+	cancelledSubj, cancelledText := deletionCancelledNotice()
+	changedSubj, changedText := emailChangedNotice(masked)
+
+	cases := map[string]struct{ subject, text string }{
+		"scheduled": {scheduledSubj, scheduledText},
+		"cancelled": {cancelledSubj, cancelledText},
+		"changed":   {changedSubj, changedText},
+	}
+	for name, c := range cases {
+		lower := strings.ToLower(c.subject + "\n" + c.text)
+		for _, word := range forbiddenNoticeWords {
+			if strings.Contains(lower, strings.ToLower(word)) {
+				t.Errorf("%s notice contains forbidden word %q:\n%s\n%s", name, word, c.subject, c.text)
+			}
+		}
+		lines := strings.Split(c.text, "\n")
+		if len(lines) != 2 {
+			t.Fatalf("%s notice is not two plain-text lines:\n%q", name, c.text)
+		}
+		if !containsArabic(lines[0]) {
+			t.Errorf("%s notice first line is not Arabic:\n%q", name, lines[0])
+		}
+		if containsArabic(lines[1]) {
+			t.Errorf("%s notice second line is not English:\n%q", name, lines[1])
+		}
+		if !containsArabic(c.subject) {
+			t.Errorf("%s subject is not Arabic-first:\n%q", name, c.subject)
+		}
+	}
+	if !strings.Contains(scheduledText, dateStr) {
+		t.Errorf("scheduled notice has no date:\n%s", scheduledText)
+	}
+	if !strings.Contains(changedText, masked) {
+		t.Errorf("changed notice has no masked address:\n%s", changedText)
+	}
+	if strings.Contains(changedText, "newaddr@example.com") {
+		t.Errorf("changed notice leaks the full address:\n%s", changedText)
+	}
+}

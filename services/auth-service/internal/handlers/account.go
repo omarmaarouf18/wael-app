@@ -798,9 +798,8 @@ func (s *Server) ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
 		_ = jwtutil.RevokeSession(sess.ID)
 	}
 	masked := maskEmail(newEmail)
-	_ = s.Sender.SendNotice(context.WithoutCancel(ctx), oldEmail,
-		"Your account email was changed",
-		"The email on your account was just changed to "+masked+". If this was not you, contact support at once.")
+	subj, body := emailChangedNotice(masked)
+	_ = s.Sender.SendNotice(context.WithoutCancel(ctx), oldEmail, subj, body)
 	s.recordAccountEvent(ctx, sc.user.ID, models.AccountEventEmailChanged, now)
 	go notify.EmailChanged(context.WithoutCancel(ctx), s.NotifyURL, s.NotifyToken, sc.user.ID)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -818,6 +817,27 @@ func maskEmail(email string) string {
 		return "***"
 	}
 	return string([]rune(local)[:1]) + "***@" + domain
+}
+
+// Self-service notice emails (F-UX2 review): Arabic first, English below,
+// plain text, with no payment, price or refund wording. The builders keep the
+// exact strings in one place so the store-safety test scans what is sent.
+func deletionScheduledNotice(dateStr string) (string, string) {
+	return "سيتم حذف حسابك / Your account will be deleted",
+		"سيتم حذف حسابك بتاريخ " + dateStr + ". تسجيل الدخول قبل ذلك يلغي الحذف.\n" +
+			"Your account will be deleted on " + dateStr + ". Signing in before then cancels the deletion."
+}
+
+func deletionCancelledNotice() (string, string) {
+	return "تم إلغاء حذف حسابك / Your account deletion was cancelled",
+		"تم إلغاء طلب حذف حسابك لأنك سجلت الدخول. حسابك نشط مجددًا.\n" +
+			"Your account deletion request was cancelled because you signed in. Your account is active again."
+}
+
+func emailChangedNotice(masked string) (string, string) {
+	return "تم تغيير البريد الإلكتروني لحسابك / Your account email was changed",
+		"تم تغيير البريد الإلكتروني لحسابك إلى " + masked + ". إذا لم تكن أنت، تواصل مع الدعم فورًا.\n" +
+			"The email on your account was just changed to " + masked + ". If this was not you, contact support at once."
 }
 
 type requestDeletionRequest struct {
@@ -875,9 +895,8 @@ func (s *Server) RequestDeletion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dateStr := purgeAfter.UTC().Format("2006-01-02")
-	_ = s.Sender.SendNotice(context.WithoutCancel(r.Context()), email,
-		"Your account will be deleted",
-		"Your account will be deleted on "+dateStr+". Signing in before then cancels the deletion.")
+	subj, body := deletionScheduledNotice(dateStr)
+	_ = s.Sender.SendNotice(context.WithoutCancel(r.Context()), email, subj, body)
 	s.recordAccountEvent(r.Context(), sc.user.ID, models.AccountEventDeletionRequested, now)
 	go notify.DeletionRequested(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, sc.user.ID)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "deletion_date": dateStr})
