@@ -74,7 +74,7 @@ launch with a private or signed player, or a protected host.
 Obscuring YouTube's player UI is a ToS risk. The top-overlay mask stays
 cosmetic and keeps the YouTube logo.
 
-*Status (2026-10-05, owner decision on the overlay masks):* the code now matches.
+*Status (2026-10-05, owner decision on the overlay masks):* the code now matches (commit 90edff3).
 `frontend/lib/widgets/protected_video_surface.dart` no longer masks the logo
 corner; the top mask shows while the video is not playing and for 4 seconds
 after every start, resume, replay and seek, with a height that scales with the
