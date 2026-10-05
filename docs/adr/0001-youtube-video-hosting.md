@@ -72,6 +72,11 @@ append-only `video_plays` audit. The risk is accepted for launch; revisit after
 launch with a private or signed player, or a protected host.
 
 Obscuring YouTube's player UI is a ToS risk. The top-overlay mask stays
-cosmetic and keeps the YouTube logo. Today the app also masks the logo corner
-(`frontend/lib/widgets/protected_video_surface.dart`); that is not yet aligned
-with this decision.
+cosmetic and keeps the YouTube logo.
+
+*Status (2026-10-05, owner decision on the overlay masks):* the code now matches.
+`frontend/lib/widgets/protected_video_surface.dart` no longer masks the logo
+corner; the top mask shows while the video is not playing and for 4 seconds
+after every start, resume, replay and seek, with a height that scales with the
+player height. Not yet verified on a real phone: whether 4 seconds and that
+height fully cover YouTube's title bar (owner to check).

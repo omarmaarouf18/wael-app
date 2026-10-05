@@ -54,10 +54,14 @@ YouTube URL (a test scans for `youtube.com`, `youtu.be`, `watch?v=`, `embed/`).
 - Remove YouTube's own passive overlays. The title bar when the video is not
   playing, the logo in the bottom corner and end-screen suggestions are drawn
   inside YouTube's cross-origin iframe, which the app cannot style. They are
-  inert (no touches reach them) and the app masks the usual places: a bar over
-  the top edge while not playing, a patch over the bottom-right corner (the
-  physical right edge in every language), and the ended cover. Whether those
-  masks land exactly where YouTube draws on every phone needs a device check.
+  inert (no touches reach them). The app masks the title area and the ended
+  screen: a bar over the top edge while the video is not playing and for 4
+  seconds after every start, resume, replay and seek (its height is about a
+  quarter of the player height, so it is taller in full screen, and it never
+  reaches the middle of the video), and the ended cover. The YouTube logo in the
+  bottom-right corner is left visible (owner decision 2026-10-05); it cannot be
+  tapped. Whether 4 seconds and that height fully cover YouTube's title bar on
+  every phone needs a device check.
 - Stop a rooted device, a camera pointed at the screen, or someone who obtains
   the unlisted URL by other means. The watermark and the per-play check are the
   deterrent.
@@ -95,8 +99,10 @@ back to the email if empty). The app reads both fields.
 3. Open recent apps with the player open: the thumbnail is blank.
 4. Tap and long-press everywhere on the video, including the corners and the top:
    nothing opens, nothing is selected, YouTube never launches.
-5. Pause, and look at the top and bottom-right corners for YouTube's title bar and
-   logo; let the video end and look for end-screen suggestions.
+5. Pause, and look at the top for YouTube's title bar; start, resume and seek and
+   watch the top for the first 4 seconds (title, channel and "copy link" must stay
+   hidden). The YouTube logo stays visible in the bottom-right corner, on purpose.
+   Let the video end and look for end-screen suggestions.
 6. Send the app to the background and back: playback pauses, then the app asks
    again (a video the admin unpublished meanwhile closes the player and shows the
    tile locked).
