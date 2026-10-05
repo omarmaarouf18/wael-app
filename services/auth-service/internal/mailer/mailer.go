@@ -17,6 +17,9 @@ import (
 // Sender delivers a one-time code to an email address.
 type Sender interface {
 	SendCode(ctx context.Context, toEmail, code, purpose string) error
+	// SendNotice delivers a plain-text notice email (no code), e.g. account
+	// email-change and self-deletion notices (F-UX2).
+	SendNotice(ctx context.Context, toEmail, subject, text string) error
 }
 
 // LogSender logs codes to stdout (localhost dev, tests).
@@ -29,6 +32,13 @@ func (LogSender) SendCode(_ context.Context, toEmail, code, purpose string) erro
 	return nil
 }
 
+// SendNotice logs the notice; never fails.
+func (LogSender) SendNotice(_ context.Context, toEmail, subject, text string) error {
+	// #nosec G706 -- fields sanitized for CR/LF
+	log.Printf("[MAIL] notice to=%s subject=%s text=%s", sanitize(toEmail), sanitize(subject), sanitize(text))
+	return nil
+}
+
 // ResendSender delivers via https://api.resend.com/emails.
 type ResendSender struct {
 	APIKey string
@@ -38,6 +48,16 @@ type ResendSender struct {
 
 // SendCode posts a plain-text code email via Resend.
 func (s *ResendSender) SendCode(ctx context.Context, toEmail, code, purpose string) error {
+	return s.send(ctx, toEmail, "Your verification code ("+purpose+")",
+		"Your verification code is: "+code+"\nIt expires in 10 minutes.")
+}
+
+// SendNotice posts a plain-text notice email via Resend.
+func (s *ResendSender) SendNotice(ctx context.Context, toEmail, subject, text string) error {
+	return s.send(ctx, toEmail, subject, text)
+}
+
+func (s *ResendSender) send(ctx context.Context, toEmail, subject, text string) error {
 	if s.APIKey == "" || s.From == "" {
 		return fmt.Errorf("mailer: resend api key/from not configured")
 	}
@@ -48,8 +68,8 @@ func (s *ResendSender) SendCode(ctx context.Context, toEmail, code, purpose stri
 	body, _ := json.Marshal(map[string]string{
 		"from":    s.From,
 		"to":      toEmail,
-		"subject": "Your verification code (" + purpose + ")",
-		"text":    "Your verification code is: " + code + "\nIt expires in 10 minutes.",
+		"subject": subject,
+		"text":    text,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
 	if err != nil {

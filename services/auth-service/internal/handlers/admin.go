@@ -182,7 +182,7 @@ func (s *Server) Accounts(w http.ResponseWriter, r *http.Request) {
 
 	if statusFilter != "" {
 		switch models.UserStatus(statusFilter) {
-		case models.StatusActive, models.StatusSuspended, models.StatusDeleted:
+		case models.StatusActive, models.StatusSuspended, models.StatusDeleted, models.StatusPendingDeletion:
 		default:
 			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "bad_request", "invalid status filter", nil)
 			return
@@ -349,6 +349,21 @@ func (s *Server) SuspendAccount(w http.ResponseWriter, r *http.Request, id strin
 		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "deleted accounts cannot be suspended", nil)
 		return
 	}
+	fromStatus := string(user.EffectiveStatus())
+
+	// A pending self-deletion request ends here: the admin suspension takes
+	// over, so the grace-period fields are cleared before the CAS below.
+	if user.EffectiveStatus() == models.StatusPendingDeletion {
+		user.DeletionRequestedAt = time.Time{}
+		user.PurgeAfter = time.Time{}
+		dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+		clearErr := s.Store.Update(dbCtx, user)
+		cancel()
+		if clearErr != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", clearErr)
+			return
+		}
+	}
 
 	// 1. RevokeAllUserTokens (idempotent, fails closed if Redis error)
 	if err := jwtutil.RevokeAllUserTokens(id); err != nil {
@@ -373,9 +388,9 @@ func (s *Server) SuspendAccount(w http.ResponseWriter, r *http.Request, id strin
 		_ = jwtutil.RevokeSession(endedSess.ID)
 	}
 
-	// 2. SetStatus active->suspended (CAS)
+	// 2. SetStatus active|pending_deletion->suspended (CAS)
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
-	err = s.Store.SetStatus(dbCtx, id, string(models.StatusActive), string(models.StatusSuspended), cleanReason, now)
+	err = s.Store.SetStatus(dbCtx, id, fromStatus, string(models.StatusSuspended), cleanReason, now)
 	cancel()
 	if err != nil {
 		if errors.Is(err, store.ErrStatusConflict) {
@@ -446,6 +461,12 @@ func (s *Server) ReactivateAccount(w http.ResponseWriter, r *http.Request, id st
 		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "deleted accounts cannot be reactivated", nil)
 		return
 	}
+	// A pending self-deletion is ended by admin suspension, not by
+	// reactivation; the student cancels it by signing in.
+	if user.EffectiveStatus() == models.StatusPendingDeletion {
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "account has a pending deletion request", nil)
+		return
+	}
 	if user.EffectiveStatus() == models.StatusActive {
 		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, "account is already active", nil)
 		return
@@ -501,7 +522,9 @@ func (s *Server) ReactivateAccount(w http.ResponseWriter, r *http.Request, id st
 
 // DeleteAccount handles DELETE /internal/admin/accounts/{id} {reason 1-1000}.
 // Order: (1) blocklist entries for normalized email and phone (HMAC, idempotent),
-// (2) RevokeAllUserTokens, (3) SetStatus active|suspended -> deleted (CAS). Already deleted -> 409.
+// (2) RevokeAllUserTokens, (3) SetStatus active|suspended|pending_deletion -> deleted
+// (CAS). Already deleted -> 409. An admin ban always blocklists (R9); only the
+// self-deletion purge skips the blocklist (SPEC D2 amendment, F-UX2 A6).
 func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodDelete {
 		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
@@ -597,9 +620,9 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, id string
 		_ = jwtutil.RevokeSession(endedSess.ID)
 	}
 
-	// 3. SetStatus active|suspended -> deleted (CAS)
+	// 3. SetStatus active|suspended|pending_deletion -> deleted (CAS)
 	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
-	err = s.Store.SetStatus(dbCtx, id, store.FromActiveOrSuspended, string(models.StatusDeleted), cleanReason, now)
+	err = s.Store.SetStatus(dbCtx, id, string(user.EffectiveStatus()), string(models.StatusDeleted), cleanReason, now)
 	cancel()
 	if err != nil {
 		if errors.Is(err, store.ErrStatusConflict) {

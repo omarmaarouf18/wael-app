@@ -127,3 +127,51 @@ func AccountDeleted(ctx context.Context, baseURL, internalToken, userID string) 
 		"تم حذف حسابك.",
 		"security", "/login")
 }
+
+// ProfileUpdated notifies an account after a self-service name/phone change (F-UX2).
+func ProfileUpdated(ctx context.Context, baseURL, internalToken, userID string) {
+	_ = Push(ctx, baseURL, internalToken, userID,
+		"Profile updated", "تم تحديث الملف الشخصي",
+		"Your profile was just updated. Contact support if this was not you.",
+		"تم تحديث ملفك الشخصي للتو. تواصل مع الدعم إذا لم تكن أنت.",
+		"security", "/settings")
+}
+
+// EmailChanged notifies an account after a self-service email change (F-UX2).
+// Every device is signed out; the push tells the student to sign in again.
+func EmailChanged(ctx context.Context, baseURL, internalToken, userID string) {
+	_ = Push(ctx, baseURL, internalToken, userID,
+		"Email updated", "تم تحديث البريد الإلكتروني",
+		"Your account email was just changed. Please sign in again with the new address.",
+		"تم تغيير البريد الإلكتروني لحسابك للتو. سجّل الدخول مجددًا بالعنوان الجديد.",
+		"security", "/login")
+}
+
+// DeletionRequested notifies an account after a self-deletion request (F-UX2).
+func DeletionRequested(ctx context.Context, baseURL, internalToken, userID string) {
+	_ = Push(ctx, baseURL, internalToken, userID,
+		"Deletion requested", "تم طلب حذف الحساب",
+		"Your account will be deleted in 30 days. Sign in before then to cancel.",
+		"سيتم حذف حسابك بعد 30 يومًا. سجّل الدخول قبل ذلك للإلغاء.",
+		"security", "/login")
+}
+
+// DeletionCancelled notifies an account when a self-deletion request is cancelled (F-UX2).
+func DeletionCancelled(ctx context.Context, baseURL, internalToken, userID string) {
+	_ = Push(ctx, baseURL, internalToken, userID,
+		"Deletion cancelled", "تم إلغاء حذف الحساب",
+		"Your account deletion request was cancelled. Your account is active again.",
+		"تم إلغاء طلب حذف حسابك. حسابك نشط مجددًا.",
+		"security", "/main")
+}
+
+// DeviceSessionEnded notifies an account when one of its sessions is ended
+// from the device list (F-UX2). Best-effort: the ended device reads it after
+// signing in again.
+func DeviceSessionEnded(ctx context.Context, baseURL, internalToken, userID string) {
+	_ = Push(ctx, baseURL, internalToken, userID,
+		"Device signed out", "تم تسجيل الخروج من جهاز",
+		"One of your devices was signed out from your device list.",
+		"تم تسجيل الخروج من أحد أجهزتك من قائمة أجهزتك.",
+		"security", "/settings")
+}

@@ -25,6 +25,7 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/ratelimit"
 	"github.com/omarmaarouf18/wael-app/shared/infra/redact"
 	"github.com/omarmaarouf18/wael-app/shared/infra/tlsutil"
+	"github.com/redis/go-redis/v9"
 )
 
 func runCheckEnv(stdout, stderr io.Writer) int {
@@ -74,12 +75,14 @@ func main() {
 	var codes otp.Store
 	var lockout handlers.Lockout
 	var loginLockout handlers.LoginLockout
+	var rdbClient *redis.Client
 	if cfg.RedisURI != "" {
 		rdb, err := ratelimit.NewRedisClient(cfg.RedisURI)
 		if err != nil {
 			log.Fatalf("[AUTH] redis: %v (uri=%s)", err, redact.RedactURI(cfg.RedisURI))
 		}
 		defer func() { _ = rdb.Close() }()
+		rdbClient = rdb
 		jwtutil.SetRedisClient(rdb)
 		codes = otp.NewRedisStore(rdb, "auth")
 		lockout = handlers.NewRedisLockout(ratelimit.NewAuthRateLimiter(rdb, "auth"))
@@ -138,7 +141,41 @@ func main() {
 	mux.HandleFunc("/auth/reset/request", srv.RequestReset)
 	mux.HandleFunc("/auth/reset/verify", srv.VerifyResetCode)
 	mux.HandleFunc("/auth/reset/confirm", srv.ConfirmReset)
-	mux.HandleFunc("/auth/me", srv.Me)
+	mux.HandleFunc("/auth/me", srv.MeSubroute)
+	mux.HandleFunc("/auth/sessions", srv.SessionSubroute)
+	mux.HandleFunc("/auth/sessions/", srv.SessionSubroute)
+	mux.HandleFunc("/auth/password/change", srv.ChangePassword)
+	mux.HandleFunc("/auth/email/change", srv.RequestEmailChange)
+	mux.HandleFunc("/auth/email/confirm", srv.ConfirmEmailChange)
+	mux.HandleFunc("/auth/account/delete", srv.RequestDeletion)
+
+	// Self-deletion purge job (F-UX2 A5): every hour, guarded by a Redis lock
+	// so only one instance purges when several run. Without Redis (dev,
+	// single instance) it runs directly.
+	go func() {
+		purge := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			if rdbClient != nil {
+				ok, err := rdbClient.SetNX(ctx, "auth:account-purge-lock", "1", 10*time.Minute).Result()
+				if err != nil {
+					log.Printf("[AUTH] purge lock error: %v", err)
+					return
+				}
+				if !ok {
+					return
+				}
+			}
+			n, err := srv.PurgeExpiredDeletions(ctx)
+			log.Printf("[AUTH] purge expired deletions: n=%d err=%v", n, err)
+		}
+		purge()
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			purge()
+		}
+	}()
 
 	var handler http.Handler = mux
 	handler = srv.GatewayAuth(handler)

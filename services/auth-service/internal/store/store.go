@@ -72,7 +72,20 @@ type Store interface {
 	UpdateSessionActivity(ctx context.Context, sid string, refreshHash string, lastUsedAt time.Time) error
 	EndSession(ctx context.Context, sid string, reason models.SessionEndReason, at time.Time) error
 	EndAllUserSessions(ctx context.Context, userID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error)
+	EndAllUserSessionsExcept(ctx context.Context, userID, exceptSID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error)
 	ListActiveSessions(ctx context.Context, userID string) ([]*models.Session, error)
+
+	// Self-service account events (F-UX2): one append-only entry per change,
+	// carrying user_id, type and created_at only (no PII values).
+	CreateAccountEvent(ctx context.Context, e *models.AccountEvent) error
+
+	// Self-deletion grace period (F-UX2, 30 days). All three are atomic
+	// compare-and-set operations on status, so a login that races the purge
+	// cannot restore a half-purged account and vice versa.
+	RequestDeletion(ctx context.Context, userID string, at, purgeAfter time.Time) error
+	CancelDeletion(ctx context.Context, userID string, at time.Time) error
+	PurgeDeletion(ctx context.Context, userID, anonymizedEmail string, at time.Time) error
+	ListDeletionsDue(ctx context.Context, now time.Time) ([]*models.User, error)
 }
 
 type blockEntry struct {
@@ -92,6 +105,7 @@ type MemoryStore struct {
 	adminsByHash map[string]*models.Admin
 	auditLogs    []*models.AuditLog
 	sessions     map[string]*models.Session
+	accountEvts  []*models.AccountEvent
 }
 
 // NewMemoryStore creates an empty MemoryStore.
@@ -104,6 +118,7 @@ func NewMemoryStore() *MemoryStore {
 		adminsByHash: map[string]*models.Admin{},
 		auditLogs:    []*models.AuditLog{},
 		sessions:     map[string]*models.Session{},
+		accountEvts:  []*models.AccountEvent{},
 	}
 }
 
@@ -228,12 +243,13 @@ func (s *MemoryStore) Update(_ context.Context, u *models.User) error {
 }
 
 // SetStatus performs an atomic compare-and-set of the user's status under mutex lock.
-// Rejects any `to` status that is not active|suspended|deleted with ErrInvalidStatus.
+// Rejects any `to` status that is not active|suspended|deleted|pending_deletion
+// with ErrInvalidStatus.
 // When from is "active", a user with an empty status also matches.
 // Returns ErrStatusConflict if the current status does not match `from`.
 func (s *MemoryStore) SetStatus(_ context.Context, userID, from, to, reason string, at time.Time) error {
 	switch models.UserStatus(to) {
-	case models.StatusActive, models.StatusSuspended, models.StatusDeleted:
+	case models.StatusActive, models.StatusSuspended, models.StatusDeleted, models.StatusPendingDeletion:
 	default:
 		return ErrInvalidStatus
 	}
@@ -285,6 +301,7 @@ func (s *MemoryStore) SetStatus(_ context.Context, userID, from, to, reason stri
 		cp.ReactivatedAt = at
 	case models.StatusDeleted:
 		cp.DeletedAt = at
+	case models.StatusPendingDeletion:
 	}
 
 	s.byID[userID] = cp
@@ -642,6 +659,23 @@ func (s *MemoryStore) EndAllUserSessions(_ context.Context, userID string, reaso
 	return ended, nil
 }
 
+// EndAllUserSessionsExcept terminates all active sessions for a user except
+// the given sid (used by password change, which keeps the current session).
+func (s *MemoryStore) EndAllUserSessionsExcept(_ context.Context, userID, exceptSID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var ended []*models.Session
+	for _, sess := range s.sessions {
+		if sess.UserID == userID && sess.EndedAt == nil && sess.ID != exceptSID {
+			t := at
+			sess.EndedAt = &t
+			sess.EndReason = reason
+			ended = append(ended, cloneSession(sess))
+		}
+	}
+	return ended, nil
+}
+
 // ListActiveSessions returns all currently active sessions for a user, sorted by last_used_at DESC.
 func (s *MemoryStore) ListActiveSessions(_ context.Context, userID string) ([]*models.Session, error) {
 	s.mu.RLock()
@@ -659,4 +693,135 @@ func (s *MemoryStore) ListActiveSessions(_ context.Context, userID string) ([]*m
 		return active[i].CreatedAt.After(active[j].CreatedAt)
 	})
 	return active, nil
+}
+
+// CreateAccountEvent appends one self-service account event (user_id, type,
+// created_at; no PII values).
+func (s *MemoryStore) CreateAccountEvent(_ context.Context, e *models.AccountEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if e.ID == "" {
+		id, err := jwtutil.GenerateUUID()
+		if err != nil {
+			return err
+		}
+		e.ID = id
+	}
+	if e.CreatedAt.IsZero() {
+		e.CreatedAt = time.Now().UTC()
+	}
+	cp := *e
+	s.accountEvts = append(s.accountEvts, &cp)
+	return nil
+}
+
+// RequestDeletion compare-and-sets an active account to pending_deletion with
+// the grace-period fields. Any other current status is ErrStatusConflict.
+func (s *MemoryStore) RequestDeletion(_ context.Context, userID string, at, purgeAfter time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	if existing.EffectiveStatus() != models.StatusActive {
+		return ErrStatusConflict
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	cp := cloneUser(existing)
+	cp.Status = models.StatusPendingDeletion
+	cp.DeletionRequestedAt = at
+	cp.PurgeAfter = purgeAfter
+	cp.UpdatedAt = at
+	s.byID[userID] = cp
+	s.byMail[cp.Email] = cp
+	return nil
+}
+
+// CancelDeletion compare-and-sets a pending_deletion account back to active
+// (login during the grace period) and clears the grace-period fields.
+func (s *MemoryStore) CancelDeletion(_ context.Context, userID string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	if existing.Status != models.StatusPendingDeletion {
+		return ErrStatusConflict
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	cp := cloneUser(existing)
+	cp.Status = models.StatusActive
+	cp.StatusReason = ""
+	cp.DeletionRequestedAt = time.Time{}
+	cp.PurgeAfter = time.Time{}
+	cp.UpdatedAt = at
+	s.byID[userID] = cp
+	s.byMail[cp.Email] = cp
+	return nil
+}
+
+// PurgeDeletion compare-and-sets a pending_deletion account whose grace period
+// has passed to deleted and anonymizes it: name, email, phone and password
+// hash are cleared (email becomes a unique non-PII placeholder so the unique
+// index still holds); the user id is kept because entitlements and payment
+// records are history. No blocklist entry is written: a self-deleted identity
+// may sign up again (SPEC D2 amendment, F-UX2 A6).
+func (s *MemoryStore) PurgeDeletion(_ context.Context, userID, anonymizedEmail string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	existing, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	if existing.Status != models.StatusPendingDeletion {
+		return ErrStatusConflict
+	}
+	if !existing.PurgeAfter.IsZero() && at.Before(existing.PurgeAfter) {
+		return ErrStatusConflict
+	}
+	if at.IsZero() {
+		at = time.Now().UTC()
+	}
+	delete(s.byMail, existing.Email)
+	cp := cloneUser(existing)
+	cp.Status = models.StatusDeleted
+	cp.StatusReason = ""
+	cp.FullName = ""
+	cp.Email = anonymizedEmail
+	cp.Phone = ""
+	cp.PasswordHash = ""
+	cp.OTPHash = ""
+	cp.PendingIDHash = ""
+	cp.ResetTokenHash = ""
+	cp.NameChangedAt = time.Time{}
+	cp.PhoneChangedAt = time.Time{}
+	cp.DeletionRequestedAt = time.Time{}
+	cp.PurgeAfter = time.Time{}
+	cp.DeletedAt = at
+	cp.UpdatedAt = at
+	s.byID[userID] = cp
+	s.byMail[cp.Email] = cp
+	return nil
+}
+
+// ListDeletionsDue returns pending_deletion accounts whose purge_after has passed.
+func (s *MemoryStore) ListDeletionsDue(_ context.Context, now time.Time) ([]*models.User, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var due []*models.User
+	for _, u := range s.byID {
+		if u.Status == models.StatusPendingDeletion && !u.PurgeAfter.IsZero() && !u.PurgeAfter.After(now) {
+			due = append(due, cloneUser(u))
+		}
+	}
+	sort.Slice(due, func(i, j int) bool {
+		return due[i].PurgeAfter.Before(due[j].PurgeAfter)
+	})
+	return due, nil
 }

@@ -174,9 +174,21 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 	case "/auth/reset/confirm":
 		h = s.ConfirmReset
 	case "/auth/me":
-		h = s.Me
+		h = s.MeSubroute
+	case "/auth/password/change":
+		h = s.ChangePassword
+	case "/auth/email/change":
+		h = s.RequestEmailChange
+	case "/auth/email/confirm":
+		h = s.ConfirmEmailChange
+	case "/auth/account/delete":
+		h = s.RequestDeletion
 	default:
-		t.Fatalf("unknown path %s", path)
+		if strings.HasPrefix(path, "/auth/sessions") {
+			h = s.SessionSubroute
+		} else {
+			t.Fatalf("unknown path %s", path)
+		}
 	}
 	s.GatewayAuth(h).ServeHTTP(rec, req)
 	// Capture the pending_id issued by a successful signup, like a client.
@@ -1544,7 +1556,25 @@ func (f *failingStore) EndSession(ctx context.Context, sid string, reason models
 func (f *failingStore) EndAllUserSessions(ctx context.Context, userID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
 	return nil, f.err
 }
+func (f *failingStore) EndAllUserSessionsExcept(ctx context.Context, userID, exceptSID string, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
+	return nil, f.err
+}
 func (f *failingStore) ListActiveSessions(ctx context.Context, userID string) ([]*models.Session, error) {
+	return nil, f.err
+}
+func (f *failingStore) CreateAccountEvent(ctx context.Context, e *models.AccountEvent) error {
+	return f.err
+}
+func (f *failingStore) RequestDeletion(ctx context.Context, userID string, at, purgeAfter time.Time) error {
+	return f.err
+}
+func (f *failingStore) CancelDeletion(ctx context.Context, userID string, at time.Time) error {
+	return f.err
+}
+func (f *failingStore) PurgeDeletion(ctx context.Context, userID, anonymizedEmail string, at time.Time) error {
+	return f.err
+}
+func (f *failingStore) ListDeletionsDue(ctx context.Context, now time.Time) ([]*models.User, error) {
 	return nil, f.err
 }
 
@@ -2587,6 +2617,17 @@ func (c *countingSender) SendCode(_ context.Context, toEmail, code, purpose stri
 	return nil
 }
 
+func (c *countingSender) SendNotice(_ context.Context, toEmail, subject, text string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.counts == nil {
+		c.counts = map[string]int{}
+	}
+	c.counts[toEmail]++
+	c.total++
+	return nil
+}
+
 func (c *countingSender) countFor(toEmail string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -2625,6 +2666,10 @@ func (b *blockingSender) SendCode(_ context.Context, _, _, _ string) error {
 	b.calls++
 	b.mu.Unlock()
 	close(b.done)
+	return nil
+}
+
+func (b *blockingSender) SendNotice(_ context.Context, _, _, _ string) error {
 	return nil
 }
 

@@ -65,6 +65,9 @@ type Server struct {
 	DefaultPhoneRegion string
 	NotifyURL          string
 	NotifyToken        string
+	// Clock returns the current time. Injectable for tests (30-day limits);
+	// nil means time.Now().UTC.
+	Clock func() time.Time
 	// BcryptCompare compares a bcrypt hash with a password. Injectable for
 	// tests (call counting); defaults to bcrypt.CompareHashAndPassword.
 	BcryptCompare func(hashed, password []byte) error
@@ -109,6 +112,14 @@ func (s *Server) bcryptCompare(hashed, password []byte) error {
 		return s.BcryptCompare(hashed, password)
 	}
 	return bcrypt.CompareHashAndPassword(hashed, password)
+}
+
+// now returns the current UTC time, honoring the injectable test clock.
+func (s *Server) now() time.Time {
+	if s.Clock != nil {
+		return s.Clock().UTC()
+	}
+	return time.Now().UTC()
 }
 
 func (s *Server) blocklistKey() string {
@@ -827,6 +838,49 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		ll.RecordEmailFailure(email)
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "invalid credentials", nil)
 		return
+	}
+	// Self-deletion grace period (F-UX2 A5): logging in with the correct
+	// password during the 30 days cancels the deletion. The cancel is a
+	// compare-and-set pending_deletion->active, so a purge that won the race
+	// cannot be undone here: the refetch then shows deleted and login ends.
+	if u.Status == models.StatusPendingDeletion {
+		now := s.now()
+		dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+		cancelErr := s.Store.CancelDeletion(dbCtx, u.ID, now)
+		cancel()
+		if cancelErr != nil {
+			if errors.Is(cancelErr, store.ErrStatusConflict) {
+				dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+				fresh, findErr := s.Store.FindByEmail(dbCtx, email)
+				cancel()
+				if findErr != nil {
+					handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", findErr)
+					return
+				}
+				if fresh == nil || fresh.EffectiveStatus() != models.StatusActive {
+					writeStatusRefusal(w, r)
+					return
+				}
+				u = fresh // a concurrent login cancelled first; continue normally
+			} else {
+				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", cancelErr)
+				return
+			}
+		} else {
+			ll.ResetPair(email, ip)
+			access, refresh, err := s.createSessionAndTokens(r.Context(), u, req.DeviceID, deviceLabel)
+			if err != nil {
+				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+				return
+			}
+			_ = s.Sender.SendNotice(context.WithoutCancel(r.Context()), email,
+				"Account deletion cancelled",
+				"Your account deletion request was cancelled because you signed in. Your account is active again.")
+			s.recordAccountEvent(r.Context(), u.ID, models.AccountEventDeletionCancelled, now)
+			go notify.DeletionCancelled(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
+			handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"access_token": access, "refresh_token": refresh, "deletion_cancelled": true})
+			return
+		}
 	}
 	if u.EffectiveStatus() != models.StatusActive {
 		writeStatusRefusal(w, r)
