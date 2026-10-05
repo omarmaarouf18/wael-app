@@ -383,6 +383,7 @@ SBOM (2026-10-02: publishing is live, so the last three are still pre-work).
 `.github/dependabot.yml` (gomod per module, github-actions, docker, pub), add CODEOWNERS
 for `.github/`, `infrastructure/`, `shared/infra/`, `docs/adr/`, `services/auth-service/`.
 *(Resolved 2026-10-02): Third-party images in `infrastructure/deploy/docker-compose.yml` (`caddy:2-alpine`, `mongo:7`, `redis:7-alpine`) pinned by multi-arch index digests matching production; Dependabot configured for `/infrastructure/deploy` weekly docker updates.*
+*(Amended 2026-10-05, owner): `.github/dependabot.yml` now also covers gomod (every Go module dir), pub (`/frontend`), github-actions (`/`) and docker (each service Dockerfile dir), weekly, max 5 open PRs per entry, minor+patch grouped, and every entry targets `develop` instead of the default branch. No auto-merge.*
 
 **W-08 `P2` Container health probes still fall back to plain HTTP.**
 The prod `HEALTHCHECK` in `services/auth-service/Dockerfile` ends with

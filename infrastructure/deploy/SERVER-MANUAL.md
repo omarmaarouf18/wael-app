@@ -779,7 +779,8 @@ Updating mongo/redis/caddy: the three third-party images are pinned by digest
 in `docker-compose.yml` (W-07 resolved 2026-10-02), with weekly Dependabot
 docker updates for `/infrastructure/deploy`. Bump the digest (and tag) in
 `docker-compose.yml`, run preflight + deploy on a test host first, then ship
-via the pipeline and review the Dependabot PRs.
+via the pipeline and review the Dependabot PRs (they target `develop`, never
+`main`; amended 2026-10-05).
 
 ## 11. Moving to a new server
 

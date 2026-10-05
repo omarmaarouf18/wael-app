@@ -1,7 +1,210 @@
 version: 2
+# Every entry targets `develop`: `main` moves only by an owner-approved
+# fast-forward of a green `develop` (CLAUDE.md). Weekly, at most 5 open PRs per
+# entry, minor and patch updates grouped per entry. No auto-merge anywhere;
+# every Dependabot PR is reviewed and merged by a human.
 updates:
-  # Keep production compose image digests up to date automatically
+  # Production compose image digests (caddy, mongo, redis)
   - package-ecosystem: "docker-compose"
     directory: "/infrastructure/deploy"
+    target-branch: "develop"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      docker-compose-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/services/academy-service"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/services/admin-console"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/services/api-gateway"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/services/auth-service"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/services/notification-service"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/shared/infra"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/tests/contracts"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/tests/e2e"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "gomod"
+    directory: "/tools/docgen"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      gomod-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "pub"
+    directory: "/frontend"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      pub-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/services/academy-service"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/services/admin-console"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/services/api-gateway"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/services/auth-service"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "docker"
+    directory: "/services/notification-service"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      docker-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
