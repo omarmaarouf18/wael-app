@@ -44,6 +44,10 @@ export const MESSAGES = Object.freeze({
     'common.total': '{total} نتيجة',
     'common.done': 'تم تنفيذ الإجراء.',
 
+    'accounts.toast.suspend': 'تم إيقاف الحساب.',
+    'accounts.toast.reactivate': 'تمت إعادة تفعيل الحساب.',
+    'accounts.toast.delete': 'تم حذف الحساب.',
+
     'unsaved.title': 'تغييرات غير محفوظة',
     'unsaved.note': 'عندك تغييرات لم تُحفظ بعد. لو غادرت الآن ستضيع.',
     'unsaved.stay': 'البقاء هنا',
@@ -344,6 +348,10 @@ export const MESSAGES = Object.freeze({
     'common.pageOf': 'Page {page} of {pages}',
     'common.total': '{total} results',
     'common.done': 'Done.',
+
+    'accounts.toast.suspend': 'Account suspended.',
+    'accounts.toast.reactivate': 'Account reactivated.',
+    'accounts.toast.delete': 'Account deleted.',
 
     'unsaved.title': 'Unsaved changes',
     'unsaved.note': 'You have changes that are not saved yet. They are lost if you leave now.',

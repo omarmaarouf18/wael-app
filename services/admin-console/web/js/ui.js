@@ -189,33 +189,37 @@ export function dateCell(value) {
   );
 }
 
-let toastTimer = 0;
+const toastTimers = new Map(); // box id -> timer
 
-/** Shows a short success note. It replaces any previous toast. */
-export function toast(doc, text) {
-  const box = doc.getElementById('toast');
+function stopToastTimer(id) {
+  const timer = toastTimers.get(id);
+  if (timer) clearTimeout(timer);
+  toastTimers.delete(id);
+}
+
+/**
+ * Shows a short success note. It replaces any previous note in the same box.
+ * The default box is the page toast; a dialog that stays open after a save
+ * has its own box inside it (the page toast would sit under its backdrop).
+ */
+export function toast(doc, text, boxId = 'toast') {
+  const box = doc.getElementById(boxId);
   if (!box) return;
-  if (toastTimer) {
-    clearTimeout(toastTimer);
-    toastTimer = 0;
-  }
+  stopToastTimer(boxId);
   clear(box);
   box.append(h('span', { text }));
   box.hidden = false;
-  toastTimer = setTimeout(() => {
-    toastTimer = 0;
+  toastTimers.set(boxId, setTimeout(() => {
+    toastTimers.delete(boxId);
     clear(box);
     box.hidden = true;
-  }, 4000);
+  }, 4000));
 }
 
-/** Hides the toast immediately. */
-export function hideToast(doc) {
-  if (toastTimer) {
-    clearTimeout(toastTimer);
-    toastTimer = 0;
-  }
-  const box = doc.getElementById('toast');
+/** Hides a toast immediately. */
+export function hideToast(doc, boxId = 'toast') {
+  stopToastTimer(boxId);
+  const box = doc.getElementById(boxId);
   if (box) {
     clear(box);
     box.hidden = true;

@@ -4,7 +4,7 @@
 
 import { clear, h } from './dom.js';
 import { formatCairoDateTime, formatNumber, t } from './i18n.js';
-import { createCooldown, hideBanner, keepOpenWhile, messageRow, showError } from './ui.js';
+import { createCooldown, hideBanner, hideToast, keepOpenWhile, messageRow, showError, toast } from './ui.js';
 import { validateReason } from './account-dialog.js';
 
 const COLUMNS = 6;
@@ -242,6 +242,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
 
       if (res.ok) {
         grantDialog.close();
+        toast(doc, t('entitlements.toast.granted'), 'entitlements-toast');
         loadEntitlements();
         if (typeof onDone === 'function') onDone();
         return;
@@ -318,6 +319,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
       if (res.ok) {
         revokeDialog.close();
         activeEntitlement = null;
+        toast(doc, t('entitlements.toast.revoked'), 'entitlements-toast');
         loadEntitlements();
         if (typeof onDone === 'function') onDone();
         return;
@@ -347,6 +349,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
   if (closeBtn) {
     closeBtn.addEventListener('click', () => dialog.close());
   }
+  dialog.addEventListener('close', () => hideToast(doc, 'entitlements-toast'));
 
   return {
     open(account) {
@@ -357,6 +360,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
       dialog.showModal();
     },
     close() {
+      hideToast(doc, 'entitlements-toast');
       if (dialog && dialog.open) dialog.close();
       if (grantDialog && grantDialog.open) grantDialog.close();
       if (revokeDialog && revokeDialog.open) revokeDialog.close();

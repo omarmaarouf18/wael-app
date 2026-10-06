@@ -5,7 +5,7 @@ import { createEntitlementsDialog } from './entitlements-dialog.js';
 import { clear, h } from './dom.js';
 import { t } from './i18n.js';
 import { isSignedIn } from './auth.js';
-import { createPager, dateCell, hideBanner, messageRow, showError, statusBadge } from './ui.js';
+import { createPager, dateCell, hideBanner, messageRow, showError, statusBadge, toast } from './ui.js';
 
 export const PAGE_SIZE = 15;
 const COLUMNS = 6;
@@ -48,7 +48,13 @@ export function mountAccounts({ api, doc = document }) {
   const state = { page: 1, search: '', status: '', total: 0, items: [], loaded: false, error: null };
   let seq = 0;
 
-  const dialog = createAccountDialog({ api, doc, onDone: load });
+  const dialog = createAccountDialog({
+    api, doc,
+    onDone: (action) => {
+      toast(doc, t(`accounts.toast.${action}`));
+      load();
+    },
+  });
   const entitlementsDialog = createEntitlementsDialog({ api, doc, onDone: load });
 
   function renderRows() {

@@ -6,7 +6,7 @@ import { clear, h } from './dom.js';
 import { formatCairoDateTime, formatNumber, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { setBadge } from './tabs.js';
-import { createCooldown, createPager, hideBanner, keepOpenWhile, messageRow, showError, statusBadge } from './ui.js';
+import { createCooldown, createPager, hideBanner, keepOpenWhile, messageRow, showError, statusBadge, toast } from './ui.js';
 import { validateReason } from './account-dialog.js';
 
 export const PAGE_SIZE = 15;
@@ -249,6 +249,7 @@ export function mountRequests({ api, doc = document, win = window }) {
       if (res.ok) {
         acceptDialog.close();
         activeRequest = null;
+        toast(doc, t('requests.toast.accepted'));
         load();
         return;
       }
@@ -328,6 +329,7 @@ export function mountRequests({ api, doc = document, win = window }) {
       if (res.ok) {
         rejectDialog.close();
         activeRequest = null;
+        toast(doc, t('requests.toast.rejected'));
         load();
         return;
       }

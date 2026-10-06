@@ -99,8 +99,9 @@ export function createAccountDialog({ api, doc = document, onDone }) {
     const res = await api.post(req.path, req.body);
     busy = false;
     if (res.ok) {
+      const action = current.action;
       dialog.close();
-      onDone();
+      onDone(action);
       return;
     }
     if (res.kind === 'unauthorized') {
