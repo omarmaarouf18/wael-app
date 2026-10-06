@@ -19,17 +19,23 @@ refresh the numbers when the baseline is lowered. *(Refreshed 2026-10-06 from th
 | `course_detail_screen.dart` | 122 | yes | 0 (0) | yes |
 | `courses_screen.dart` | 312 | yes | 0 (0) | yes |
 | `ebook_screen.dart` | 53 | yes | 0 (0) | yes |
-| `forgot_password_screen.dart` | 250 | yes | 0 (0) | no |
+| `forgot_password_screen.dart` | 251 | yes | 0 (0) | no |
 | `home_screen.dart` | 200 | yes | 0 (0) | yes |
-| `login_screen.dart` | 259 | yes | 0 (0) | no |
-| `main_shell.dart` | 220 | yes | 0 (0) | no |
+| `login_screen.dart` | 330 | yes | 0 (0) | no |
+| `main_shell.dart` | 238 | yes | 0 (0) | no |
 | `notifications_screen.dart` | 221 | yes | 0 (0) | no |
 | `otp_screen.dart` | 168 | yes | 0 (0) | no |
-| `settings_screen.dart` | 231 | yes | 0 (0) | no |
-| `signup_screen.dart` | 366 | yes | 0 (0) | no |
-| `splash_screen.dart` | 75 | yes | 0 (0) | no |
-| `video_player_screen.dart` | 436 | yes | 0 (0) | no |
-| **Total** | 2913 | 13 of 13 | 0 (0) | 4 of 13 |
+| `settings_screen.dart` | 397 | yes | 0 (0) | no |
+| `settings/delete_account_screen.dart` | 242 | yes | 0 (0) | no |
+| `settings/devices_screen.dart` | 255 | yes | 0 (0) | no |
+| `settings/email_change_screen.dart` | 156 | yes | 0 (0) | no |
+| `settings/password_change_screen.dart` | 124 | yes | 0 (0) | no |
+| `settings/profile_section.dart` | 338 | n/a (section) | 0 (0) | no |
+| `signup_screen.dart` | 416 | yes | 0 (0) | no |
+| `splash_screen.dart` | 117 | yes | 0 (0) | no |
+| `update_gate_screen.dart` | 102 | yes | 0 (0) | no |
+| `video_player_screen.dart` | 676 | yes | 0 (0) | no |
+| **Total** | 4718 | 18 of 18 | 0 (0) | 4 of 18 |
 
 ## Widgets
 
