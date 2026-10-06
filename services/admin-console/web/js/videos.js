@@ -8,6 +8,7 @@ import { formatDuration } from './video-dialog.js';
 import { t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { hideBanner, hideToast, showError, toast } from './ui.js';
+import { trackDirty } from './unsaved.js';
 
 // The only third-party URL on the page: a plain link, never fetched,
 // embedded or previewed (static.test.mjs allows exactly this prefix).
@@ -29,6 +30,8 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
   let seq = 0;
 
   const dirty = () => state.order.join(',') !== state.items.map((v) => v.id).join(',');
+  // An unsaved order counts for the leave guard while a subject is open.
+  trackDirty('video-order', () => state.subject !== null && dirty());
 
   function byId(id) {
     return state.items.find((v) => v.id === id) ?? null;
@@ -210,6 +213,10 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
     },
     reload: load,
     rerender: paint,
+    /** Drops an unsaved order (the admin chose to leave without saving). */
+    discard() {
+      state.order = state.items.map((v) => v.id);
+    },
     reset() {
       seq += 1;
       hideToast(doc);

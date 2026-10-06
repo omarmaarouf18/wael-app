@@ -4,6 +4,7 @@
 import { clear, h } from './dom.js';
 import { t } from './i18n.js';
 import { hideBanner, showError } from './ui.js';
+import { guardDialog } from './unsaved.js';
 
 export const TITLE_MAX = 200;
 
@@ -59,6 +60,15 @@ export function createVideoDialog({ api, doc = document, onDone }) {
 
   let current = null; // { mode: 'create', subjectId } or { mode: 'edit', video }
   let busy = false;
+
+  const guard = guardDialog({
+    id: 'video-dialog',
+    doc,
+    dialog,
+    cancel,
+    snapshot: () => JSON.stringify([titleAr.value, youtube.value, duration.value]),
+    isBusy: () => busy,
+  });
 
   function render() {
     title.textContent = t(current?.mode === 'edit' ? 'catalog.videoEditTitle' : 'catalog.videoCreateTitle');
@@ -120,7 +130,6 @@ export function createVideoDialog({ api, doc = document, onDone }) {
     event.preventDefault();
     submit();
   });
-  cancel.addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => {
     current = null;
     busy = false;
@@ -137,9 +146,13 @@ export function createVideoDialog({ api, doc = document, onDone }) {
       duration.value = video && (video.duration_seconds ?? 0) > 0 ? formatDuration(video.duration_seconds) : '';
       hideBanner(banner);
       render();
+      guard.arm();
       dialog.showModal();
       titleAr.focus();
     },
     rerender: render,
+    close() {
+      if (dialog.open) dialog.close();
+    },
   };
 }

@@ -7,6 +7,7 @@ import { clear, h } from './dom.js';
 import { formatNumber, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { hideBanner, hideToast, showError, toast } from './ui.js';
+import { guardDialog } from './unsaved.js';
 
 export const STUDY_ORDER = Object.freeze(['bachelor', 'diploma', 'vocational']);
 export const NAME_MAX = 200;
@@ -189,6 +190,7 @@ export function mountLevels({ api, doc = document, confirm, onOpen }) {
     },
     reset() {
       seq += 1;
+      editor.close();
       hideToast(doc);
       Object.assign(state, { items: [], loaded: false, error: null });
       paint();
@@ -228,6 +230,15 @@ function createLevelEditor({ api, doc, onDone }) {
 
   let current = null; // null for create, level for edit
   let busy = false;
+
+  const guard = guardDialog({
+    id: 'level-editor',
+    doc,
+    dialog,
+    cancel,
+    snapshot: () => JSON.stringify([nameAr.value, nameEn.value, order.value]),
+    isBusy: () => busy,
+  });
 
   function fieldError() {
     if (!validName(nameAr.value).ok) return 'catalog.required';
@@ -291,7 +302,6 @@ function createLevelEditor({ api, doc, onDone }) {
     submit();
   });
   for (const input of [nameAr, nameEn, order]) input.addEventListener('input', () => hideBanner(banner));
-  cancel.addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => {
     current = null;
     busy = false;
@@ -307,9 +317,13 @@ function createLevelEditor({ api, doc, onDone }) {
       order.value = level ? String(level.order ?? '') : '';
       hideBanner(banner);
       render();
+      guard.arm();
       dialog.showModal();
       nameAr.focus();
     },
     rerender: render,
+    close() {
+      if (dialog.open) dialog.close();
+    },
   };
 }

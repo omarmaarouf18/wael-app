@@ -25,7 +25,7 @@ function stripJsComments(src) {
 const jsCode = Object.fromEntries(Object.entries(jsSources).map(([f, s]) => [f, stripJsComments(s)]));
 
 test('the expected modules are present', () => {
-  for (const name of ['api', 'auth', 'i18n', 'accounts', 'audit', 'app', 'account-dialog', 'tabs', 'ui', 'dom', 'catalog', 'levels', 'subjects', 'subject-dialog', 'videos', 'video-dialog', 'confirm', 'requests', 'idle', 'entitlements-dialog']) {
+  for (const name of ['api', 'auth', 'i18n', 'accounts', 'audit', 'app', 'account-dialog', 'tabs', 'ui', 'dom', 'catalog', 'levels', 'subjects', 'subject-dialog', 'videos', 'video-dialog', 'confirm', 'requests', 'idle', 'entitlements-dialog', 'unsaved']) {
     assert.ok(jsFiles.includes(`${name}.js`), `${name}.js`);
   }
 });

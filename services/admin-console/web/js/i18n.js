@@ -44,6 +44,11 @@ export const MESSAGES = Object.freeze({
     'common.total': '{total} نتيجة',
     'common.done': 'تم تنفيذ الإجراء.',
 
+    'unsaved.title': 'تغييرات غير محفوظة',
+    'unsaved.note': 'عندك تغييرات لم تُحفظ بعد. لو غادرت الآن ستضيع.',
+    'unsaved.stay': 'البقاء هنا',
+    'unsaved.discard': 'تجاهل التغييرات',
+
     'err.unauthorized': 'انتهت الجلسة. سجّل الدخول من جديد.',
     'err.forbidden': 'ليست لديك صلاحية لتنفيذ هذا الإجراء.',
     'err.not_found': 'العنصر غير موجود. ربما تم حذفه.',
@@ -338,6 +343,11 @@ export const MESSAGES = Object.freeze({
     'common.pageOf': 'Page {page} of {pages}',
     'common.total': '{total} results',
     'common.done': 'Done.',
+
+    'unsaved.title': 'Unsaved changes',
+    'unsaved.note': 'You have changes that are not saved yet. They are lost if you leave now.',
+    'unsaved.stay': 'Stay here',
+    'unsaved.discard': 'Discard changes',
 
     'err.unauthorized': 'Your session ended. Sign in again.',
     'err.forbidden': 'You are not allowed to do this.',

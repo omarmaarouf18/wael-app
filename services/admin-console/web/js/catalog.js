@@ -12,6 +12,7 @@ import { mountSubjects } from './subjects.js';
 import { createVideoDialog } from './video-dialog.js';
 import { mountVideos } from './videos.js';
 import { hideToast, toast } from './ui.js';
+import { leaveIfClean } from './unsaved.js';
 
 export function mountCatalog({ api, doc = document }) {
   const crumb = doc.getElementById('catalog-crumb');
@@ -69,11 +70,14 @@ export function mountCatalog({ api, doc = document }) {
     return null;
   }
 
+  // Leaving the videos view with an unsaved order asks first.
+  const leave = (go) => leaveIfClean(doc, go, () => videos.discard());
+
   function renderCrumb() {
     clear(crumb);
     crumb.append(h('button', {
       class: 'btn link', text: t('catalog.title'), attrs: { type: 'button' },
-      on: { click: () => enterLevels() },
+      on: { click: () => leave(enterLevels) },
     }));
     const top = current();
     const level = levelOf(top);
@@ -81,7 +85,7 @@ export function mountCatalog({ api, doc = document }) {
       crumb.append(h('span', { class: 'muted', text: ' › ' }));
       crumb.append(h('button', {
         class: 'btn link', text: level.name_ar || level.key, attrs: { type: 'button' },
-        on: { click: () => backToSubjects() },
+        on: { click: () => leave(backToSubjects) },
       }));
     }
     if (top.view === 'videos' && top.subject) {
@@ -126,6 +130,10 @@ export function mountCatalog({ api, doc = document }) {
     load() {
       enterLevels();
     },
+    /** Drops edits that are not saved yet (the admin chose to leave). */
+    discard() {
+      videos.discard();
+    },
     rerender() {
       renderCrumb();
       levels.rerender();
@@ -137,6 +145,8 @@ export function mountCatalog({ api, doc = document }) {
     },
     reset() {
       stack = [{ view: 'levels' }];
+      subjectDialog.close();
+      videoDialog.close();
       levels.reset();
       subjects.reset();
       videos.reset();

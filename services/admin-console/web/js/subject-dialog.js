@@ -5,6 +5,7 @@
 import { clear, h } from './dom.js';
 import { getLang, t } from './i18n.js';
 import { hideBanner, showError } from './ui.js';
+import { guardDialog } from './unsaved.js';
 
 export const TITLE_MAX = 200;
 export const DESC_MAX = 5000;
@@ -121,6 +122,15 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
   let levels = [];
   let busy = false;
 
+  const guard = guardDialog({
+    id: 'subject-dialog',
+    doc,
+    dialog,
+    cancel,
+    snapshot: () => JSON.stringify([level.value, titleAr.value, titleEn.value, descAr.value, descEn.value, term.value, price.value, expires.value]),
+    isBusy: () => busy,
+  });
+
   function fillTermRow() {
     const keep = term.value;
     clear(termRow);
@@ -216,7 +226,6 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
     submit();
   });
   level.addEventListener('change', syncTermRow);
-  cancel.addEventListener('click', () => dialog.close());
   dialog.addEventListener('close', () => {
     current = null;
     busy = false;
@@ -246,9 +255,13 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
       // render() rebuilds the term options, so apply the value afterwards.
       term.value = subject?.term === 'second' ? 'second' : 'first';
       syncTermRow();
+      guard.arm();
       dialog.showModal();
       titleAr.focus();
     },
     rerender: render,
+    close() {
+      if (dialog.open) dialog.close();
+    },
   };
 }

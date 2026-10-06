@@ -20,6 +20,7 @@ import {
 } from './i18n.js';
 import { TABS, isTabEnabled, nextTabIndex, visibleTabs } from './tabs.js';
 import { hideBanner, showBanner } from './ui.js';
+import { closeDiscardDialog, installUnloadGuard, leaveIfClean } from './unsaved.js';
 
 export function main(doc = document, win = window) {
   const loginView = doc.getElementById('login-view');
@@ -41,6 +42,9 @@ export function main(doc = document, win = window) {
   let badgePollTimer = null;
   let activeTab = 'accounts';
   let signingIn = false;
+
+  // Closing or reloading the page with unsaved catalog edits asks first.
+  if (win && typeof win.addEventListener === 'function') installUnloadGuard(win);
 
   // --- language ----------------------------------------------------------
   setLang(langFromHash(win.location.hash));
@@ -83,8 +87,14 @@ export function main(doc = document, win = window) {
     }
   }
 
+  // A tab switch with unsaved edits asks first; Stay keeps the current tab.
+  async function switchTab(id) {
+    const moved = await leaveIfClean(doc, () => activate(id), () => modules.catalog.discard());
+    if (!moved) doc.getElementById(`tab-${activeTab}`)?.focus();
+  }
+
   for (const tab of visibleTabs()) {
-    doc.getElementById(`tab-${tab.id}`).addEventListener('click', () => activate(tab.id));
+    doc.getElementById(`tab-${tab.id}`).addEventListener('click', () => switchTab(tab.id));
   }
   tabList.addEventListener('keydown', (event) => {
     const buttons = tabButtons();
@@ -105,6 +115,7 @@ export function main(doc = document, win = window) {
 
   function showLogin(message) {
     idleLock.stop();
+    closeDiscardDialog();
     if (badgePollTimer) {
       win.clearInterval(badgePollTimer);
       badgePollTimer = null;
