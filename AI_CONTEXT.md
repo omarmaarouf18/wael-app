@@ -217,7 +217,7 @@ Agreed order (owner, recorded 2026-10-06):
 2. Small tasks: S3 (HSTS, done), S4 (notification `subject_id`, done), S5 (login 403/401).
 3. Release prep: terms and privacy pages with `TERMS_URL`/`PRIVACY_URL` set on the server, the compose e2e run, the owner's phone test, then the owner's fast-forward of `main`, deploy and a new APK (checklist: "Pending release").
 4. F-UX2 Part B: the settings screen (done 2026-10-06, commits `c36af5a`..`627ba59`).
-5. F-UX5: console polish.
+5. F-UX5: console polish. *(Amended 2026-10-06, `services/admin-console/web` only: done are the unsaved-changes guard on the catalog forms and the video order (`unsaved.js`), `Retry-After` countdown on 429 with the action disabled, double-submit gaps closed (Esc during a request, grant dialog opened twice, reorder while saving), and a success toast for every save. Already there: up/down buttons for video order (`videos.js`), draft/published badges on level cards and subject rows. Not done: the YouTube thumbnail preview, because it needs `https://i.ytimg.com` in the CSP `img-src` (now `'self' data:`, `internal/server/server.go`); the owner decides whether to relax the CSP. Levels have only the numeric `order` field in their form, no up/down.)*
 6. Backups: offsite copy and a restore drill.
 7. Phase 5 - Files: upload (Section 8 item 6), download streaming with R3 and R6, delete. *(This was the whole Next task until 2026-10-05.)*
 
