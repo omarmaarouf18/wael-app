@@ -62,12 +62,16 @@ func httpClient() *http.Client {
 }
 
 // Push posts one notification; empty baseURL is a no-op success.
-func Push(ctx context.Context, baseURL, internalToken, userID, title, titleAr, body, bodyAr, ntype, route string) error {
+// subjectID is the academy's own subject id the notice is about; the
+// notification-service accepts it optional and returns it on list/SSE so
+// the app can deep-link the subject.
+func Push(ctx context.Context, baseURL, internalToken, userID, subjectID, title, titleAr, body, bodyAr, ntype, route string) error {
 	if baseURL == "" {
 		return nil
 	}
 	payload, _ := json.Marshal(map[string]string{
 		"user_id":      userID,
+		"subject_id":   subjectID,
 		"title":        title,
 		"title_ar":     titleAr,
 		"body":         body,
@@ -95,12 +99,12 @@ func Push(ctx context.Context, baseURL, internalToken, userID, title, titleAr, b
 }
 
 // SubjectActivated notifies a student that a subject has been unlocked.
-func SubjectActivated(ctx context.Context, baseURL, internalToken, userID, titleAr, titleEn string) error {
+func SubjectActivated(ctx context.Context, baseURL, internalToken, userID, subjectID, titleAr, titleEn string) error {
 	nameEn := titleEn
 	if nameEn == "" {
 		nameEn = titleAr
 	}
-	return Push(ctx, baseURL, internalToken, userID,
+	return Push(ctx, baseURL, internalToken, userID, subjectID,
 		"Subject activated", "تم تفعيل المادة",
 		fmt.Sprintf("Subject %s has been activated", nameEn),
 		fmt.Sprintf("تم تفعيل مادة %s", titleAr),
@@ -108,12 +112,12 @@ func SubjectActivated(ctx context.Context, baseURL, internalToken, userID, title
 }
 
 // SubjectRejected notifies a student that their access request was rejected with reason.
-func SubjectRejected(ctx context.Context, baseURL, internalToken, userID, titleAr, titleEn, reason string) error {
+func SubjectRejected(ctx context.Context, baseURL, internalToken, userID, subjectID, titleAr, titleEn, reason string) error {
 	nameEn := titleEn
 	if nameEn == "" {
 		nameEn = titleAr
 	}
-	return Push(ctx, baseURL, internalToken, userID,
+	return Push(ctx, baseURL, internalToken, userID, subjectID,
 		"Subject request rejected", "تم رفض طلب المادة",
 		fmt.Sprintf("Your request for %s was rejected: %s", nameEn, reason),
 		fmt.Sprintf("تم رفض طلبك لمادة %s: %s", titleAr, reason),
@@ -124,12 +128,12 @@ func SubjectRejected(ctx context.Context, baseURL, internalToken, userID, titleA
 // The reason is internal (it may concern a refund or sensitive administrative detail)
 // and is preserved in the entitlement and audit log only; the student notification
 // carries no reason.
-func SubjectRevoked(ctx context.Context, baseURL, internalToken, userID, titleAr, titleEn string) error {
+func SubjectRevoked(ctx context.Context, baseURL, internalToken, userID, subjectID, titleAr, titleEn string) error {
 	nameEn := titleEn
 	if nameEn == "" {
 		nameEn = titleAr
 	}
-	return Push(ctx, baseURL, internalToken, userID,
+	return Push(ctx, baseURL, internalToken, userID, subjectID,
 		"Subject revoked", "تم سحب المادة",
 		fmt.Sprintf("Access to %s was revoked", nameEn),
 		fmt.Sprintf("تم سحب مادة %s", titleAr),

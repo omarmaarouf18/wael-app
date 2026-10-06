@@ -323,7 +323,7 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request, reqID str
 
 	// 6. Notify the student, best-effort.
 	s.notifyStudent(r.Context(), pr.UserID, "request_accept", func(ctx context.Context) error {
-		return notify.SubjectActivated(ctx, s.NotifyURL, s.NotifyToken, pr.UserID, subj.TitleAr, subj.TitleEn)
+		return notify.SubjectActivated(ctx, s.NotifyURL, s.NotifyToken, pr.UserID, pr.SubjectID, subj.TitleAr, subj.TitleEn)
 	})
 
 	lvl, _ := s.Store.GetLevelByKey(dbCtx, subj.LevelKey)
@@ -413,7 +413,7 @@ func (s *Server) RejectRequest(w http.ResponseWriter, r *http.Request, reqID str
 		titleEn = subj.TitleEn
 	}
 	s.notifyStudent(r.Context(), pr.UserID, "request_reject", func(ctx context.Context) error {
-		return notify.SubjectRejected(ctx, s.NotifyURL, s.NotifyToken, pr.UserID, titleAr, titleEn, reason)
+		return notify.SubjectRejected(ctx, s.NotifyURL, s.NotifyToken, pr.UserID, pr.SubjectID, titleAr, titleEn, reason)
 	})
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})

@@ -59,7 +59,8 @@ func assertNoForbiddenStudentFields(t *testing.T, contextName string, jsonBytes 
 
 // TestStoreSafety_Notifications renders SubjectActivated, SubjectRejected (with neutral reason),
 // and SubjectRevoked (plus grant notification, which uses SubjectActivated) in Arabic and English,
-// asserting none of the forbidden payment terms appear in any notification payload field.
+// asserting none of the forbidden payment terms appear in any notification payload field,
+// and every payload carries the subject it is about.
 func TestStoreSafety_Notifications(t *testing.T) {
 	var capturedPayloads []map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,29 +78,29 @@ func TestStoreSafety_Notifications(t *testing.T) {
 	userID := "student-safety-user"
 
 	// 1. SubjectActivated in ar and en
-	err := notify.SubjectActivated(ctx, server.URL, token, userID, "لغة عربية", "Arabic Language")
+	err := notify.SubjectActivated(ctx, server.URL, token, userID, "subj-safety-1", "لغة عربية", "Arabic Language")
 	if err != nil {
 		t.Fatalf("SubjectActivated failed: %v", err)
 	}
 
 	// 2. SubjectRejected with a neutral reason in ar and en
-	err = notify.SubjectRejected(ctx, server.URL, token, userID, "أصول فقه", "Islamic Jurisprudence", "بيانات غير مطابقة للطلب")
+	err = notify.SubjectRejected(ctx, server.URL, token, userID, "subj-safety-2", "أصول فقه", "Islamic Jurisprudence", "بيانات غير مطابقة للطلب")
 	if err != nil {
 		t.Fatalf("SubjectRejected ar failed: %v", err)
 	}
-	err = notify.SubjectRejected(ctx, server.URL, token, userID, "أصول فقه", "Islamic Jurisprudence", "Incomplete request information")
+	err = notify.SubjectRejected(ctx, server.URL, token, userID, "subj-safety-2", "أصول فقه", "Islamic Jurisprudence", "Incomplete request information")
 	if err != nil {
 		t.Fatalf("SubjectRejected en failed: %v", err)
 	}
 
 	// 3. SubjectRevoked in ar and en
-	err = notify.SubjectRevoked(ctx, server.URL, token, userID, "تفسير القرآن", "Quran Interpretation")
+	err = notify.SubjectRevoked(ctx, server.URL, token, userID, "subj-safety-3", "تفسير القرآن", "Quran Interpretation")
 	if err != nil {
 		t.Fatalf("SubjectRevoked failed: %v", err)
 	}
 
 	// 4. Grant notification (uses SubjectActivated per admin_entitlements.go)
-	err = notify.SubjectActivated(ctx, server.URL, token, userID, "حديث شريف", "Prophetic Traditions")
+	err = notify.SubjectActivated(ctx, server.URL, token, userID, "subj-safety-4", "حديث شريف", "Prophetic Traditions")
 	if err != nil {
 		t.Fatalf("Grant notification failed: %v", err)
 	}
@@ -108,8 +109,12 @@ func TestStoreSafety_Notifications(t *testing.T) {
 		t.Fatalf("expected 5 captured notification payloads, got %d", len(capturedPayloads))
 	}
 
+	wantSubjects := []string{"subj-safety-1", "subj-safety-2", "subj-safety-2", "subj-safety-3", "subj-safety-4"}
 	fields := []string{"title", "title_ar", "body", "body_ar"}
 	for i, payload := range capturedPayloads {
+		if payload["subject_id"] != wantSubjects[i] {
+			t.Errorf("payload %d subject_id = %q, want %q", i, payload["subject_id"], wantSubjects[i])
+		}
 		for _, f := range fields {
 			val := payload[f]
 			assertNoForbiddenStoreWords(t, "notification payload "+f+" index "+string(rune('0'+i)), val)

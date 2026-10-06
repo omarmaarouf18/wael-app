@@ -232,7 +232,7 @@ func (s *Server) GrantAdminEntitlement(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.notifyStudent(r.Context(), userID, "entitlement_grant", func(ctx context.Context) error {
-		return notify.SubjectActivated(ctx, s.NotifyURL, s.NotifyToken, userID, subj.TitleAr, subj.TitleEn)
+		return notify.SubjectActivated(ctx, s.NotifyURL, s.NotifyToken, userID, subjectID, subj.TitleAr, subj.TitleEn)
 	})
 
 	lvl, _ := s.Store.GetLevelByKey(dbCtx, subj.LevelKey)
@@ -320,7 +320,7 @@ func (s *Server) RevokeAdminEntitlement(w http.ResponseWriter, r *http.Request, 
 			titleEn = subj.TitleEn
 		}
 		s.notifyStudent(r.Context(), ent.UserID, "entitlement_revoke", func(ctx context.Context) error {
-			return notify.SubjectRevoked(ctx, s.NotifyURL, s.NotifyToken, ent.UserID, titleAr, titleEn)
+			return notify.SubjectRevoked(ctx, s.NotifyURL, s.NotifyToken, ent.UserID, ent.SubjectID, titleAr, titleEn)
 		})
 	}
 
