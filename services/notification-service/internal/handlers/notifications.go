@@ -28,11 +28,14 @@ import (
 // streamSlot tracks an individual active stream for a user.
 type streamSlot struct {
 	id     uint64
+	userID string
+	sid    string
 	cancel context.CancelFunc
 	once   sync.Once
 }
 
-// StreamLimiter manages per-account concurrent stream slots and connection open rate limits.
+// StreamLimiter manages per-account concurrent stream slots, connection open rate limits,
+// and in-process stream registry by user and session for revocation.
 type StreamLimiter struct {
 	mu            sync.Mutex
 	maxConcurrent int
@@ -40,6 +43,7 @@ type StreamLimiter struct {
 	window        time.Duration
 	nextID        uint64
 	userStreams   map[string][]*streamSlot
+	sidStreams    map[string][]*streamSlot
 	openAttempts  map[string][]time.Time
 }
 
@@ -59,22 +63,25 @@ func NewStreamLimiter(maxConcurrent, rateLimit int, window time.Duration) *Strea
 		rateLimit:     rateLimit,
 		window:        window,
 		userStreams:   make(map[string][]*streamSlot),
+		sidStreams:    make(map[string][]*streamSlot),
 		openAttempts:  make(map[string][]time.Time),
 	}
 }
 
-// acquireStreamSlot attempts to reserve a concurrent stream slot for userID.
+// acquireStreamSlot attempts to reserve a concurrent stream slot for userID and sid.
 // Under the "newest wins" policy, if the user has reached maxConcurrent, the oldest
 // active stream(s) are evicted by cancelling their context(s) so their handlers return
 // and release their slots. The new stream is always accepted.
 // Eviction and release are idempotent (sync.Once).
-func (sl *StreamLimiter) acquireStreamSlot(parent context.Context, userID string) (context.Context, func()) {
+func (sl *StreamLimiter) acquireStreamSlot(parent context.Context, userID, sid string) (context.Context, func()) {
 	streamCtx, cancel := context.WithCancel(parent)
 
 	sl.mu.Lock()
 	sl.nextID++
 	slot := &streamSlot{
 		id:     sl.nextID,
+		userID: userID,
+		sid:    sid,
 		cancel: cancel,
 	}
 
@@ -82,10 +89,16 @@ func (sl *StreamLimiter) acquireStreamSlot(parent context.Context, userID string
 	for len(sl.userStreams[userID]) >= sl.maxConcurrent {
 		oldest := sl.userStreams[userID][0]
 		sl.userStreams[userID] = sl.userStreams[userID][1:]
+		if oldest.sid != "" {
+			sl.removeSidSlotLocked(oldest.sid, oldest.id)
+		}
 		toEvict = append(toEvict, oldest)
 	}
 
 	sl.userStreams[userID] = append(sl.userStreams[userID], slot)
+	if sid != "" {
+		sl.sidStreams[sid] = append(sl.sidStreams[sid], slot)
+	}
 	sl.mu.Unlock()
 
 	// Cancel evicted streams outside lock
@@ -110,10 +123,54 @@ func (sl *StreamLimiter) acquireStreamSlot(parent context.Context, userID string
 			if len(sl.userStreams[userID]) == 0 {
 				delete(sl.userStreams, userID)
 			}
+			if sid != "" {
+				sl.removeSidSlotLocked(sid, slot.id)
+			}
 		})
 	}
 
 	return streamCtx, release
+}
+
+func (sl *StreamLimiter) removeSidSlotLocked(sid string, slotID uint64) {
+	slots := sl.sidStreams[sid]
+	for i, s := range slots {
+		if s.id == slotID {
+			sl.sidStreams[sid] = append(slots[:i], slots[i+1:]...)
+			break
+		}
+	}
+	if len(sl.sidStreams[sid]) == 0 {
+		delete(sl.sidStreams, sid)
+	}
+}
+
+// CloseUser cancels and closes all active streams for userID.
+func (sl *StreamLimiter) CloseUser(userID string) {
+	if userID == "" {
+		return
+	}
+	sl.mu.Lock()
+	slots := append([]*streamSlot(nil), sl.userStreams[userID]...)
+	sl.mu.Unlock()
+
+	for _, s := range slots {
+		s.cancel()
+	}
+}
+
+// CloseSession cancels and closes all active streams for sid.
+func (sl *StreamLimiter) CloseSession(sid string) {
+	if sid == "" {
+		return
+	}
+	sl.mu.Lock()
+	slots := append([]*streamSlot(nil), sl.sidStreams[sid]...)
+	sl.mu.Unlock()
+
+	for _, s := range slots {
+		s.cancel()
+	}
 }
 
 // allowStreamOpen checks if a new stream open attempt is permitted under the rate limit.
@@ -173,21 +230,83 @@ func (sl *StreamLimiter) TotalActiveSlots() int {
 
 // Server wires notification dependencies.
 type Server struct {
-	Store         store.Store
-	Bus           bus.Bus
-	GatewaySecret string
-	InternalToken string
-	Limiter       *StreamLimiter
+	Store             store.Store
+	Bus               bus.Bus
+	GatewaySecret     string
+	InternalToken     string
+	Limiter           *StreamLimiter
+	HeartbeatInterval time.Duration
+	CheckEveryNth     int
+	accountSubCancel  context.CancelFunc
+	accountSubDone    chan struct{}
 }
 
 // New creates a Server with safe default stream limits (cap: 3, rate: 10/min).
 func New(st store.Store, b bus.Bus, gatewaySecret, internalToken string) *Server {
 	return &Server{
-		Store:         st,
-		Bus:           b,
-		GatewaySecret: gatewaySecret,
-		InternalToken: internalToken,
-		Limiter:       NewStreamLimiter(3, 10, time.Minute),
+		Store:             st,
+		Bus:               b,
+		GatewaySecret:     gatewaySecret,
+		InternalToken:     internalToken,
+		Limiter:           NewStreamLimiter(3, 10, time.Minute),
+		HeartbeatInterval: 25 * time.Second,
+		CheckEveryNth:     1,
+	}
+}
+
+// StartAccountEventsListener subscribes once to account:events and closes
+// matching active streams when revocation events arrive.
+func (s *Server) StartAccountEventsListener(ctx context.Context) func() {
+	if s.Bus == nil {
+		return func() {}
+	}
+	subCtx, cancel := context.WithCancel(ctx)
+	s.accountSubCancel = cancel
+	s.accountSubDone = make(chan struct{})
+
+	go func() {
+		defer close(s.accountSubDone)
+		ch, unsub, err := s.Bus.SubscribeAccountEvents(subCtx)
+		if err != nil {
+			log.Printf("[NOTIF] failed to subscribe to account:events: %v", err)
+			return
+		}
+		defer unsub()
+
+		for {
+			select {
+			case <-subCtx.Done():
+				return
+			case evt, ok := <-ch:
+				if !ok {
+					return
+				}
+				if evt == nil {
+					continue
+				}
+				if evt.SID != "" && s.Limiter != nil {
+					s.Limiter.CloseSession(evt.SID)
+				}
+				if evt.UserID != "" && s.Limiter != nil {
+					s.Limiter.CloseUser(evt.UserID)
+				}
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-s.accountSubDone
+	}
+}
+
+// StopAccountEventsListener stops the account events listener if active.
+func (s *Server) StopAccountEventsListener() {
+	if s.accountSubCancel != nil {
+		s.accountSubCancel()
+		if s.accountSubDone != nil {
+			<-s.accountSubDone
+		}
 	}
 }
 
@@ -283,7 +402,7 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var release func()
-		streamCtx, release = s.Limiter.acquireStreamSlot(r.Context(), claims.UserID)
+		streamCtx, release = s.Limiter.acquireStreamSlot(r.Context(), claims.UserID, claims.SID)
 		defer release()
 	}
 	ch, unsub, err := s.Bus.Subscribe(streamCtx, claims.UserID)
@@ -306,8 +425,18 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 	s.clearWriteDeadline(w)
 
-	heartbeat := time.NewTicker(25 * time.Second)
+	interval := s.HeartbeatInterval
+	if interval <= 0 {
+		interval = 25 * time.Second
+	}
+	checkNth := s.CheckEveryNth
+	if checkNth <= 0 {
+		checkNth = 1
+	}
+
+	heartbeat := time.NewTicker(interval)
 	defer heartbeat.Stop()
+	heartbeatCount := 0
 	for {
 		select {
 		case <-streamCtx.Done():
@@ -327,6 +456,13 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 			s.clearWriteDeadline(w)
 		case <-heartbeat.C:
+			heartbeatCount++
+			if heartbeatCount%checkNth == 0 {
+				if err := jwtutil.CheckRevocation(claims); err != nil {
+					// Revoked or Redis lookup failed (fail closed): close stream cleanly.
+					return
+				}
+			}
 			s.setWriteDeadline(w, time.Now().Add(10*time.Second))
 			if _, err := fmt.Fprintf(w, ": ping\n\n"); err != nil {
 				return

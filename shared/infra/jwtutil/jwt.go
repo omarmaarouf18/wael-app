@@ -184,9 +184,35 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 		return nil, ErrInvalidToken
 	}
 
-	// Redis-backed denylist check.
+	// Redis-backed revocation checks (denylist, session, user invalidation).
+	if err := CheckRevocation(claims); err != nil {
+		return nil, err
+	}
+
+	if isExpired {
+		return claims, ErrExpiredToken
+	}
+
+	if !token.Valid {
+		return nil, ErrInvalidToken
+	}
+
+	return claims, nil
+}
+
+// CheckRevocation checks Redis-backed revocation markers (jti, sid, and user invalidation timestamp) for existing claims.
+// Returns nil if valid, ErrSessionRevoked or ErrTokenRevoked if revoked, or an error if Redis lookup fails (fail closed).
+func CheckRevocation(claims *Claims) error {
+	if claims == nil {
+		return errors.New("jwtutil: nil claims")
+	}
+	if redisClient == nil {
+		return nil
+	}
+
+	// 1. JTI denylist check.
 	// We explicitly fail-closed if Redis is unreachable to maintain security integrity.
-	if redisClient != nil && claims.RegisteredClaims.ID != "" {
+	if claims.RegisteredClaims.ID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		isDenylisted, err := redisClient.Exists(ctx, "jwt:denylist:"+claims.RegisteredClaims.ID).Result()
 		cancel()
@@ -206,25 +232,25 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 				} else {
 					healthTracker.recordFailure()
 					log.Printf("[SECURITY CRITICAL] Redis error checking JWT denylist (FAIL CLOSED after retry): %v. Rejecting token jti: %s", retryErr, claims.RegisteredClaims.ID)
-					return nil, fmt.Errorf("jwtutil: security check failed (denylist unreachable): %w", retryErr)
+					return fmt.Errorf("jwtutil: security check failed (denylist unreachable): %w", retryErr)
 				}
 			} else {
 				log.Printf("[SECURITY CRITICAL] Redis error checking JWT denylist (FAIL CLOSED): %v. Rejecting token jti: %s", err, claims.RegisteredClaims.ID)
-				return nil, fmt.Errorf("jwtutil: security check failed (denylist unreachable): %w", err)
+				return fmt.Errorf("jwtutil: security check failed (denylist unreachable): %w", err)
 			}
 		} else {
 			healthTracker.recordSuccess()
 		}
 
 		if isDenylisted > 0 {
-			return nil, ErrTokenRevoked
+			return ErrTokenRevoked
 		}
 	}
 
-	// Redis-backed session revocation check.
+	// 2. Redis-backed session revocation check.
 	// Rejects tokens whose sid has key jwt:sid:<sid> in Redis (same fail-closed + one-retry path as the jti denylist).
 	// Tokens without sid (issued before deploy) stay valid until expiry.
-	if redisClient != nil && claims.SID != "" {
+	if claims.SID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		isSessionRevoked, err := redisClient.Exists(ctx, "jwt:sid:"+claims.SID).Result()
 		cancel()
@@ -244,24 +270,24 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 				} else {
 					healthTracker.recordFailure()
 					log.Printf("[SECURITY CRITICAL] Redis error checking JWT sid revocation (FAIL CLOSED after retry): %v. Rejecting token sid: %s", retryErr, claims.SID)
-					return nil, fmt.Errorf("jwtutil: security check failed (session lookup unreachable): %w", retryErr)
+					return fmt.Errorf("jwtutil: security check failed (session lookup unreachable): %w", retryErr)
 				}
 			} else {
 				log.Printf("[SECURITY CRITICAL] Redis error checking JWT sid revocation (FAIL CLOSED): %v. Rejecting token sid: %s", err, claims.SID)
-				return nil, fmt.Errorf("jwtutil: security check failed (session lookup unreachable): %w", err)
+				return fmt.Errorf("jwtutil: security check failed (session lookup unreachable): %w", err)
 			}
 		} else {
 			healthTracker.recordSuccess()
 		}
 
 		if isSessionRevoked > 0 {
-			return nil, ErrSessionRevoked
+			return ErrSessionRevoked
 		}
 	}
 
-	// Redis-backed per-user token invalidation check (tokens issued before stored timestamp).
+	// 3. Redis-backed per-user token invalidation check (tokens issued before stored timestamp).
 	// We explicitly fail-closed if Redis is unreachable to maintain security integrity.
-	if redisClient != nil && claims.UserID != "" {
+	if claims.UserID != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		invalidatedStr, err := redisClient.Get(ctx, "jwt:invalidated_before:"+claims.UserID).Result()
 		cancel()
@@ -281,11 +307,11 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 				} else {
 					healthTracker.recordFailure()
 					log.Printf("[SECURITY CRITICAL] Redis error checking user token invalidation (FAIL CLOSED after retry): %v. Rejecting user_id: %s", retryErr, claims.UserID)
-					return nil, fmt.Errorf("jwtutil: security check failed (user invalidation lookup unreachable): %w", retryErr)
+					return fmt.Errorf("jwtutil: security check failed (user invalidation lookup unreachable): %w", retryErr)
 				}
 			} else {
 				log.Printf("[SECURITY CRITICAL] Redis error checking user token invalidation (FAIL CLOSED): %v. Rejecting user_id: %s", err, claims.UserID)
-				return nil, fmt.Errorf("jwtutil: security check failed (user invalidation lookup unreachable): %w", err)
+				return fmt.Errorf("jwtutil: security check failed (user invalidation lookup unreachable): %w", err)
 			}
 		} else {
 			healthTracker.recordSuccess()
@@ -295,23 +321,15 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 			ts, parseErr := strconv.ParseInt(invalidatedStr, 10, 64)
 			if parseErr != nil {
 				log.Printf("[SECURITY CRITICAL] Redis error parsing user token invalidation timestamp (FAIL CLOSED): %v. Rejecting user_id: %s", parseErr, claims.UserID)
-				return nil, fmt.Errorf("jwtutil: security check failed (invalid timestamp format): %w", parseErr)
+				return fmt.Errorf("jwtutil: security check failed (invalid timestamp format): %w", parseErr)
 			}
 			if claims.IssuedAt == nil || claims.IssuedAt.Time.Unix() < ts {
-				return nil, ErrTokenRevoked
+				return ErrTokenRevoked
 			}
 		}
 	}
 
-	if isExpired {
-		return claims, ErrExpiredToken
-	}
-
-	if !token.Valid {
-		return nil, ErrInvalidToken
-	}
-
-	return claims, nil
+	return nil
 }
 
 // RevokeAllUserTokens invalidates all tokens issued for a specific user prior to the current timestamp.
@@ -403,6 +421,13 @@ func RevokeSession(sid string) error {
 		log.Printf("[SECURITY CRITICAL] Redis error storing revoked session (FAIL CLOSED): %v. Session sid: %s", err, sid)
 		return fmt.Errorf("jwtutil: revoke session failed: %w", err)
 	}
+
+	// Publish session revocation event to account:events channel
+	eventPayload := fmt.Sprintf(`{"action":"SESSION_REVOKED","sid":%q}`, sid)
+	if pubErr := redisClient.Publish(ctx, "account:events", eventPayload).Err(); pubErr != nil {
+		log.Printf("[SECURITY WARNING] Redis pubsub error publishing session revocation event for %s: %v", sid, pubErr)
+	}
+
 	return nil
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"math"
 	"sync"
@@ -786,4 +787,63 @@ func TestSessionRevocation(t *testing.T) {
 
 	// Token without sid does not query Redis sid key, so it validates even if Redis is unreachable (unless user check triggers)
 	// (Note: user invalidation check also queries Redis so badRdb fails on user check for non-empty UserID, which is expected fail-closed).
+}
+
+func TestCheckRevocationAndPublish(t *testing.T) {
+	Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	SetRedisClient(rdb)
+	defer SetRedisClient(nil)
+
+	// Subscribe to account:events channel
+	ctx := context.Background()
+	pubsub := rdb.Subscribe(ctx, "account:events")
+	defer pubsub.Close()
+	if _, err := pubsub.Receive(ctx); err != nil {
+		t.Fatalf("subscribe to account:events failed: %v", err)
+	}
+
+	sid := "sess-test-pubsub-1"
+	tok, err := GenerateTokenWithSession("user-pub-1", "user", "pub1@example.com", sid)
+	if err != nil {
+		t.Fatalf("GenerateTokenWithSession failed: %v", err)
+	}
+	claims, err := ValidateToken(tok)
+	if err != nil {
+		t.Fatalf("ValidateToken failed: %v", err)
+	}
+
+	// CheckRevocation on valid token returns nil
+	if err := CheckRevocation(claims); err != nil {
+		t.Fatalf("expected nil from CheckRevocation on valid claims, got %v", err)
+	}
+
+	// RevokeSession should publish to account:events
+	if err := RevokeSession(sid); err != nil {
+		t.Fatalf("RevokeSession failed: %v", err)
+	}
+
+	msgCh := pubsub.Channel()
+	select {
+	case msg := <-msgCh:
+		var evt struct {
+			Action string `json:"action"`
+			SID    string `json:"sid"`
+		}
+		if err := json.Unmarshal([]byte(msg.Payload), &evt); err != nil {
+			t.Fatalf("failed to parse event payload: %v", err)
+		}
+		if evt.Action != "SESSION_REVOKED" || evt.SID != sid {
+			t.Fatalf("unexpected event payload: %+v", evt)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for session revocation event on account:events")
+	}
+
+	// CheckRevocation now returns ErrSessionRevoked
+	if err := CheckRevocation(claims); !errors.Is(err, ErrSessionRevoked) {
+		t.Fatalf("expected ErrSessionRevoked, got %v", err)
+	}
 }

@@ -654,16 +654,16 @@ func TestStreamLimiter_DeterministicSlidingWindow(t *testing.T) {
 	}
 
 	// 5. Test newest-wins eviction and double-release safety on acquireStreamSlot
-	ctx1, release1 := limiter.acquireStreamSlot(context.Background(), "user1")
+	ctx1, release1 := limiter.acquireStreamSlot(context.Background(), "user1", "")
 	if limiter.ActiveSlots("user1") != 1 {
 		t.Fatalf("expected 1 active slot, got %d", limiter.ActiveSlots("user1"))
 	}
-	_, release2 := limiter.acquireStreamSlot(context.Background(), "user1")
+	_, release2 := limiter.acquireStreamSlot(context.Background(), "user1", "")
 	if limiter.ActiveSlots("user1") != 2 {
 		t.Fatalf("expected 2 active slots, got %d", limiter.ActiveSlots("user1"))
 	}
 	// 3rd stream for user1 (cap is 2) -> evicts stream 1
-	_, release3 := limiter.acquireStreamSlot(context.Background(), "user1")
+	_, release3 := limiter.acquireStreamSlot(context.Background(), "user1", "")
 	if limiter.ActiveSlots("user1") != 2 {
 		t.Fatalf("expected slot count to remain at cap (2), got %d", limiter.ActiveSlots("user1"))
 	}

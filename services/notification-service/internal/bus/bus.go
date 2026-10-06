@@ -13,25 +13,40 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Bus publishes notifications and subscribes per user.
+// AccountEvent represents an account or session lifecycle event (e.g. suspension or session revocation).
+type AccountEvent struct {
+	Action string `json:"action"`
+	UserID string `json:"user_id,omitempty"`
+	SID    string `json:"sid,omitempty"`
+}
+
+// Bus publishes notifications and subscribes per user, and fans out account revocation events.
 type Bus interface {
 	Publish(ctx context.Context, n *models.Notification) error
 	Subscribe(ctx context.Context, userID string) (<-chan *models.Notification, func(), error)
+	PublishAccountEvent(ctx context.Context, evt *AccountEvent) error
+	SubscribeAccountEvents(ctx context.Context) (<-chan *AccountEvent, func(), error)
 }
 
 func channelFor(userID string) string {
 	return "notif:user:" + userID
 }
 
+const accountEventsChannel = "account:events"
+
 // MemoryBus is an in-process fan-out bus.
 type MemoryBus struct {
-	mu   sync.RWMutex
-	subs map[string]map[chan *models.Notification]struct{}
+	mu          sync.RWMutex
+	subs        map[string]map[chan *models.Notification]struct{}
+	accountSubs map[chan *AccountEvent]struct{}
 }
 
 // NewMemoryBus creates an empty MemoryBus.
 func NewMemoryBus() *MemoryBus {
-	return &MemoryBus{subs: map[string]map[chan *models.Notification]struct{}{}}
+	return &MemoryBus{
+		subs:        map[string]map[chan *models.Notification]struct{}{},
+		accountSubs: map[chan *AccountEvent]struct{}{},
+	}
 }
 
 // Publish delivers to current subscribers (non-blocking).
@@ -65,6 +80,34 @@ func (b *MemoryBus) Subscribe(_ context.Context, userID string) (<-chan *models.
 				delete(b.subs, userID)
 			}
 		}
+		close(ch)
+	}
+	return ch, unsub, nil
+}
+
+// PublishAccountEvent delivers an account event to subscribers (non-blocking).
+func (b *MemoryBus) PublishAccountEvent(_ context.Context, evt *AccountEvent) error {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for ch := range b.accountSubs {
+		select {
+		case ch <- evt:
+		default:
+		}
+	}
+	return nil
+}
+
+// SubscribeAccountEvents returns a channel fed with account events.
+func (b *MemoryBus) SubscribeAccountEvents(_ context.Context) (<-chan *AccountEvent, func(), error) {
+	ch := make(chan *AccountEvent, 16)
+	b.mu.Lock()
+	b.accountSubs[ch] = struct{}{}
+	b.mu.Unlock()
+	unsub := func() {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		delete(b.accountSubs, ch)
 		close(ch)
 	}
 	return ch, unsub, nil
@@ -119,6 +162,61 @@ func (b *RedisBus) Subscribe(ctx context.Context, userID string) (<-chan *models
 				}
 				select {
 				case out <- &n:
+				case <-done:
+					return
+				}
+			}
+		}
+	}()
+	unsub := func() {
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
+	}
+	return out, unsub, nil
+}
+
+// PublishAccountEvent publishes an account revocation event to the shared account:events channel.
+func (b *RedisBus) PublishAccountEvent(ctx context.Context, evt *AccountEvent) error {
+	payload, err := json.Marshal(evt)
+	if err != nil {
+		return fmt.Errorf("bus: marshal account event: %w", err)
+	}
+	if err := b.client.Publish(ctx, accountEventsChannel, payload).Err(); err != nil {
+		return fmt.Errorf("bus: publish account event: %w", err)
+	}
+	return nil
+}
+
+// SubscribeAccountEvents subscribes once to the shared account:events Redis channel.
+func (b *RedisBus) SubscribeAccountEvents(ctx context.Context) (<-chan *AccountEvent, func(), error) {
+	sub := b.client.Subscribe(ctx, accountEventsChannel)
+	if _, err := sub.Receive(ctx); err != nil {
+		_ = sub.Close()
+		return nil, nil, fmt.Errorf("bus: subscribe account events: %w", err)
+	}
+	out := make(chan *AccountEvent, 16)
+	done := make(chan struct{})
+	go func() {
+		defer close(out)
+		defer func() { _ = sub.Close() }()
+		msgCh := sub.Channel()
+		for {
+			select {
+			case <-done:
+				return
+			case msg, ok := <-msgCh:
+				if !ok {
+					return
+				}
+				var evt AccountEvent
+				if err := json.Unmarshal([]byte(msg.Payload), &evt); err != nil {
+					continue
+				}
+				select {
+				case out <- &evt:
 				case <-done:
 					return
 				}
