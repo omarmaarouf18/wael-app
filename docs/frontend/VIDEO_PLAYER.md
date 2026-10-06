@@ -41,7 +41,7 @@ YouTube URL (a test scans for `youtube.com`, `youtu.be`, `watch?v=`, `embed/`).
 
 | Control | Result |
 |---|---|
-| Embedded controls (play bar, settings, captions button) | Hidden: `controls=0`. The app draws its own bar. |
+| Embedded controls (play bar, settings, captions button) | Hidden: `controls=0`. The app draws its own bar: play or pause, 10-second jumps, seek, a speed menu (0.75x–2x, one saved app preference, never per video) and full screen. |
 | Fullscreen button / "full screen into the YouTube app" | Hidden: `fs=0`; the app has its own full screen (landscape, immersive) over the same widget. |
 | Keyboard shortcuts | Off: `disablekb=1`. |
 | Annotations / cards | Off: `iv_load_policy=3`. |

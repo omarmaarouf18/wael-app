@@ -271,7 +271,7 @@ file for their exact values.
 | `CatalogFileTile` (+ `formatFileSize`) | `catalog_file_tile.dart` | PDF row (book or note): badges, size, title, lock when not owned. |
 | `showFileDetailsSheet` | `file_details_sheet.dart` | Bottom sheet for one PDF with the reason it cannot be opened yet. |
 | `ProtectedVideoSurface` | `protected_video_surface.dart` | The embedded video with its title mask, a touch-swallowing layer, the ended cover, the app's controls and the watermark, in that order. Same widget in portrait and full screen. See `VIDEO_PLAYER.md`. |
-| `PlayerControls` | `player_controls.dart` | The player's own control bar (play or pause, 10-second jumps, seek slider with times, full screen). The time row is always left to right. |
+| `PlayerControls` | `player_controls.dart` | The player's own control bar (play or pause, 10-second jumps, seek slider with times, playback-speed menu, full screen). The time row is always left to right. |
 | `MovingWatermark` | `moving_watermark.dart` | Identity text that jumps to a new spot every 20 s; touch-less, hidden from accessibility, cannot be dismissed. |
 | `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |
 | `OtpPinInput` (+ `OtpDigitsFormatter`) | `otp_pin_input.dart` | N-digit code input (default 6) over one hidden text field: paste, SMS autofill, backspace. Always laid out left to right; maps Arabic-Indic and Persian digits to ASCII. |
