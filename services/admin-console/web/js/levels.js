@@ -6,7 +6,7 @@
 import { clear, h } from './dom.js';
 import { formatNumber, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
-import { hideBanner, hideToast, showError, toast } from './ui.js';
+import { createCooldown, hideBanner, hideToast, showError, toast } from './ui.js';
 import { guardDialog } from './unsaved.js';
 
 export const STUDY_ORDER = Object.freeze(['bachelor', 'diploma', 'vocational']);
@@ -40,6 +40,11 @@ export function mountLevels({ api, doc = document, confirm, onOpen }) {
 
   const state = { items: [], loaded: false, error: null };
   let seq = 0;
+  // A 429 with Retry-After keeps the publish buttons off until the wait ends.
+  const lock = createCooldown();
+  lock.subscribe((left) => {
+    if (left === 0) paint();
+  });
 
   const editor = createLevelEditor({ api, doc, onDone: load });
 
@@ -64,14 +69,14 @@ export function mountLevels({ api, doc = document, confirm, onOpen }) {
         on: { click: () => editor.open(level) },
       }),
     );
-    buttons.append(
-      h('button', {
-        class: 'btn small secondary',
-        text: level.published ? t('catalog.unpublish') : t('catalog.publish'),
-        attrs: { type: 'button' },
-        on: { click: (event) => togglePublished(level, event.target) },
-      }),
-    );
+    const toggle = h('button', {
+      class: 'btn small secondary',
+      text: level.published ? t('catalog.unpublish') : t('catalog.publish'),
+      attrs: { type: 'button' },
+      on: { click: (event) => togglePublished(level, event.target) },
+    });
+    toggle.disabled = lock.active;
+    buttons.append(toggle);
     if (level.study_type === 'diploma' && (level.subject_count ?? 0) === 0) {
       buttons.append(
         h('button', {
@@ -94,6 +99,7 @@ export function mountLevels({ api, doc = document, confirm, onOpen }) {
   }
 
   async function togglePublished(level, button) {
+    if (lock.active) return;
     button.disabled = true;
     const res = await api.post('/api/levels/update', { id: level.key, published: !level.published });
     if (!isSignedIn()) return;
@@ -103,8 +109,9 @@ export function mountLevels({ api, doc = document, confirm, onOpen }) {
       return;
     }
     if (res.kind !== 'unauthorized') {
+      lock.arm(res);
       state.error = res;
-      render();
+      paint();
     }
   }
 
@@ -161,7 +168,7 @@ export function mountLevels({ api, doc = document, confirm, onOpen }) {
 
   function paint() {
     render();
-    if (state.error) showError(banner, state.error, load);
+    if (state.error) showError(banner, state.error, load, state.error.kind === 'rate_limited' ? lock : undefined);
     else hideBanner(banner);
   }
 
@@ -190,6 +197,7 @@ export function mountLevels({ api, doc = document, confirm, onOpen }) {
     },
     reset() {
       seq += 1;
+      lock.stop();
       editor.close();
       hideToast(doc);
       Object.assign(state, { items: [], loaded: false, error: null });
@@ -230,6 +238,11 @@ function createLevelEditor({ api, doc, onDone }) {
 
   let current = null; // null for create, level for edit
   let busy = false;
+  // A 429 with Retry-After keeps the save button off until the wait ends.
+  const cooldown = createCooldown();
+  cooldown.subscribe((left) => {
+    if (left === 0) render();
+  });
 
   const guard = guardDialog({
     id: 'level-editor',
@@ -250,7 +263,7 @@ function createLevelEditor({ api, doc, onDone }) {
   function render() {
     title.textContent = t(current ? 'catalog.levelEditTitle' : 'catalog.levelCreateTitle');
     save.textContent = busy ? t('dialog.working') : t(current ? 'catalog.save' : 'catalog.create');
-    save.disabled = busy;
+    save.disabled = busy || cooldown.active;
     cancel.disabled = busy;
     nameAr.disabled = busy;
     nameEn.disabled = busy;
@@ -258,7 +271,7 @@ function createLevelEditor({ api, doc, onDone }) {
   }
 
   async function submit() {
-    if (busy) return;
+    if (busy || cooldown.active) return;
     if (fieldError()) {
       showError(banner, { kind: 'bad_request' }, null);
       return;
@@ -293,7 +306,8 @@ function createLevelEditor({ api, doc, onDone }) {
       dialog.close();
       return;
     }
-    showError(banner, res, submit);
+    cooldown.arm(res);
+    showError(banner, res, submit, cooldown);
     render();
   }
 
@@ -312,6 +326,7 @@ function createLevelEditor({ api, doc, onDone }) {
     open(level) {
       current = level;
       busy = false;
+      cooldown.stop();
       nameAr.value = level ? level.name_ar ?? '' : '';
       nameEn.value = level ? level.name_en ?? '' : '';
       order.value = level ? String(level.order ?? '') : '';

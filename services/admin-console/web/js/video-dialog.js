@@ -3,7 +3,7 @@
 
 import { clear, h } from './dom.js';
 import { t } from './i18n.js';
-import { hideBanner, showError } from './ui.js';
+import { createCooldown, hideBanner, showError } from './ui.js';
 import { guardDialog } from './unsaved.js';
 
 export const TITLE_MAX = 200;
@@ -60,6 +60,11 @@ export function createVideoDialog({ api, doc = document, onDone }) {
 
   let current = null; // { mode: 'create', subjectId } or { mode: 'edit', video }
   let busy = false;
+  // A 429 with Retry-After keeps the save button off until the wait ends.
+  const cooldown = createCooldown();
+  cooldown.subscribe((left) => {
+    if (left === 0) render();
+  });
 
   const guard = guardDialog({
     id: 'video-dialog',
@@ -73,7 +78,7 @@ export function createVideoDialog({ api, doc = document, onDone }) {
   function render() {
     title.textContent = t(current?.mode === 'edit' ? 'catalog.videoEditTitle' : 'catalog.videoCreateTitle');
     save.textContent = busy ? t('dialog.working') : t(current?.mode === 'edit' ? 'catalog.save' : 'catalog.create');
-    save.disabled = busy;
+    save.disabled = busy || cooldown.active;
     cancel.disabled = busy;
     for (const input of [titleAr, youtube, duration]) input.disabled = busy;
   }
@@ -90,7 +95,7 @@ export function createVideoDialog({ api, doc = document, onDone }) {
   }
 
   async function submit() {
-    if (busy || !current) return;
+    if (busy || cooldown.active || !current) return;
     const read = readBody();
     if (read.error) {
       clear(banner);
@@ -122,7 +127,8 @@ export function createVideoDialog({ api, doc = document, onDone }) {
       dialog.close();
       return;
     }
-    showError(banner, res, submit);
+    cooldown.arm(res);
+    showError(banner, res, submit, cooldown);
     render();
   }
 
@@ -140,6 +146,7 @@ export function createVideoDialog({ api, doc = document, onDone }) {
     open(spec) {
       current = spec;
       busy = false;
+      cooldown.stop();
       const video = spec.mode === 'edit' ? spec.video : null;
       titleAr.value = video?.title_ar ?? '';
       youtube.value = '';

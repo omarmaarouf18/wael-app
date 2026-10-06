@@ -19,7 +19,7 @@ import {
   t,
 } from './i18n.js';
 import { TABS, isTabEnabled, nextTabIndex, visibleTabs } from './tabs.js';
-import { hideBanner, showBanner } from './ui.js';
+import { createCooldown, hideBanner, showError } from './ui.js';
 import { closeDiscardDialog, installUnloadGuard, leaveIfClean } from './unsaved.js';
 
 export function main(doc = document, win = window) {
@@ -42,6 +42,11 @@ export function main(doc = document, win = window) {
   let badgePollTimer = null;
   let activeTab = 'accounts';
   let signingIn = false;
+  // A 429 with Retry-After on sign-in keeps the button off until it ends.
+  const loginCooldown = createCooldown();
+  loginCooldown.subscribe((left) => {
+    if (left === 0 && !signingIn) loginSubmit.disabled = false;
+  });
 
   // Closing or reloading the page with unsaved catalog edits asks first.
   if (win && typeof win.addEventListener === 'function') installUnloadGuard(win);
@@ -168,7 +173,7 @@ export function main(doc = document, win = window) {
 
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (signingIn) return;
+    if (signingIn || loginCooldown.active) return;
     signingIn = true;
     loginSubmit.disabled = true;
     renderSigningIn();
@@ -189,7 +194,9 @@ export function main(doc = document, win = window) {
       loginBanner.textContent = t('login.expired');
       loginBanner.hidden = false;
     } else {
-      showBanner(loginBanner, result.kind, () => loginForm.requestSubmit());
+      loginCooldown.arm(result);
+      loginSubmit.disabled = loginCooldown.active;
+      showError(loginBanner, result, () => loginForm.requestSubmit(), loginCooldown);
     }
   });
 

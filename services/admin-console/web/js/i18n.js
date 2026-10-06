@@ -54,6 +54,7 @@ export const MESSAGES = Object.freeze({
     'err.not_found': 'العنصر غير موجود. ربما تم حذفه.',
     'err.conflict': 'تعذّر تنفيذ الإجراء لأن حالة الحساب تغيّرت. حدّث القائمة ثم أعد المحاولة.',
     'err.rate_limited': 'محاولات كثيرة. انتظر قليلًا ثم أعد المحاولة.',
+    'err.retryAfter': 'حاول بعد {n} ثانية',
     'err.bad_request': 'البيانات المُدخلة غير صالحة. راجعها ثم أعد المحاولة.',
     'err.unavailable': 'الخدمة غير متاحة الآن. أعد المحاولة بعد قليل.',
 
@@ -354,6 +355,7 @@ export const MESSAGES = Object.freeze({
     'err.not_found': 'That item was not found. It may have been deleted.',
     'err.conflict': 'The action could not be applied because the account changed. Refresh the list and try again.',
     'err.rate_limited': 'Too many attempts. Wait a moment, then try again.',
+    'err.retryAfter': 'Try again in {n} seconds',
     'err.bad_request': 'Some of the input is not valid. Check it and try again.',
     'err.unavailable': 'The service is not available right now. Try again shortly.',
 

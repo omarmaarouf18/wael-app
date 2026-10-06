@@ -4,7 +4,7 @@
 
 import { clear, h } from './dom.js';
 import { formatCairoDateTime, formatNumber, t } from './i18n.js';
-import { hideBanner, messageRow, showBanner, showError } from './ui.js';
+import { createCooldown, hideBanner, messageRow, showError } from './ui.js';
 import { validateReason } from './account-dialog.js';
 
 const COLUMNS = 6;
@@ -46,6 +46,15 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
   let subjects = [];
   let loading = false;
   let inFlight = false;
+  // A 429 with Retry-After keeps the grant/revoke buttons off until it ends.
+  const grantCooldown = createCooldown();
+  const revokeCooldown = createCooldown();
+  grantCooldown.subscribe((left) => {
+    if (left === 0 && !inFlight && grantSubjectSelect.value) grantConfirm.disabled = false;
+  });
+  revokeCooldown.subscribe((left) => {
+    if (left === 0) renderRevokeState();
+  });
 
   async function loadEntitlements() {
     if (!currentAccount) return;
@@ -59,7 +68,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
     clear(tbody);
 
     if (!res.ok) {
-      showBanner(banner, res.kind, loadEntitlements);
+      showError(banner, res, loadEntitlements);
       return;
     }
 
@@ -123,6 +132,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
   async function openGrant() {
     if (!currentAccount) return;
     inFlight = false;
+    grantCooldown.stop();
     hideBanner(grantBanner);
 
     const name = currentAccount.full_name || currentAccount.email || currentAccount.id;
@@ -205,7 +215,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
   if (grantForm) {
     grantForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!currentAccount || inFlight) return;
+      if (!currentAccount || inFlight || grantCooldown.active) return;
       const subjID = grantSubjectSelect.value;
       if (!subjID) return;
 
@@ -233,7 +243,9 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
         grantDialog.close();
         return;
       }
-      showError(grantBanner, res, () => grantForm.requestSubmit());
+      grantCooldown.arm(res);
+      grantConfirm.disabled = grantCooldown.active;
+      showError(grantBanner, res, () => grantForm.requestSubmit(), grantCooldown);
     });
   }
 
@@ -247,6 +259,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
   function openRevoke(ent) {
     activeEntitlement = ent;
     inFlight = false;
+    revokeCooldown.stop();
     revokeReason.value = '';
     hideBanner(revokeBanner);
 
@@ -264,7 +277,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
     revokeHint.textContent = t('dialog.reasonHint', { max: formatNumber(1000) });
     revokeCount.textContent = t('dialog.reasonCount', { n: formatNumber(len), max: formatNumber(1000) });
     const valid = validateReason(val).ok;
-    revokeConfirm.disabled = inFlight || !valid;
+    revokeConfirm.disabled = inFlight || revokeCooldown.active || !valid;
     revokeCancel.disabled = inFlight;
     revokeReason.disabled = inFlight;
   }
@@ -276,7 +289,7 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
   if (revokeForm) {
     revokeForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!activeEntitlement || inFlight) return;
+      if (!activeEntitlement || inFlight || revokeCooldown.active) return;
       const valid = validateReason(revokeReason.value);
       if (!valid.ok) return;
 
@@ -303,7 +316,9 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
         revokeDialog.close();
         return;
       }
-      showError(revokeBanner, res, () => revokeForm.requestSubmit());
+      revokeCooldown.arm(res);
+      renderRevokeState();
+      showError(revokeBanner, res, () => revokeForm.requestSubmit(), revokeCooldown);
     });
   }
 

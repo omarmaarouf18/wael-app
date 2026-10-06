@@ -183,16 +183,18 @@ export function makeFetch(routes) {
     if (!handler) return jsonResponse(404, { code: 'not_found', error: 'SECRET not found text' });
     const spec = typeof handler === 'function' ? await handler({ method, url: String(url), init }) : handler;
     if (spec instanceof Error) throw spec;
-    return jsonResponse(spec.status ?? 200, spec.body ?? {});
+    return jsonResponse(spec.status ?? 200, spec.body ?? {}, spec.headers);
   }
   fetchFn.calls = calls;
   return fetchFn;
 }
 
-export function jsonResponse(status, body) {
+export function jsonResponse(status, body, headers = {}) {
+  const lower = Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), String(value)]));
   return {
     status,
     ok: status >= 200 && status < 300,
+    headers: { get: (name) => lower[String(name).toLowerCase()] ?? null },
     async json() {
       return body;
     },

@@ -5,7 +5,7 @@ import { createEntitlementsDialog } from './entitlements-dialog.js';
 import { clear, h } from './dom.js';
 import { t } from './i18n.js';
 import { isSignedIn } from './auth.js';
-import { createPager, dateCell, hideBanner, messageRow, showBanner, statusBadge } from './ui.js';
+import { createPager, dateCell, hideBanner, messageRow, showError, statusBadge } from './ui.js';
 
 export const PAGE_SIZE = 15;
 const COLUMNS = 6;
@@ -101,7 +101,7 @@ export function mountAccounts({ api, doc = document }) {
 
   function render() {
     renderRows();
-    if (state.error) showBanner(banner, state.error, load);
+    if (state.error) showError(banner, state.error, load);
     else hideBanner(banner);
     pager.update({ page: state.page, total: state.total, limit: PAGE_SIZE });
   }
@@ -113,7 +113,7 @@ export function mountAccounts({ api, doc = document }) {
     const res = await api.get('/api/accounts', listQuery({ ...state, limit: PAGE_SIZE }));
     if (mine !== seq || !isSignedIn()) return;
     if (!res.ok) {
-      state.error = res.kind;
+      state.error = res;
       render();
       return;
     }

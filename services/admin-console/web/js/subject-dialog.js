@@ -4,7 +4,7 @@
 
 import { clear, h } from './dom.js';
 import { getLang, t } from './i18n.js';
-import { hideBanner, showError } from './ui.js';
+import { createCooldown, hideBanner, showError } from './ui.js';
 import { guardDialog } from './unsaved.js';
 
 export const TITLE_MAX = 200;
@@ -121,6 +121,11 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
   let current = null; // { mode: 'create', levelKey } or { mode: 'edit', subject }
   let levels = [];
   let busy = false;
+  // A 429 with Retry-After keeps the save button off until the wait ends.
+  const cooldown = createCooldown();
+  cooldown.subscribe((left) => {
+    if (left === 0) render();
+  });
 
   const guard = guardDialog({
     id: 'subject-dialog',
@@ -157,7 +162,7 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
     syncTermRow();
     title.textContent = t(current?.mode === 'edit' ? 'catalog.subjectEditTitle' : 'catalog.subjectCreateTitle');
     save.textContent = busy ? t('dialog.working') : t(current?.mode === 'edit' ? 'catalog.save' : 'catalog.create');
-    save.disabled = busy;
+    save.disabled = busy || cooldown.active;
     cancel.disabled = busy;
     for (const input of [level, titleAr, titleEn, descAr, descEn, term, price, expires]) input.disabled = busy;
   }
@@ -191,7 +196,7 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
   }
 
   async function submit() {
-    if (busy || !current) return;
+    if (busy || cooldown.active || !current) return;
     const read = readBody();
     if (read.error) {
       clear(banner);
@@ -217,7 +222,8 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
       dialog.close();
       return;
     }
-    showError(banner, res, submit);
+    cooldown.arm(res);
+    showError(banner, res, submit, cooldown);
     render();
   }
 
@@ -237,6 +243,7 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
       current = spec;
       levels = Array.isArray(allLevels) ? allLevels : [];
       busy = false;
+      cooldown.stop();
       clear(level);
       for (const l of levels) {
         level.append(h('option', { text: l.name_ar ?? l.key, attrs: { value: l.key } }));

@@ -6,7 +6,7 @@ import { clear, h } from './dom.js';
 import { formatCairoDate } from './subject-dialog.js';
 import { formatNumber, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
-import { createPager, hideBanner, hideToast, messageRow, showError, toast } from './ui.js';
+import { createCooldown, createPager, hideBanner, hideToast, messageRow, showError, toast } from './ui.js';
 
 export const PAGE_SIZE = 15;
 const COLUMNS = 7;
@@ -31,6 +31,11 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
 
   const state = { level: null, published: '', page: 1, total: 0, items: [], loaded: false, error: null };
   let seq = 0;
+  // A 429 with Retry-After keeps the publish buttons off until the wait ends.
+  const lock = createCooldown();
+  lock.subscribe((left) => {
+    if (left === 0) paint();
+  });
 
   function badge(published) {
     return h('span', {
@@ -66,7 +71,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
         class: 'btn small secondary', text: t('catalog.publish'), attrs: { type: 'button' },
         on: { click: (event) => publish(subject, event.target) },
       });
-      button.disabled = !canPublish;
+      button.disabled = !canPublish || lock.active;
       if (!canPublish) button.title = t('catalog.publishDisabledHint');
       actions.append(button);
       if (!canPublish) {
@@ -92,6 +97,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
   }
 
   async function publish(subject, button) {
+    if (lock.active) return;
     button.disabled = true;
     const res = await api.post('/api/subjects/publish', { id: subject.id });
     if (!isSignedIn()) return;
@@ -101,6 +107,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
       return;
     }
     if (res.kind !== 'unauthorized') {
+      lock.arm(res);
       state.error = res;
       paint();
     }
@@ -170,7 +177,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
   function paint() {
     render();
     pager.update({ page: state.page, total: state.total, limit: PAGE_SIZE });
-    if (state.error) showError(banner, state.error, load);
+    if (state.error) showError(banner, state.error, load, state.error.kind === 'rate_limited' ? lock : undefined);
     else hideBanner(banner);
   }
 
@@ -212,6 +219,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
     },
     reset() {
       seq += 1;
+      lock.stop();
       hideToast(doc);
       Object.assign(state, { level: null, published: '', page: 1, total: 0, items: [], loaded: false, error: null });
     },

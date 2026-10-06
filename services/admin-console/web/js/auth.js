@@ -49,7 +49,8 @@ export function clearSession(reason = 'signed_out') {
  * signed in only once the server has named the admin.
  *
  * Resolves { ok: true } or { ok: false, kind } where kind is 'empty' or an api
- * error kind such as 'unauthorized' or 'unavailable'.
+ * error kind such as 'unauthorized' or 'unavailable'. A rate-limited answer
+ * also carries retryAfter (seconds).
  */
 export async function signIn(rawToken, loadIdentity) {
   const candidate = normalizeToken(rawToken);
@@ -61,7 +62,8 @@ export async function signIn(rawToken, loadIdentity) {
   const name = res.ok && res.data && typeof res.data.name === 'string' ? res.data.name.trim() : '';
   if (!name) {
     token = '';
-    return { ok: false, kind: res.ok ? 'unavailable' : res.kind };
+    if (res.ok) return { ok: false, kind: 'unavailable' };
+    return res.retryAfter ? { ok: false, kind: res.kind, retryAfter: res.retryAfter } : { ok: false, kind: res.kind };
   }
   adminName = name;
   notify({ signedIn: true, reason: 'signed_in' });

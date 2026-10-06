@@ -7,7 +7,7 @@ import { clear, h } from './dom.js';
 import { formatDuration } from './video-dialog.js';
 import { t } from './i18n.js';
 import { isSignedIn } from './auth.js';
-import { hideBanner, hideToast, showError, toast } from './ui.js';
+import { createCooldown, hideBanner, hideToast, showError, toast } from './ui.js';
 import { trackDirty } from './unsaved.js';
 
 // The only third-party URL on the page: a plain link, never fetched,
@@ -28,6 +28,11 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
 
   const state = { subject: null, items: [], order: [], loaded: false, error: null, saving: false };
   let seq = 0;
+  // A 429 with Retry-After keeps the save-order button off until the wait ends.
+  const lock = createCooldown();
+  lock.subscribe((left) => {
+    if (left === 0) paint();
+  });
 
   const dirty = () => state.order.join(',') !== state.items.map((v) => v.id).join(',');
   // An unsaved order counts for the leave guard while a subject is open.
@@ -88,7 +93,7 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
   }
 
   async function saveOrder(button) {
-    if (state.saving || !dirty()) return;
+    if (state.saving || lock.active || !dirty()) return;
     state.saving = true;
     paint();
     const res = await api.post('/api/videos/reorder', { subject_id: state.subject.id, video_ids: state.order });
@@ -100,6 +105,7 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
       return;
     }
     if (res.kind !== 'unauthorized') {
+      lock.arm(res);
       state.error = res;
       paint();
     }
@@ -170,7 +176,7 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
         attrs: { type: 'button' },
         on: { click: (event) => saveOrder(event.target) },
       });
-      save.disabled = state.saving || !dirty();
+      save.disabled = state.saving || lock.active || !dirty();
       bar.append(save);
       if (dirty()) bar.append(h('span', { class: 'muted small', text: t('catalog.reorder.dirty') }));
     }
@@ -179,7 +185,7 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
 
   function paint() {
     render();
-    if (state.error) showError(banner, state.error, load);
+    if (state.error) showError(banner, state.error, load, state.error.kind === 'rate_limited' ? lock : undefined);
     else hideBanner(banner);
   }
 
@@ -219,6 +225,7 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
     },
     reset() {
       seq += 1;
+      lock.stop();
       hideToast(doc);
       Object.assign(state, { subject: null, items: [], order: [], loaded: false, error: null, saving: false });
     },

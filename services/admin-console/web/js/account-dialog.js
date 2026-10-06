@@ -1,7 +1,7 @@
 // The confirmation dialog for suspend, reactivate and delete. Suspend and
 // delete need a reason (1-1000 characters), reactivate does not.
 
-import { hideBanner, showBanner } from './ui.js';
+import { createCooldown, hideBanner, showError } from './ui.js';
 import { formatNumber, t } from './i18n.js';
 
 export const REASON_MAX = 1000;
@@ -61,6 +61,11 @@ export function createAccountDialog({ api, doc = document, onDone }) {
 
   let current = null; // { action, account }
   let busy = false;
+  // A 429 with Retry-After keeps the confirm button off until the wait ends.
+  const cooldown = createCooldown();
+  cooldown.subscribe((left) => {
+    if (left === 0) render();
+  });
 
   function valid() {
     const spec = ACTIONS[current.action];
@@ -79,13 +84,13 @@ export function createAccountDialog({ api, doc = document, onDone }) {
     count.textContent = t('dialog.reasonCount', { n: formatNumber([...reason.value].length), max: formatNumber(REASON_MAX) });
     confirm.className = `btn ${spec.tone}`;
     confirm.textContent = busy ? t('dialog.working') : t(`dialog.${action}.confirm`);
-    confirm.disabled = busy || !valid();
+    confirm.disabled = busy || cooldown.active || !valid();
     cancel.disabled = busy;
     reason.disabled = busy;
   }
 
   async function submit() {
-    if (!current || busy || !valid()) return;
+    if (!current || busy || cooldown.active || !valid()) return;
     const req = buildActionRequest(current.action, current.account, reason.value);
     if (req.error) return;
     busy = true;
@@ -102,7 +107,8 @@ export function createAccountDialog({ api, doc = document, onDone }) {
       dialog.close();
       return;
     }
-    showBanner(banner, res.kind, submit);
+    cooldown.arm(res);
+    showError(banner, res, submit, cooldown);
     render();
   }
 
@@ -124,6 +130,7 @@ export function createAccountDialog({ api, doc = document, onDone }) {
     open(action, account) {
       current = { action, account };
       busy = false;
+      cooldown.stop();
       reason.value = '';
       hideBanner(banner);
       render();

@@ -97,6 +97,7 @@ The UI is split into small ES modules:
 - Requests: purchase requests queue with student identity join via auth-service, Cairo date formatting, live `pending_count` badge with 60-second polling, accept dialog, and reject dialog with mandatory reason (`requests.js`).
 - Catalog: levels, subjects, videos, publish/unpublish, reorder, and force-delete (`catalog.js`, `levels.js`, `subjects.js`, `subject-dialog.js`, `videos.js`, `video-dialog.js`, `confirm.js`).
 - Unsaved changes: the catalog add/edit forms and an unsaved video order ask before they are closed, left through the tabs or breadcrumb, or the page is closed or reloaded (`unsaved.js`; the browser's own prompt for `beforeunload`, an in-page dialog for the rest).
+- Rate limits: a `429` with a `Retry-After` (whole seconds, relayed by the proxy; capped at an hour in the page) shows "حاول بعد N ثانية", counts down, and keeps the action's button and the banner's retry button disabled until the wait ends (`api.js` `parseRetryAfter`, `ui.js` `createCooldown`).
 - Audit: per-source audit log switch (`audit.js`).
 - Idle Lock: 19-minute idle warning with 60-second live countdown dialog and automatic 20-minute logout (`idle.js`).
 

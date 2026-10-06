@@ -25,6 +25,21 @@ export function kindForStatus(status) {
   }
 }
 
+export const RETRY_AFTER_MAX = 3600;
+
+/**
+ * Reads a Retry-After header as whole seconds. Only a plain number of seconds
+ * is accepted (the console proxy relays digits only); a date, a negative or
+ * zero value, or junk gives null. Longer waits are capped at an hour.
+ */
+export function parseRetryAfter(raw) {
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+  const text = String(raw).trim();
+  if (!/^\d{1,7}$/.test(text)) return null;
+  const seconds = Number(text);
+  return seconds >= 1 ? Math.min(seconds, RETRY_AFTER_MAX) : null;
+}
+
 function withQuery(path, query) {
   const params = new URLSearchParams();
   for (const [name, value] of Object.entries(query ?? {})) {
@@ -57,7 +72,9 @@ export function createApi({ fetchFn, getToken: tokenOf, onUnauthorized }) {
   /**
    * Resolves { ok, status, kind, code, data }. data is set only when ok. code
    * is the server's error code when it is a plain token (a-z and _); raw
-   * error text is never kept. Never throws on HTTP or network errors.
+   * error text is never kept. A 429 also carries retryAfter (seconds, or null
+   * when the server sent no usable Retry-After). Never throws on HTTP or
+   * network errors.
    */
   async function request(method, path, { query, body } = {}) {
     const token = tokenOf();
@@ -89,7 +106,9 @@ export function createApi({ fetchFn, getToken: tokenOf, onUnauthorized }) {
       return { ok: false, status: 401, kind: 'unauthorized', code: 'unauthorized', data: null };
     }
     if (!res.ok) {
-      return { ok: false, status: res.status, kind: kindForStatus(res.status), code: await errorCode(res), data: null };
+      const failure = { ok: false, status: res.status, kind: kindForStatus(res.status), code: await errorCode(res), data: null };
+      if (res.status === 429) failure.retryAfter = parseRetryAfter(res.headers?.get?.('Retry-After'));
+      return failure;
     }
     let data;
     try {

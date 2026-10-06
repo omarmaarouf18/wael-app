@@ -6,7 +6,7 @@
 import { clear, h } from './dom.js';
 import { MESSAGES, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
-import { createPager, dateCell, hideBanner, messageRow, showBanner } from './ui.js';
+import { createPager, dateCell, hideBanner, messageRow, showError } from './ui.js';
 
 export const PAGE_SIZE = 20;
 const COLUMNS = 5;
@@ -62,7 +62,7 @@ export function mountAudit({ api, doc = document }) {
     if (!state.loaded && !state.error) tbody.append(messageRow(COLUMNS, t('common.loading')));
     else if (state.loaded && state.items.length === 0) tbody.append(messageRow(COLUMNS, t('common.empty')));
     else if (state.loaded) for (const entry of state.items) tbody.append(row(entry));
-    if (state.error) showBanner(banner, state.error, load);
+    if (state.error) showError(banner, state.error, load);
     else hideBanner(banner);
     pager.update({ page: state.page, total: state.total, limit: PAGE_SIZE });
   }
@@ -74,7 +74,7 @@ export function mountAudit({ api, doc = document }) {
     const res = await api.get('/api/audit', auditQuery({ source: state.source, page: state.page, limit: PAGE_SIZE }));
     if (mine !== seq || !isSignedIn()) return;
     if (!res.ok) {
-      state.error = res.kind;
+      state.error = res;
       render();
       return;
     }

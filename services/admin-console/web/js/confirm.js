@@ -4,7 +4,7 @@
 
 import { clear, h } from './dom.js';
 import { t } from './i18n.js';
-import { hideBanner, showError } from './ui.js';
+import { createCooldown, hideBanner, showError } from './ui.js';
 
 export function createConfirm({ api, doc = document }) {
   const host = doc.getElementById('catalog-dialogs');
@@ -21,6 +21,11 @@ export function createConfirm({ api, doc = document }) {
 
   let current = null; // { titleKey, noteText, confirmKey, tone, path, body, onDone, onCode }
   let busy = false;
+  // A 429 with Retry-After keeps the confirm button off until the wait ends.
+  const cooldown = createCooldown();
+  cooldown.subscribe((left) => {
+    if (left === 0) render();
+  });
 
   function render() {
     if (!current) return;
@@ -28,12 +33,12 @@ export function createConfirm({ api, doc = document }) {
     note.textContent = current.noteText;
     confirm.className = `btn ${current.tone}`;
     confirm.textContent = busy ? t('dialog.working') : t(current.confirmKey);
-    confirm.disabled = busy;
+    confirm.disabled = busy || cooldown.active;
     cancel.disabled = busy;
   }
 
   async function submit() {
-    if (!current || busy) return;
+    if (!current || busy || cooldown.active) return;
     busy = true;
     hideBanner(banner);
     render();
@@ -56,7 +61,8 @@ export function createConfirm({ api, doc = document }) {
     if (res.code && current.onCode && current.onCode(res)) {
       return;
     }
-    showError(banner, res, submit);
+    cooldown.arm(res);
+    showError(banner, res, submit, cooldown);
     render();
   }
 
@@ -78,6 +84,7 @@ export function createConfirm({ api, doc = document }) {
       if (dialog.open) dialog.close();
       current = { tone: 'danger', ...spec };
       busy = false;
+      cooldown.stop();
       hideBanner(banner);
       render();
       dialog.showModal();

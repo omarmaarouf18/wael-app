@@ -6,7 +6,7 @@ import { clear, h } from './dom.js';
 import { formatCairoDateTime, formatNumber, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { setBadge } from './tabs.js';
-import { createPager, hideBanner, messageRow, showBanner, showError, statusBadge } from './ui.js';
+import { createCooldown, createPager, hideBanner, messageRow, showError, statusBadge } from './ui.js';
 import { validateReason } from './account-dialog.js';
 
 export const PAGE_SIZE = 15;
@@ -65,6 +65,15 @@ export function mountRequests({ api, doc = document, win = window }) {
   let seq = 0;
   let activeRequest = null;
   let inFlight = false;
+  // A 429 with Retry-After keeps the accept/reject buttons off until it ends.
+  const acceptCooldown = createCooldown();
+  const rejectCooldown = createCooldown();
+  acceptCooldown.subscribe((left) => {
+    if (left === 0 && activeRequest && !inFlight) acceptConfirm.disabled = false;
+  });
+  rejectCooldown.subscribe((left) => {
+    if (left === 0) renderRejectState();
+  });
 
   async function loadSubjectsFilter() {
     const res = await api.get('/api/subjects', { limit: 100 });
@@ -150,7 +159,7 @@ export function mountRequests({ api, doc = document, win = window }) {
 
   function render() {
     renderRows();
-    if (state.error) showBanner(banner, state.error, load);
+    if (state.error) showError(banner, state.error, load);
     else hideBanner(banner);
     pager.update({ page: state.page, total: state.total, limit: PAGE_SIZE });
   }
@@ -169,7 +178,7 @@ export function mountRequests({ api, doc = document, win = window }) {
 
     if (mine !== seq || !isSignedIn()) return;
     if (!res.ok) {
-      state.error = res.kind;
+      state.error = res;
       render();
       return;
     }
@@ -206,6 +215,7 @@ export function mountRequests({ api, doc = document, win = window }) {
   function openAccept(req) {
     activeRequest = req;
     inFlight = false;
+    acceptCooldown.stop();
     hideBanner(acceptBanner);
 
     const student = state.studentMap.get(req.user_id);
@@ -225,7 +235,7 @@ export function mountRequests({ api, doc = document, win = window }) {
   if (acceptForm) {
     acceptForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!activeRequest || inFlight) return;
+      if (!activeRequest || inFlight || acceptCooldown.active) return;
       inFlight = true;
       acceptConfirm.disabled = true;
       acceptCancel.disabled = true;
@@ -246,7 +256,9 @@ export function mountRequests({ api, doc = document, win = window }) {
         acceptDialog.close();
         return;
       }
-      showError(acceptBanner, res, () => acceptForm.requestSubmit());
+      acceptCooldown.arm(res);
+      acceptConfirm.disabled = acceptCooldown.active;
+      showError(acceptBanner, res, () => acceptForm.requestSubmit(), acceptCooldown);
     });
   }
 
@@ -263,6 +275,7 @@ export function mountRequests({ api, doc = document, win = window }) {
   function openReject(req) {
     activeRequest = req;
     inFlight = false;
+    rejectCooldown.stop();
     rejectReason.value = '';
     hideBanner(rejectBanner);
 
@@ -281,7 +294,7 @@ export function mountRequests({ api, doc = document, win = window }) {
     rejectHint.textContent = t('dialog.reasonHint', { max: formatNumber(1000) });
     rejectCount.textContent = t('dialog.reasonCount', { n: formatNumber(len), max: formatNumber(1000) });
     const valid = validateReason(val).ok;
-    rejectConfirm.disabled = inFlight || !valid;
+    rejectConfirm.disabled = inFlight || rejectCooldown.active || !valid;
     rejectCancel.disabled = inFlight;
     rejectReason.disabled = inFlight;
   }
@@ -293,7 +306,7 @@ export function mountRequests({ api, doc = document, win = window }) {
   if (rejectForm) {
     rejectForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      if (!activeRequest || inFlight) return;
+      if (!activeRequest || inFlight || rejectCooldown.active) return;
       const valid = validateReason(rejectReason.value);
       if (!valid.ok) return;
 
@@ -319,7 +332,9 @@ export function mountRequests({ api, doc = document, win = window }) {
         rejectDialog.close();
         return;
       }
-      showError(rejectBanner, res, () => rejectForm.requestSubmit());
+      rejectCooldown.arm(res);
+      renderRejectState();
+      showError(rejectBanner, res, () => rejectForm.requestSubmit(), rejectCooldown);
     });
   }
 
