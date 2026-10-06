@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"runtime"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -296,8 +297,8 @@ func TestSSE_PublishRevokeSession_ClosesOnlyTargetSID(t *testing.T) {
 	<-done2
 }
 
-// 3. heartbeat re-check closes when only the denylist changed (no pub/sub message)
-func TestSSE_HeartbeatRecheck_ClosesOnSilentDenylist(t *testing.T) {
+// 3a. Heartbeat re-check: (a) session revoked -> stream closes
+func TestSSE_HeartbeatRecheck_SessionRevoked_ClosesStream(t *testing.T) {
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
@@ -310,8 +311,8 @@ func TestSSE_HeartbeatRecheck_ClosesOnSilentDenylist(t *testing.T) {
 	s.HeartbeatInterval = 25 * time.Millisecond
 	s.CheckEveryNth = 1
 
-	sid := "sid-silent-denylist"
-	tok, err := jwtutil.GenerateTokenWithSession("user-silent", "user", "silent@example.com", sid)
+	sid := "sid-session-revoked"
+	tok, err := jwtutil.GenerateTokenWithSession("user-sess-revoked", "user", "sess@example.com", sid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +320,7 @@ func TestSSE_HeartbeatRecheck_ClosesOnSilentDenylist(t *testing.T) {
 	_, cancel, done := openTestStream(t, s, tok)
 	defer cancel()
 
-	// Silently set the Redis key WITHOUT publishing to account:events
+	// Silently set session revocation key in Redis
 	err = rdb.Set(context.Background(), "jwt:sid:"+sid, "1", 24*time.Hour).Err()
 	if err != nil {
 		t.Fatalf("failed to set redis key: %v", err)
@@ -329,16 +330,16 @@ func TestSSE_HeartbeatRecheck_ClosesOnSilentDenylist(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("stream did not close after silent session denylist on heartbeat")
+		t.Fatal("stream did not close after session revocation")
 	}
 
-	if s.Limiter.ActiveSlots("user-silent") != 0 {
-		t.Fatalf("expected 0 slots after heartbeat revocation, got %d", s.Limiter.ActiveSlots("user-silent"))
+	if s.Limiter.ActiveSlots("user-sess-revoked") != 0 {
+		t.Fatalf("expected 0 slots after heartbeat revocation, got %d", s.Limiter.ActiveSlots("user-sess-revoked"))
 	}
 }
 
-// 4. Redis down during re-check closes (fail closed)
-func TestSSE_HeartbeatRecheck_ClosesWhenRedisDown(t *testing.T) {
+// 3b. Heartbeat re-check: (b) token revoked -> stream closes
+func TestSSE_HeartbeatRecheck_TokenRevoked_ClosesStream(t *testing.T) {
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
@@ -350,8 +351,8 @@ func TestSSE_HeartbeatRecheck_ClosesWhenRedisDown(t *testing.T) {
 	s.HeartbeatInterval = 25 * time.Millisecond
 	s.CheckEveryNth = 1
 
-	sid := "sid-redis-down"
-	tok, err := jwtutil.GenerateTokenWithSession("user-redis-down", "user", "down@example.com", sid)
+	userID := "user-token-revoked"
+	tok, err := jwtutil.GenerateTokenWithSession(userID, "user", "tok@example.com", "sid-tok-revoked")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,18 +360,148 @@ func TestSSE_HeartbeatRecheck_ClosesWhenRedisDown(t *testing.T) {
 	_, cancel, done := openTestStream(t, s, tok)
 	defer cancel()
 
-	// Shut down miniredis to simulate sudden Redis outage
-	mr.Close()
-
-	// Stream must fail-closed and terminate on heartbeat check
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("stream did not fail closed when Redis went down during heartbeat")
+	// Silently set user invalidation timestamp in Redis to future timestamp so issued token is revoked
+	futureTs := time.Now().Add(1 * time.Hour).Unix()
+	err = rdb.Set(context.Background(), "jwt:invalidated_before:"+userID, strconv.FormatInt(futureTs, 10), 24*time.Hour).Err()
+	if err != nil {
+		t.Fatalf("failed to set redis key: %v", err)
 	}
 
-	if s.Limiter.ActiveSlots("user-redis-down") != 0 {
-		t.Fatalf("expected 0 slots after Redis outage, got %d", s.Limiter.ActiveSlots("user-redis-down"))
+	// The stream must close upon the next heartbeat check
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream did not close after token invalidation")
+	}
+
+	if s.Limiter.ActiveSlots(userID) != 0 {
+		t.Fatalf("expected 0 slots after token revocation, got %d", s.Limiter.ActiveSlots(userID))
+	}
+}
+
+// 3c. Heartbeat re-check: (c) transient Redis error -> stream stays open and is not closed
+func TestSSE_HeartbeatRecheck_TransientRedisError_StaysOpen(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr(), MaxRetries: -1})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	s := testServer()
+	s.HeartbeatInterval = 30 * time.Millisecond
+	s.CheckEveryNth = 1
+
+	sid := "sid-redis-transient"
+	tok, err := jwtutil.GenerateTokenWithSession("user-redis-transient", "user", "transient@example.com", sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec, cancel, done := openTestStream(t, s, tok)
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	// Inject transient Redis error
+	mr.SetError("ERR mock transient redis error")
+
+	// Wait across multiple heartbeat ticks
+	// Stream must NOT close, and ping frames continue to arrive
+	pingCount := 0
+	deadline := time.After(300 * time.Millisecond)
+loop:
+	for {
+		select {
+		case chunk := <-rec.bodyCh:
+			if chunk == ": ping\n\n" {
+				pingCount++
+				if pingCount >= 2 {
+					break loop
+				}
+			}
+		case <-done:
+			t.Fatal("stream closed during transient Redis error; expected stream to stay open")
+		case <-deadline:
+			break loop
+		}
+	}
+
+	if pingCount < 2 {
+		t.Fatalf("expected at least 2 ping frames despite Redis error, got %d", pingCount)
+	}
+
+	if s.Limiter.ActiveSlots("user-redis-transient") != 1 {
+		t.Fatalf("expected stream slot to remain active, got %d", s.Limiter.ActiveSlots("user-redis-transient"))
+	}
+}
+
+// 3d. Heartbeat re-check: (d) after Redis recovers and a real revocation exists -> stream closes on the next check
+func TestSSE_HeartbeatRecheck_RedisRecoversAndRevoked_ClosesStream(t *testing.T) {
+	jwtutil.Init("test-jwt-secret-0123456789abcdef")
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr(), MaxRetries: -1})
+	defer rdb.Close()
+	jwtutil.SetRedisClient(rdb)
+	defer jwtutil.SetRedisClient(nil)
+
+	s := testServer()
+	s.HeartbeatInterval = 30 * time.Millisecond
+	s.CheckEveryNth = 1
+
+	sid := "sid-recover-then-revoke"
+	tok, err := jwtutil.GenerateTokenWithSession("user-recover", "user", "recover@example.com", sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec, cancel, done := openTestStream(t, s, tok)
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	// 1. Inject transient Redis error
+	mr.SetError("ERR mock transient redis error")
+
+	// Verify stream survives across at least 1-2 heartbeat ticks
+	pingReceived := false
+	timer := time.After(200 * time.Millisecond)
+loop:
+	for {
+		select {
+		case chunk := <-rec.bodyCh:
+			if chunk == ": ping\n\n" {
+				pingReceived = true
+				break loop
+			}
+		case <-done:
+			t.Fatal("stream closed during transient Redis error")
+		case <-timer:
+			break loop
+		}
+	}
+	if !pingReceived {
+		t.Fatal("expected at least one ping frame while Redis returned error")
+	}
+
+	// 2. Clear Redis error and set revocation
+	mr.SetError("")
+	err = rdb.Set(context.Background(), "jwt:sid:"+sid, "1", 24*time.Hour).Err()
+	if err != nil {
+		t.Fatalf("failed to set redis revocation: %v", err)
+	}
+
+	// 3. Now Redis is healthy and session is revoked: stream must close on next check
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream did not close after Redis recovered and revocation was present")
+	}
+
+	if s.Limiter.ActiveSlots("user-recover") != 0 {
+		t.Fatalf("expected 0 slots after revocation on recovered Redis, got %d", s.Limiter.ActiveSlots("user-recover"))
 	}
 }
 

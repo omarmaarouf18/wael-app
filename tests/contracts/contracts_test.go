@@ -443,9 +443,9 @@ func TestContract_NotificationListShape(t *testing.T) {
 
 // 8b. Notification SSE stream closure on session/account revocation contract:
 // verifies that notification-service closes open SSE streams when the account/session
-// is revoked, fails closed on Redis outage, and leaks no goroutines.
+// is revoked, stays open and retries on transient Redis errors, and leaks no goroutines.
 func TestContract_NotificationStreamRevocation(t *testing.T) {
-	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestSSE_PublishRevokeUser_ClosesOnlyUserA|TestSSE_PublishRevokeSession_ClosesOnlyTargetSID|TestSSE_HeartbeatRecheck_ClosesOnSilentDenylist|TestSSE_HeartbeatRecheck_ClosesWhenRedisDown|TestSSE_NoGoroutineLeakAfterClose)$", "github.com/omarmaarouf18/wael-app/notification-service/internal/handlers")
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestSSE_PublishRevokeUser_ClosesOnlyUserA|TestSSE_PublishRevokeSession_ClosesOnlyTargetSID|TestSSE_HeartbeatRecheck_SessionRevoked_ClosesStream|TestSSE_HeartbeatRecheck_TokenRevoked_ClosesStream|TestSSE_HeartbeatRecheck_TransientRedisError_StaysOpen|TestSSE_HeartbeatRecheck_RedisRecoversAndRevoked_ClosesStream|TestSSE_NoGoroutineLeakAfterClose)$", "github.com/omarmaarouf18/wael-app/notification-service/internal/handlers")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("notification stream revocation contract verification failed: %v\nOutput:\n%s", err, string(out))
@@ -454,8 +454,10 @@ func TestContract_NotificationStreamRevocation(t *testing.T) {
 	for _, name := range []string{
 		"TestSSE_PublishRevokeUser_ClosesOnlyUserA",
 		"TestSSE_PublishRevokeSession_ClosesOnlyTargetSID",
-		"TestSSE_HeartbeatRecheck_ClosesOnSilentDenylist",
-		"TestSSE_HeartbeatRecheck_ClosesWhenRedisDown",
+		"TestSSE_HeartbeatRecheck_SessionRevoked_ClosesStream",
+		"TestSSE_HeartbeatRecheck_TokenRevoked_ClosesStream",
+		"TestSSE_HeartbeatRecheck_TransientRedisError_StaysOpen",
+		"TestSSE_HeartbeatRecheck_RedisRecoversAndRevoked_ClosesStream",
 		"TestSSE_NoGoroutineLeakAfterClose",
 	} {
 		if !strings.Contains(outStr, "PASS: "+name) {

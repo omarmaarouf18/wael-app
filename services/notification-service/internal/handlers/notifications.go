@@ -459,8 +459,14 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 			heartbeatCount++
 			if heartbeatCount%checkNth == 0 {
 				if err := jwtutil.CheckRevocation(claims); err != nil {
-					// Revoked or Redis lookup failed (fail closed): close stream cleanly.
-					return
+					if errors.Is(err, jwtutil.ErrSessionRevoked) || errors.Is(err, jwtutil.ErrTokenRevoked) {
+						// Session or user token revoked: close stream cleanly.
+						return
+					}
+					// For any other error (transient Redis outage / lookup failure): log a warning,
+					// keep the stream open, and retry on the next heartbeat check to prevent thundering herds.
+					// Note: Never log the full token or full sid.
+					log.Printf("[NOTIF] warning: Redis error during SSE heartbeat revocation check for user %s: %v", claims.UserID, err)
 				}
 			}
 			s.setWriteDeadline(w, time.Now().Add(10*time.Second))
