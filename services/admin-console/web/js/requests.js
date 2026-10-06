@@ -6,7 +6,7 @@ import { clear, h } from './dom.js';
 import { formatCairoDateTime, formatNumber, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { setBadge } from './tabs.js';
-import { createCooldown, createPager, hideBanner, messageRow, showError, statusBadge } from './ui.js';
+import { createCooldown, createPager, hideBanner, keepOpenWhile, messageRow, showError, statusBadge } from './ui.js';
 import { validateReason } from './account-dialog.js';
 
 export const PAGE_SIZE = 15;
@@ -261,6 +261,9 @@ export function mountRequests({ api, doc = document, win = window }) {
       showError(acceptBanner, res, () => acceptForm.requestSubmit(), acceptCooldown);
     });
   }
+
+  if (acceptDialog) keepOpenWhile(acceptDialog, () => inFlight);
+  if (rejectDialog) keepOpenWhile(rejectDialog, () => inFlight);
 
   if (acceptCancel) {
     acceptCancel.addEventListener('click', () => {

@@ -1,7 +1,7 @@
 // The confirmation dialog for suspend, reactivate and delete. Suspend and
 // delete need a reason (1-1000 characters), reactivate does not.
 
-import { createCooldown, hideBanner, showError } from './ui.js';
+import { createCooldown, hideBanner, keepOpenWhile, showError } from './ui.js';
 import { formatNumber, t } from './i18n.js';
 
 export const REASON_MAX = 1000;
@@ -118,6 +118,7 @@ export function createAccountDialog({ api, doc = document, onDone }) {
   });
   reason.addEventListener('input', render);
   cancel.addEventListener('click', () => dialog.close());
+  keepOpenWhile(dialog, () => busy);
   dialog.addEventListener('close', () => {
     // The reason can be sensitive; do not keep it around once the dialog is gone.
     reason.value = '';

@@ -4,7 +4,7 @@
 
 import { clear, h } from './dom.js';
 import { t } from './i18n.js';
-import { createCooldown, hideBanner, showError } from './ui.js';
+import { createCooldown, hideBanner, keepOpenWhile, showError } from './ui.js';
 
 export function createConfirm({ api, doc = document }) {
   const host = doc.getElementById('catalog-dialogs');
@@ -71,6 +71,7 @@ export function createConfirm({ api, doc = document }) {
     submit();
   });
   cancel.addEventListener('click', () => dialog.close());
+  keepOpenWhile(dialog, () => busy);
   dialog.addEventListener('close', () => {
     current = null;
     busy = false;

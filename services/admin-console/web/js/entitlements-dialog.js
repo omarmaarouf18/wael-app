@@ -4,7 +4,7 @@
 
 import { clear, h } from './dom.js';
 import { formatCairoDateTime, formatNumber, t } from './i18n.js';
-import { createCooldown, hideBanner, messageRow, showError } from './ui.js';
+import { createCooldown, hideBanner, keepOpenWhile, messageRow, showError } from './ui.js';
 import { validateReason } from './account-dialog.js';
 
 const COLUMNS = 6;
@@ -129,8 +129,13 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
   }
 
   // --- Grant Flow ---
+  let opening = false;
+
   async function openGrant() {
-    if (!currentAccount) return;
+    // The subjects are fetched before the dialog opens; a second click in
+    // that time must not start a second round (or open the dialog twice).
+    if (!currentAccount || opening || grantDialog.open) return;
+    opening = true;
     inFlight = false;
     grantCooldown.stop();
     hideBanner(grantBanner);
@@ -159,6 +164,8 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
     clear(grantSubjectSelect);
     grantSubjectSelect.append(h('option', { value: '', text: t('dialog.grant.selectSubject') }));
 
+    opening = false;
+    if (!currentAccount) return;
     grantDialog.showModal();
     grantLevelSelect.focus();
   }
@@ -248,6 +255,9 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
       showError(grantBanner, res, () => grantForm.requestSubmit(), grantCooldown);
     });
   }
+
+  if (grantDialog) keepOpenWhile(grantDialog, () => inFlight);
+  if (revokeDialog) keepOpenWhile(revokeDialog, () => inFlight);
 
   if (grantCancel) {
     grantCancel.addEventListener('click', () => {

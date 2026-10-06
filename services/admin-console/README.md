@@ -98,6 +98,7 @@ The UI is split into small ES modules:
 - Catalog: levels, subjects, videos, publish/unpublish, reorder, and force-delete (`catalog.js`, `levels.js`, `subjects.js`, `subject-dialog.js`, `videos.js`, `video-dialog.js`, `confirm.js`).
 - Unsaved changes: the catalog add/edit forms and an unsaved video order ask before they are closed, left through the tabs or breadcrumb, or the page is closed or reloaded (`unsaved.js`; the browser's own prompt for `beforeunload`, an in-page dialog for the rest).
 - Rate limits: a `429` with a `Retry-After` (whole seconds, relayed by the proxy; capped at an hour in the page) shows "حاول بعد N ثانية", counts down, and keeps the action's button and the banner's retry button disabled until the wait ends (`api.js` `parseRetryAfter`, `ui.js` `createCooldown`).
+- Double submit: every save, confirm and publish button is disabled while its request is in flight, a second submit (Enter, a second click, the banner's retry) sends nothing, and Esc cannot close a dialog during the request (`ui.js` `keepOpenWhile`, `unsaved.js` `guardDialog`, the per-dialog `busy`/`inFlight` flags).
 - Audit: per-source audit log switch (`audit.js`).
 - Idle Lock: 19-minute idle warning with 60-second live countdown dialog and automatic 20-minute logout (`idle.js`).
 

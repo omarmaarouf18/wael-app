@@ -69,6 +69,17 @@ function unwatch(container) {
   watchers.delete(container);
 }
 
+/**
+ * Stops Esc (the dialog's cancel event) from closing a dialog while its
+ * request is in flight. Closing then would reset the dialog and let the same
+ * action be submitted a second time.
+ */
+export function keepOpenWhile(dialog, isBusy) {
+  dialog.addEventListener('cancel', (event) => {
+    if (isBusy()) event.preventDefault();
+  });
+}
+
 /** Fills and shows a banner. A retry button is offered unless the session ended. */
 export function showBanner(container, kind, onRetry) {
   showError(container, { kind }, onRetry);

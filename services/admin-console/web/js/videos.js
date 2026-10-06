@@ -84,6 +84,7 @@ export function mountVideos({ api, doc = document, dialog, confirm, onChanged })
   }
 
   function move(index, delta) {
+    if (state.saving) return;
     const next = index + delta;
     if (next < 0 || next >= state.order.length) return;
     const ids = [...state.order];
