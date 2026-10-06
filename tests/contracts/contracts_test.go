@@ -426,3 +426,17 @@ func TestContract_AppConfigShape(t *testing.T) {
 		}
 	}
 }
+
+// 8. Notification list shape contract (S4): the student list carries the
+// academy's subject id on subject notices (omitted otherwise) and no other
+// new keys; the app deep-links subject_id into /course-details.
+func TestContract_NotificationListShape(t *testing.T) {
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^TestNotificationsList_ContractShape$", "github.com/omarmaarouf18/wael-app/notification-service/internal/handlers")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("notification list contract verification failed: %v\nOutput:\n%s", err, string(out))
+	}
+	if !strings.Contains(string(out), "PASS: TestNotificationsList_ContractShape") {
+		t.Errorf("contract verification missing TestNotificationsList_ContractShape pass:\n%s", string(out))
+	}
+}
