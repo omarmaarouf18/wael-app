@@ -14,6 +14,7 @@
 # 12. Restore --skip-restart restores without touching services (rehearsal path)
 # 13. pull-backups.sh validates env, pulls via rsync, keeps newest N at 600
 # 14. preflight.sh redis memory checks: cap + noeviction passes; either alone fails
+# 15. Caddyfile sends the exact HSTS header with includeSubDomains (no preload) on both site blocks
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -454,6 +455,22 @@ check "preflight fails when maxmemory is 0 (unlimited)" 1 "FAIL: redis maxmemory
 
 run_preflight pf-evict "$(render_redis --maxmemory 96mb --policy allkeys-lru)"
 check "preflight fails when an eviction policy is set" 1 "must not use an eviction policy"
+
+# ---------------------------------------------------------------------------
+# Test 15: Caddyfile HSTS header (owner decision 2026-10-05: includeSubDomains
+# on both site blocks, no preload)
+# ---------------------------------------------------------------------------
+HSTS_FILE="$REPO_ROOT/infrastructure/deploy/Caddyfile"
+HSTS_WANT='Strict-Transport-Security "max-age=31536000; includeSubDomains"'
+export HSTS_FILE HSTS_WANT
+assert "Caddyfile has the exact HSTS header twice (API and admin blocks)" \
+	bash -c '[ "$(grep -cF -- "$HSTS_WANT" "$HSTS_FILE")" -eq 2 ]'
+assert "each site block carries the HSTS header exactly once" \
+	bash -c 'awk -v want="$HSTS_WANT" "{ if (index(\$0, \"{\$API_DOMAIN} {\")) b=\"api\"; if (index(\$0, \"{\$ADMIN_DOMAIN} {\")) b=\"admin\"; if (index(\$0, want)) n[b]++ } END { exit !(n[\"api\"]==1 && n[\"admin\"]==1) }" "$HSTS_FILE"'
+assert "no HSTS max-age without includeSubDomains remains" \
+	bash -c '! grep -E "Strict-Transport-Security \"max-age=[0-9]+\"" "$HSTS_FILE"'
+assert "HSTS has no preload directive" \
+	bash -c '! grep -qi "preload" "$HSTS_FILE"'
 
 # ---------------------------------------------------------------------------
 # Summary

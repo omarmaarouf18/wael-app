@@ -131,7 +131,8 @@ Measured reference (owner-measured, not re-measured here): on Azure B2ats_v2
   authoritative NS answers but the default resolver does not, wait out the
   negative TTL instead of recreating the record.
 - `.app` is HSTS-preloaded: HTTPS only, no plain-HTTP fallback. Caddy sends
-  `Strict-Transport-Security: max-age=31536000`.
+  `Strict-Transport-Security: max-age=31536000; includeSubDomains` on both
+  site blocks (owner decision 2026-10-05; no `preload` directive).
 
 ## 3. Base server setup ([server azureuser])
 
