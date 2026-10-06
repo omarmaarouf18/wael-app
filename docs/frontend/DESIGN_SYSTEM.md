@@ -271,6 +271,7 @@ file for their exact values.
 | `CatalogFileTile` (+ `formatFileSize`) | `catalog_file_tile.dart` | PDF row (book or note): badges, size, title, lock when not owned. |
 | `showFileDetailsSheet` | `file_details_sheet.dart` | Bottom sheet for one PDF with the reason it cannot be opened yet. |
 | `ProtectedVideoSurface` | `protected_video_surface.dart` | The embedded video with its title mask, a touch-swallowing layer, the ended cover, the app's controls and the watermark, in that order. Same widget in portrait and full screen. See `VIDEO_PLAYER.md`. |
+| `NextLessonButton`, `NextCountdownCard`, `SubjectEndCard` | `player_next_cards.dart` | Next-lesson UI: a button under the player, the 5-second auto-advance card on the ended cover, and the last-lesson end card. |
 | `PlayerControls` | `player_controls.dart` | The player's own control bar (play or pause, 10-second jumps, seek slider with times, playback-speed menu, full screen). The time row is always left to right. |
 | `MovingWatermark` | `moving_watermark.dart` | Identity text that jumps to a new spot every 20 s; touch-less, hidden from accessibility, cannot be dismissed. |
 | `ConfirmActionDialog` | `confirm_action_dialog.dart` | Cancel / confirm dialog; `ConfirmActionDialog.show(...)` resolves true only on confirm; outside taps do not dismiss it. |

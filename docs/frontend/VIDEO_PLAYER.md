@@ -19,6 +19,12 @@ on a phone.
    player with `PlayerExit.locked`; the subject screen shows the tile locked,
    refetches the subject and says the content is restricted. Other failures
    (network, 5xx) pause the video and show a banner with Retry.
+5. The player carries the academy's subject id (never a YouTube id) so it can
+   offer the next lesson from the catalog provider: a "next lesson" button
+   while the video plays when a playable next lesson exists, a 5-second
+   countdown card with cancel on the ended cover, and an end card with back
+   on the last lesson. Loading the next video keeps the ended cover until the
+   new video plays and re-holds the title mask for 4 seconds.
 
 Backend contract (from the backend lane, **not verified against the real
 service yet**): subject detail has `videos[].playable`; the play endpoint answers
