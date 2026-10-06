@@ -900,6 +900,15 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		writeStatusRefusal(w, r)
 		return
 	}
+	// Unverified with a correct password: 403 stays distinguishable on
+	// purpose. Every wrong-password path above (unknown email via the dummy
+	// bcrypt, known email, any account status) answers the identical 401
+	// "invalid credentials", so no unauthenticated caller can tell those
+	// states apart; this branch is reachable only after the password check
+	// passes. The app needs the 403: its login maps 403 to the
+	// needs-verification state that routes the student to the OTP screen —
+	// collapsing this to 401 would strand correct-password users with no
+	// path to verify (S5 review, kept deliberately).
 	if !u.EmailVerified {
 		handlerutil.WriteSafeError(w, r, http.StatusForbidden, handlerutil.ErrCodeUnauthorized, "email not verified", nil)
 		return

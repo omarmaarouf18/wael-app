@@ -817,6 +817,84 @@ func TestLogin_DummyBcryptCalledOnce(t *testing.T) {
 	}
 }
 
+// TestLogin_WrongPasswordUniformAcrossStates (S5): a wrong password gives the
+// identical 401 status, code and message for unknown emails and for every
+// account state, so login is not an account-existence oracle before the
+// password check. Correct password + unverified keeps the app-facing 403
+// that routes the student to OTP verification.
+func TestLogin_WrongPasswordUniformAcrossStates(t *testing.T) {
+	s := testServer()
+	ctx := context.Background()
+	pwHash, err := bcrypt.GenerateFromPassword([]byte("Password123!"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mkUser := func(email, phone string, verified bool) *models.User {
+		u := &models.User{
+			ID:            "uid-" + strings.ReplaceAll(email, "@", "-at-"),
+			FullName:      "Oracle " + email,
+			Email:         email,
+			Phone:         phone,
+			PasswordHash:  string(pwHash),
+			Role:          models.RoleUser,
+			EmailVerified: verified,
+		}
+		if err := s.Store.Create(ctx, u); err != nil {
+			t.Fatalf("Create %s: %v", email, err)
+		}
+		return u
+	}
+	mkUser("oracle_verified@example.com", "+201011111111", true)
+	mkUser("oracle_unverified@example.com", "+201022222222", false)
+	mkUser("oracle_suspended@example.com", "+201033333333", true)
+	mkUser("oracle_grace@example.com", "+201044444444", true)
+	st := s.Store
+	if err := st.SetStatus(ctx, "uid-oracle_suspended-at-example.com", string(models.StatusActive), string(models.StatusSuspended), "test", time.Now()); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if err := st.SetStatus(ctx, "uid-oracle_grace-at-example.com", string(models.StatusActive), string(models.StatusPendingDeletion), "test", time.Now()); err != nil {
+		t.Fatalf("grace: %v", err)
+	}
+
+	login := func(email, password string) (int, map[string]any) {
+		rec := doRequest(t, s, http.MethodPost, "/auth/login", map[string]string{
+			"email": email, "password": password,
+		}, "")
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode login %s: %v", email, err)
+		}
+		return rec.Code, body
+	}
+
+	// Wrong password: identical status, code and message across all states.
+	var wantCode int
+	var wantBody map[string]any
+	for i, email := range []string{
+		"nobody-oracle@example.com",
+		"oracle_verified@example.com",
+		"oracle_unverified@example.com",
+		"oracle_suspended@example.com",
+		"oracle_grace@example.com",
+	} {
+		code, body := login(email, "WrongPassword999!")
+		if i == 0 {
+			wantCode, wantBody = code, body
+		} else if code != wantCode || body["code"] != wantBody["code"] || body["error"] != wantBody["error"] {
+			t.Fatalf("%s: got (%d, %v), want (%d, %v)", email, code, body, wantCode, wantBody)
+		}
+	}
+	if wantCode != http.StatusUnauthorized || wantBody["code"] != "unauthorized" || wantBody["error"] != "invalid credentials" {
+		t.Fatalf("wrong-password answer = (%d, %v), want 401 unauthorized/invalid credentials", wantCode, wantBody)
+	}
+
+	// Correct password + unverified: the app-facing 403 is preserved.
+	code, body := login("oracle_unverified@example.com", "Password123!")
+	if code != http.StatusForbidden || body["error"] != "email not verified" {
+		t.Fatalf("unverified correct-password answer = (%d, %v), want 403 email not verified", code, body)
+	}
+}
+
 func TestGatewaySecretRequired(t *testing.T) {
 	s := testServer()
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", bytes.NewBufferString(`{}`))
