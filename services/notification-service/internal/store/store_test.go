@@ -19,6 +19,9 @@ func runNotificationStoreSuite(t *testing.T, s Store) {
 			Title:     title,
 			CreatedAt: now.Add(time.Duration(i) * time.Second),
 		}
+		if title == "b" {
+			n.SubjectID = "subj-store-7"
+		}
 		if err := s.Create(ctx, n); err != nil {
 			t.Fatalf("Create n-%s: %v", title, err)
 		}
@@ -39,6 +42,12 @@ func runNotificationStoreSuite(t *testing.T, s Store) {
 	}
 	if page1[0].ID != "n-c" || page1[1].ID != "n-b" {
 		t.Fatalf("page1 unexpected order: [%s, %s]", page1[0].ID, page1[1].ID)
+	}
+	if page1[1].SubjectID != "subj-store-7" {
+		t.Fatalf("n-b subject_id = %q, want subj-store-7", page1[1].SubjectID)
+	}
+	if page1[0].SubjectID != "" {
+		t.Fatalf("n-c subject_id = %q, want empty (pre-subject_id row)", page1[0].SubjectID)
 	}
 
 	// List page 2 (limit 2): should return n-a

@@ -160,6 +160,132 @@ func TestMarkRead_OwnerScope(t *testing.T) {
 	}
 }
 
+func TestPush_SubjectIDRoundTrip(t *testing.T) {
+	s := testServer()
+	rec := doPush(t, s, "internal-123", map[string]string{
+		"user_id": "alice", "title": "activated", "body": "b",
+		"type": "system", "target_route": "/main", "subject_id": "subj-ABC_123",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("push with subject_id = %d (%s)", rec.Code, rec.Body.String())
+	}
+	token := userToken(t, "alice")
+	lrec := doUser(t, s, http.MethodGet, "/notifications/list", token, nil)
+	if lrec.Code != http.StatusOK {
+		t.Fatalf("list = %d (%s)", lrec.Code, lrec.Body.String())
+	}
+	var out struct {
+		Notifications []map[string]any `json:"notifications"`
+	}
+	if err := json.NewDecoder(lrec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Notifications) != 1 {
+		t.Fatalf("list = %v", out.Notifications)
+	}
+	if got := out.Notifications[0]["subject_id"]; got != "subj-ABC_123" {
+		t.Fatalf("subject_id = %v, want subj-ABC_123", got)
+	}
+}
+
+func TestPush_SubjectIDInvalid(t *testing.T) {
+	s := testServer()
+	tooLong := strings.Repeat("a", 101)
+	for _, bad := range []string{
+		"has space", "semi;colon", "quote\"q", "slash/x", "dot.x",
+		"back\\slash", "uniçode", tooLong, strings.Repeat("b", 100) + "!",
+	} {
+		rec := doPush(t, s, "internal-123", map[string]string{
+			"user_id": "alice", "title": "t", "body": "b", "subject_id": bad,
+		})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("subject_id %q: status = %d, want 400", bad, rec.Code)
+		}
+		bodyStr := rec.Body.String()
+		var body map[string]any
+		if err := json.NewDecoder(strings.NewReader(bodyStr)).Decode(&body); err != nil {
+			t.Fatalf("subject_id %q: bad error body: %v", bad, err)
+		}
+		if body["code"] != "invalid_subject_id" {
+			t.Fatalf("subject_id %q: code = %v, want invalid_subject_id", bad, body["code"])
+		}
+		if len(bad) <= 100 && strings.Contains(bodyStr, bad) {
+			t.Fatalf("subject_id %q: error body reflects input", bad)
+		}
+	}
+	// Empty stays optional: no subject_id key at all is accepted.
+	rec := doPush(t, s, "internal-123", map[string]string{"user_id": "alice", "title": "t", "body": "b"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("push without subject_id = %d, want 201", rec.Code)
+	}
+}
+
+func TestList_OldDocumentWithoutSubjectID(t *testing.T) {
+	s := testServer()
+	// A row written before subject_id existed: no key in list JSON, and the
+	// row still lists.
+	if err := s.Store.Create(context.Background(), &models.Notification{
+		ID: "old-1", UserID: "alice", Title: "legacy", Body: "b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	token := userToken(t, "alice")
+	rec := doUser(t, s, http.MethodGet, "/notifications/list", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list = %d (%s)", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "subject_id") {
+		t.Fatalf("legacy row leaks subject_id key: %s", rec.Body.String())
+	}
+}
+
+// TestNotificationsList_ContractShape pins the student list shape with and
+// without subject_id: the exact key set per row. tests/contracts runs it.
+func TestNotificationsList_ContractShape(t *testing.T) {
+	s := testServer()
+	rec := doPush(t, s, "internal-123", map[string]string{
+		"user_id": "alice", "title": "with-subject", "title_ar": "عنوان",
+		"body": "b", "body_ar": "نص", "type": "system",
+		"target_route": "/main", "subject_id": "subj-1",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("push = %d (%s)", rec.Code, rec.Body.String())
+	}
+	pushNotif(t, s, "alice", "without-subject")
+	token := userToken(t, "alice")
+	lrec := doUser(t, s, http.MethodGet, "/notifications/list", token, nil)
+	if lrec.Code != http.StatusOK {
+		t.Fatalf("list = %d (%s)", lrec.Code, lrec.Body.String())
+	}
+	var out struct {
+		Notifications []map[string]any `json:"notifications"`
+	}
+	if err := json.NewDecoder(lrec.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Notifications) != 2 {
+		t.Fatalf("list = %v", out.Notifications)
+	}
+	byTitle := map[string]map[string]any{}
+	for _, n := range out.Notifications {
+		title, _ := n["title"].(string)
+		byTitle[title] = n
+	}
+	withSubj := byTitle["with-subject"]
+	for _, k := range []string{"id", "user_id", "title", "title_ar", "body", "body_ar", "type", "target_route", "subject_id", "read", "created_at"} {
+		if _, ok := withSubj[k]; !ok {
+			t.Fatalf("row with subject missing key %q: %v", k, withSubj)
+		}
+	}
+	if withSubj["subject_id"] != "subj-1" {
+		t.Fatalf("subject_id = %v", withSubj["subject_id"])
+	}
+	withoutSubj := byTitle["without-subject"]
+	if _, ok := withoutSubj["subject_id"]; ok {
+		t.Fatalf("row without subject carries subject_id: %v", withoutSubj)
+	}
+}
+
 type syncRecorder struct {
 	mu     sync.Mutex
 	header http.Header
@@ -241,13 +367,14 @@ func TestStream_BearerAndQueryToken(t *testing.T) {
 		}()
 		waitForBody(t, rec, ": connected")
 
-		pushRec := doPush(t, s, "internal-123", map[string]string{"user_id": "alice", "title": "hello-live", "body": "b"})
+		pushRec := doPush(t, s, "internal-123", map[string]string{"user_id": "alice", "title": "hello-live", "body": "b", "subject_id": "subj-live-9"})
 		if pushRec.Code != http.StatusCreated {
 			cancel()
 			<-done
 			t.Fatalf("push = %d", pushRec.Code)
 		}
 		waitForBody(t, rec, "hello-live")
+		waitForBody(t, rec, `"subject_id":"subj-live-9"`)
 		cancel()
 		<-done
 	}

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -387,7 +388,13 @@ type pushRequest struct {
 	BodyAr      string `json:"body_ar"`
 	Type        string `json:"type"`
 	TargetRoute string `json:"target_route"`
+	SubjectID   string `json:"subject_id"`
 }
+
+// subjectIDPattern constrains the optional subject id carried on a push: the
+// same shape academy-service uses for subject ids (1-100 of letters,
+// digits, dash, underscore). Anything else is rejected before any DB call.
+var subjectIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 
 // Push serves POST /internal/push for trusted services: persists then fans out.
 func (s *Server) Push(w http.ResponseWriter, r *http.Request) {
@@ -396,6 +403,10 @@ func (s *Server) Push(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil || strings.TrimSpace(req.UserID) == "" || strings.TrimSpace(req.Title) == "" {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid request body", err)
+		return
+	}
+	if req.SubjectID != "" && !subjectIDPattern.MatchString(req.SubjectID) {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_subject_id", "invalid subject id", nil)
 		return
 	}
 	id, err := jwtutil.GenerateUUID()
@@ -410,6 +421,7 @@ func (s *Server) Push(w http.ResponseWriter, r *http.Request) {
 	n := &models.Notification{
 		ID: id, UserID: req.UserID, Title: req.Title, TitleAr: req.TitleAr,
 		Body: req.Body, BodyAr: req.BodyAr, Type: ntype, TargetRoute: req.TargetRoute,
+		SubjectID: req.SubjectID,
 	}
 	if err := s.Store.Create(r.Context(), n); err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "request failed", err)
