@@ -3525,3 +3525,78 @@ func TestResetAndVerify_StoreErrors(t *testing.T) {
 		t.Fatalf("expected tokens on successful verify-otp despite ClearFailures error")
 	}
 }
+
+func TestValidEmail_FormsAndBypasses(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"plain@example.com", true},
+		{"bob+tag@example.com", true},
+		{"BOB@EXAMPLE.COM", true},
+		{"Bob.Smith@Example.COM", true},
+		{"  bob@example.com  ", true},
+		{"Bob <bob@x.com>", false},
+		{"bob@x.com (c)", false},
+		{"(c) bob@x.com", false},
+		{"<bob@x.com>", false},
+		{"x <blocked@y.com>", false},
+		{"junk bob@x.com", false},
+		{"bob@x.com junk", false},
+		{"@bob@x.com", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := validEmail(tt.input)
+			if got != tt.want {
+				t.Errorf("validEmail(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSignup_RejectsDisplayNameAndCommentEmails(t *testing.T) {
+	s := testServer()
+
+	// 1. Display name form rejected on signup
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Bob Test",
+		"email":     "Bob <bob@example.com>",
+		"phone":     "+201011111111",
+		"password":  "password123",
+	}, "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("signup with display name email status = %d, want 400 (%s)", rec.Code, rec.Body.String())
+	}
+
+	// 2. Comment form rejected on signup
+	rec2 := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Bob Test",
+		"email":     "bob@example.com (c)",
+		"phone":     "+201011111112",
+		"password":  "password123",
+	}, "")
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("signup with comment email status = %d, want 400 (%s)", rec2.Code, rec2.Body.String())
+	}
+
+	// 3. Blocklist bypass prevented
+	blockedEmail := "blocked-target@example.com"
+	emailHash := computeHMAC(s.blocklistKey(), blockedEmail)
+	if err := s.Store.AddToBlocklist(context.Background(), "email", emailHash, "cheating", time.Now()); err != nil {
+		t.Fatalf("AddToBlocklist: %v", err)
+	}
+
+	recBlocked := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Blocked Bypass Attempt",
+		"email":     "Student <" + blockedEmail + ">",
+		"phone":     "+201011111113",
+		"password":  "password123",
+	}, "")
+	// Must be rejected as 400 invalid email
+	if recBlocked.Code != http.StatusBadRequest {
+		t.Fatalf("signup attempting blocklist bypass with display name status = %d, want 400 (%s)", recBlocked.Code, recBlocked.Body.String())
+	}
+}

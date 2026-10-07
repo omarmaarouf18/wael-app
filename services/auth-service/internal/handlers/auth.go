@@ -230,11 +230,18 @@ func normalizeEmail(email string) string {
 }
 
 func validEmail(email string) bool {
-	if email == "" || len(email) > 254 {
+	trimmed := strings.TrimSpace(email)
+	if trimmed == "" || len(trimmed) > 254 {
 		return false
 	}
-	_, err := mail.ParseAddress(email)
-	return err == nil
+	a, err := mail.ParseAddress(trimmed)
+	if err != nil {
+		return false
+	}
+	if a.Name != "" {
+		return false
+	}
+	return strings.EqualFold(a.Address, trimmed)
 }
 
 func (s *Server) devOTPField() bool {
