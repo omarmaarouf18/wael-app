@@ -38,6 +38,9 @@ func TestRateLimit_BlocksAfterExhaustion(t *testing.T) {
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 429 after exhaustion, got %d", rec.Code)
 	}
+	if retryAfter := rec.Header().Get("Retry-After"); retryAfter != "30" {
+		t.Fatalf("expected Retry-After header %q, got %q", "30", retryAfter)
+	}
 }
 
 func TestRateLimit_AuthenticatedRoutesBypassGatewayIPLimiter(t *testing.T) {
@@ -102,5 +105,51 @@ func TestLogging_HealthPassthrough(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestRateLimit_RetryAfterHeaderExactValues(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb, err := ratelimit.NewRedisClient("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rdb.Close() }()
+
+	rl := NewRateLimiter(ratelimit.NewRateLimiter(rdb, 1, time.Minute, "test-retry-after"), []string{"127.0.0.1"})
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RateLimit(rl)(okHandler)
+
+	req1 := httptest.NewRequest(http.MethodPost, "http://x/api/v1/auth/login", nil)
+	req1.RemoteAddr = "10.0.0.1:1234"
+	rec1 := httptest.NewRecorder()
+	h.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("req 1 status = %d, want 200", rec1.Code)
+	}
+
+	// 2nd request triggers lockout (30s)
+	req2 := httptest.NewRequest(http.MethodPost, "http://x/api/v1/auth/login", nil)
+	req2.RemoteAddr = "10.0.0.1:1234"
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusTooManyRequests {
+		t.Fatalf("req 2 status = %d, want 429", rec2.Code)
+	}
+	if got := rec2.Header().Get("Retry-After"); got != "30" {
+		t.Fatalf("initial Retry-After = %q, want \"30\"", got)
+	}
+
+	// Advance 10s: remaining is ~20s
+	mr.FastForward(10 * time.Second)
+	req3 := httptest.NewRequest(http.MethodPost, "http://x/api/v1/auth/login", nil)
+	req3.RemoteAddr = "10.0.0.1:1234"
+	rec3 := httptest.NewRecorder()
+	h.ServeHTTP(rec3, req3)
+	if rec3.Code != http.StatusTooManyRequests {
+		t.Fatalf("req 3 status = %d, want 429", rec3.Code)
+	}
+	if got := rec3.Header().Get("Retry-After"); got != "20" {
+		t.Fatalf("Retry-After after 10s = %q, want \"20\"", got)
 	}
 }

@@ -2,7 +2,9 @@
 package middleware
 
 import (
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,7 +67,11 @@ func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 			}
 			ip := limiter.getIP(r)
 			if limited, retryAfter := limiter.CheckAndRecord("gw:" + ip); limited {
-				w.Header().Set("Retry-After", time.Duration(retryAfter.Seconds()).String())
+				secs := int(math.Ceil(retryAfter.Seconds()))
+				if secs < 1 {
+					secs = 1
+				}
+				w.Header().Set("Retry-After", strconv.Itoa(secs))
 				handlerutil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{
 					"error": "rate limit exceeded, retry later",
 					"code":  "rate_limited",
