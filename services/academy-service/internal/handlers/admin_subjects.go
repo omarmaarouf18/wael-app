@@ -122,10 +122,17 @@ func (s *Server) ListAdminSubjects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	const maxPage = 10000
 	page := 1
 	if pStr := strings.TrimSpace(q.Get("page")); pStr != "" {
-		if p, err := strconv.Atoi(pStr); err == nil && p >= 1 {
-			page = p
+		if p, err := strconv.Atoi(pStr); err == nil {
+			if p < 1 {
+				page = 1
+			} else if p > maxPage {
+				page = maxPage
+			} else {
+				page = p
+			}
 		}
 	}
 	limit := 20

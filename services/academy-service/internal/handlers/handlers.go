@@ -224,10 +224,17 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 	levelKey := strings.TrimSpace(query.Get("level"))
 	term := strings.TrimSpace(query.Get("term"))
 
+	const maxPage = 10000
 	page := 1
 	if pStr := strings.TrimSpace(query.Get("page")); pStr != "" {
-		if p, err := strconv.Atoi(pStr); err == nil && p > 0 {
-			page = p
+		if p, err := strconv.Atoi(pStr); err == nil {
+			if p < 1 {
+				page = 1
+			} else if p > maxPage {
+				page = maxPage
+			} else {
+				page = p
+			}
 		}
 	}
 
@@ -353,12 +360,21 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 	})
 
 	total := len(merged)
-	start := (page - 1) * limit
-	if start > total {
+	start := 0
+	if page > 1 {
+		if total == 0 || (page-1) > total/limit {
+			start = total
+		} else {
+			start = (page - 1) * limit
+		}
+	}
+	if start < 0 {
+		start = 0
+	} else if start > total {
 		start = total
 	}
 	end := start + limit
-	if end > total {
+	if end < start || end > total {
 		end = total
 	}
 	paged := merged[start:end]

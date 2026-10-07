@@ -331,9 +331,12 @@ func (s *MemoryStore) ListSubjects(_ context.Context, filter SubjectFilter) ([]*
 	})
 
 	total := len(matches)
+	const maxPage = 10000
 	page := filter.Page
 	if page < 1 {
 		page = 1
+	} else if page > maxPage {
+		page = maxPage
 	}
 	limit := filter.Limit
 	if limit <= 0 {
@@ -342,12 +345,21 @@ func (s *MemoryStore) ListSubjects(_ context.Context, filter SubjectFilter) ([]*
 		limit = 100
 	}
 
-	start := (page - 1) * limit
-	if start >= total {
-		return []*models.Subject{}, total, nil
+	start := 0
+	if page > 1 {
+		if total == 0 || (page-1) > total/limit {
+			start = total
+		} else {
+			start = (page - 1) * limit
+		}
+	}
+	if start < 0 {
+		start = 0
+	} else if start > total {
+		start = total
 	}
 	end := start + limit
-	if end > total {
+	if end < start || end > total {
 		end = total
 	}
 
@@ -757,9 +769,12 @@ func (s *MemoryStore) ListRequests(_ context.Context, filter RequestFilter) ([]*
 	})
 
 	total := len(matched)
+	const maxPage = 10000
 	page := filter.Page
 	if page < 1 {
 		page = 1
+	} else if page > maxPage {
+		page = maxPage
 	}
 	limit := filter.Limit
 	if limit <= 0 {
@@ -768,12 +783,21 @@ func (s *MemoryStore) ListRequests(_ context.Context, filter RequestFilter) ([]*
 		limit = 100
 	}
 
-	start := (page - 1) * limit
-	if start >= total {
-		return []*models.PurchaseRequest{}, total, nil
+	start := 0
+	if page > 1 {
+		if total == 0 || (page-1) > total/limit {
+			start = total
+		} else {
+			start = (page - 1) * limit
+		}
+	}
+	if start < 0 {
+		start = 0
+	} else if start > total {
+		start = total
 	}
 	end := start + limit
-	if end > total {
+	if end < start || end > total {
 		end = total
 	}
 	return matched[start:end], total, nil
@@ -940,8 +964,11 @@ func (s *MemoryStore) ListAuditLogs(_ context.Context, page, limit int) ([]*mode
 	})
 
 	total := len(logs)
+	const maxPage = 10000
 	if page < 1 {
 		page = 1
+	} else if page > maxPage {
+		page = maxPage
 	}
 	if limit <= 0 {
 		limit = 20
@@ -949,12 +976,21 @@ func (s *MemoryStore) ListAuditLogs(_ context.Context, page, limit int) ([]*mode
 		limit = 100
 	}
 
-	start := (page - 1) * limit
-	if start >= total {
-		return []*models.AuditLog{}, total, nil
+	start := 0
+	if page > 1 {
+		if total == 0 || (page-1) > total/limit {
+			start = total
+		} else {
+			start = (page - 1) * limit
+		}
+	}
+	if start < 0 {
+		start = 0
+	} else if start > total {
+		start = total
 	}
 	end := start + limit
-	if end > total {
+	if end < start || end > total {
 		end = total
 	}
 

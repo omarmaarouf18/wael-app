@@ -3051,3 +3051,104 @@ func TestPlayVideo_EndedDeviceSessionRevoked_Refused401(t *testing.T) {
 		t.Fatalf("expected 401 for revoked session, got %d (%s)", recRevoked.Code, recRevoked.Body.String())
 	}
 }
+
+func TestListSubjects_Pagination_OverflowAndEdgeCases(t *testing.T) {
+	s := newTestServer(false)
+	h := s.PublicHandler()
+	ctx := context.Background()
+
+	subj := &models.Subject{
+		ID:        "subj-page-test-1",
+		LevelKey:  "bachelor-y1",
+		Term:      "first",
+		TitleAr:   "مادة اختبار التصفح",
+		TitleEn:   "Pagination Test Subject",
+		Status:    models.StatusPublished,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := s.Store.CreateSubject(ctx, subj); err != nil {
+		t.Fatalf("CreateSubject failed: %v", err)
+	}
+
+	tok := makeStudentToken(t, "user-page-test")
+
+	t.Run("MaxIntPage_DoesNotPanic", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects?page=9223372036854775807&limit=100", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+		}
+		var res models.SubjectListResponseDTO
+		if err := json.NewDecoder(rec.Body).Decode(&res); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(res.Items) != 0 {
+			t.Fatalf("expected 0 items for page beyond total, got %d", len(res.Items))
+		}
+	})
+
+	t.Run("NegativePage", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects?page=-5&limit=20", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		var res models.SubjectListResponseDTO
+		if err := json.NewDecoder(rec.Body).Decode(&res); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if res.Page < 1 {
+			t.Fatalf("expected page >= 1, got %d", res.Page)
+		}
+	})
+
+	t.Run("ZeroLimit", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects?limit=0", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		var res models.SubjectListResponseDTO
+		if err := json.NewDecoder(rec.Body).Decode(&res); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if res.Limit <= 0 {
+			t.Fatalf("expected default positive limit, got %d", res.Limit)
+		}
+	})
+
+	t.Run("PagePastTheEnd", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/academy/subjects?page=500&limit=20", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		var res models.SubjectListResponseDTO
+		if err := json.NewDecoder(rec.Body).Decode(&res); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(res.Items) != 0 {
+			t.Fatalf("expected 0 items past the end, got %d", len(res.Items))
+		}
+		if res.Total < 1 {
+			t.Fatalf("expected total >= 1, got %d", res.Total)
+		}
+	})
+}

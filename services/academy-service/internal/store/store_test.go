@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1010,4 +1011,60 @@ func TestMongoStore(t *testing.T) {
 	})
 
 	runStoreSuite(t, s)
+}
+
+func TestStore_PaginationEdgeCases(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemoryStore()
+	defer func() { _ = s.Close(ctx) }()
+
+	subj := &models.Subject{
+		ID:        "subj-page-1",
+		LevelKey:  "bachelor-y1",
+		Term:      "first",
+		TitleAr:   "مادة تجريبية",
+		TitleEn:   "Test Subject",
+		Status:    models.StatusPublished,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := s.CreateSubject(ctx, subj); err != nil {
+		t.Fatalf("CreateSubject: %v", err)
+	}
+
+	// 1. MaxInt page does not panic and returns empty slice
+	subjs, total, err := s.ListSubjects(ctx, SubjectFilter{Page: math.MaxInt, Limit: 100})
+	if err != nil {
+		t.Fatalf("ListSubjects with MaxInt page failed: %v", err)
+	}
+	if len(subjs) != 0 || total != 1 {
+		t.Fatalf("expected 0 items, total 1; got %d items, total %d", len(subjs), total)
+	}
+
+	// 2. Negative page defaults to 1
+	subjs, total, err = s.ListSubjects(ctx, SubjectFilter{Page: -5, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListSubjects with negative page failed: %v", err)
+	}
+	if len(subjs) != 1 || total != 1 {
+		t.Fatalf("expected 1 item, total 1; got %d items, total %d", len(subjs), total)
+	}
+
+	// 3. Zero limit defaults to 20
+	subjs, total, err = s.ListSubjects(ctx, SubjectFilter{Page: 1, Limit: 0})
+	if err != nil {
+		t.Fatalf("ListSubjects with zero limit failed: %v", err)
+	}
+	if len(subjs) != 1 || total != 1 {
+		t.Fatalf("expected 1 item, total 1; got %d items, total %d", len(subjs), total)
+	}
+
+	// 4. Page past the end returns empty slice
+	subjs, total, err = s.ListSubjects(ctx, SubjectFilter{Page: 50, Limit: 20})
+	if err != nil {
+		t.Fatalf("ListSubjects past end failed: %v", err)
+	}
+	if len(subjs) != 0 || total != 1 {
+		t.Fatalf("expected 0 items past end, got %d", len(subjs))
+	}
 }

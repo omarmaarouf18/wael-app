@@ -409,9 +409,12 @@ func (s *MongoStore) ListSubjects(ctx context.Context, filter SubjectFilter) ([]
 		return nil, 0, fmt.Errorf("store: count subjects: %w", err)
 	}
 
+	const maxPage = 10000
 	page := filter.Page
 	if page < 1 {
 		page = 1
+	} else if page > maxPage {
+		page = maxPage
 	}
 	limit := filter.Limit
 	if limit <= 0 {
@@ -420,7 +423,13 @@ func (s *MongoStore) ListSubjects(ctx context.Context, filter SubjectFilter) ([]
 		limit = 100
 	}
 
-	skip := int64((page - 1) * limit)
+	var skip int64
+	if page > 1 {
+		skip = int64(page-1) * int64(limit)
+	}
+	if skip < 0 {
+		skip = 0
+	}
 	opts := options.Find().
 		SetSort(bson.D{{Key: "order", Value: 1}, {Key: "created_at", Value: 1}}).
 		SetSkip(skip).
@@ -939,9 +948,12 @@ func (s *MongoStore) ListRequests(ctx context.Context, filter RequestFilter) ([]
 		return nil, 0, fmt.Errorf("store: count requests: %w", err)
 	}
 
+	const maxPage = 10000
 	page := filter.Page
 	if page < 1 {
 		page = 1
+	} else if page > maxPage {
+		page = maxPage
 	}
 	limit := filter.Limit
 	if limit <= 0 {
@@ -950,7 +962,13 @@ func (s *MongoStore) ListRequests(ctx context.Context, filter RequestFilter) ([]
 		limit = 100
 	}
 
-	skip := int64((page - 1) * limit)
+	var skip int64
+	if page > 1 {
+		skip = int64(page-1) * int64(limit)
+	}
+	if skip < 0 {
+		skip = 0
+	}
 	opts := options.Find().
 		SetSort(bson.D{{Key: "created_at", Value: -1}}).
 		SetSkip(skip).
@@ -1124,8 +1142,11 @@ func (s *MongoStore) CreateAuditLog(ctx context.Context, entry *models.AuditLog)
 
 // ListAuditLogs returns paginated audit log entries, newest first.
 func (s *MongoStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error) {
+	const maxPage = 10000
 	if page < 1 {
 		page = 1
+	} else if page > maxPage {
+		page = maxPage
 	}
 	if limit <= 0 {
 		limit = 20
@@ -1138,7 +1159,13 @@ func (s *MongoStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*mod
 		return nil, 0, fmt.Errorf("store: count audit logs: %w", err)
 	}
 
-	skip := int64((page - 1) * limit)
+	var skip int64
+	if page > 1 {
+		skip = int64(page-1) * int64(limit)
+	}
+	if skip < 0 {
+		skip = 0
+	}
 	opts := options.Find().
 		SetSort(bson.D{{Key: "created_at", Value: -1}}).
 		SetSkip(skip).
