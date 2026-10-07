@@ -501,3 +501,100 @@ func TestRateLimiter_CounterResetsOnLockoutEngage(t *testing.T) {
 		t.Errorf("request right after lockout expiry was limited; counter was not reset")
 	}
 }
+
+func TestRateLimiter_FixedWindowAndLockout(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+
+	// 1. TTL is not refreshed by later hits inside the window
+	t.Run("TTLNotRefreshedByLaterHits", func(t *testing.T) {
+		rl := NewRateLimiter(rdb, 10, 60*time.Second, "ttl-test")
+		key := "ttl-user"
+		countKey := "ratelimit:ttl-test:count:" + key
+
+		if limited, _ := rl.CheckAndRecord(key); limited {
+			t.Fatal("first request should not be limited")
+		}
+		initialTTL := mr.TTL(countKey)
+		if initialTTL > 60*time.Second || initialTTL <= 0 {
+			t.Fatalf("expected initial TTL <= 60s, got %v", initialTTL)
+		}
+
+		// Fast-forward 20s into the window
+		mr.FastForward(20 * time.Second)
+
+		// Second request arrives at t = 20s
+		if limited, _ := rl.CheckAndRecord(key); limited {
+			t.Fatal("second request should not be limited")
+		}
+
+		// TTL should now be ~40s, NOT renewed back to 60s
+		currentTTL := mr.TTL(countKey)
+		if currentTTL > 41*time.Second {
+			t.Fatalf("TTL was refreshed by later hit: got %v, expected <= 40s", currentTTL)
+		}
+	})
+
+	// 2. N requests spread across more than one window never lock
+	t.Run("SteadyTrafficAcrossWindowsNeverLocks", func(t *testing.T) {
+		limit := 3
+		window := 10 * time.Second
+		rl := NewRateLimiter(rdb, limit, window, "steady-traffic")
+		key := "steady-user"
+
+		// Send 6 requests, spaced 4 seconds apart (t=0, 4, 8, 12, 16, 20)
+		// Across 20s with a 10s window:
+		// Window 1 [0s, 10s): requests at 0s, 4s, 8s (3 requests <= limit 3)
+		// Window 2 [10s, 20s): requests at 12s, 16s (2 requests <= limit 3)
+		// Window 3 [20s, 30s): request at 20s (1 request <= limit 3)
+		// None should ever be rate limited!
+		for i := 0; i < 6; i++ {
+			if i > 0 {
+				mr.FastForward(4 * time.Second)
+			}
+			limited, backoff := rl.CheckAndRecord(key)
+			if limited {
+				t.Fatalf("request %d (at t=%ds) was unexpectedly limited with backoff %v", i+1, i*4, backoff)
+			}
+		}
+	})
+
+	// 3. N+1 requests inside one window locks
+	t.Run("NPlusOneInsideOneWindowLocksAndExpires", func(t *testing.T) {
+		limit := 3
+		window := 10 * time.Second
+		rl := NewRateLimiter(rdb, limit, window, "burst-test")
+		key := "burst-user"
+
+		// First N requests succeed
+		for i := 0; i < limit; i++ {
+			limited, _ := rl.CheckAndRecord(key)
+			if limited {
+				t.Fatalf("request %d inside window unexpectedly limited", i+1)
+			}
+		}
+
+		// N+1 request inside the same window must lock with 30s lockout
+		limited, backoff := rl.CheckAndRecord(key)
+		if !limited {
+			t.Fatal("N+1 request inside one window must be limited")
+		}
+		if backoff < 29*time.Second || backoff > 31*time.Second {
+			t.Fatalf("expected 30s base lockout, got %v", backoff)
+		}
+
+		// Subsequent request while locked still limited
+		limited2, _ := rl.CheckAndRecord(key)
+		if !limited2 {
+			t.Fatal("request while locked must be limited")
+		}
+
+		// 4. Lockout expires
+		mr.FastForward(31 * time.Second)
+		limitedAfterExpiry, _ := rl.CheckAndRecord(key)
+		if limitedAfterExpiry {
+			t.Fatal("request after lockout expiration should succeed")
+		}
+	})
+}

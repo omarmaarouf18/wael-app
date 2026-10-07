@@ -113,18 +113,18 @@ end
 
 -- 2. Increment count
 local count = redis.call('INCR', countKey)
-redis.call('EXPIRE', countKey, window)
+if count == 1 then
+    redis.call('EXPIRE', countKey, window)
+end
 
 -- 3. Check if limit exceeded
 if count > limit then
     -- Reset the counter so the client starts with a clean budget when the
-    -- lockout expires. Without this, a client that crosses the threshold
-    -- resumes ABOVE the limit after a short (sub-window) lockout and is
-    -- instantly re-locked with an exponentially longer penalty — an
-    -- escalation spiral that persists for as long as it keeps using the app.
+    -- lockout expires. Because countKey is deleted here, count is always
+    -- limit + 1 on breach and diff is always 0, so exponential escalation
+    -- was dead code. Retain the effective 30 s base lockout duration.
     redis.call('DEL', countKey)
-    local diff = count - limit - 1
-    local backoff = 30 * (2 ^ diff)
+    local backoff = 30
     if backoff > cap then
         backoff = cap
     end
