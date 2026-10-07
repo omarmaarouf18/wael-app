@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/notification-service/internal/bus"
@@ -230,15 +231,24 @@ func (sl *StreamLimiter) TotalActiveSlots() int {
 
 // Server wires notification dependencies.
 type Server struct {
-	Store             store.Store
-	Bus               bus.Bus
-	GatewaySecret     string
-	InternalToken     string
-	Limiter           *StreamLimiter
-	HeartbeatInterval time.Duration
-	CheckEveryNth     int
-	accountSubCancel  context.CancelFunc
-	accountSubDone    chan struct{}
+	Store                    store.Store
+	Bus                      bus.Bus
+	GatewaySecret            string
+	InternalToken            string
+	Limiter                  *StreamLimiter
+	HeartbeatInterval        time.Duration
+	CheckEveryNth            int
+	AccountSubInitialBackoff time.Duration
+	accountSubActive         atomic.Bool
+	accountSubCancel         context.CancelFunc
+	accountSubDone           chan struct{}
+}
+
+func (s *Server) AccountEventsSubscribed() bool {
+	if s == nil {
+		return false
+	}
+	return s.accountSubActive.Load()
 }
 
 // New creates a Server with safe default stream limits (cap: 3, rate: 10/min).
@@ -266,30 +276,76 @@ func (s *Server) StartAccountEventsListener(ctx context.Context) func() {
 
 	go func() {
 		defer close(s.accountSubDone)
-		ch, unsub, err := s.Bus.SubscribeAccountEvents(subCtx)
-		if err != nil {
-			log.Printf("[NOTIF] failed to subscribe to account:events: %v", err)
-			return
+		defer s.accountSubActive.Store(false)
+
+		initBackoff := s.AccountSubInitialBackoff
+		if initBackoff <= 0 {
+			initBackoff = 1 * time.Second
 		}
-		defer unsub()
+		backoff := initBackoff
+		const maxBackoff = 30 * time.Second
 
 		for {
 			select {
 			case <-subCtx.Done():
 				return
-			case evt, ok := <-ch:
-				if !ok {
+			default:
+			}
+
+			ch, unsub, err := s.Bus.SubscribeAccountEvents(subCtx)
+			if err != nil {
+				s.accountSubActive.Store(false)
+				log.Printf("[ERROR] [NOTIF] failed to subscribe to account:events: %v (retrying in %v)", err, backoff)
+				select {
+				case <-subCtx.Done():
 					return
+				case <-time.After(backoff):
 				}
-				if evt == nil {
-					continue
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
 				}
-				if evt.SID != "" && s.Limiter != nil {
-					s.Limiter.CloseSession(evt.SID)
+				continue
+			}
+
+			// Successful subscription: mark active and reset backoff
+			s.accountSubActive.Store(true)
+			backoff = initBackoff
+
+			chanClosed := false
+			for !chanClosed {
+				select {
+				case <-subCtx.Done():
+					unsub()
+					return
+				case evt, ok := <-ch:
+					if !ok {
+						chanClosed = true
+						break
+					}
+					if evt == nil {
+						continue
+					}
+					if evt.SID != "" && s.Limiter != nil {
+						s.Limiter.CloseSession(evt.SID)
+					}
+					if evt.UserID != "" && s.Limiter != nil {
+						s.Limiter.CloseUser(evt.UserID)
+					}
 				}
-				if evt.UserID != "" && s.Limiter != nil {
-					s.Limiter.CloseUser(evt.UserID)
-				}
+			}
+
+			unsub()
+			s.accountSubActive.Store(false)
+			log.Printf("[ERROR] [NOTIF] account:events channel closed (resubscribing in %v)", backoff)
+			select {
+			case <-subCtx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
 			}
 		}
 	}()
@@ -576,9 +632,25 @@ func (s *Server) Push(w http.ResponseWriter, r *http.Request) {
 	handlerutil.WriteJSON(w, http.StatusCreated, map[string]string{"id": id})
 }
 
-// Health is the unauthenticated liveness probe.
+// Health is the unauthenticated liveness and readiness probe on the server,
+// reporting degraded when account events bus is unsubscribed.
+func (s *Server) Health(w http.ResponseWriter, _ *http.Request) {
+	if s != nil && s.Bus != nil && !s.AccountEventsSubscribed() {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"status":     "degraded",
+			"subscribed": false,
+		})
+		return
+	}
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":     "ok",
+		"subscribed": true,
+	})
+}
+
+// Health is the package-level unauthenticated liveness probe.
 func Health(w http.ResponseWriter, _ *http.Request) {
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "subscribed": true})
 }
 
 func pageOrDefault(page int) int {

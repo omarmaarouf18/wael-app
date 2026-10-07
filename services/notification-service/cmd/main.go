@@ -90,7 +90,7 @@ func main() {
 	defer stopAccountListener()
 	log.Printf("[NOTIF] stream caps: max concurrent=%d, open rate limit=%d/min", cfg.StreamMaxConcurrent, cfg.StreamOpenRateLimit)
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", handlers.Health)
+	mux.HandleFunc("/health", srv.Health)
 	mux.HandleFunc("/notifications/stream", srv.Stream)
 	mux.HandleFunc("/notifications/list", srv.List)
 	mux.HandleFunc("/notifications/read", srv.MarkRead)
