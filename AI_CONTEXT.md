@@ -229,7 +229,7 @@ Agreed order (owner, recorded 2026-10-06):
 4. F-UX2 Part B: the settings screen (done 2026-10-06, commits `c36af5a`..`627ba59`).
 5. F-UX5: console polish. *(Amended 2026-10-06, `services/admin-console/web` only: done are the unsaved-changes guard on the catalog forms and the video order (`unsaved.js`), `Retry-After` countdown on 429 with the action disabled, double-submit gaps closed (Esc during a request, grant dialog opened twice, reorder while saving), and a success toast for every save. Already there: up/down buttons for video order (`videos.js`), draft/published badges on level cards and subject rows. Not done: the YouTube thumbnail preview, because it needs `https://i.ytimg.com` in the CSP `img-src` (now `'self' data:`, `internal/server/server.go`); the owner decides whether to relax the CSP. Levels have only the numeric `order` field in their form, no up/down.)*
 6. Backups: offsite copy and a restore drill.
-7. Phase 5 - Files: upload (Section 8 item 6), download streaming with R3 and R6, delete. *(This was the whole Next task until 2026-10-05.)*
+7. Phase 5 - Files: upload (Section 8 item 6), download streaming with R3 and R6, delete. *(This was the whole Next task until 2026-10-05.)* *(Prerequisites recorded 2026-10-08: `MAX_PDF_BYTES` default is 20 MB (owner decision, SPEC D14); admin-console caps every proxied request body at 1 MiB (`services/admin-console/internal/proxy/proxy.go:42`, `maxRequestBody`), which must be raised (for the upload route) before PDF uploads can pass it; the gateway gives each upstream 2 s to start its response (`resilience.NewRoundTripper(..., 2*time.Second)` in `services/api-gateway/cmd/main.go`), which also applies to downloads, so academy must start streaming a download within 2 s.)*
 
 
 
