@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -178,6 +179,36 @@ type AdminSettingsRequest struct {
 	CenterMapURL    string `json:"center_map_url"`
 }
 
+// effectiveAppSettings returns the stored settings with the support number
+// resolved: the stored number when valid, else SUPPORT_WHATSAPP when valid,
+// else "" (no fallback number; the app then shows no support link).
+func (s *Server) effectiveAppSettings(ctx context.Context) (*models.AppSettings, error) {
+	stored, err := s.Store.GetAppSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return models.WithWhatsAppDefault(stored, s.SupportWhatsApp), nil
+}
+
+// WarnIfNoSupportWhatsApp logs one warning when neither the stored number
+// nor SUPPORT_WHATSAPP is a valid WhatsApp number, so app-config will omit
+// support_whatsapp_url. Called once at startup; it reports whether it
+// warned. A store error is logged and treated as no warning.
+func (s *Server) WarnIfNoSupportWhatsApp(ctx context.Context) bool {
+	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+	settings, err := s.effectiveAppSettings(dbCtx)
+	if err != nil {
+		log.Printf("[ACADEMY] warning: could not read app settings to check the support WhatsApp number: %v", err)
+		return false
+	}
+	if settings.SupportWhatsApp != "" {
+		return false
+	}
+	log.Printf("[ACADEMY] warning: no valid support WhatsApp number (neither the console setting nor SUPPORT_WHATSAPP); app-config omits support_whatsapp_url until one is saved")
+	return true
+}
+
 // AdminSettings dispatches GET and PUT /internal/admin/settings on the admin listener.
 func (s *Server) AdminSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -200,7 +231,7 @@ func (s *Server) getAdminSettings(w http.ResponseWriter, r *http.Request) {
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	defer cancel()
 
-	current, err := s.Store.GetAppSettings(dbCtx)
+	current, err := s.effectiveAppSettings(dbCtx)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
@@ -287,7 +318,7 @@ func (s *Server) putAdminSettings(w http.ResponseWriter, r *http.Request) {
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	defer cancel()
 
-	current, err := s.Store.GetAppSettings(dbCtx)
+	current, err := s.effectiveAppSettings(dbCtx)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return

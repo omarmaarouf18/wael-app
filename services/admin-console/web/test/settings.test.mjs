@@ -162,6 +162,19 @@ test('server error code is displayed in banner using mapped localized text', asy
 
   assert.equal(elements.banner.hidden, false);
   assert.ok(elements.banner.textContent.includes(MESSAGES.ar['err.settings_forbidden_word']));
+  // A validation error needs an edit, not a retry.
+  assert.ok(!elements.banner.textContent.includes(MESSAGES.ar['common.retry']));
+});
+
+test('a 503 or network failure on save keeps the Retry button', async () => {
+  for (const failure of [{ status: 503, body: { error: 'x', code: 'service_unavailable' } }, new Error('offline')]) {
+    const { mod, elements } = setup({}, { 'POST /api/settings/update': failure });
+    await mod.load();
+    elements.centerNameAr.value = 'مركز جديد';
+    await mod.save();
+    assert.equal(elements.banner.hidden, false);
+    assert.ok(elements.banner.textContent.includes(MESSAGES.ar['common.retry']));
+  }
 });
 
 test('double submit guard prevents duplicate save requests while in flight', async (ctx) => {

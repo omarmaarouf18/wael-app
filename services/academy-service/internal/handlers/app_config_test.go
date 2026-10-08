@@ -413,3 +413,31 @@ func TestAppConfig_StoreErrorFailsClosed(t *testing.T) {
 		t.Fatalf("503 is cacheable: %q", cc)
 	}
 }
+
+// TestAppConfig_NoValidWhatsAppOmitsURL: with neither a valid stored number
+// nor a valid SUPPORT_WHATSAPP, app-config omits support_whatsapp_url (no
+// dummy number, no bare https://wa.me/); a valid stored number still wins
+// over an invalid env value.
+func TestAppConfig_NoValidWhatsAppOmitsURL(t *testing.T) {
+	for _, env := range []string{"", "PASTE_WHATSAPP", "0100000000"} {
+		s := appConfigTestServer()
+		s.SupportWhatsApp = env
+		rec := doPublic(t, s.PublicHandler(), http.MethodGet, "/academy/app-config", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("env %q: app-config = %d (%s)", env, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "support_whatsapp_url") || strings.Contains(rec.Body.String(), "wa.me") {
+			t.Fatalf("env %q: support link present: %s", env, rec.Body.String())
+		}
+	}
+
+	s := appConfigTestServer()
+	s.SupportWhatsApp = "PASTE_WHATSAPP"
+	if err := s.Store.SaveAppSettings(context.Background(), &models.AppSettings{SupportWhatsApp: "201555555555"}); err != nil {
+		t.Fatal(err)
+	}
+	rec := doPublic(t, s.PublicHandler(), http.MethodGet, "/academy/app-config", "")
+	if !strings.Contains(rec.Body.String(), `"support_whatsapp_url":"https://wa.me/201555555555"`) {
+		t.Fatalf("stored number not used: %s", rec.Body.String())
+	}
+}

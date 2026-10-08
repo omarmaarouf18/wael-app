@@ -119,7 +119,11 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
       const res = await api.post('/api/settings/update', values);
       if (!res.ok) {
         cooldown.arm(res);
-        if (banner) showError(banner, res, () => save(), cooldown);
+        // Retry only helps when the failure was the server or the network
+        // (503, offline) or a rate limit; a validation error (4xx such as
+        // settings_forbidden_word) needs an edit, so it gets no Retry.
+        const retryable = res.kind === 'unavailable' || res.kind === 'rate_limited';
+        if (banner) showError(banner, res, retryable ? () => save() : undefined, cooldown);
         return;
       }
       loadedState = {

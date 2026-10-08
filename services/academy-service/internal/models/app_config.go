@@ -25,7 +25,7 @@ type CenterDTO struct {
 // It carries no payment wording and no per-user data, so it is public and cacheable.
 type AppConfigDTO struct {
 	ShowPrices         bool       `json:"show_prices"`
-	SupportWhatsAppURL string     `json:"support_whatsapp_url"`
+	SupportWhatsAppURL string     `json:"support_whatsapp_url,omitempty"`
 	TermsURL           string     `json:"terms_url"`
 	PrivacyURL         string     `json:"privacy_url"`
 	MinVersion         string     `json:"min_version,omitempty"`

@@ -704,7 +704,8 @@ func (s *Server) EnforceIPTier(tier string, next http.HandlerFunc) http.HandlerF
 
 // GetAppConfig serves GET /academy/app-config (F-UX2 A7, 2026-10-08 settings). Public (no student
 // JWT), read tier (per-IP), cacheable for 5 min. It returns the show_prices flag,
-// the support WhatsApp URL built from the stored number, the terms/privacy URLs,
+// the support WhatsApp URL (stored number, else SUPPORT_WHATSAPP; omitted when
+// neither is a valid number), the terms/privacy URLs,
 // optional update metadata (empty means no update prompt), and optional center info (omitted when empty).
 // No payment wording.
 func (s *Server) GetAppConfig(w http.ResponseWriter, r *http.Request) {
@@ -716,16 +717,22 @@ func (s *Server) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	defer cancel()
 
-	settings, err := s.Store.GetAppSettings(dbCtx)
+	settings, err := s.effectiveAppSettings(dbCtx)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
+	}
+	// No valid number: omit the link (FormatWhatsAppURLStrict("") would
+	// give a bare https://wa.me/).
+	var whatsappURL string
+	if settings.SupportWhatsApp != "" {
+		whatsappURL = models.FormatWhatsAppURLStrict(settings.SupportWhatsApp)
 	}
 
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	handlerutil.WriteJSON(w, http.StatusOK, models.AppConfigDTO{
 		ShowPrices:         settings.ShowPrices,
-		SupportWhatsAppURL: models.FormatWhatsAppURLStrict(settings.SupportWhatsApp),
+		SupportWhatsAppURL: whatsappURL,
 		TermsURL:           s.TermsURL,
 		PrivacyURL:         s.PrivacyURL,
 		MinVersion:         s.MinVersion,

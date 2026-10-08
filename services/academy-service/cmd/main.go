@@ -98,6 +98,7 @@ func main() {
 	srv.MinVersion = cfg.MinVersion
 	srv.LatestVersion = cfg.LatestVersion
 	srv.UpdateURL = cfg.UpdateURL
+	srv.WarnIfNoSupportWhatsApp(ctx)
 
 	if err := notify.InitClient(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath); err != nil {
 		log.Fatalf("[ACADEMY] notify client: %v", err)

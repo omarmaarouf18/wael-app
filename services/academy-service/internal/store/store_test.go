@@ -1001,8 +1001,13 @@ func testAppSettings(t *testing.T, s Store) {
 	if defaults.ShowPrices {
 		t.Fatalf("defaults.ShowPrices = true, want false")
 	}
-	if defaults.SupportWhatsApp == "" {
-		t.Fatalf("defaults.SupportWhatsApp is empty")
+	// The store returns what is stored, nothing more: no env default and no
+	// fallback number (handlers resolve SUPPORT_WHATSAPP).
+	if defaults.SupportWhatsApp != "" {
+		t.Fatalf("defaults.SupportWhatsApp = %q, want empty (no fallback number)", defaults.SupportWhatsApp)
+	}
+	if defaults.ID != models.AppSettingsID {
+		t.Fatalf("defaults.ID = %q, want %q", defaults.ID, models.AppSettingsID)
 	}
 	if defaults.CenterNameAr != "" || defaults.CenterNameEn != "" || defaults.CenterMapURL != "" {
 		t.Fatalf("defaults center fields should be empty, got %+v", defaults)
@@ -1069,7 +1074,7 @@ func testAppSettings(t *testing.T, s Store) {
 		t.Fatalf("cached read mismatch: %+v vs %+v", cached, saved)
 	}
 
-	// 5. Merge test: saving empty whatsapp falls back to env default on read
+	// 5. A saved empty number reads back empty (the store adds no default)
 	partial := &models.AppSettings{
 		ShowPrices:      false,
 		SupportWhatsApp: "",
@@ -1087,8 +1092,8 @@ func testAppSettings(t *testing.T, s Store) {
 	if merged.ShowPrices != false {
 		t.Fatalf("merged.ShowPrices = %v, want false", merged.ShowPrices)
 	}
-	if merged.SupportWhatsApp == "" {
-		t.Fatalf("merged.SupportWhatsApp should have fallen back to env default, got empty")
+	if merged.SupportWhatsApp != "" {
+		t.Fatalf("merged.SupportWhatsApp = %q, want empty (no fallback number)", merged.SupportWhatsApp)
 	}
 	if merged.CenterNameAr != "مركز" {
 		t.Fatalf("merged.CenterNameAr = %q, want 'مركز'", merged.CenterNameAr)

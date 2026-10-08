@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -1192,8 +1191,9 @@ func (s *MongoStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*mod
 	return result, int(total), nil
 }
 
-// GetAppSettings returns the app settings for MongoStore.
-// Cached in-process for 60s, returns env defaults merged (A1).
+// GetAppSettings returns the stored app settings for MongoStore (empty
+// settings when none were saved). Cached in-process for 60s (A1). Env
+// defaults are applied by the caller (handlers), not here.
 func (s *MongoStore) GetAppSettings(ctx context.Context) (*models.AppSettings, error) {
 	s.settingsMu.RLock()
 	if s.cachedSettings != nil && time.Since(s.cachedSettingsAt) < settingsCacheTTL {
@@ -1213,18 +1213,18 @@ func (s *MongoStore) GetAppSettings(ctx context.Context) (*models.AppSettings, e
 	err := s.db.Collection("app_settings").FindOne(ctx, bson.M{"_id": models.AppSettingsID}).Decode(&raw)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			def := models.DefaultAppSettings(os.Getenv("SUPPORT_WHATSAPP"))
-			s.cachedSettings = def.Clone()
+			empty := &models.AppSettings{ID: models.AppSettingsID}
+			s.cachedSettings = empty.Clone()
 			s.cachedSettingsAt = time.Now()
-			return def.Clone(), nil
+			return empty, nil
 		}
 		return nil, fmt.Errorf("store: find app_settings: %w", err)
 	}
 
-	merged := models.MergeAppSettingsDefaults(&raw, os.Getenv("SUPPORT_WHATSAPP"))
-	s.cachedSettings = merged.Clone()
+	raw.ID = models.AppSettingsID
+	s.cachedSettings = raw.Clone()
 	s.cachedSettingsAt = time.Now()
-	return merged.Clone(), nil
+	return raw.Clone(), nil
 }
 
 // SaveAppSettings replaces the single app_settings document (_id: "app")

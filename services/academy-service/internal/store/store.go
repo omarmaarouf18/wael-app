@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"os"
 	"sort"
 	"sync"
 	"time"
@@ -1008,8 +1007,9 @@ func (s *MemoryStore) ListAuditLogs(_ context.Context, page, limit int) ([]*mode
 
 const settingsCacheTTL = 60 * time.Second
 
-// GetAppSettings returns the app settings for MemoryStore.
-// Cached in-process for 60s, returns env defaults merged (A1).
+// GetAppSettings returns the stored app settings for MemoryStore (empty
+// settings when none were saved). Cached in-process for 60s (A1). Env
+// defaults are applied by the caller (handlers), not here.
 func (s *MemoryStore) GetAppSettings(_ context.Context) (*models.AppSettings, error) {
 	s.settingsMu.RLock()
 	if s.cachedSettings != nil && time.Since(s.cachedSettingsAt) < settingsCacheTTL {
@@ -1029,10 +1029,13 @@ func (s *MemoryStore) GetAppSettings(_ context.Context) (*models.AppSettings, er
 	raw := s.settings
 	s.mu.RUnlock()
 
-	merged := models.MergeAppSettingsDefaults(raw, os.Getenv("SUPPORT_WHATSAPP"))
-	s.cachedSettings = merged.Clone()
+	stored := &models.AppSettings{ID: models.AppSettingsID}
+	if raw != nil {
+		stored = raw.Clone()
+	}
+	s.cachedSettings = stored.Clone()
 	s.cachedSettingsAt = time.Now()
-	return merged.Clone(), nil
+	return stored, nil
 }
 
 // SaveAppSettings updates the single app settings for MemoryStore

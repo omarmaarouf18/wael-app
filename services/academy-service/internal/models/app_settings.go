@@ -3,7 +3,6 @@ package models
 import (
 	"strings"
 	"time"
-	"unicode"
 )
 
 // AppSettingsID is the fixed MongoDB _id for the single app_settings document.
@@ -67,41 +66,43 @@ func centerText(ar, en string) *CenterText {
 	return &CenterText{Ar: ar, En: en}
 }
 
-// NormalizeWhatsAppDigits extracts digits only from raw input, stripping any "+",
-// spaces or formatting characters. Returns fallback "201000000000" if no digits are present.
-func NormalizeWhatsAppDigits(raw string) string {
+// ValidWhatsAppNumber returns the digits of raw when they form a usable
+// international WhatsApp number: 10-15 digits, not starting with 0, written
+// with digits only or with "+", spaces, dashes or parentheses around them.
+// Anything else returns "": there is deliberately no fallback number, so a
+// missing or broken number hides the support link instead of showing a
+// wrong one.
+func ValidWhatsAppNumber(raw string) string {
 	var sb strings.Builder
 	for _, r := range strings.TrimSpace(raw) {
-		if unicode.IsDigit(r) {
+		switch {
+		case r >= '0' && r <= '9':
 			sb.WriteRune(r)
+		case r == '+' || r == ' ' || r == '-' || r == '(' || r == ')':
+		default:
+			return ""
 		}
 	}
-	if sb.Len() == 0 {
-		return "201000000000"
+	d := sb.String()
+	if len(d) < 10 || len(d) > 15 || d[0] == '0' {
+		return ""
 	}
-	return sb.String()
+	return d
 }
 
-// DefaultAppSettings returns the initial settings merged with env defaults.
-func DefaultAppSettings(envWhatsApp string) *AppSettings {
-	return &AppSettings{
-		ID:              AppSettingsID,
-		ShowPrices:      false,
-		SupportWhatsApp: NormalizeWhatsAppDigits(envWhatsApp),
+// WithWhatsAppDefault returns a copy of s (empty settings when s is nil)
+// whose support number is the stored one when valid, else envDefault
+// (SUPPORT_WHATSAPP) when valid, else "".
+func WithWhatsAppDefault(s *AppSettings, envDefault string) *AppSettings {
+	res := &AppSettings{}
+	if s != nil {
+		res = s.Clone()
 	}
-}
-
-// MergeAppSettingsDefaults merges env defaults into settings if any defaults apply.
-func MergeAppSettingsDefaults(s *AppSettings, envWhatsApp string) *AppSettings {
-	if s == nil {
-		return DefaultAppSettings(envWhatsApp)
+	res.ID = AppSettingsID
+	number := ValidWhatsAppNumber(res.SupportWhatsApp)
+	if number == "" {
+		number = ValidWhatsAppNumber(envDefault)
 	}
-	res := s.Clone()
-	if res.ID == "" {
-		res.ID = AppSettingsID
-	}
-	if res.SupportWhatsApp == "" {
-		res.SupportWhatsApp = NormalizeWhatsAppDigits(envWhatsApp)
-	}
+	res.SupportWhatsApp = number
 	return res
 }

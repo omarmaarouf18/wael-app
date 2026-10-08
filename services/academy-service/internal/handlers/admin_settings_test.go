@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -408,5 +410,52 @@ func TestAdminSettings_MethodNotAllowed(t *testing.T) {
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("%s /internal/admin/settings = %d, want 405", method, rec.Code)
 		}
+	}
+}
+
+// With no valid number anywhere, GET /internal/admin/settings returns an
+// empty support_whatsapp (the console shows the field empty), never a
+// dummy number.
+func TestAdminSettings_GetNoValidNumberIsEmpty(t *testing.T) {
+	s, _ := newAdminTestServer(t, okVerify)
+	s.SupportWhatsApp = "PASTE_WHATSAPP"
+	rec := doAdminJSON(t, s, http.MethodGet, "/internal/admin/settings", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /internal/admin/settings = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := got["support_whatsapp"]; !ok || v != "" {
+		t.Fatalf("support_whatsapp = %#v (present %v), want empty string", v, ok)
+	}
+}
+
+// WarnIfNoSupportWhatsApp logs exactly one warning when no valid number
+// exists, and none when the env or a stored number is valid.
+func TestWarnIfNoSupportWhatsApp(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+
+	s, _ := newAdminTestServer(t, okVerify)
+	ctx := context.Background()
+	if s.WarnIfNoSupportWhatsApp(ctx) {
+		t.Fatal("warned with a valid SUPPORT_WHATSAPP")
+	}
+	s.SupportWhatsApp = ""
+	if !s.WarnIfNoSupportWhatsApp(ctx) {
+		t.Fatal("no warning with no valid number")
+	}
+	if n := strings.Count(buf.String(), "no valid support WhatsApp number"); n != 1 {
+		t.Fatalf("warning logged %d times, want 1: %q", n, buf.String())
+	}
+	if err := s.Store.SaveAppSettings(ctx, &models.AppSettings{SupportWhatsApp: "201555555555"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.WarnIfNoSupportWhatsApp(ctx) {
+		t.Fatal("warned with a valid stored number")
 	}
 }
