@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
@@ -15,8 +17,11 @@ import (
 
 // MongoStore persists academy entities in MongoDB.
 type MongoStore struct {
-	client *mongo.Client
-	db     *mongo.Database
+	client           *mongo.Client
+	db               *mongo.Database
+	settingsMu       sync.RWMutex
+	cachedSettings   *models.AppSettings
+	cachedSettingsAt time.Time
 }
 
 // NewMongoStore connects to MongoDB, verifies the connection, ensures indexes,
@@ -1185,4 +1190,62 @@ func (s *MongoStore) ListAuditLogs(ctx context.Context, page, limit int) ([]*mod
 		result = []*models.AuditLog{}
 	}
 	return result, int(total), nil
+}
+
+// GetAppSettings returns the app settings for MongoStore.
+// Cached in-process for 60s, returns env defaults merged (A1).
+func (s *MongoStore) GetAppSettings(ctx context.Context) (*models.AppSettings, error) {
+	s.settingsMu.RLock()
+	if s.cachedSettings != nil && time.Since(s.cachedSettingsAt) < settingsCacheTTL {
+		val := s.cachedSettings.Clone()
+		s.settingsMu.RUnlock()
+		return val, nil
+	}
+	s.settingsMu.RUnlock()
+
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	if s.cachedSettings != nil && time.Since(s.cachedSettingsAt) < settingsCacheTTL {
+		return s.cachedSettings.Clone(), nil
+	}
+
+	var raw models.AppSettings
+	err := s.db.Collection("app_settings").FindOne(ctx, bson.M{"_id": models.AppSettingsID}).Decode(&raw)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			def := models.DefaultAppSettings(os.Getenv("SUPPORT_WHATSAPP"))
+			s.cachedSettings = def.Clone()
+			s.cachedSettingsAt = time.Now()
+			return def.Clone(), nil
+		}
+		return nil, fmt.Errorf("store: find app_settings: %w", err)
+	}
+
+	merged := models.MergeAppSettingsDefaults(&raw, os.Getenv("SUPPORT_WHATSAPP"))
+	s.cachedSettings = merged.Clone()
+	s.cachedSettingsAt = time.Now()
+	return merged.Clone(), nil
+}
+
+// SaveAppSettings replaces the single app_settings document (_id: "app")
+// and invalidates the in-process cache (A1).
+func (s *MongoStore) SaveAppSettings(ctx context.Context, settings *models.AppSettings) error {
+	if settings == nil {
+		return errors.New("store: nil app settings")
+	}
+	toSave := settings.Clone()
+	toSave.ID = models.AppSettingsID
+
+	opts := options.Replace().SetUpsert(true)
+	_, err := s.db.Collection("app_settings").ReplaceOne(ctx, bson.M{"_id": models.AppSettingsID}, toSave, opts)
+	if err != nil {
+		return fmt.Errorf("store: save app_settings: %w", err)
+	}
+
+	s.settingsMu.Lock()
+	s.cachedSettings = nil
+	s.cachedSettingsAt = time.Time{}
+	s.settingsMu.Unlock()
+
+	return nil
 }

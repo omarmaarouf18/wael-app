@@ -985,6 +985,114 @@ func runStoreSuite(t *testing.T, s Store) {
 	if err != nil || totalReqs < 1 || len(filteredReqs) < 1 || filteredReqs[0].ID != "req-decide-2" {
 		t.Fatalf("ListRequests status=rejected failed: total=%d len=%d err=%v", totalReqs, len(filteredReqs), err)
 	}
+
+	// App Settings suite (2026-10-08, A1: defaults, merge, save, caching)
+	testAppSettings(t, s)
+}
+
+func testAppSettings(t *testing.T, s Store) {
+	ctx := context.Background()
+
+	// 1. Defaults: when no settings have been saved yet
+	defaults, err := s.GetAppSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetAppSettings defaults failed: %v", err)
+	}
+	if defaults.ShowPrices {
+		t.Fatalf("defaults.ShowPrices = true, want false")
+	}
+	if defaults.SupportWhatsApp == "" {
+		t.Fatalf("defaults.SupportWhatsApp is empty")
+	}
+	if defaults.CenterNameAr != "" || defaults.CenterNameEn != "" || defaults.CenterMapURL != "" {
+		t.Fatalf("defaults center fields should be empty, got %+v", defaults)
+	}
+	if !defaults.UpdatedAt.IsZero() {
+		t.Fatalf("defaults.UpdatedAt should be zero, got %v", defaults.UpdatedAt)
+	}
+
+	// 2. Save settings
+	now := time.Now().UTC()
+	toSave := &models.AppSettings{
+		ShowPrices:      true,
+		SupportWhatsApp: "201234567890",
+		CenterNameAr:    "مركز النور",
+		CenterNameEn:    "Al-Nour Center",
+		CenterAddressAr: "١٢ شارع التحرير، الدقي",
+		CenterAddressEn: "12 Tahrir St, Dokki",
+		CenterHoursAr:   "يوميًا من ٩ ص إلى ٩ م",
+		CenterHoursEn:   "Daily 9 AM - 9 PM",
+		CenterMapURL:    "https://maps.google.com/?q=dokki",
+		UpdatedAt:       now,
+		UpdatedBy:       "admin-1",
+	}
+	if err := s.SaveAppSettings(ctx, toSave); err != nil {
+		t.Fatalf("SaveAppSettings failed: %v", err)
+	}
+
+	// 3. Read back immediately (verifies save + cache invalidation on save)
+	saved, err := s.GetAppSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetAppSettings after save failed: %v", err)
+	}
+	if !saved.ShowPrices {
+		t.Fatalf("saved.ShowPrices = false, want true")
+	}
+	if saved.SupportWhatsApp != "201234567890" {
+		t.Fatalf("saved.SupportWhatsApp = %q, want 201234567890", saved.SupportWhatsApp)
+	}
+	if saved.CenterNameAr != "مركز النور" || saved.CenterNameEn != "Al-Nour Center" {
+		t.Fatalf("saved center names mismatch: %+v", saved)
+	}
+	if saved.CenterAddressAr != "١٢ شارع التحرير، الدقي" || saved.CenterAddressEn != "12 Tahrir St, Dokki" {
+		t.Fatalf("saved center address mismatch: %+v", saved)
+	}
+	if saved.CenterHoursAr != "يوميًا من ٩ ص إلى ٩ م" || saved.CenterHoursEn != "Daily 9 AM - 9 PM" {
+		t.Fatalf("saved center hours mismatch: %+v", saved)
+	}
+	if saved.CenterMapURL != "https://maps.google.com/?q=dokki" {
+		t.Fatalf("saved map url mismatch: %q", saved.CenterMapURL)
+	}
+	if saved.UpdatedBy != "admin-1" {
+		t.Fatalf("saved.UpdatedBy = %q, want admin-1", saved.UpdatedBy)
+	}
+	if saved.UpdatedAt.IsZero() {
+		t.Fatalf("saved.UpdatedAt is zero")
+	}
+
+	// 4. Repeated read hits cache
+	cached, err := s.GetAppSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetAppSettings cached read failed: %v", err)
+	}
+	if cached.ShowPrices != saved.ShowPrices || cached.SupportWhatsApp != saved.SupportWhatsApp {
+		t.Fatalf("cached read mismatch: %+v vs %+v", cached, saved)
+	}
+
+	// 5. Merge test: saving empty whatsapp falls back to env default on read
+	partial := &models.AppSettings{
+		ShowPrices:      false,
+		SupportWhatsApp: "",
+		CenterNameAr:    "مركز",
+		UpdatedAt:       time.Now().UTC(),
+		UpdatedBy:       "admin-2",
+	}
+	if err := s.SaveAppSettings(ctx, partial); err != nil {
+		t.Fatalf("SaveAppSettings partial failed: %v", err)
+	}
+	merged, err := s.GetAppSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetAppSettings after partial save failed: %v", err)
+	}
+	if merged.ShowPrices != false {
+		t.Fatalf("merged.ShowPrices = %v, want false", merged.ShowPrices)
+	}
+	if merged.SupportWhatsApp == "" {
+		t.Fatalf("merged.SupportWhatsApp should have fallen back to env default, got empty")
+	}
+	if merged.CenterNameAr != "مركز" {
+		t.Fatalf("merged.CenterNameAr = %q, want 'مركز'", merged.CenterNameAr)
+	}
 }
 
 func TestMemoryStore(t *testing.T) {

@@ -306,6 +306,7 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("/internal/admin/requests/", s.AdminRequestSubroute)
 	mux.HandleFunc("/internal/admin/entitlements", s.AdminEntitlements)
 	mux.HandleFunc("/internal/admin/entitlements/", s.AdminEntitlementSubroute)
+	mux.HandleFunc("/internal/admin/settings", s.AdminSettings)
 
 	var h http.Handler = mux
 	h = s.requireAdmin(h)

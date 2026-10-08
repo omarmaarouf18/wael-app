@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -103,6 +104,10 @@ type Store interface {
 	// Same shape as auth-service's admin_audit_log; newest first.
 	CreateAuditLog(ctx context.Context, entry *models.AuditLog) error
 	ListAuditLogs(ctx context.Context, page, limit int) ([]*models.AuditLog, int, error)
+
+	// App Settings (2026-10-08, A1)
+	GetAppSettings(ctx context.Context) (*models.AppSettings, error)
+	SaveAppSettings(ctx context.Context, settings *models.AppSettings) error
 }
 
 // MemoryStore is an in-memory Store for local dev and unit testing.
@@ -117,6 +122,10 @@ type MemoryStore struct {
 	paymentRecords   []*models.PaymentRecord
 	videoPlays       []*models.VideoPlay
 	auditLogs        []*models.AuditLog
+	settings         *models.AppSettings
+	cachedSettings   *models.AppSettings
+	cachedSettingsAt time.Time
+	settingsMu       sync.RWMutex
 }
 
 // NewMemoryStore creates an empty MemoryStore.
@@ -995,4 +1004,54 @@ func (s *MemoryStore) ListAuditLogs(_ context.Context, page, limit int) ([]*mode
 	}
 
 	return logs[start:end], total, nil
+}
+
+const settingsCacheTTL = 60 * time.Second
+
+// GetAppSettings returns the app settings for MemoryStore.
+// Cached in-process for 60s, returns env defaults merged (A1).
+func (s *MemoryStore) GetAppSettings(_ context.Context) (*models.AppSettings, error) {
+	s.settingsMu.RLock()
+	if s.cachedSettings != nil && time.Since(s.cachedSettingsAt) < settingsCacheTTL {
+		val := s.cachedSettings.Clone()
+		s.settingsMu.RUnlock()
+		return val, nil
+	}
+	s.settingsMu.RUnlock()
+
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+	if s.cachedSettings != nil && time.Since(s.cachedSettingsAt) < settingsCacheTTL {
+		return s.cachedSettings.Clone(), nil
+	}
+
+	s.mu.RLock()
+	raw := s.settings
+	s.mu.RUnlock()
+
+	merged := models.MergeAppSettingsDefaults(raw, os.Getenv("SUPPORT_WHATSAPP"))
+	s.cachedSettings = merged.Clone()
+	s.cachedSettingsAt = time.Now()
+	return merged.Clone(), nil
+}
+
+// SaveAppSettings updates the single app settings for MemoryStore
+// and invalidates the in-process cache (A1).
+func (s *MemoryStore) SaveAppSettings(_ context.Context, settings *models.AppSettings) error {
+	if settings == nil {
+		return errors.New("store: nil app settings")
+	}
+	toSave := settings.Clone()
+	toSave.ID = models.AppSettingsID
+
+	s.mu.Lock()
+	s.settings = toSave.Clone()
+	s.mu.Unlock()
+
+	s.settingsMu.Lock()
+	s.cachedSettings = nil
+	s.cachedSettingsAt = time.Time{}
+	s.settingsMu.Unlock()
+
+	return nil
 }
