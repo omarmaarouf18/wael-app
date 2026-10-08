@@ -185,6 +185,8 @@ Forward compatibility audit (owner strategy 2026-10-08, C2, frontend only; tests
 
 **Emergency lever (update gate).** To force every student off a broken or unsafe build, set `MIN_VERSION` (academy-service env, served as `min_version` by `GET /academy/app-config`) above that build's version and `UPDATE_URL` to the store listing (https only; a non-https value is dropped and the gate then shows "contact support"). The app checks it at every cold start on the splash screen and shows the blocking `/update-gate` (no back) when the installed version is below it; `LATEST_VERSION` only adds the soft "update available" row in Settings > About. Limits: a config cached less than 5 minutes ago is reused, an app already running is gated on its next cold start, and an unreachable config never blocks (fail soft), so only devices that reach the server (or hold a cached copy with the new value) are stopped. Lowering `MIN_VERSION` again releases them without a new APK. Tests: `forward_compat_test.dart` (blocking and soft from server JSON, splash routing), `splash_screen_test.dart`, `settings_about_test.dart`, `app_config_provider_test.dart`.
 
+Subject banner (owner, 2026-10-08, A1): the subject-screen banner is the owner-supplied `assets/images/elmetr_banner.jpg` (1242 x 649, `AppConstants.imgSubjectBanner`, same on every subject; its art carries a phone number line, as supplied); `catalog_composure.jpg` (source never confirmed) is deleted. CONTENT-GAPS #30 and `docs/asset-provenance.md` amended.
+
 ## Pending release (develop ahead of main)
 Written 2026-10-06 from `git log origin/main..origin/develop` (31 commits, `8e71d72`..`79e1962`, plus the docs refresh of this date). Production is `main` = `32d185e`. Update this section when `main` is fast-forwarded.
 

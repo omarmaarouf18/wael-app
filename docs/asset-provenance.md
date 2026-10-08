@@ -41,7 +41,7 @@ Android app icon set), which say so. UNCONFIRMED rows block the release review
 | Path | Used as (constants.dart) | Source | License |
 |---|---|---|---|
 | `home_hero.png` | `imgHomeHero` | A downscaled copy (341 x 512) of `el_metr_character_art.png` | Owner-approved 2026-10-02 (same picture as the character art) |
-| `catalog_composure.jpg` | `imgCatalogComposure` | UNCONFIRMED | UNCONFIRMED |
+| `elmetr_banner.jpg` | `imgSubjectBanner`; the banner at the top of every subject screen | Owner-supplied EL METR banner (1242 x 649 JPEG; the art's own text includes a phone number line, as supplied), 2026-10-08. Replaces `catalog_composure.jpg` (source never confirmed, deleted) | Owner-supplied 2026-10-08 |
 | `director_portrait.jpg` | `imgDirectorPortrait`; the director portrait (Home director card, subject strip) | Owner-supplied photo of Ustaz Wael Al-Saeed (800 x 800 JPEG, head and shoulders), used with his consent, 2026-10-08 | CONFIRMED by owner 2026-10-08 |
 
 ## Launcher and platform icons
@@ -93,4 +93,6 @@ name, for the login screen.
   screen. It is kept until the owner decides whether it is wanted.
 - `catalog_composure.jpg` is the one decorative banner shown at the top of every
   subject screen. Subject images are not in the API; the owner decides whether
-  to supply per-subject images or keep a single banner.
+  to supply per-subject images or keep a single banner. *(Amended 2026-10-08:
+  replaced by the owner's `elmetr_banner.jpg`, still one banner for every
+  subject; `catalog_composure.jpg` is deleted.)*
