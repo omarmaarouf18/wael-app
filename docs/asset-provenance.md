@@ -31,7 +31,7 @@ Android app icon set), which say so. UNCONFIRMED rows block the release review
 
 | Path | Used as (constants.dart) | Source | License |
 |---|---|---|---|
-| `el_metr_character_art.png` | `imgCharacterArt`; the director portrait; the source of the app icon | Owner-supplied | Owner-approved 2026-10-02 |
+| `el_metr_character_art.png` | `imgCharacterArt`; the director portrait; the source of the app icon *(amended 2026-10-08: no longer the director portrait, replaced by `director_portrait.jpg`; still the Home hero art, the subject-image fallback and the icon source)* | Owner-supplied | Owner-approved 2026-10-02 |
 | `el_metr_poster.jpg` | `imgPoster`; shown on the login screen only | Owner-supplied (the EL METR poster, 548 x 871 JPEG) | Owner-approved 2026-10-02 |
 | `store_icon_512.png` | none (Play Store listing icon, not bundled in the app) | Generated 2026-10-02 from `el_metr_character_art.png` by `scripts/make_app_icons.sh` | Owner-approved 2026-10-02 |
 | `el_metr_landscape.jpg` | `imgLandscape` | UNCONFIRMED | UNCONFIRMED |
@@ -42,6 +42,7 @@ Android app icon set), which say so. UNCONFIRMED rows block the release review
 |---|---|---|---|
 | `home_hero.png` | `imgHomeHero` | A downscaled copy (341 x 512) of `el_metr_character_art.png` | Owner-approved 2026-10-02 (same picture as the character art) |
 | `catalog_composure.jpg` | `imgCatalogComposure` | UNCONFIRMED | UNCONFIRMED |
+| `director_portrait.jpg` | `imgDirectorPortrait`; the director portrait (Home director card, subject strip) | Owner-supplied photo of Ustaz Wael Al-Saeed (800 x 800 JPEG, head and shoulders), used with his consent, 2026-10-08 | CONFIRMED by owner 2026-10-08 |
 
 ## Launcher and platform icons
 
