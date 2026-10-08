@@ -228,7 +228,7 @@ func TestLoad_StreamCapsConfig(t *testing.T) {
 }
 
 // Weak shared secrets are refused outside APP_ENV=local|test (review P1);
-// the full rule table is jwtutil.TestCheckSecretStrength.
+// the full rule table is secretcheck.TestCheck.
 func TestLoad_WeakSecretsRefusedOutsideLocal(t *testing.T) {
 	weak := []string{
 		"short-secret",

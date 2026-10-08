@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
+	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil/secretcheck"
 )
 
 type Config struct {
@@ -69,7 +70,7 @@ func Load() (*Config, error) {
 		{"GATEWAY_SECRET", gatewaySecret},
 		{"INTERNAL_SERVICE_TOKEN", internalToken},
 	} {
-		if err := jwtutil.CheckSecretStrength(s.name, s.value, appEnv); err != nil {
+		if err := secretcheck.Check(s.name, s.value, appEnv); err != nil {
 			return nil, err
 		}
 	}

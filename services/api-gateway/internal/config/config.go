@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
+	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil/secretcheck"
 	"strings"
 )
 
@@ -69,7 +69,7 @@ func Load() (*Config, error) {
 	for _, s := range []struct{ name, value string }{
 		{"GATEWAY_SECRET", gatewaySecret},
 	} {
-		if err := jwtutil.CheckSecretStrength(s.name, s.value, appEnv); err != nil {
+		if err := secretcheck.Check(s.name, s.value, appEnv); err != nil {
 			return nil, err
 		}
 	}

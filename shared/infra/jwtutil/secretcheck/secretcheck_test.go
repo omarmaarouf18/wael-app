@@ -1,11 +1,11 @@
-package jwtutil
+package secretcheck
 
 import (
 	"strings"
 	"testing"
 )
 
-func TestCheckSecretStrength(t *testing.T) {
+func TestCheck(t *testing.T) {
 	strong := strings.Repeat("a1", 32) // 64 hex chars, like openssl rand -hex 32
 	cases := []struct {
 		name    string
@@ -28,7 +28,7 @@ func TestCheckSecretStrength(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := CheckSecretStrength("JWT_SECRET", tc.value, tc.appEnv)
+			err := Check("JWT_SECRET", tc.value, tc.appEnv)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
 			}

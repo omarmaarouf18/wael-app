@@ -1,4 +1,7 @@
-package jwtutil
+// Package secretcheck validates shared-secret strength at startup. It has no
+// dependencies so every service config (including api-gateway) can use it
+// without pulling the JWT library into its build.
+package secretcheck
 
 import (
 	"fmt"
@@ -15,12 +18,12 @@ const MinSecretBytes = 32
 // reach a production secret. Matched case-insensitively, like preflight.sh.
 var placeholderMarkers = []string{"paste_", "change_me", "devpassword123"}
 
-// CheckSecretStrength refuses a weak shared secret outside APP_ENV=local|test.
+// Check refuses a weak shared secret outside APP_ENV=local|test.
 // Any other appEnv, including empty or unknown, is treated as production.
 // Production rules: at least MinSecretBytes bytes and no placeholder marker
 // (PASTE_, CHANGE_ME, devpassword123). The error names the variable, never
 // its value. Emptiness is the caller's required-variable check.
-func CheckSecretStrength(name, value, appEnv string) error {
+func Check(name, value, appEnv string) error {
 	if appEnv == "local" || appEnv == "test" {
 		return nil
 	}
