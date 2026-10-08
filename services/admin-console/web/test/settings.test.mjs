@@ -7,6 +7,7 @@ const doc = new FakeDocument();
 globalThis.document = doc;
 
 const { mountSettings } = await import('../js/settings.js');
+const { createApi } = await import('../js/api.js');
 const { MESSAGES } = await import('../js/i18n.js');
 
 function setup(initialSettings = {}, routes = {}) {
@@ -60,30 +61,9 @@ function setup(initialSettings = {}, routes = {}) {
   };
 
   const fetchFn = makeFetch(defaultRoutes);
-  const api = {
-    get: async (path) => {
-      const resp = await fetchFn(path, { method: 'GET' });
-      const body = await resp.json();
-      return { ok: resp.ok, status: resp.status, body, kind: resp.ok ? 'ok' : 'error' };
-    },
-    post: async (path, body) => {
-      const resp = await fetchFn(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json();
-      const retry = resp.headers.get('Retry-After');
-      return {
-        ok: resp.ok,
-        status: resp.status,
-        body: data,
-        code: data?.code,
-        kind: resp.status === 429 ? 'rate_limited' : resp.ok ? 'ok' : 'error',
-        retryAfter: retry ? parseInt(retry, 10) : 0,
-      };
-    },
-  };
+  // The real api client over the fake fetch, so the test sees exactly the
+  // { ok, status, data, code, retryAfter } shape the console uses.
+  const api = createApi({ fetchFn, getToken: () => 'test-token', onUnauthorized: () => {} });
 
   const mod = mountSettings({ api, doc });
   return {

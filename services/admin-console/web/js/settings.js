@@ -95,7 +95,7 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
       if (banner) showError(banner, res, () => load(), cooldown);
       return;
     }
-    loadedState = res.body ?? {};
+    loadedState = res.data ?? {};
     applyState(loadedState);
   }
 
@@ -124,8 +124,8 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
       }
       loadedState = {
         ...values,
-        updated_at: res.body?.updated_at ?? new Date().toISOString(),
-        updated_by: res.body?.updated_by,
+        updated_at: res.data?.updated_at ?? new Date().toISOString(),
+        updated_by: res.data?.updated_by,
       };
       updateMeta(loadedState);
       toast(doc, t('settings.toast.saved'));
