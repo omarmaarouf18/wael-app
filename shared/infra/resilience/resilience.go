@@ -2,6 +2,7 @@ package resilience
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -19,27 +20,50 @@ import (
 // full lifetime of the body read (including streamed responses such as SSE)
 // instead of being cancelled the moment the execute closure returns, while
 // still guaranteeing eventual resource release on Close or on error paths.
+//
+// It never caps the body on its own: limit <= 0 streams the whole body (the
+// gateway reverse-proxy path, including SSE and file downloads). A positive
+// limit is an explicit per-caller cap; reading past it fails with
+// ErrResponseTooLarge instead of ending in a clean EOF, so a caller can never
+// mistake a truncated body for a complete one.
 type cancelReadCloser struct {
-	closer     io.Closer
-	reader     io.Reader
+	rc         io.ReadCloser
+	limit      int64
+	read       int64
 	cancelOnce sync.Once
 	cancel     context.CancelFunc
 }
 
-func newCancelReadCloser(rc io.ReadCloser, cancel context.CancelFunc) *cancelReadCloser {
-	return &cancelReadCloser{
-		closer: rc,
-		reader: io.LimitReader(rc, 10<<20),
-		cancel: cancel,
-	}
+// ErrResponseTooLarge is returned by a response body read that passes the
+// cap set with ResilienceClient.WithMaxResponseBytes.
+var ErrResponseTooLarge = errors.New("resilience: response body exceeds the configured limit")
+
+func newCancelReadCloser(rc io.ReadCloser, cancel context.CancelFunc, limit int64) *cancelReadCloser {
+	return &cancelReadCloser{rc: rc, limit: limit, cancel: cancel}
 }
 
 func (c *cancelReadCloser) Read(p []byte) (int, error) {
-	return c.reader.Read(p)
+	if c.limit <= 0 {
+		return c.rc.Read(p)
+	}
+	if c.read > c.limit {
+		return 0, ErrResponseTooLarge
+	}
+	// Read at most one byte past the limit: enough to detect an oversized
+	// body without consuming more of it.
+	if room := c.limit + 1 - c.read; int64(len(p)) > room {
+		p = p[:room]
+	}
+	n, err := c.rc.Read(p)
+	c.read += int64(n)
+	if c.read > c.limit {
+		return n - int(c.read-c.limit), ErrResponseTooLarge
+	}
+	return n, err
 }
 
 func (c *cancelReadCloser) Close() error {
-	err := c.closer.Close()
+	err := c.rc.Close()
 	c.cancelOnce.Do(c.cancel)
 	return err
 }
@@ -93,12 +117,22 @@ func backoffWithJitter(attempt int, initialBackoff, maxBackoff time.Duration) ti
 }
 
 type ResilienceClient struct {
-	client         *http.Client
-	breaker        *gobreaker.CircuitBreaker[*http.Response]
-	maxRetries     int
-	initialBackoff time.Duration
-	maxBackoff     time.Duration
-	attemptTimeout time.Duration
+	client           *http.Client
+	breaker          *gobreaker.CircuitBreaker[*http.Response]
+	maxRetries       int
+	initialBackoff   time.Duration
+	maxBackoff       time.Duration
+	attemptTimeout   time.Duration
+	maxResponseBytes int64 // 0: no cap (default)
+}
+
+// WithMaxResponseBytes caps every response body read through this client at
+// n bytes (n <= 0 removes the cap). Use it for service-to-service calls whose
+// body is read fully into memory; reading past n fails with
+// ErrResponseTooLarge. It returns rc for chaining.
+func (rc *ResilienceClient) WithMaxResponseBytes(n int64) *ResilienceClient {
+	rc.maxResponseBytes = n
+	return rc
 }
 
 func NewClient(client *http.Client, serviceName string, maxRetries int, attemptTimeout time.Duration) *ResilienceClient {
@@ -181,7 +215,7 @@ func (rc *ResilienceClient) Do(req *http.Request) (*http.Response, error) {
 			// underlying io.ReadWriteCloser for bidirectional streaming.
 			timer.Stop()
 			if resp.StatusCode != http.StatusSwitchingProtocols {
-				resp.Body = newCancelReadCloser(resp.Body, cancel)
+				resp.Body = newCancelReadCloser(resp.Body, cancel, rc.maxResponseBytes)
 			}
 
 			if resp.StatusCode >= 500 {
@@ -294,7 +328,8 @@ func (rt *ResilienceRoundTripper) RoundTrip(req *http.Request) (*http.Response, 
 			// underlying io.ReadWriteCloser for bidirectional streaming.
 			timer.Stop()
 			if resp.StatusCode != http.StatusSwitchingProtocols {
-				resp.Body = newCancelReadCloser(resp.Body, cancel)
+				// No cap: the gateway proxies SSE streams and file downloads.
+				resp.Body = newCancelReadCloser(resp.Body, cancel, 0)
 			}
 
 			if resp.StatusCode >= 500 {

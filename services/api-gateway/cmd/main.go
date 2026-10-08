@@ -126,6 +126,11 @@ func main() {
 		log.Fatalf("[GATEWAY] %v", err)
 	}
 
+	// 1 MiB caps REQUEST bodies only. File uploads never pass the gateway:
+	// students upload nothing (SPEC Section 1 decision 1) and admin calls go
+	// admin-console -> academy admin listener (/internal/admin/*, ADR-0008),
+	// which the gateway does not route. Response bodies are never capped or
+	// buffered here: SSE streams and PDF downloads stream through unchanged.
 	handler := handlerutil.MaxBytesMiddleware(1 << 20)(mux)
 	handler = middleware.RateLimit(rl)(handler)
 	handler = middleware.Logging(cfg.AllowedOrigin)(handler)
