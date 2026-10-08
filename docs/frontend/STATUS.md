@@ -75,6 +75,7 @@ The gate scans screens only, so widgets carry no baseline entries.
 | `secondary_button.dart` | 90 | course detail body, home |
 | `selectable_chip.dart` | 142 | subject content section, courses |
 | `status_dot.dart` | 37 | notifications |
+| `subject_price.dart` | 73 | course detail body, courses (via card) |
 | `subject_hero_banner.dart` | 76 | course detail body |
 | `themed_card.dart` | 55 | notifications, settings |
 | `themed_empty_state.dart` | 64 | 5 screens |

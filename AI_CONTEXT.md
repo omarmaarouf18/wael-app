@@ -171,6 +171,8 @@ Landing record for `develop` (work of 2026-10-05, recorded 2026-10-06; all of it
 - Player overlay masks `90edff3` and `79e1962`: the logo corner is no longer masked; the title mask shows while the video is not playing and for 4 seconds after every start, resume, replay and seek, with a height that scales with the player. Frontend suite at `90edff3`: 823 passing, ~22 live-gated skips unchanged. Not verified: whether 4 seconds and that height fully cover YouTube's title bar on a real phone (owner to send screenshots at play start and on pause).
 - Deferred by the owner (2026-10-05): video progress, push notifications (SPEC Phase 7), crash reporting.
 
+Subject price display (owner decision 2026-10-08, on `develop`, `1164755`..`91c4cc5`, frontend only, no backend change): locked subjects show the server-sent price (`price` + `currency`, SPEC Section 2 D3 amendment 2026-10-08) in the subject header and compactly on course cards (`SubjectPriceTag`, `formatSubjectPrice`); owned subjects and a null price show nothing. Locked/pending wording names activation by the center/support with a "contact support" WhatsApp button; no payment action is named anywhere. The store-safety test is rewritten (price words allowlisted to the label/helper/wire keys, payment-action list extended with word-boundary matching, WhatsApp strings checked). Backend unchanged: the academy API already sends/omits `price`/`currency` on `EXPOSE_PRICE_TO_STUDENTS`; turning it on in production is the owner's server step (see "Pending release"). The project doc "release-v1-plan-2026-10-08.md" was not in the repo, so the decision is recorded here and in SPEC D3 from the task brief.
+
 ## Pending release (develop ahead of main)
 Written 2026-10-06 from `git log origin/main..origin/develop` (31 commits, `8e71d72`..`79e1962`, plus the docs refresh of this date). Production is `main` = `32d185e`. Update this section when `main` is fast-forwarded.
 
@@ -179,6 +181,7 @@ What reaches production on the next fast-forward of `main`:
 - academy-service `GET /academy/app-config` (terms and privacy URLs, update metadata) and `whatsapp_url` in subject detail while a request is pending; admin-console `pending_deletion` accounts view and the account-settings gateway routes.
 - Deploy: production Redis capped at `REDIS_MAXMEMORY` (default `96mb`) with `noeviction`, `GOMEMLIMIT` on the Go services (`8e71d72`); preflight requires a non-zero redis `--maxmemory` (`b79aaaa`); the compose file requires `TERMS_URL` and `PRIVACY_URL`.
 - App (needs a new APK): F-UX1 session resilience, F-UX4 offline cache, bundled fonts, forms and accessibility, the e-book coming-soon tab, the player overlay masks, and F-UX2 Part B (settings screen with self-service account actions, devices list, deletion flow, app-config consumption, WhatsApp support links, and blocking update gate).
+- App (needs a new APK, owner decision 2026-10-08): locked subjects show the server-sent price when present (SPEC D3 amendment); locked/pending wording names activation by the center/support. No price appears until the owner flips the server switch (checklist item 6).
 - Repository: the Dependabot configuration (S2) and the D1/D3 records; docs only.
 
 Pre-deploy checklist:
@@ -187,6 +190,7 @@ Pre-deploy checklist:
 3. Gating change (account self-deletion): after deploy the owner tests a delete request, cancelling by logging in during the grace period, a password change ending the other sessions, and the 30-day profile edit limit.
 4. After the fast-forward: close the Dependabot redis-8 PR that targets `main`; check the repository's Dependabot page for configuration errors in the new `dependabot.yml`; dismiss the 16 stale `x/crypto` alerts if GitHub still shows them open (dismissing is the owner's call).
 5. Build and distribute a new APK for the frontend changes (including the settings screen and update gating; `frontend/.github/workflows/build-apk.yml`, run in the wael-app-mobile mirror).
+6. (Owner decision 2026-10-08, after deploy) Show subject prices: set `EXPOSE_PRICE_TO_STUDENTS=true` in the academy-service server env and set a price per subject in the admin console. Until then the API omits `price`/`currency` and the app shows no price (null-safe, no gap). Hiding the price later needs no new APK: set the flag back to `false`.
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy/mobile pipeline live on production with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true` (ADR-0011). *(Amended 2026-10-06: the academy service is built through SPEC Phase 4 and live since 2026-10-03, and the app providers are rebound to `AcademyRepository`; the remaining order is under "Next task".)*

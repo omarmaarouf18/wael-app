@@ -265,6 +265,7 @@ file for their exact values.
 | `OwnedSubjectTile` | `owned_subject_tile.dart` | Home row for an owned subject: icon tile, title, video / book counts, access end date or "Ready to Start". |
 | `CatalogLevelHeader` | `catalog_level_header.dart` | Summary card above the subject list: level, study type, subject count. |
 | `CatalogSubjectCard` | `catalog_subject_card.dart` | Subject card: term, title, director name, description, video / book / note counts, View subject / Continue. |
+| `SubjectPriceTag` | `subject_price.dart` | Locked-subject price: neutral label plus the server-sent value (`formatSubjectPrice`); `compact` for list cards. Nothing when owned or the price is null. Never inside the support button. |
 | `SubjectHeroBanner` | `subject_hero_banner.dart` | 16:10 subject hero image fading into the canvas, with an optional term tag at the top start corner. |
 | `DirectorStrip` | `director_strip.dart` | Compact academy-director card: round portrait, name with a crimson dot, tagline. |
 | `CatalogVideoTile` | `catalog_video_tile.dart` | Lesson video row; shows a lock when `locked`. Reports taps only, never knows a URL. |
