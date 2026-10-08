@@ -57,6 +57,36 @@ func newMux(cfg *config.Config, base http.RoundTripper) (*http.ServeMux, error) 
 	return mux, nil
 }
 
+// serverTimeouts are the gateway's inbound connection limits (review P2).
+type serverTimeouts struct {
+	readHeader time.Duration // request line and headers (slowloris)
+	read       time.Duration // whole request including the (1 MiB max) body
+	idle       time.Duration // keep-alive connection between requests
+}
+
+// defaultServerTimeouts: WriteTimeout is deliberately left at 0 (none). A
+// write timeout covers the whole response, so it would cut the SSE stream
+// (/api/v1/notifications/stream, open for up to the token lifetime) and
+// long downloads. The notification service already bounds each stream
+// write with a per-write deadline. ReadTimeout only bounds reading the
+// request; it does not end a streaming response (TestNewServer_
+// StreamOutlivesReadTimeout covers HTTP/1.1 and HTTP/2).
+var defaultServerTimeouts = serverTimeouts{
+	readHeader: 5 * time.Second,
+	read:       30 * time.Second,
+	idle:       120 * time.Second,
+}
+
+func newServer(addr string, handler http.Handler, to serverTimeouts) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: to.readHeader,
+		ReadTimeout:       to.read,
+		IdleTimeout:       to.idle,
+	}
+}
+
 func main() {
 	checkEnv := flag.Bool("check-env", false, "validate environment variables and exit")
 	flag.Parse()
@@ -108,12 +138,8 @@ func main() {
 			certFile = cfg.TLSCertPath
 			keyFile = cfg.TLSKeyPath
 		}
-		srv := &http.Server{
-			Addr:              addr,
-			Handler:           handler,
-			ReadHeaderTimeout: 5 * time.Second,
-			TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
-		}
+		srv := newServer(addr, handler, defaultServerTimeouts)
+		srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		fmt.Printf("api-gateway listening HTTPS on %s\n", addr)
 		log.Fatal(srv.ListenAndServeTLS(certFile, keyFile))
 		return
@@ -121,7 +147,7 @@ func main() {
 	if !dev {
 		log.Fatalf("[GATEWAY] plain HTTP not permitted outside dev")
 	}
-	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	srv := newServer(addr, handler, defaultServerTimeouts)
 	fmt.Printf("api-gateway listening HTTP on %s\n", addr)
 	log.Fatal(srv.ListenAndServe())
 }
