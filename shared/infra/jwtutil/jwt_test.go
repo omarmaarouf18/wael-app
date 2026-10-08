@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -365,7 +366,8 @@ func TestRevokeAllUserTokens(t *testing.T) {
 			t.Fatalf("expected key %s to exist in miniredis", key)
 		}
 
-		// Generate token2 for user1 AFTER revocation
+		// Generate token2 for user1 AFTER revocation (RevokeAllUserTokens
+		// returns only after the marker second, so no sleep is needed).
 		token2, err := GenerateToken(userID1, "customer", "user1@example.com")
 		if err != nil {
 			t.Fatalf("failed to generate token2: %v", err)
@@ -894,6 +896,106 @@ func TestValidateToken_OnlyHS256(t *testing.T) {
 	if _, err := ValidateToken(sign(t, jwt.SigningMethodHS256, getSecret(), time.Now().Add(time.Hour))); err != nil {
 		t.Fatalf("HS256 token rejected: %v", err)
 	}
+}
+
+// The user invalidation marker and iat both have one-second granularity. A
+// token whose iat equals the marker second cannot be ordered against the
+// revocation and is rejected (fail closed); one second later is accepted.
+func TestCheckRevocation_SameSecondIat(t *testing.T) {
+	Init("super-secret-key-that-is-at-least-thirty-two-bytes-long")
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	SetRedisClient(rdb)
+	defer SetRedisClient(nil)
+	ResetHealthTracker()
+
+	marker := time.Now().Unix()
+	if err := mr.Set("jwt:invalidated_before:user-same-second", strconv.FormatInt(marker, 10)); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name    string
+		iat     time.Time
+		revoked bool
+	}{
+		{"previous second", time.Unix(marker-1, 0), true},
+		{"same second, start", time.Unix(marker, 0), true},
+		{"same second, end", time.Unix(marker, 999_000_000), true},
+		{"next second", time.Unix(marker+1, 0), false},
+	}
+	for _, tc := range cases {
+		claims := &Claims{UserID: "user-same-second", RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt: jwt.NewNumericDate(tc.iat),
+		}}
+		err := CheckRevocation(claims)
+		if tc.revoked && !errors.Is(err, ErrTokenRevoked) {
+			t.Fatalf("%s: err = %v, want ErrTokenRevoked", tc.name, err)
+		}
+		if !tc.revoked && err != nil {
+			t.Fatalf("%s: err = %v, want nil", tc.name, err)
+		}
+	}
+}
+
+// A token issued in the same second as RevokeAllUserTokens, before it, is
+// rejected (the race the review flagged); a token issued right after it
+// returns is accepted.
+func TestRevokeAllUserTokens_SameSecondTokenRevoked(t *testing.T) {
+	Init("super-secret-key-that-is-at-least-thirty-two-bytes-long")
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer rdb.Close()
+	SetRedisClient(rdb)
+	defer SetRedisClient(nil)
+	ResetHealthTracker()
+
+	// Issue and revoke must share one wall-clock second; retry the rare run
+	// that crosses a boundary instead of skipping.
+	for attempt := 0; attempt < 5; attempt++ {
+		for time.Now().Nanosecond() >= 500_000_000 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		user := "user-race-" + strconv.Itoa(attempt)
+		before, err := GenerateToken(user, "user", "race@example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		issued := time.Now().Unix()
+		if err := RevokeAllUserTokens(user); err != nil {
+			t.Fatal(err)
+		}
+		marker, err := mr.Get("jwt:invalidated_before:" + user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if marker != strconv.FormatInt(issued, 10) {
+			continue
+		}
+		if time.Now().Unix() <= issued {
+			t.Fatalf("RevokeAllUserTokens returned inside the marker second %d", issued)
+		}
+		if _, err := ValidateToken(before); !errors.Is(err, ErrTokenRevoked) {
+			t.Fatalf("token issued in the revocation second: err = %v, want ErrTokenRevoked", err)
+		}
+		after, err := GenerateToken(user, "user", "race@example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ValidateToken(after); err != nil {
+			t.Fatalf("token issued after RevokeAllUserTokens returned: %v", err)
+		}
+		return
+	}
+	t.Fatal("issue and revoke never shared a second in 5 attempts")
 }
 
 func TestAccessTTL_Bounds(t *testing.T) {

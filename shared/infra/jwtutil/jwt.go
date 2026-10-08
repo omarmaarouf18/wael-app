@@ -371,7 +371,12 @@ func CheckRevocation(claims *Claims) error {
 				log.Printf("[SECURITY CRITICAL] Redis error parsing user token invalidation timestamp (FAIL CLOSED): %v. Rejecting user_id: %s", parseErr, claims.UserID)
 				return fmt.Errorf("jwtutil: security check failed (invalid timestamp format): %w", parseErr)
 			}
-			if claims.IssuedAt == nil || claims.IssuedAt.Time.Unix() < ts {
+			// iat and the marker both have one-second granularity, so a
+			// token issued in the same second as the revocation cannot be
+			// ordered against it. Rule: iat <= marker is revoked (inclusive,
+			// fail closed). RevokeAllUserTokens returns only after the marker
+			// second has passed, so tokens issued after it returns survive.
+			if claims.IssuedAt == nil || claims.IssuedAt.Time.Unix() <= ts {
 				return ErrTokenRevoked
 			}
 		}
@@ -380,7 +385,9 @@ func CheckRevocation(claims *Claims) error {
 	return nil
 }
 
-// RevokeAllUserTokens invalidates all tokens issued for a specific user prior to the current timestamp.
+// RevokeAllUserTokens invalidates all tokens issued for a specific user up to and including the current second
+// (CheckRevocation rejects iat <= marker). It returns only after that second has passed (at most one second
+// of added latency), so a token issued after it returns is never revoked by it.
 // It sets a Redis key jwt:invalidated_before:<user_id> to the current Unix timestamp.
 func RevokeAllUserTokens(userID string) error {
 	if userID == "" {
@@ -412,7 +419,19 @@ func RevokeAllUserTokens(userID string) error {
 		log.Printf("[SECURITY WARNING] Redis pubsub error publishing revocation event for %s: %v", userID, pubErr)
 	}
 
+	// Wait out the marker second before returning. CheckRevocation rejects
+	// iat <= marker, so a token issued after this call returns (iat >=
+	// marker+1 on this clock) is never caught by it, while every token from
+	// the marker second or earlier is.
+	waitPastSecond(timestamp)
 	return nil
+}
+
+// waitPastSecond sleeps until the wall clock has left Unix second sec.
+func waitPastSecond(sec int64) {
+	if d := time.Until(time.Unix(sec+1, 0)); d > 0 {
+		time.Sleep(d)
+	}
 }
 
 // RevokeToken denylists a token's jti in Redis.
