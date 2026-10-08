@@ -42,7 +42,7 @@ Android app icon set), which say so. UNCONFIRMED rows block the release review
 |---|---|---|---|
 | `home_hero.png` | `imgHomeHero` | A downscaled copy (341 x 512) of `el_metr_character_art.png` | Owner-approved 2026-10-02 (same picture as the character art) |
 | `elmetr_banner.jpg` | `imgSubjectBanner`; the banner at the top of every subject screen | Owner-supplied EL METR banner (1242 x 649 JPEG; the art's own text includes a phone number line, as supplied), 2026-10-08. Replaces `catalog_composure.jpg` (source never confirmed, deleted) | Owner-supplied 2026-10-08 |
-| `director_portrait.jpg` | `imgDirectorPortrait`; the director portrait (Home director card, subject strip) | Owner-supplied photo of Ustaz Wael Al-Saeed (800 x 800 JPEG, head and shoulders), used with his consent, 2026-10-08 | CONFIRMED by owner 2026-10-08 |
+| `director_portrait.jpg` | `imgDirectorPortrait`; the director portrait (Home director card, subject strip) | Owner-supplied photo of Ustaz Wael Al-Saeed (800 x 800 JPEG, head and shoulders), used with his consent, 2026-10-08. *(Amended 2026-10-08: replaced in place by the owner's v2, `director_portrait_v2.jpg` from "Claude outputs/director/", 800 x 800 JPEG, black-and-white close-up; same path and constant, titles unchanged.)* | CONFIRMED by owner 2026-10-08 |
 
 ## Launcher and platform icons
 
