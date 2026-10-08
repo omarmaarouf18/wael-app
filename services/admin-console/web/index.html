@@ -54,6 +54,7 @@
       <!-- Hidden until their APIs exist (see js/tabs.js). -->
       <button id="tab-requests" class="tab" type="button" role="tab" aria-controls="panel-requests" aria-selected="false" tabindex="-1" data-tab="requests"><span data-i18n="tabs.requests"></span> <span id="badge-requests" class="count" hidden></span></button>
       <button id="tab-catalog" class="tab" type="button" role="tab" aria-controls="panel-catalog" aria-selected="false" tabindex="-1" data-tab="catalog"><span data-i18n="tabs.catalog"></span></button>
+      <button id="tab-settings" class="tab" type="button" role="tab" aria-controls="panel-settings" aria-selected="false" tabindex="-1" data-tab="settings"><span data-i18n="tabs.settings"></span></button>
       <button id="tab-files" class="tab" type="button" role="tab" aria-controls="panel-files" aria-selected="false" tabindex="-1" data-tab="files" hidden><span data-i18n="tabs.files"></span></button>
     </nav>
 
@@ -204,6 +205,76 @@
           <button class="btn secondary small" type="button" data-role="next" data-i18n="common.next"></button>
         </div>
       </div>
+    </section>
+    <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <div class="section-head">
+        <div>
+          <h2 data-i18n="settings.title"></h2>
+          <p class="muted small" data-i18n="settings.subtitle"></p>
+        </div>
+      </div>
+      <div id="settings-banner" class="banner" role="alert" hidden></div>
+      <form id="settings-form" class="settings-form" novalidate>
+        <div class="field-toggle">
+          <label class="toggle-label" for="settings-show-prices">
+            <input id="settings-show-prices" type="checkbox">
+            <span data-i18n="settings.showPrices"></span>
+          </label>
+          <p class="muted small" data-i18n="settings.showPricesNote"></p>
+        </div>
+
+        <div class="field">
+          <label for="settings-support-whatsapp" data-i18n="settings.whatsapp"></label>
+          <input id="settings-support-whatsapp" type="text" dir="ltr" maxlength="15" autocomplete="off" data-i18n-placeholder="settings.whatsappHint">
+          <span class="muted small" data-i18n="settings.whatsappHint"></span>
+        </div>
+
+        <h3 data-i18n="settings.centerSection"></h3>
+
+        <div class="settings-grid">
+          <div class="field">
+            <label for="settings-center-name-ar" data-i18n="settings.centerNameAr"></label>
+            <input id="settings-center-name-ar" type="text" maxlength="100" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="settings-center-name-en" data-i18n="settings.centerNameEn"></label>
+            <input id="settings-center-name-en" type="text" dir="ltr" maxlength="100" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <div class="field">
+            <label for="settings-center-address-ar" data-i18n="settings.centerAddressAr"></label>
+            <textarea id="settings-center-address-ar" rows="3" maxlength="300"></textarea>
+          </div>
+          <div class="field">
+            <label for="settings-center-address-en" data-i18n="settings.centerAddressEn"></label>
+            <textarea id="settings-center-address-en" dir="ltr" rows="3" maxlength="300"></textarea>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <div class="field">
+            <label for="settings-center-hours-ar" data-i18n="settings.centerHoursAr"></label>
+            <input id="settings-center-hours-ar" type="text" maxlength="200" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="settings-center-hours-en" data-i18n="settings.centerHoursEn"></label>
+            <input id="settings-center-hours-en" type="text" dir="ltr" maxlength="200" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="settings-center-map-url" data-i18n="settings.centerMapUrl"></label>
+          <input id="settings-center-map-url" type="url" dir="ltr" maxlength="500" autocomplete="off" data-i18n-placeholder="settings.centerMapUrlHint">
+          <span class="muted small" data-i18n="settings.centerMapUrlHint"></span>
+        </div>
+
+        <div class="settings-actions">
+          <button id="settings-submit" class="btn primary" type="submit" data-i18n="settings.save"></button>
+          <span id="settings-meta" class="muted small"></span>
+        </div>
+      </form>
     </section>
     <section id="panel-files" role="tabpanel" aria-labelledby="tab-files" hidden></section>
     <div id="catalog-dialogs"></div>

@@ -6,6 +6,7 @@ import { api } from './api.js';
 import { mountAudit } from './audit.js';
 import { mountCatalog } from './catalog.js';
 import { mountRequests } from './requests.js';
+import { mountSettings } from './settings.js';
 import { createIdleLock } from './idle.js';
 import { clearSession, getAdminName, onSessionChange, signIn } from './auth.js';
 import {
@@ -37,6 +38,7 @@ export function main(doc = document, win = window) {
     audit: mountAudit({ api, doc }),
     requests: mountRequests({ api, doc, win }),
     catalog: mountCatalog({ api, doc }),
+    settings: mountSettings({ api, doc }),
   };
   const idleLock = createIdleLock({ doc, win });
   let badgePollTimer = null;
@@ -94,7 +96,10 @@ export function main(doc = document, win = window) {
 
   // A tab switch with unsaved edits asks first; Stay keeps the current tab.
   async function switchTab(id) {
-    const moved = await leaveIfClean(doc, () => activate(id), () => modules.catalog.discard());
+    const moved = await leaveIfClean(doc, () => activate(id), () => {
+      modules.catalog.discard();
+      if (modules.settings?.discard) modules.settings.discard();
+    });
     if (!moved) doc.getElementById(`tab-${activeTab}`)?.focus();
   }
 

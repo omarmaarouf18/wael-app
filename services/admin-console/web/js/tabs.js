@@ -7,6 +7,7 @@ export const TABS = Object.freeze([
   Object.freeze({ id: 'audit', enabled: true }),
   Object.freeze({ id: 'requests', enabled: true, badge: true }),
   Object.freeze({ id: 'catalog', enabled: true }),
+  Object.freeze({ id: 'settings', enabled: true }),
   Object.freeze({ id: 'files', enabled: false }),
 ]);
 

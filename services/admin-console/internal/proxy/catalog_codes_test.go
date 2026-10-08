@@ -54,6 +54,12 @@ var academyErrorCodes = []string{
 	"entitlement_not_found",
 	"already_owned",
 	"subject_expired",
+	"invalid_whatsapp",
+	"invalid_center_name",
+	"invalid_center_address",
+	"invalid_center_hours",
+	"invalid_map_url",
+	"settings_forbidden_word",
 }
 
 var (
@@ -79,7 +85,7 @@ var (
 // returns anymore.
 func TestAcademyErrorCodes_MatchHandlers(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "academy-service", "internal", "handlers")
-	files := []string{"admin.go", "admin_levels.go", "admin_subjects.go", "admin_videos.go", "admin_youtube.go", "admin_validate.go", "admin_requests.go", "admin_entitlements.go"}
+	files := []string{"admin.go", "admin_levels.go", "admin_subjects.go", "admin_videos.go", "admin_youtube.go", "admin_validate.go", "admin_requests.go", "admin_entitlements.go", "admin_settings.go"}
 	found := map[string]bool{}
 	for _, name := range files {
 		raw, err := os.ReadFile(filepath.Join(dir, name))
