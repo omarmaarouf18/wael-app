@@ -162,13 +162,18 @@ func GenerateTokenWithAMR(userID string, role string, email string, amr []string
 	return GenerateToken(userID, role, email, amr)
 }
 
+// validMethods pins access-token verification to HS256, the only algorithm
+// GenerateTokenWithSession signs with. Any other alg header (none, HS384,
+// HS512, RS256, ...) is rejected before the signature or claims are checked.
+var validMethods = []string{jwt.SigningMethodHS256.Alg()}
+
 func ValidateToken(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return getSecret(), nil
-	})
+	}, jwt.WithValidMethods(validMethods))
 
 	var isExpired bool
 	if err != nil {

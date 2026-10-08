@@ -847,3 +847,51 @@ func TestCheckRevocationAndPublish(t *testing.T) {
 		t.Fatalf("expected ErrSessionRevoked, got %v", err)
 	}
 }
+
+// Only HS256 is accepted: a token signed with the right secret but another
+// HMAC size, an RSA key, or no signature at all is rejected, expired or not.
+func TestValidateToken_OnlyHS256(t *testing.T) {
+	Init("super-secret-key-that-is-at-least-thirty-two-bytes-long")
+	SetRedisClient(nil)
+
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sign := func(t *testing.T, m jwt.SigningMethod, key interface{}, exp time.Time) string {
+		t.Helper()
+		claims := Claims{UserID: "u1", Role: "user", RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(exp),
+			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
+			ID:        "jti-1",
+		}}
+		s, err := jwt.NewWithClaims(m, claims).SignedString(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+
+	for _, exp := range []time.Time{time.Now().Add(time.Hour), time.Now().Add(-time.Hour)} {
+		cases := []struct {
+			name   string
+			method jwt.SigningMethod
+			key    interface{}
+		}{
+			{"none", jwt.SigningMethodNone, jwt.UnsafeAllowNoneSignatureType},
+			{"HS384", jwt.SigningMethodHS384, getSecret()},
+			{"HS512", jwt.SigningMethodHS512, getSecret()},
+			{"RS256", jwt.SigningMethodRS256, rsaKey},
+		}
+		for _, tc := range cases {
+			claims, err := ValidateToken(sign(t, tc.method, tc.key, exp))
+			if err == nil || errors.Is(err, ErrExpiredToken) || claims != nil {
+				t.Fatalf("%s (exp %v): got claims=%v err=%v, want rejection", tc.name, exp, claims, err)
+			}
+		}
+	}
+
+	if _, err := ValidateToken(sign(t, jwt.SigningMethodHS256, getSecret(), time.Now().Add(time.Hour))); err != nil {
+		t.Fatalf("HS256 token rejected: %v", err)
+	}
+}
