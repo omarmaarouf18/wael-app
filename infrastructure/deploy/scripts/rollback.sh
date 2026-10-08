@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Rollback to the last release recorded by a successful deploy.sh run.
-# Limits: images only. Database changes are NOT rolled back (no migration
-# framework yet; see RUNBOOK.md "Known gaps").
+# Limits: images only. Database changes are NOT rolled back automatically (no
+# migration framework yet; see RUNBOOK.md "Known gaps"). When deploy.sh took a
+# pre-deploy backup it exports PREDEPLOY_BACKUP, and this script prints the
+# exact restore command; restoring stays a deliberate human decision because
+# it discards every write made since the backup.
 set -euo pipefail
 # shellcheck disable=SC1091
 source "$(dirname "$0")/lib.sh"
@@ -64,3 +67,8 @@ compose_rollback up -d --remove-orphans --wait --wait-timeout 180 \
 	|| fail "rollback containers did not become healthy; manual recovery needed"
 external_health || fail "rollback is up but the public health check fails; manual recovery needed"
 log "rollback to $good is healthy"
+if [ -n "${PREDEPLOY_BACKUP:-}" ]; then
+	log "DATA NOT ROLLED BACK. If the failed release changed data, restore the pre-deploy backup"
+	log "(this discards every write made since it was taken):"
+	log "  $(dirname "$0")/restore.sh $PREDEPLOY_BACKUP --yes"
+fi

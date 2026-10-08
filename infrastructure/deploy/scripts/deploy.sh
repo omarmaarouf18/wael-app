@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Deploy: pre-flight -> up with health gate -> external check -> record.
+# Deploy: pre-flight -> pre-deploy backup -> up with health gate ->
+# external check -> record.
 # On any failure after containers were touched, roll back to the last
 # release that passed this script (fixes saas-core S-03: no HEAD~1 guess).
 set -euo pipefail
@@ -21,6 +22,26 @@ if [ -f "$FAILED_RELEASES_FILE" ] && grep -qxF "$tag" "$FAILED_RELEASES_FILE"; t
 	fi
 	log "WARNING: IMAGE_TAG=$tag is listed in $FAILED_RELEASES_FILE, but ALLOW_FAILED_RELEASE=1 is set; proceeding"
 fi
+
+# Pre-deploy backup (full review 2026-10-06, infra H1): a release can migrate
+# data (indexes, purge jobs) and rollback.sh restores images only, so take a
+# verified backup before any container changes. A failed backup stops the
+# deploy before anything is touched. The first deploy (no mongo running yet)
+# has nothing to back up. SKIP_PREDEPLOY_BACKUP=1 is an explicit, logged
+# escape hatch for emergencies only.
+PREDEPLOY_BACKUP=""
+if [ "${SKIP_PREDEPLOY_BACKUP:-0}" = "1" ]; then
+	log "WARNING: SKIP_PREDEPLOY_BACKUP=1 is set; deploying without a pre-deploy backup"
+elif [ -z "${MONGO_CONTAINER:-}" ] && [ -z "$(compose ps -q mongo 2>/dev/null | head -n 1 || true)" ]; then
+	log "no running mongo container (first deploy?); skipping the pre-deploy backup"
+else
+	log "taking the pre-deploy backup"
+	BACKUP_LABEL=predeploy "$(dirname "$0")/backup.sh" \
+		|| fail "pre-deploy backup failed; nothing was deployed (fix the backup, or set SKIP_PREDEPLOY_BACKUP=1 to force)"
+	PREDEPLOY_BACKUP="$(read_var "$STATE_DIR/last-backup.env" BACKUP_FILE)"
+	log "pre-deploy backup: $PREDEPLOY_BACKUP"
+fi
+export PREDEPLOY_BACKUP
 
 deployed=0
 if compose up -d --remove-orphans --wait --wait-timeout 180; then

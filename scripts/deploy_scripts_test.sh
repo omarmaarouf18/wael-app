@@ -15,6 +15,12 @@
 # 13. pull-backups.sh validates env, pulls via rsync, keeps newest N at 600
 # 14. preflight.sh redis memory checks: cap + noeviction passes; either alone fails
 # 15. Caddyfile sends the exact HSTS header with includeSubDomains (no preload) on both site blocks
+# 16. Deploy takes a verified pre-deploy backup before touching containers; a failed backup
+#     aborts the deploy; first deploy (no mongo) and SKIP_PREDEPLOY_BACKUP=1 skip it; a failed
+#     deploy's rollback prints the exact restore command for the pre-deploy backup
+# 17. Backup keeps nothing that fails gzip -t, records last-backup.env, labels archives,
+#     pings BACKUP_PING_URL (/fail on failure), and waits on the lock instead of overlapping
+# 18. pull-backups.sh fails on a stale or corrupt newest archive
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -69,9 +75,10 @@ exit 0
 EOF
 	chmod +x "$d/repo/scripts/preflight.sh"
 
-	# Mock curl: always succeeds
+	# Mock curl: always succeeds; logs its arguments when CURL_LOG is set.
 	cat > "$d/bin/curl" << 'EOF'
 #!/usr/bin/env bash
+[ -z "${CURL_LOG:-}" ] || echo "CURL_CALL: $*" >> "$CURL_LOG"
 exit 0
 EOF
 	chmod +x "$d/bin/curl"
@@ -83,9 +90,22 @@ EOF
 #!/usr/bin/env bash
 echo "DOCKER_CALL: $*" >> "$DOCKER_LOG"
 case "$*" in
-*"ps -q"*) echo "mockcid123" ;;
-*mongodump*) printf 'FAKE-GZIP-ARCHIVE-BYTES' ;;
+*"ps -q"*) [ "${MOCK_NO_MONGO:-0}" = 1 ] || echo "mockcid123" ;;
+*mongodump*)
+	if [ "${MOCK_MONGODUMP_CORRUPT:-0}" = 1 ]; then
+		printf 'NOT-A-GZIP-STREAM'
+	else
+		printf 'FAKE-ARCHIVE-BYTES' | gzip -c
+	fi
+	;;
 *mongorestore*) cat >/dev/null ;;
+*" up "*)
+	# MOCK_UP_FAIL_ONCE=<file>: the first 'up' fails, later ones (rollback) succeed.
+	if [ -n "${MOCK_UP_FAIL_ONCE:-}" ] && [ ! -f "$MOCK_UP_FAIL_ONCE" ]; then
+		touch "$MOCK_UP_FAIL_ONCE"
+		exit 1
+	fi
+	;;
 esac
 exit "${MOCK_DOCKER_EXIT:-0}"
 EOF
@@ -97,10 +117,19 @@ EOF
 	echo "$d"
 }
 
+# give_backup_creds BOX: the root user and password file backup.sh needs
+# (deploy.sh now runs backup.sh before touching containers).
+give_backup_creds() {
+	printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$1/wael/.env.production"
+	mkdir -p "$1/wael/secrets"
+	printf '%s' "pw-for-$(basename "$1")" > "$1/wael/secrets/mongo_root_password"
+}
+
 # ---------------------------------------------------------------------------
 # Test 1: Deploy populates state/last-good/ on success
 # ---------------------------------------------------------------------------
 BOX1="$(setup_sandbox test1)"
+give_backup_creds "$BOX1"
 TAG1="1111111111111111111111111111111111111111"
 printf 'IMAGE_TAG=%s\n' "$TAG1" > "$BOX1/repo/release.env"
 export DOCKER_LOG="$BOX1/docker.log"
@@ -111,11 +140,14 @@ assert "last-good/docker-compose.yml was created" test -f "$BOX1/wael/state/last
 assert "last-good/Caddyfile was created" test -f "$BOX1/wael/state/last-good/Caddyfile"
 assert "last-good/last-good.env has correct IMAGE_TAG" grep -qF "IMAGE_TAG=$TAG1" "$BOX1/wael/state/last-good/last-good.env"
 assert "legacy last-good.env has correct IMAGE_TAG" grep -qF "IMAGE_TAG=$TAG1" "$BOX1/wael/state/last-good.env"
+assert "deploy wrote a predeploy archive" bash -c "ls \"$BOX1\"/wael/backups/mongo-predeploy-*.archive.gz"
+assert "the pre-deploy backup ran before any 'up'" bash -c "grep -nE 'mongodump| up ' \"$BOX1/docker.log\" | head -n 1 | grep -qF mongodump"
 
 # ---------------------------------------------------------------------------
 # Test 2: Failed-releases guard blocks deployment of rolled-back SHAs
 # ---------------------------------------------------------------------------
 BOX2="$(setup_sandbox test2)"
+give_backup_creds "$BOX2"
 BAD_TAG="2222222222222222222222222222222222222222"
 printf 'IMAGE_TAG=%s\n' "$BAD_TAG" > "$BOX2/repo/release.env"
 printf '%s\n' "$BAD_TAG" > "$BOX2/wael/state/failed-releases"
@@ -236,7 +268,7 @@ printf '%s' "pw-for-test7-never-logged" > "$BOX7/wael/secrets/mongo_root_passwor
 export DOCKER_LOG="$BOX7/docker.log"
 RC=0
 OUT="$(PATH="$BOX7/bin:$PATH" WAEL_HOME="$BOX7/wael" bash "$BOX7/repo/scripts/backup.sh" 2>&1)" || RC=$?
-check "backup succeeds" 0 "backup written:"
+check "backup succeeds" 0 "backup written and verified:"
 ARCHIVE7="$(echo "$BOX7"/wael/backups/mongo-*.archive.gz)"
 assert "backup archive exists and is non-empty" test -s "$ARCHIVE7"
 assert "backup archive mode is 600" test "$(stat -c %a "$ARCHIVE7")" = 600
@@ -351,6 +383,7 @@ chmod +x "$BOX13/bin/rsync"
 touch -d '40 days ago' "$BOX13/fixture/mongo-a.archive.gz"
 touch -d '20 days ago' "$BOX13/fixture/mongo-b.archive.gz"
 touch -d '10 days ago' "$BOX13/fixture/mongo-c.archive.gz"
+printf 'FAKE' | gzip -c > "$BOX13/fixture/mongo-d.archive.gz"
 touch -d '1 day ago' "$BOX13/fixture/mongo-d.archive.gz"
 RC=0
 OUT="$(PATH="$BOX13/bin:$PATH" FIXTURE_SRC="$BOX13/fixture" WAEL_HOST=server.test BACKUP_KEEP_LOCAL=2 LOCAL_BACKUP_DIR="$BOX13/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
@@ -471,6 +504,128 @@ assert "no HSTS max-age without includeSubDomains remains" \
 	bash -c '! grep -E "Strict-Transport-Security \"max-age=[0-9]+\"" "$HSTS_FILE"'
 assert "HSTS has no preload directive" \
 	bash -c '! grep -qi "preload" "$HSTS_FILE"'
+
+# ---------------------------------------------------------------------------
+# Test 16: pre-deploy backup (full review 2026-10-06, infra H1)
+# ---------------------------------------------------------------------------
+TAG16="1616161616161616161616161616161616161616"
+
+# 16a: a failed pre-deploy backup aborts before any container is touched.
+BOX16A="$(setup_sandbox test16a)"
+printf 'IMAGE_TAG=%s\n' "$TAG16" > "$BOX16A/repo/release.env"
+printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX16A/wael/.env.production" # no password file
+export DOCKER_LOG="$BOX16A/docker.log"
+RC=0
+OUT="$(PATH="$BOX16A/bin:$PATH" WAEL_HOME="$BOX16A/wael" bash "$BOX16A/repo/scripts/deploy.sh" 2>&1)" || RC=$?
+check "deploy aborts when the pre-deploy backup fails" 1 "pre-deploy backup failed; nothing was deployed"
+assert "aborted deploy ran no 'up'" bash -c "! grep -qF ' up ' \"$BOX16A/docker.log\""
+assert "aborted deploy recorded no last-good release" test ! -f "$BOX16A/wael/state/last-good/last-good.env"
+
+# 16b: a corrupt dump also aborts the deploy.
+BOX16B="$(setup_sandbox test16b)"
+give_backup_creds "$BOX16B"
+printf 'IMAGE_TAG=%s\n' "$TAG16" > "$BOX16B/repo/release.env"
+export DOCKER_LOG="$BOX16B/docker.log"
+RC=0
+OUT="$(PATH="$BOX16B/bin:$PATH" WAEL_HOME="$BOX16B/wael" MOCK_MONGODUMP_CORRUPT=1 bash "$BOX16B/repo/scripts/deploy.sh" 2>&1)" || RC=$?
+check "deploy aborts when the pre-deploy archive is corrupt" 1 "gzip integrity check"
+assert "corrupt-dump deploy ran no 'up'" bash -c "! grep -qF ' up ' \"$BOX16B/docker.log\""
+
+# 16c: first deploy (no mongo running yet) skips the backup and deploys.
+BOX16C="$(setup_sandbox test16c)"
+printf 'IMAGE_TAG=%s\n' "$TAG16" > "$BOX16C/repo/release.env"
+export DOCKER_LOG="$BOX16C/docker.log"
+RC=0
+OUT="$(PATH="$BOX16C/bin:$PATH" WAEL_HOME="$BOX16C/wael" MOCK_NO_MONGO=1 bash "$BOX16C/repo/scripts/deploy.sh" 2>&1)" || RC=$?
+check "first deploy without mongo skips the backup and succeeds" 0 "skipping the pre-deploy backup"
+assert "first deploy ran no mongodump" bash -c "! grep -qF mongodump \"$BOX16C/docker.log\""
+
+# 16d: SKIP_PREDEPLOY_BACKUP=1 is honoured and logged.
+BOX16D="$(setup_sandbox test16d)"
+printf 'IMAGE_TAG=%s\n' "$TAG16" > "$BOX16D/repo/release.env"
+export DOCKER_LOG="$BOX16D/docker.log"
+RC=0
+OUT="$(PATH="$BOX16D/bin:$PATH" WAEL_HOME="$BOX16D/wael" SKIP_PREDEPLOY_BACKUP=1 bash "$BOX16D/repo/scripts/deploy.sh" 2>&1)" || RC=$?
+check "SKIP_PREDEPLOY_BACKUP=1 deploys with a warning" 0 "deploying without a pre-deploy backup"
+assert "skipped backup ran no mongodump" bash -c "! grep -qF mongodump \"$BOX16D/docker.log\""
+
+# 16e: a failed deploy rolls back and prints the restore command.
+BOX16E="$(setup_sandbox test16e)"
+give_backup_creds "$BOX16E"
+GOOD16="1515151515151515151515151515151515151515"
+printf 'IMAGE_TAG=%s\n' "$TAG16" > "$BOX16E/repo/release.env"
+mkdir -p "$BOX16E/wael/state/last-good"
+printf 'IMAGE_TAG=%s\n' "$GOOD16" > "$BOX16E/wael/state/last-good/last-good.env"
+cp "$BOX16E/repo/docker-compose.yml" "$BOX16E/wael/state/last-good/docker-compose.yml"
+export DOCKER_LOG="$BOX16E/docker.log"
+RC=0
+OUT="$(PATH="$BOX16E/bin:$PATH" WAEL_HOME="$BOX16E/wael" MOCK_UP_FAIL_ONCE="$BOX16E/up-failed" bash "$BOX16E/repo/scripts/deploy.sh" 2>&1)" || RC=$?
+check "failed deploy rolls back and fails" 1 "rollback to $GOOD16 is healthy"
+check "rollback prints the restore command for the pre-deploy backup" 1 "restore.sh $BOX16E/wael/backups/mongo-predeploy-"
+check "rollback says the data was not rolled back" 1 "DATA NOT ROLLED BACK"
+
+# ---------------------------------------------------------------------------
+# Test 17: backup verification, state, label, ping and lock (infra H2)
+# ---------------------------------------------------------------------------
+BOX17="$(setup_sandbox test17)"
+give_backup_creds "$BOX17"
+export DOCKER_LOG="$BOX17/docker.log" CURL_LOG="$BOX17/curl.log"
+PING17="https://hc.test/ping/abc"
+
+RC=0
+OUT="$(PATH="$BOX17/bin:$PATH" WAEL_HOME="$BOX17/wael" BACKUP_PING_URL="$PING17" bash "$BOX17/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup verifies the archive" 0 "backup written and verified"
+LAST17="$(sed -n 's/^BACKUP_FILE=//p' "$BOX17/wael/state/last-backup.env" 2>/dev/null)"
+assert "last-backup.env names an existing archive" test -s "$LAST17"
+assert "the recorded archive passes gzip -t" gzip -t "$LAST17"
+assert "success pinged BACKUP_PING_URL" grep -qF "$PING17" "$BOX17/curl.log"
+assert "success did not ping /fail" bash -c "! grep -qF '$PING17/fail' \"$BOX17/curl.log\""
+
+rm -f "$BOX17/curl.log"
+COUNT17="$(find "$BOX17/wael/backups" -name 'mongo-*.archive.gz' | wc -l)"
+RC=0
+OUT="$(PATH="$BOX17/bin:$PATH" WAEL_HOME="$BOX17/wael" BACKUP_PING_URL="$PING17" MOCK_MONGODUMP_CORRUPT=1 bash "$BOX17/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "a corrupt dump fails the backup" 1 "gzip integrity check; nothing was kept"
+assert "a corrupt dump left no archive behind" test "$(find "$BOX17/wael/backups" -name 'mongo-*.archive.gz' | wc -l)" -eq "$COUNT17"
+assert "a corrupt dump left no temp file behind" bash -c "! ls \"$BOX17\"/wael/backups/*.tmp.* 2>/dev/null"
+assert "failure pinged BACKUP_PING_URL/fail" grep -qF "$PING17/fail" "$BOX17/curl.log"
+assert "last-backup.env still names the good archive" grep -qF "BACKUP_FILE=$LAST17" "$BOX17/wael/state/last-backup.env"
+
+RC=0
+OUT="$(PATH="$BOX17/bin:$PATH" WAEL_HOME="$BOX17/wael" BACKUP_LABEL=predeploy bash "$BOX17/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "a labelled backup succeeds" 0 "mongo-predeploy-"
+RC=0
+OUT="$(PATH="$BOX17/bin:$PATH" WAEL_HOME="$BOX17/wael" BACKUP_LABEL='../x' bash "$BOX17/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "a path-like BACKUP_LABEL is refused" 1 "BACKUP_LABEL must be"
+
+mkdir -p "$BOX17/wael/state"
+flock "$BOX17/wael/state/backup.lock" sleep 5 &
+LOCKPID=$!
+sleep 1
+RC=0
+OUT="$(PATH="$BOX17/bin:$PATH" WAEL_HOME="$BOX17/wael" BACKUP_LOCK_WAIT=1 bash "$BOX17/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "a second backup does not overlap a running one" 1 "another backup is still running"
+wait "$LOCKPID" 2>/dev/null || true
+unset CURL_LOG
+
+# ---------------------------------------------------------------------------
+# Test 18: pull-backups.sh freshness and integrity (infra H2)
+# ---------------------------------------------------------------------------
+BOX18="$WORK/test18"
+mkdir -p "$BOX18/fixture" "$BOX18/local"
+cp -a "$BOX13/bin" "$BOX18/bin"
+printf 'FAKE' | gzip -c > "$BOX18/fixture/mongo-old.archive.gz"
+touch -d '3 days ago' "$BOX18/fixture/mongo-old.archive.gz"
+RC=0
+OUT="$(PATH="$BOX18/bin:$PATH" FIXTURE_SRC="$BOX18/fixture" WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX18/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups fails when the newest archive is stale" 1 "STALE BACKUPS"
+printf 'NOT-GZIP' > "$BOX18/fixture/mongo-new.archive.gz"
+RC=0
+OUT="$(PATH="$BOX18/bin:$PATH" FIXTURE_SRC="$BOX18/fixture" WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX18/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups fails when the newest archive is corrupt" 1 "CORRUPT BACKUP"
+RC=0
+OUT="$(PATH="$BOX18/bin:$PATH" FIXTURE_SRC="$BOX18/fixture" WAEL_HOST=server.test BACKUP_MAX_AGE_HOURS=0 LOCAL_BACKUP_DIR="$BOX18/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups rejects BACKUP_MAX_AGE_HOURS=0" 1 "must be a positive integer"
 
 # ---------------------------------------------------------------------------
 # Summary

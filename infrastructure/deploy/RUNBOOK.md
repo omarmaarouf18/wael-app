@@ -15,12 +15,15 @@ wael-app main (fast-forward) -> CI Gate green
        mirror infrastructure/deploy/ -> wael-app-deploy, write release.env
   -> wael-app-deploy push -> deploy.yml on the self-hosted runner [wael-vm]
        scripts/preflight.sh   (touches nothing running)
+       scripts/backup.sh (BACKUP_LABEL=predeploy; verified with gzip -t;
+         a failure stops the deploy before any container changes)
        docker compose up --wait (strict health checks)
         public check through Caddy
         success: record state/last-good/last-good.env (plus a legacy copy at
         state/last-good.env) and snapshot docker-compose.yml + Caddyfile
         failure: scripts/rollback.sh (the failed tag is recorded in
-        state/failed-releases, which later deploys refuse)
+        state/failed-releases, which later deploys refuse; images only,
+        it prints the restore.sh command for the pre-deploy backup)
 ```
 
 Do not edit files in wael-app-deploy by hand. Change them in
@@ -210,6 +213,10 @@ guard, backups, restore, logs, cleanup, rotation, base-image updates).
 ## Known gaps (not solved by this scaffold)
 
 - No database migration framework; rollback restores images only (saas-core S-08).
+  *(Amended 2026-10-08: every deploy now takes a verified pre-deploy backup
+  first, and rollback prints the exact `restore.sh` command for it. Restoring
+  stays a human decision because it discards every write made since the
+  backup. `SKIP_PREDEPLOY_BACKUP=1` skips the backup, emergencies only.)*
 - Server backup cron exists (deploybot `17 0 * * *`, adopt repo
   `scripts/backup.sh`); restore rehearsed locally 2026-10-02 (`SERVER-MANUAL.md`
   §10); production restore drill still open (Bootstrap Phase B item 14).

@@ -5,6 +5,11 @@
 # under deploybot, so plain rsync cannot read it). No --delete: this machine
 # keeps the newest BACKUP_KEEP_LOCAL archives (default 30) while the server
 # keeps 7.
+#
+# Freshness (full review 2026-10-06, infra H2): the run FAILS (exit 1) when the
+# newest archive is older than BACKUP_MAX_AGE_HOURS (default 30, one missed
+# nightly run plus slack) or fails `gzip -t`, so a silent server-side backup
+# failure is noticed here even without a monitoring service.
 set -euo pipefail
 
 WAEL_HOST="${WAEL_HOST:?set WAEL_HOST to the server hostname, e.g. export WAEL_HOST=<host>}"
@@ -12,6 +17,12 @@ WAEL_SSH_USER="${WAEL_SSH_USER:-azureuser}"
 REMOTE_BACKUPS="${REMOTE_BACKUPS:-/home/deploybot/wael/backups/}"
 LOCAL_DIR="${LOCAL_BACKUP_DIR:-$HOME/wael-offsite-backups}"
 BACKUP_KEEP_LOCAL="${BACKUP_KEEP_LOCAL:-30}"
+BACKUP_MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-30}"
+[[ "$BACKUP_MAX_AGE_HOURS" =~ ^[1-9][0-9]*$ ]] \
+	|| {
+		echo "BACKUP_MAX_AGE_HOURS must be a positive integer, got '$BACKUP_MAX_AGE_HOURS'" >&2
+		exit 1
+	}
 [[ "$BACKUP_KEEP_LOCAL" =~ ^[1-9][0-9]*$ ]] \
 	|| {
 		echo "BACKUP_KEEP_LOCAL must be a positive integer, got '$BACKUP_KEEP_LOCAL'" >&2
@@ -55,3 +66,18 @@ fi
 COUNT="$(find "$LOCAL_DIR" -maxdepth 1 -name 'mongo-*.archive.gz' | wc -l)"
 NEWEST="$(find "$LOCAL_DIR" -maxdepth 1 -name 'mongo-*.archive.gz' -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d' ' -f2-)"
 echo "off-site backups in $LOCAL_DIR: $COUNT archive(s); newest: ${NEWEST:-none}"
+
+if [ -z "$NEWEST" ]; then
+	echo "STALE BACKUPS: no archive was pulled at all; check backup.sh and the deploybot crontab on the server" >&2
+	exit 1
+fi
+AGE_HOURS=$(( ($(date +%s) - $(stat -c %Y "$NEWEST")) / 3600 ))
+if [ "$AGE_HOURS" -ge "$BACKUP_MAX_AGE_HOURS" ]; then
+	echo "STALE BACKUPS: the newest archive is ${AGE_HOURS}h old (limit ${BACKUP_MAX_AGE_HOURS}h); the nightly backup on the server is failing or not running" >&2
+	exit 1
+fi
+if ! gzip -t "$NEWEST" 2>/dev/null; then
+	echo "CORRUPT BACKUP: the newest archive fails the gzip integrity check: $NEWEST" >&2
+	exit 1
+fi
+echo "newest archive is ${AGE_HOURS}h old and passes gzip -t"

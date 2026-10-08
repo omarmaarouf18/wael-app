@@ -723,6 +723,17 @@ publish workflow keeps in sync):
 [server azureuser] sudo -u deploybot crontab -l   # confirm exactly one backup line
 ```
 
+*(Amended 2026-10-08, full review infra H1/H2:)* `backup.sh` now keeps an
+archive only if it passes `gzip -t`, runs one at a time (`flock` on
+`state/backup.lock`), records the last good archive in
+`state/last-backup.env`, and never prunes the archive it just wrote. Every
+deploy runs it first with `BACKUP_LABEL=predeploy`
+(`mongo-predeploy-<stamp>.archive.gz`); if it fails, nothing is deployed. If a
+deploy then fails, the rollback output names the restore command. To get an
+alert when the nightly backup fails or does not run, create a free
+healthchecks.io check (period 1 day, grace 6 hours) and put its URL in
+`.env.production` as `BACKUP_PING_URL`.
+
 (`<deploy-checkout>` is the runner checkout path used for manual rollback
 above; `lib.sh` defaults `WAEL_HOME` so no env is needed in cron. The old
 `$WAEL_HOME/backup.sh` can be deleted once the new cron has produced its
@@ -731,7 +742,11 @@ first archive.)
 Off-site copy: `scripts/pull-backups.sh` on the owner's laptop (rsync over
 SSH as `azureuser` with the `--rsync-path='sudo rsync'` trick for the 700
 dir; no cloud storage, no new secrets — existing SSH key auth). It keeps the
-newest 30 archives locally at mode 600:
+newest 30 archives locally at mode 600. *(Amended 2026-10-08:)* it exits 1
+with `STALE BACKUPS` when the newest archive is older than
+`BACKUP_MAX_AGE_HOURS` (default 30) and with `CORRUPT BACKUP` when it fails
+`gzip -t`, so a failing timer run shows up in `systemctl --user status
+wael-pull-backups`:
 
 ```bash
 [laptop] export WAEL_HOST=<host>   # plus WAEL_SSH_USER / LOCAL_BACKUP_DIR / BACKUP_KEEP_LOCAL to override
