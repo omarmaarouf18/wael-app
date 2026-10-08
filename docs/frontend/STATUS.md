@@ -62,6 +62,7 @@ The gate scans screens only, so widgets carry no baseline entries.
 | `icon_tile.dart` | 41 | notifications, settings |
 | `instructor_dossier_card.dart` | 155 | home |
 | `language_toggle_chip.dart` | 71 | login |
+| `legal_summary_sheet.dart` | 161 | signup |
 | `moving_watermark.dart` | 109 | none |
 | `otp_pin_input.dart` | 183 | forgot password, otp |
 | `owned_subject_tile.dart` | 83 | course detail body, home |
