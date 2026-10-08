@@ -409,7 +409,7 @@ func TestContract_AuthSessionsShape(t *testing.T) {
 // public config shape and cacheability, whatsapp_url only with a pending
 // request, https-only links.
 func TestContract_AppConfigShape(t *testing.T) {
-	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestAppConfig_PublicShape|TestAppConfig_EmptyOptionalsOmitted|TestSubjectDetail_WhatsAppURLPresentWhenPending|TestWhatsAppURL_HTTPSOnly)$", "github.com/omarmaarouf18/wael-app/academy-service/internal/handlers")
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestAppConfig_PublicShape|TestAppConfig_EmptyOptionalsOmitted|TestAppConfig_ShowPricesAndCenterAfterSave|TestAppConfig_CenterExactShape|TestSubjectDetail_WhatsAppURLPresentWhenPending|TestWhatsAppURL_HTTPSOnly)$", "github.com/omarmaarouf18/wael-app/academy-service/internal/handlers")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("app-config contract verification failed: %v\nOutput:\n%s", err, string(out))
@@ -418,6 +418,8 @@ func TestContract_AppConfigShape(t *testing.T) {
 	for _, name := range []string{
 		"TestAppConfig_PublicShape",
 		"TestAppConfig_EmptyOptionalsOmitted",
+		"TestAppConfig_ShowPricesAndCenterAfterSave",
+		"TestAppConfig_CenterExactShape",
 		"TestSubjectDetail_WhatsAppURLPresentWhenPending",
 		"TestWhatsAppURL_HTTPSOnly",
 	} {

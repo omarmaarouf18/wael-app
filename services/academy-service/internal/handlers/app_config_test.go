@@ -3,13 +3,16 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
 )
 
 func appConfigTestServer() *Server {
@@ -50,17 +53,23 @@ func TestAppConfig_PublicShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for _, k := range []string{"support_whatsapp_url", "terms_url", "privacy_url", "min_version", "latest_version", "update_url"} {
+	for _, k := range []string{"show_prices", "support_whatsapp_url", "terms_url", "privacy_url", "min_version", "latest_version", "update_url"} {
 		if _, ok := raw[k]; !ok {
 			t.Fatalf("missing key %q: %s", k, rec.Body.String())
 		}
 	}
-	if len(raw) != 6 {
-		t.Fatalf("unexpected keys: %s", rec.Body.String())
+	if len(raw) != 7 {
+		t.Fatalf("unexpected keys count %d, want 7: %s", len(raw), rec.Body.String())
 	}
 	var cfg models.AppConfigDTO
 	if err := json.Unmarshal(rec.Body.Bytes(), &cfg); err != nil {
 		t.Fatalf("decode DTO: %v", err)
+	}
+	if cfg.ShowPrices != false {
+		t.Errorf("show_prices = %v, want false by default", cfg.ShowPrices)
+	}
+	if cfg.Center != nil {
+		t.Errorf("center should be nil by default, got %+v", cfg.Center)
 	}
 	if cfg.SupportWhatsAppURL != "https://wa.me/201000000000" {
 		t.Errorf("support_whatsapp_url = %q", cfg.SupportWhatsAppURL)
@@ -71,7 +80,7 @@ func TestAppConfig_PublicShape(t *testing.T) {
 	if cfg.MinVersion != "1.4.0" || cfg.LatestVersion != "1.5.0" || cfg.UpdateURL != "https://elmetracademy.app/app" {
 		t.Errorf("versions = %+v", cfg)
 	}
-	assertNoForbiddenStoreWords(t, "app-config", rec.Body.String())
+	assertNoForbiddenStoreWords(t, "app-config", strings.ReplaceAll(rec.Body.String(), "show_prices", ""))
 	if tok := makeStudentToken(t, "cfg-student"); true {
 		rec2 := doPublic(t, h, http.MethodGet, "/academy/app-config", tok)
 		if rec2.Code != http.StatusOK || rec2.Body.String() != rec.Body.String() {
@@ -80,7 +89,7 @@ func TestAppConfig_PublicShape(t *testing.T) {
 	}
 }
 
-// TestAppConfig_EmptyOptionalsOmitted: empty versions are absent (no update prompt).
+// TestAppConfig_EmptyOptionalsOmitted: empty versions and empty center are absent.
 func TestAppConfig_EmptyOptionalsOmitted(t *testing.T) {
 	s := newTestServer(false)
 	s.TermsURL = "https://elmetracademy.app/terms"
@@ -91,7 +100,7 @@ func TestAppConfig_EmptyOptionalsOmitted(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("app-config = %d (%s)", rec.Code, rec.Body.String())
 	}
-	for _, k := range []string{"min_version", "latest_version", "update_url"} {
+	for _, k := range []string{"min_version", "latest_version", "update_url", "center"} {
 		if strings.Contains(rec.Body.String(), k) {
 			t.Fatalf("empty optional %q present: %s", k, rec.Body.String())
 		}
@@ -226,5 +235,181 @@ func TestWhatsAppURL_HTTPSOnly(t *testing.T) {
 	crec := doPublic(t, h, http.MethodGet, "/academy/app-config", "")
 	if strings.Contains(crec.Body.String(), "http://") {
 		t.Fatalf("http whatsapp leaked into app-config: %s", crec.Body.String())
+	}
+}
+
+// TestAppConfig_ShowPricesAndCenterAfterSave verifies that saving settings
+// with show_prices: true, custom whatsapp, and center information is reflected
+// in GET /academy/app-config.
+func TestAppConfig_ShowPricesAndCenterAfterSave(t *testing.T) {
+	s := appConfigTestServer()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	toSave := &models.AppSettings{
+		ShowPrices:      true,
+		SupportWhatsApp: "201555555555",
+		CenterNameAr:    "مركز النور التعليمي",
+		CenterNameEn:    "Al-Nour Educational Center",
+		CenterAddressAr: "١٢ شارع التحرير، الدقي، الجيزة",
+		CenterAddressEn: "12 Tahrir St, Dokki, Giza",
+		CenterHoursAr:   "السبت إلى الخميس: ٩ ص - ٩ م",
+		CenterHoursEn:   "Sat-Thu: 9 AM - 9 PM",
+		CenterMapURL:    "https://maps.google.com/?q=dokki",
+		UpdatedAt:       now,
+		UpdatedBy:       "admin-123",
+	}
+	if err := s.Store.SaveAppSettings(ctx, toSave); err != nil {
+		t.Fatalf("SaveAppSettings: %v", err)
+	}
+
+	h := s.PublicHandler()
+	rec := doPublic(t, h, http.MethodGet, "/academy/app-config", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("app-config = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var cfg models.AppConfigDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &cfg); err != nil {
+		t.Fatalf("decode DTO: %v", err)
+	}
+
+	if !cfg.ShowPrices {
+		t.Errorf("show_prices = false, want true after save")
+	}
+	if cfg.SupportWhatsAppURL != "https://wa.me/201555555555" {
+		t.Errorf("support_whatsapp_url = %q, want https://wa.me/201555555555", cfg.SupportWhatsAppURL)
+	}
+	if cfg.Center == nil {
+		t.Fatalf("center is nil, expected populated center info")
+	}
+	if cfg.Center.Name.Ar != "مركز النور التعليمي" || cfg.Center.Name.En != "Al-Nour Educational Center" {
+		t.Errorf("center name mismatch: %+v", cfg.Center.Name)
+	}
+	if cfg.Center.Address.Ar != "١٢ شارع التحرير، الدقي، الجيزة" || cfg.Center.Address.En != "12 Tahrir St, Dokki, Giza" {
+		t.Errorf("center address mismatch: %+v", cfg.Center.Address)
+	}
+	if cfg.Center.Hours.Ar != "السبت إلى الخميس: ٩ ص - ٩ م" || cfg.Center.Hours.En != "Sat-Thu: 9 AM - 9 PM" {
+		t.Errorf("center hours mismatch: %+v", cfg.Center.Hours)
+	}
+	if cfg.Center.MapURL != "https://maps.google.com/?q=dokki" {
+		t.Errorf("center map_url = %q", cfg.Center.MapURL)
+	}
+
+	assertNoForbiddenStoreWords(t, "app-config-saved", strings.ReplaceAll(rec.Body.String(), "show_prices", ""))
+}
+
+// TestAppConfig_CenterExactShape pins the public app-config JSON that the
+// app parses (frontend AppConfigData / CenterInfo): show_prices is always a
+// boolean; center is {"name":{"ar","en"},"address":{"ar","en"},
+// "hours":{"ar","en"},"map_url":"https://..."} with empty languages and
+// empty keys omitted, and center itself omitted when nothing is set.
+func TestAppConfig_CenterExactShape(t *testing.T) {
+	cases := []struct {
+		name       string
+		settings   *models.AppSettings
+		showPrices bool
+		center     string // exact JSON of "center"; "" means the key is absent
+	}{
+		{
+			name:     "nothing set",
+			settings: nil,
+		},
+		{
+			name: "everything set",
+			settings: &models.AppSettings{
+				ShowPrices: true, SupportWhatsApp: "201555555555",
+				CenterNameAr: "مركز", CenterNameEn: "Center",
+				CenterAddressAr: "عنوان", CenterAddressEn: "Address",
+				CenterHoursAr: "مواعيد", CenterHoursEn: "Hours",
+				CenterMapURL: "https://maps.example/x",
+			},
+			showPrices: true,
+			center:     `{"name":{"ar":"مركز","en":"Center"},"address":{"ar":"عنوان","en":"Address"},"hours":{"ar":"مواعيد","en":"Hours"},"map_url":"https://maps.example/x"}`,
+		},
+		{
+			name: "one language and a map only",
+			settings: &models.AppSettings{
+				SupportWhatsApp: "201555555555",
+				CenterNameAr:    "مركز",
+				CenterHoursEn:   "Hours",
+				CenterMapURL:    "https://maps.example/x",
+			},
+			center: `{"name":{"ar":"مركز"},"hours":{"en":"Hours"},"map_url":"https://maps.example/x"}`,
+		},
+		{
+			name:     "map only",
+			settings: &models.AppSettings{SupportWhatsApp: "201555555555", CenterMapURL: "https://maps.example/x"},
+			center:   `{"map_url":"https://maps.example/x"}`,
+		},
+		{
+			name:       "show_prices true, no center",
+			settings:   &models.AppSettings{ShowPrices: true, SupportWhatsApp: "201555555555"},
+			showPrices: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := appConfigTestServer()
+			if tc.settings != nil {
+				if err := s.Store.SaveAppSettings(context.Background(), tc.settings); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rec := doPublic(t, s.PublicHandler(), http.MethodGet, "/academy/app-config", "")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("app-config = %d (%s)", rec.Code, rec.Body.String())
+			}
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+				t.Fatal(err)
+			}
+			sp, ok := raw["show_prices"]
+			if !ok {
+				t.Fatalf("show_prices missing: %s", rec.Body.String())
+			}
+			if want := strconv.FormatBool(tc.showPrices); string(sp) != want {
+				t.Fatalf("show_prices = %s, want boolean %s", sp, want)
+			}
+			got, present := raw["center"]
+			if tc.center == "" {
+				if present {
+					t.Fatalf("center present, want omitted: %s", got)
+				}
+				return
+			}
+			if !present {
+				t.Fatalf("center missing: %s", rec.Body.String())
+			}
+			if string(got) != tc.center {
+				t.Fatalf("center =\n%s\nwant\n%s", got, tc.center)
+			}
+		})
+	}
+}
+
+type errSettingsStore struct {
+	store.Store
+}
+
+func (errSettingsStore) GetAppSettings(context.Context) (*models.AppSettings, error) {
+	return nil, errors.New("settings store down")
+}
+
+// TestAppConfig_StoreErrorFailsClosed: when the settings cannot be read the
+// public config answers 503 with no body fields, never a config built from
+// env defaults that could show prices or a stale center.
+func TestAppConfig_StoreErrorFailsClosed(t *testing.T) {
+	s := appConfigTestServer()
+	s.Store = errSettingsStore{Store: s.Store}
+	rec := doPublic(t, s.PublicHandler(), http.MethodGet, "/academy/app-config", "")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("app-config with a failing settings store = %d, want 503 (%s)", rec.Code, rec.Body.String())
+	}
+	for _, k := range []string{"show_prices", "support_whatsapp_url", "center"} {
+		if strings.Contains(rec.Body.String(), k) {
+			t.Fatalf("503 body leaks %q: %s", k, rec.Body.String())
+		}
+	}
+	if cc := rec.Header().Get("Cache-Control"); strings.Contains(cc, "public") {
+		t.Fatalf("503 is cacheable: %q", cc)
 	}
 }

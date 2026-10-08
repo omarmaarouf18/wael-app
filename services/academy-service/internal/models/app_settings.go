@@ -34,6 +34,39 @@ func (s *AppSettings) Clone() *AppSettings {
 	return &c
 }
 
+// CenterHasContent reports whether any center field is non-empty.
+func (s *AppSettings) CenterHasContent() bool {
+	if s == nil {
+		return false
+	}
+	return s.CenterNameAr != "" || s.CenterNameEn != "" ||
+		s.CenterAddressAr != "" || s.CenterAddressEn != "" ||
+		s.CenterHoursAr != "" || s.CenterHoursEn != "" ||
+		s.CenterMapURL != ""
+}
+
+// CenterDTO returns the student-facing CenterDTO, or nil if all center fields are empty.
+func (s *AppSettings) CenterDTO() *CenterDTO {
+	if !s.CenterHasContent() {
+		return nil
+	}
+	return &CenterDTO{
+		Name:    centerText(s.CenterNameAr, s.CenterNameEn),
+		Address: centerText(s.CenterAddressAr, s.CenterAddressEn),
+		Hours:   centerText(s.CenterHoursAr, s.CenterHoursEn),
+		MapURL:  s.CenterMapURL,
+	}
+}
+
+// centerText returns nil when both languages are empty, so the key is
+// omitted from the JSON.
+func centerText(ar, en string) *CenterText {
+	if ar == "" && en == "" {
+		return nil
+	}
+	return &CenterText{Ar: ar, En: en}
+}
+
 // NormalizeWhatsAppDigits extracts digits only from raw input, stripping any "+",
 // spaces or formatting characters. Returns fallback "201000000000" if no digits are present.
 func NormalizeWhatsAppDigits(raw string) string {

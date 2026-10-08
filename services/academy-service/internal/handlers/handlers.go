@@ -702,23 +702,36 @@ func (s *Server) EnforceIPTier(tier string, next http.HandlerFunc) http.HandlerF
 	}
 }
 
-// GetAppConfig serves GET /academy/app-config (F-UX2 A7). Public (no student
-// JWT), read tier (per-IP), cacheable for 5 min. It returns the support
-// WhatsApp URL, the terms/privacy URLs, and the optional update metadata
-// (empty means no update prompt). No payment wording.
+// GetAppConfig serves GET /academy/app-config (F-UX2 A7, 2026-10-08 settings). Public (no student
+// JWT), read tier (per-IP), cacheable for 5 min. It returns the show_prices flag,
+// the support WhatsApp URL built from the stored number, the terms/privacy URLs,
+// optional update metadata (empty means no update prompt), and optional center info (omitted when empty).
+// No payment wording.
 func (s *Server) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
 		return
 	}
+
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	defer cancel()
+
+	settings, err := s.Store.GetAppSettings(dbCtx)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	handlerutil.WriteJSON(w, http.StatusOK, models.AppConfigDTO{
-		SupportWhatsAppURL: models.FormatWhatsAppURLStrict(s.SupportWhatsApp),
+		ShowPrices:         settings.ShowPrices,
+		SupportWhatsAppURL: models.FormatWhatsAppURLStrict(settings.SupportWhatsApp),
 		TermsURL:           s.TermsURL,
 		PrivacyURL:         s.PrivacyURL,
 		MinVersion:         s.MinVersion,
 		LatestVersion:      s.LatestVersion,
 		UpdateURL:          s.UpdateURL,
+		Center:             settings.CenterDTO(),
 	})
 }
 
