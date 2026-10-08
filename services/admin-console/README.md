@@ -44,6 +44,8 @@ route under `/internal/`.
 | `GET /api/entitlements?user_id` | `GET /internal/admin/entitlements` |
 | `POST /api/entitlements/grant` `{user_id, subject_id}` | `POST /internal/admin/entitlements` |
 | `POST /api/entitlements/revoke` `{id, reason}` | `DELETE /internal/admin/entitlements/{id}` |
+| `GET /api/settings` | `GET /internal/admin/settings` |
+| `POST /api/settings/update` `{show_prices, support_whatsapp, center_...}` | `PUT /internal/admin/settings` |
 
 `GET /healthz` is unauthenticated and calls nothing. Everything else is the
 embedded static UI (`web/`).

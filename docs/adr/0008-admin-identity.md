@@ -125,6 +125,21 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 4. **Student entitlements modal**: Accounts tab rows gain a "المواد" button opening a student-specific modal that lists active, expired, and revoked entitlements with revocation details, manual grant (level and published subject cascading select), and manual revoke with a mandatory reason. Revoking an entitlement leaves the underlying payment record intact.
 5. **Idle lock (UI/UX audit A1)**: After 19 minutes of inactivity across mouse, keyboard, touch, and scroll events, a modal warning appears with a live 60-second countdown. User interaction dismisses the warning and resets the timer. If 20 minutes elapse without activity, the admin token is wiped from memory and the console returns to the sign-in screen with an idle-lock notice.
 
+### 13. Amendment (2026-10-08, App-Facing Settings Control in Admin Console)
+
+*Records the owner decision to allow the admin console to control app-facing settings that were previously environment-variable only.*
+
+1. **Storage & Defaults**: Stored in a single document in academy-service's `app_settings` collection (`_id: "app"`). Fields: `show_prices` (bool, default `false`), `support_whatsapp` (digits only, international without "+", 10-15 digits, default from `SUPPORT_WHATSAPP`), `center_name_ar`/`center_name_en` (0-100 runes), `center_address_ar`/`center_address_en` (0-300 runes), `center_hours_ar`/`center_hours_en` (0-200 runes), `center_map_url` (empty or https only, max 500 runes), `updated_at`, `updated_by`. Environment values serve as defaults until an admin explicitly saves settings in the console. Read paths are cached in-memory for 60 seconds and invalidated on save.
+2. **Safety & Validation**: All text fields reject store-safety payment/purchase words (`دفع`, `ادفع`, `شراء`, `اشتري`, `استرداد`, `اشتراك مدفوع`, `payment`, `pay`, `buy`, `purchase`, `refund`, `InstaPay`, `فودافون كاش`, `محفظة`/`wallet`) on word boundaries with HTTP 400 `settings_forbidden_word`. Unknown fields are rejected.
+3. **Internal Admin Endpoints**:
+   - `GET /internal/admin/settings`: returns current effective settings with env defaults merged, plus `updated_at` and `updated_by`.
+   - `PUT /internal/admin/settings`: full replace of editable settings fields; writes an `admin_audit_log` entry `settings_updated` listing changed field names only (values omitted).
+4. **Proxy Routes & Console UI**:
+   - Proxy routes `GET /api/settings` and `POST /api/settings/update` forward to `ACADEMY_ADMIN_URL` over mTLS with standard admin token verification and security headers.
+   - New "الإعدادات / Settings" tab provides controls for the price toggle ("إظهار الأسعار في التطبيق" with notice "التغيير بيوصل للتطبيق خلال 5 دقايق تقريباً"), WhatsApp support number, center details (Arabic and English), and map URL.
+   - Includes unsaved-changes guard, double-submit guard, `Retry-After` countdown on 429, success toast, and localized error messages.
+5. **Decoupling from Server Expose Flag**: `show_prices` in `app_settings` is independent of `EXPOSE_PRICE_TO_STUDENTS`. The backend flag `EXPOSE_PRICE_TO_STUDENTS` determines whether the API sends subject price fields; `show_prices` controls client-side display visibility via `GET /academy/app-config`.
+
 ## Consequences
 
 
