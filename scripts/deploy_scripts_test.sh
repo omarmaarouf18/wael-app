@@ -30,6 +30,9 @@
 # 20. Restore discovers the sibling files archive (or takes --files), refuses
 #     mixed stamps and corrupt archives before stopping anything, extracts
 #     into STORAGE_DIR; pull-backups.sh freshness-checks files archives too
+# 21. Restore validates the mongo archive before stopping anything; on a
+#     mongorestore failure it does NOT restart the apps as healthy but
+#     prints the exact retry command and exits non-zero (review M6)
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -107,7 +110,13 @@ case "$*" in
 		printf 'FAKE-ARCHIVE-BYTES' | gzip -c
 	fi
 	;;
-*mongorestore*) cat >/dev/null ;;
+ *mongorestore*)
+ 	if [ "${MOCK_MONGORESTORE_FAIL:-0}" = 1 ]; then
+ 		cat >/dev/null
+ 		exit 1
+ 	fi
+ 	cat >/dev/null
+ 	;;
 *" up "*)
 	# MOCK_UP_FAIL_ONCE=<file>: the first 'up' fails, later ones (rollback) succeed.
 	if [ -n "${MOCK_UP_FAIL_ONCE:-}" ] && [ ! -f "$MOCK_UP_FAIL_ONCE" ]; then
@@ -788,6 +797,33 @@ rm -f "$BOX20P/local/files-new.archive.gz"
 RC=0
 OUT="$(PATH="$BOX20P/bin:$PATH" FIXTURE_SRC="$BOX20P/fixture" WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX20P/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
 check "pull-backups skips files checks when none were pulled" 0 "skipping files checks"
+
+# ---------------------------------------------------------------------------
+# Test 21: restore.sh validates first; a failed restore never restarts as
+# healthy (review M6)
+# ---------------------------------------------------------------------------
+BOX21="$(setup_sandbox test21)"
+give_backup_creds "$BOX21"
+mkdir -p "$BOX21/wael/backups"
+printf 'NOT-GZIP' > "$BOX21/wael/backups/mongo-bad.archive.gz"
+: > "$BOX21/wael/backups/mongo-empty.archive.gz"
+export DOCKER_LOG="$BOX21/docker.log"
+RC=0
+OUT="$(PATH="$BOX21/bin:$PATH" WAEL_HOME="$BOX21/wael" MONGO_CONTAINER=mockcid bash "$BOX21/repo/scripts/restore.sh" "$BOX21/wael/backups/mongo-bad.archive.gz" --yes 2>&1)" || RC=$?
+check "restore refuses a corrupt mongo archive" 1 "fails the gzip integrity check"
+assert "corrupt mongo archive stopped no service" bash -c "! grep -qF ' stop ' \"$BOX21/docker.log\""
+RC=0
+OUT="$(PATH="$BOX21/bin:$PATH" WAEL_HOME="$BOX21/wael" MONGO_CONTAINER=mockcid bash "$BOX21/repo/scripts/restore.sh" "$BOX21/wael/backups/mongo-empty.archive.gz" --yes 2>&1)" || RC=$?
+check "restore refuses an empty mongo archive" 1 "archive is empty"
+assert "empty mongo archive stopped no service" bash -c "! grep -qF ' stop ' \"$BOX21/docker.log\""
+
+printf 'FAKE' | gzip -c > "$BOX21/wael/backups/mongo-good.archive.gz"
+RC=0
+OUT="$(PATH="$BOX21/bin:$PATH" WAEL_HOME="$BOX21/wael" MONGO_CONTAINER=mockcid MOCK_MONGORESTORE_FAIL=1 bash "$BOX21/repo/scripts/restore.sh" "$BOX21/wael/backups/mongo-good.archive.gz" --yes 2>&1)" || RC=$?
+check "a failed mongorestore exits non-zero" 1 "NOT restarted as healthy"
+check "a failed mongorestore prints the exact retry command" 1 "restore.sh \"$BOX21/wael/backups/mongo-good.archive.gz\" --yes"
+assert "a failed mongorestore stopped the apps" grep -qF "stop api-gateway" "$BOX21/docker.log"
+assert "a failed mongorestore restarted nothing" bash -c "! grep -qF ' up ' \"$BOX21/docker.log\""
 
 # ---------------------------------------------------------------------------
 # Summary

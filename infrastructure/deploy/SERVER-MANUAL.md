@@ -915,7 +915,12 @@ services first (mongo and redis stay up), runs `mongorestore --archive
 health gate. *(Amended 2026-10-08, infra I1:)* it also restores the matching
 `files-<label>-<stamp>.archive.gz` into `STORAGE_DIR` when one sits next to
 the mongo archive (same set, auto-discovered; `--files` overrides but must
-carry the same stamp). `--skip-restart` is a rehearsal-only escape hatch.
+carry the same stamp). *(Amended 2026-10-08, infra I2, review M6:)* every
+archive is validated (exists, readable, non-empty, `gzip -t`, matching set)
+before any service stops; when `mongorestore` (or the files extract) fails,
+the apps are NOT restarted as if healthy — the script prints the exact
+retry command and exits non-zero with the services stopped, for a deliberate
+human decision. `--skip-restart` is a rehearsal-only escape hatch.
 
 Logs: `docker compose -p wael logs --tail 100 <service>` (from the deploy
 checkout as deploybot); host side: `journalctl -u docker.service --since -1h`.
