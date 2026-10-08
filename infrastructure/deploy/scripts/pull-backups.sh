@@ -53,19 +53,24 @@ chmod 700 "$LOCAL_DIR"
 
 rsync -a --rsync-path='sudo rsync' "$REMOTE:$REMOTE_BACKUPS" "$LOCAL_DIR/"
 find "$LOCAL_DIR" -maxdepth 1 -name 'mongo-*.archive.gz' -exec chmod 600 {} +
+find "$LOCAL_DIR" -maxdepth 1 -name 'files-*.archive.gz' -exec chmod 600 {} +
 
-# Prune local history to the newest BACKUP_KEEP_LOCAL archives (oldest first,
-# drop everything past the keep count).
-mapfile -t STALE < <(find "$LOCAL_DIR" -maxdepth 1 -name 'mongo-*.archive.gz' -printf '%T@ %p\n' |
-	sort -n | head -n "-$BACKUP_KEEP_LOCAL" | cut -d' ' -f2-)
-if [ "${#STALE[@]}" -gt 0 ]; then
-	rm -f "${STALE[@]}"
-	echo "pruned ${#STALE[@]} local archive(s)"
-fi
+# Prune local history to the newest BACKUP_KEEP_LOCAL archives of each kind
+# (oldest first, drop everything past the keep count). Mongo and files sets
+# are pruned independently so a set always keeps both of its archives.
+for kind in mongo files; do
+	mapfile -t STALE < <(find "$LOCAL_DIR" -maxdepth 1 -name "$kind-*.archive.gz" -printf '%T@ %p\n' |
+		sort -n | head -n "-$BACKUP_KEEP_LOCAL" | cut -d' ' -f2-)
+	if [ "${#STALE[@]}" -gt 0 ]; then
+		rm -f "${STALE[@]}"
+		echo "pruned ${#STALE[@]} local $kind archive(s)"
+	fi
+done
 
 COUNT="$(find "$LOCAL_DIR" -maxdepth 1 -name 'mongo-*.archive.gz' | wc -l)"
+FILES_COUNT="$(find "$LOCAL_DIR" -maxdepth 1 -name 'files-*.archive.gz' | wc -l)"
 NEWEST="$(find "$LOCAL_DIR" -maxdepth 1 -name 'mongo-*.archive.gz' -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d' ' -f2-)"
-echo "off-site backups in $LOCAL_DIR: $COUNT archive(s); newest: ${NEWEST:-none}"
+echo "off-site backups in $LOCAL_DIR: $((COUNT + FILES_COUNT)) archive(s) ($COUNT mongo, $FILES_COUNT files); newest: ${NEWEST:-none}"
 
 if [ -z "$NEWEST" ]; then
 	echo "STALE BACKUPS: no archive was pulled at all; check backup.sh and the deploybot crontab on the server" >&2
@@ -80,4 +85,23 @@ if ! gzip -t "$NEWEST" 2>/dev/null; then
 	echo "CORRUPT BACKUP: the newest archive fails the gzip integrity check: $NEWEST" >&2
 	exit 1
 fi
-echo "newest archive is ${AGE_HOURS}h old and passes gzip -t"
+echo "newest mongo archive is ${AGE_HOURS}h old and passes gzip -t"
+
+# The files archive rides with the same backup set: when the server sends
+# any, the newest local one must be fresh and intact too. No files archives
+# at all means the files feature is not deployed; skip, do not fail.
+NEWEST_FILES="$(find "$LOCAL_DIR" -maxdepth 1 -name 'files-*.archive.gz' -printf '%T@ %p\n' | sort -n | tail -n 1 | cut -d' ' -f2-)"
+if [ -z "$NEWEST_FILES" ]; then
+	echo "no files archives pulled (files feature not deployed?); skipping files checks"
+else
+	FILES_AGE_HOURS=$(( ($(date +%s) - $(stat -c %Y "$NEWEST_FILES")) / 3600 ))
+	if [ "$FILES_AGE_HOURS" -ge "$BACKUP_MAX_AGE_HOURS" ]; then
+		echo "STALE BACKUPS: the newest files archive is ${FILES_AGE_HOURS}h old (limit ${BACKUP_MAX_AGE_HOURS}h); the server stopped archiving uploaded files" >&2
+		exit 1
+	fi
+	if ! gzip -t "$NEWEST_FILES" 2>/dev/null; then
+		echo "CORRUPT BACKUP: the newest files archive fails the gzip integrity check: $NEWEST_FILES" >&2
+		exit 1
+	fi
+	echo "newest files archive is ${FILES_AGE_HOURS}h old and passes gzip -t"
+fi

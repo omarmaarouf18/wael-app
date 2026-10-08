@@ -24,6 +24,12 @@
 # 17. Backup keeps nothing that fails gzip -t, records last-backup.env, labels archives,
 #     pings BACKUP_PING_URL (/fail on failure), and waits on the lock instead of overlapping
 # 18. pull-backups.sh fails on a stale or corrupt newest archive
+# 19. Backup archives STORAGE_DIR as files-<label>-<stamp>.archive.gz in one
+#     set with the mongo archive (same stamp, own retention); unset or
+#     missing STORAGE_DIR skips with a log line and still succeeds
+# 20. Restore discovers the sibling files archive (or takes --files), refuses
+#     mixed stamps and corrupt archives before stopping anything, extracts
+#     into STORAGE_DIR; pull-backups.sh freshness-checks files archives too
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -336,7 +342,7 @@ BOX11="$(setup_sandbox test11)"
 printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX11/wael/.env.production"
 mkdir -p "$BOX11/wael/secrets"
 printf '%s' "pw-for-test11" > "$BOX11/wael/secrets/mongo_root_password"
-printf 'FAKE-ARCHIVE' > "$BOX11/dummy.archive.gz"
+printf 'FAKE' | gzip -c > "$BOX11/dummy.archive.gz"
 export DOCKER_LOG="$BOX11/docker.log"
 RC=0
 OUT="$(PATH="$BOX11/bin:$PATH" WAEL_HOME="$BOX11/wael" MONGO_CONTAINER=mockcid bash "$BOX11/repo/scripts/restore.sh" "$BOX11/dummy.archive.gz" --yes 2>&1)" || RC=$?
@@ -352,7 +358,7 @@ BOX12="$(setup_sandbox test12)"
 printf 'MONGO_ROOT_USERNAME=wael_root\n' >> "$BOX12/wael/.env.production"
 mkdir -p "$BOX12/wael/secrets"
 printf '%s' "pw-for-test12" > "$BOX12/wael/secrets/mongo_root_password"
-printf 'FAKE-ARCHIVE' > "$BOX12/dummy.archive.gz"
+printf 'FAKE' | gzip -c > "$BOX12/dummy.archive.gz"
 export DOCKER_LOG="$BOX12/docker.log"
 RC=0
 OUT="$(PATH="$BOX12/bin:$PATH" WAEL_HOME="$BOX12/wael" MONGO_CONTAINER=mockcid bash "$BOX12/repo/scripts/restore.sh" "$BOX12/dummy.archive.gz" --yes --skip-restart 2>&1)" || RC=$?
@@ -697,6 +703,91 @@ check "pull-backups fails when the newest archive is corrupt" 1 "CORRUPT BACKUP"
 RC=0
 OUT="$(PATH="$BOX18/bin:$PATH" FIXTURE_SRC="$BOX18/fixture" WAEL_HOST=server.test BACKUP_MAX_AGE_HOURS=0 LOCAL_BACKUP_DIR="$BOX18/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
 check "pull-backups rejects BACKUP_MAX_AGE_HOURS=0" 1 "must be a positive integer"
+
+# ---------------------------------------------------------------------------
+# Test 19: backup.sh archives STORAGE_DIR as one set with mongo (I1)
+# ---------------------------------------------------------------------------
+BOX19="$(setup_sandbox test19)"
+give_backup_creds "$BOX19"
+mkdir -p "$BOX19/storage/uploads/nested" "$BOX19/wael/backups"
+printf 'object-bytes-1' > "$BOX19/storage/obj1"
+printf 'object-bytes-2' > "$BOX19/storage/uploads/nested/obj2"
+touch -d '10 days ago' "$BOX19/wael/backups/files-2000-01-01T000000Z.archive.gz"
+export DOCKER_LOG="$BOX19/docker.log"
+RC=0
+OUT="$(PATH="$BOX19/bin:$PATH" WAEL_HOME="$BOX19/wael" STORAGE_DIR="$BOX19/storage" bash "$BOX19/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup with STORAGE_DIR writes the files archive" 0 "files archive written and verified"
+FILES19="$(echo "$BOX19"/wael/backups/files-2*.archive.gz)"
+assert "files archive exists and is mode 600" test "$(stat -c %a "$FILES19")" = 600
+assert "files archive passes gzip -t" gzip -t "$FILES19"
+assert "files archive holds the stored objects" bash -c "tar -tzf \"$FILES19\" | grep -q obj1"
+assert "last-backup.env names the files archive" grep -qF "BACKUP_FILES_FILE=$FILES19" "$BOX19/wael/state/last-backup.env"
+MONGO19="$(echo "$BOX19"/wael/backups/mongo-2*.archive.gz)"
+assert "mongo and files archives share one stamp" test "$(basename "$MONGO19" | sed 's/^mongo-//')" = "$(basename "$FILES19" | sed 's/^files-//')"
+assert "old files archive was pruned" test ! -f "$BOX19/wael/backups/files-2000-01-01T000000Z.archive.gz"
+assert "just-written files archive was kept" test -s "$FILES19"
+RC=0
+OUT="$(PATH="$BOX19/bin:$PATH" WAEL_HOME="$BOX19/wael" bash "$BOX19/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup without STORAGE_DIR still succeeds" 0 "skipping the files archive"
+assert "last-backup.env records an empty files file" grep -qxF "BACKUP_FILES_FILE=" "$BOX19/wael/state/last-backup.env"
+RC=0
+OUT="$(PATH="$BOX19/bin:$PATH" WAEL_HOME="$BOX19/wael" STORAGE_DIR="$BOX19/does-not-exist" bash "$BOX19/repo/scripts/backup.sh" 2>&1)" || RC=$?
+check "backup with a missing STORAGE_DIR skips cleanly" 0 "does not exist"
+
+# ---------------------------------------------------------------------------
+# Test 20: restore.sh handles the files archive of a set; pull-backups.sh
+# checks files archives too (I1)
+# ---------------------------------------------------------------------------
+BOX20="$(setup_sandbox test20)"
+give_backup_creds "$BOX20"
+mkdir -p "$BOX20/wael/backups"
+STAMP20="20200101T000000Z"
+printf 'FAKE' | gzip -c > "$BOX20/wael/backups/mongo-manual-$STAMP20.archive.gz"
+mkdir -p "$BOX20/restore-src/objects"
+printf 'restored-bytes' > "$BOX20/restore-src/objects/o1"
+tar -czf "$BOX20/wael/backups/files-manual-$STAMP20.archive.gz" -C "$BOX20/restore-src" .
+export DOCKER_LOG="$BOX20/docker.log"
+RC=0
+OUT="$(PATH="$BOX20/bin:$PATH" WAEL_HOME="$BOX20/wael" MONGO_CONTAINER=mockcid STORAGE_DIR="$BOX20/restored" bash "$BOX20/repo/scripts/restore.sh" "$BOX20/wael/backups/mongo-manual-$STAMP20.archive.gz" --yes --skip-restart 2>&1)" || RC=$?
+check "restore discovers the sibling files archive" 0 "found the matching files archive"
+assert "files were extracted into STORAGE_DIR" grep -qF "restored-bytes" "$BOX20/restored/objects/o1"
+check "restore reports both archives of the set" 0 "and $BOX20/wael/backups/files-manual-$STAMP20.archive.gz complete and healthy"
+
+printf 'NOT-GZIP' > "$BOX20/wael/backups/files-manual-$STAMP20.archive.gz"
+RC=0
+OUT="$(PATH="$BOX20/bin:$PATH" WAEL_HOME="$BOX20/wael" MONGO_CONTAINER=mockcid STORAGE_DIR="$BOX20/restored" bash "$BOX20/repo/scripts/restore.sh" "$BOX20/wael/backups/mongo-manual-$STAMP20.archive.gz" --yes 2>&1)" || RC=$?
+check "restore refuses a corrupt sibling before stopping anything" 1 "fails the gzip integrity check"
+assert "corrupt sibling stopped no service" bash -c "! grep -qF ' stop ' \"$BOX20/docker.log\""
+
+printf 'FAKE' | gzip -c > "$BOX20/mongo-setA.archive.gz"
+printf 'FAKE' | gzip -c > "$BOX20/files-setB.archive.gz"
+RC=0
+OUT="$(PATH="$BOX20/bin:$PATH" WAEL_HOME="$BOX20/wael" MONGO_CONTAINER=mockcid STORAGE_DIR="$BOX20/restored" bash "$BOX20/repo/scripts/restore.sh" "$BOX20/mongo-setA.archive.gz" --files "$BOX20/files-setB.archive.gz" --yes --skip-restart 2>&1)" || RC=$?
+check "restore refuses an explicit --files from another set" 1 "refusing to mix backup sets"
+assert "mixed sets stopped no service" bash -c "! grep -qF ' stop ' \"$BOX20/docker.log\""
+
+BOX20P="$WORK/test20pull"
+mkdir -p "$BOX20P/fixture" "$BOX20P/local"
+cp -a "$BOX13/bin" "$BOX20P/bin"
+printf 'FAKE' | gzip -c > "$BOX20P/fixture/mongo-new.archive.gz"
+printf 'FAKE' | gzip -c > "$BOX20P/fixture/files-new.archive.gz"
+RC=0
+OUT="$(PATH="$BOX20P/bin:$PATH" FIXTURE_SRC="$BOX20P/fixture" WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX20P/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups checks the files archive too" 0 "newest files archive is"
+assert "files archive was pulled at 600" test "$(stat -c %a "$BOX20P/local/files-new.archive.gz")" = 600
+touch -d '40 days ago' "$BOX20P/fixture/files-new.archive.gz"
+RC=0
+OUT="$(PATH="$BOX20P/bin:$PATH" FIXTURE_SRC="$BOX20P/fixture" WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX20P/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups fails when the files archive is stale" 1 "newest files archive"
+printf 'NOT-GZIP' > "$BOX20P/fixture/files-new.archive.gz"
+RC=0
+OUT="$(PATH="$BOX20P/bin:$PATH" FIXTURE_SRC="$BOX20P/fixture" WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX20P/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups fails when the files archive is corrupt" 1 "newest files archive fails"
+rm -f "$BOX20P/fixture/files-new.archive.gz"
+rm -f "$BOX20P/local/files-new.archive.gz"
+RC=0
+OUT="$(PATH="$BOX20P/bin:$PATH" FIXTURE_SRC="$BOX20P/fixture" WAEL_HOST=server.test LOCAL_BACKUP_DIR="$BOX20P/local" bash "$REPO_ROOT/infrastructure/deploy/scripts/pull-backups.sh" 2>&1)" || RC=$?
+check "pull-backups skips files checks when none were pulled" 0 "skipping files checks"
 
 # ---------------------------------------------------------------------------
 # Summary

@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Backup: full mongodump --archive --gzip as the mongo root user.
+# Backup: full mongodump --archive --gzip as the mongo root user, plus the
+# academy STORAGE_DIR (uploaded files, Phase 5 prerequisite) as a second
+# archive with the same label/stamp, so the two files form one backup set.
 # Runs from the deploybot crontab (17 0 * * * UTC) and from deploy.sh before
 # every deploy (BACKUP_LABEL=predeploy). Archives land in $WAEL_HOME/backups/
-# as mongo-[<label>-]<UTC-timestamp>.archive.gz, mode 600.
+# as mongo-[<label>-]<UTC-timestamp>.archive.gz and
+# files-[<label>-]<UTC-timestamp>.archive.gz, mode 600. When STORAGE_DIR is
+# unset or missing (files feature not deployed) the files archive is skipped
+# with a log line and the backup still succeeds.
 # The root password is read from $WAEL_HOME/secrets/mongo_root_password and
 # is never printed; it travels only inside the docker exec argument vector.
 #
@@ -32,9 +37,11 @@ ping_monitor() {
 }
 
 TMP=""
+FILES_TMP=""
 on_exit() {
 	local rc=$?
 	[ -z "$TMP" ] || rm -f "$TMP"
+	[ -z "$FILES_TMP" ] || rm -f "$FILES_TMP"
 	if [ "$rc" -ne 0 ]; then
 		ping_monitor /fail
 	fi
@@ -87,13 +94,59 @@ chmod 600 "$TMP"
 gzip -t "$TMP" 2>/dev/null || fail "archive failed the gzip integrity check; nothing was kept"
 mv "$TMP" "$DEST"
 TMP=""
-printf 'BACKUP_FILE=%s\nBACKUP_AT=%s\n' "$DEST" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$STATE_DIR/last-backup.env"
+
+# Uploaded files (Phase 5 prerequisite, ADR-0009 STORAGE_DIR): archived with
+# the same label/stamp, so the mongo archive plus the files archive form one
+# combined backup set that restore.sh never mixes. Objects are only read
+# (tar never modifies them) and services keep running.
+STORAGE_DIR="${STORAGE_DIR:-$(read_var "$ENV_FILE" STORAGE_DIR 2>/dev/null || true)}"
+FILES_DEST=""
+if [ -z "$STORAGE_DIR" ]; then
+	log "no STORAGE_DIR in env (files feature not deployed); skipping the files archive"
+elif [ ! -d "$STORAGE_DIR" ]; then
+	log "STORAGE_DIR $STORAGE_DIR does not exist (files feature not deployed?); skipping the files archive"
+else
+	FILES_DEST="$BACKUP_DIR/files-${BACKUP_LABEL:+$BACKUP_LABEL-}$STAMP.archive.gz"
+	FILES_TMP="$FILES_DEST.tmp.$$"
+	TAR_RC=0
+	if tar --warning=no-file-changed -czf "$FILES_TMP" -C "$STORAGE_DIR" .; then
+		TAR_RC=0
+	else
+		TAR_RC=$?
+	fi
+	if [ "$TAR_RC" -gt 1 ]; then
+		rm -f "$FILES_TMP"
+		fail "files archive failed (tar exited $TAR_RC); nothing was kept"
+	fi
+	if [ "$TAR_RC" -eq 1 ]; then
+		log "warning: files changed during the read; the archive below still passed verification"
+	fi
+	chmod 600 "$FILES_TMP"
+	[ -s "$FILES_TMP" ] || fail "files archive is empty; nothing was kept"
+	gzip -t "$FILES_TMP" 2>/dev/null || fail "files archive failed the gzip integrity check; nothing was kept"
+	mv "$FILES_TMP" "$FILES_DEST"
+	FILES_TMP=""
+	log "files archive written and verified: $FILES_DEST ($(du -h "$FILES_DEST" | cut -f1))"
+fi
+printf 'BACKUP_FILE=%s\nBACKUP_FILES_FILE=%s\nBACKUP_AT=%s\n' "$DEST" "$FILES_DEST" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$STATE_DIR/last-backup.env"
 log "backup written and verified: $DEST ($(du -h "$DEST" | cut -f1))"
 
 # Retention: delete archives strictly older than BACKUP_KEEP_DAYS days, but
-# never the archive just written (it is the newest by construction).
+# never the archive just written (it is the newest by construction). The
+# files kind keeps its own newest archive when this run wrote none.
 CUTOFF_MINUTES=$((BACKUP_KEEP_DAYS * 24 * 60))
 PRUNED="$(find "$BACKUP_DIR" -maxdepth 1 -name 'mongo-*.archive.gz' ! -path "$DEST" -mmin "+$CUTOFF_MINUTES" -print -delete | wc -l)"
 log "retention: kept last $BACKUP_KEEP_DAYS days, pruned $PRUNED archive(s)"
+if [ -n "$FILES_DEST" ]; then
+	PRUNED_FILES="$(find "$BACKUP_DIR" -maxdepth 1 -name 'files-*.archive.gz' ! -path "$FILES_DEST" -mmin "+$CUTOFF_MINUTES" -print -delete | wc -l)"
+else
+	NEWEST_FILES="$(find "$BACKUP_DIR" -maxdepth 1 -name 'files-*.archive.gz' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -n 1 | cut -d' ' -f2-)"
+	if [ -n "$NEWEST_FILES" ]; then
+		PRUNED_FILES="$(find "$BACKUP_DIR" -maxdepth 1 -name 'files-*.archive.gz' ! -path "$NEWEST_FILES" -mmin "+$CUTOFF_MINUTES" -print -delete | wc -l)"
+	else
+		PRUNED_FILES=0
+	fi
+fi
+log "retention: kept last $BACKUP_KEEP_DAYS days, pruned $PRUNED_FILES files archive(s)"
 
 ping_monitor ""

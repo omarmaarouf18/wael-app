@@ -829,6 +829,26 @@ alert when the nightly backup fails or does not run, create a free
 healthchecks.io check (period 1 day, grace 6 hours) and put its URL in
 `.env.production` as `BACKUP_PING_URL`.
 
+*(Amended 2026-10-08, infra I1 — uploaded files are part of the backup:)*
+when `$STORAGE_DIR` (see `env.production.example`; the host directory
+Phase 5 stores encrypted objects in, ADR-0009) exists, `backup.sh` also
+writes a `files-[<label>-]<stamp>.archive.gz` next to the mongo archive, so
+both files share one label/stamp and form a single backup set that
+`restore.sh` never mixes. Objects are only read; services keep running. The
+archive is mode `600`, verified with `gzip -t`, recorded as
+`BACKUP_FILES_FILE` in `state/last-backup.env`, and pruned with the same
+retention (the newest files archive is always kept). When `STORAGE_DIR` is
+unset or missing (files feature not deployed) the backup logs the skip and
+still succeeds. `pull-backups.sh` pulls, prunes, freshness-checks and
+integrity-checks the files archives too, and skips those checks when the
+server sends none.
+
+**DOCUMENT_ENCRYPTION_KEY must be kept off-server (owner step).** The files
+archive holds AES-256-GCM objects that only this key opens: a backup set
+without the key restores nothing readable. The key lives in the service env,
+never in the repo, never in a backup — write it on paper (or the owner's
+password manager) when Phase 5 deploys, separately from every backup copy.
+
 (`<deploy-checkout>` is the runner checkout path used for manual rollback
 above; `lib.sh` defaults `WAEL_HOME` so no env is needed in cron. The old
 `$WAEL_HOME/backup.sh` can be deleted once the new cron has produced its
@@ -892,7 +912,10 @@ rows; orchestration path covered by mocked tests in
 Without `--yes` it refuses and touches nothing. It stops the five app
 services first (mongo and redis stay up), runs `mongorestore --archive
 --gzip --drop`, restarts the services with `--wait` and must pass the public
-health gate. `--skip-restart` is a rehearsal-only escape hatch.
+health gate. *(Amended 2026-10-08, infra I1:)* it also restores the matching
+`files-<label>-<stamp>.archive.gz` into `STORAGE_DIR` when one sits next to
+the mongo archive (same set, auto-discovered; `--files` overrides but must
+carry the same stamp). `--skip-restart` is a rehearsal-only escape hatch.
 
 Logs: `docker compose -p wael logs --tail 100 <service>` (from the deploy
 checkout as deploybot); host side: `journalctl -u docker.service --since -1h`.
