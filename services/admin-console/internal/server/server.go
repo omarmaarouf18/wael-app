@@ -48,6 +48,8 @@ func APIRoutes() []string {
 		"/api/entitlements",
 		"/api/entitlements/grant",
 		"/api/entitlements/revoke",
+		"/api/settings",
+		"/api/settings/update",
 	}
 }
 
@@ -85,6 +87,8 @@ func New(p *proxy.Proxy, assets fs.FS) (http.Handler, error) {
 		"/api/entitlements":        p.EntitlementsList,
 		"/api/entitlements/grant":  p.EntitlementsGrant,
 		"/api/entitlements/revoke": p.EntitlementsRevoke,
+		"/api/settings":            p.SettingsGet,
+		"/api/settings/update":     p.SettingsUpdate,
 	}
 	for _, route := range APIRoutes() {
 		mux.HandleFunc(route, handlers[route])
