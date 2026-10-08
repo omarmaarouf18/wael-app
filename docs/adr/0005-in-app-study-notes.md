@@ -59,3 +59,17 @@ and a copy saved to the student's device from inside the app is
 permitted; distribution outside the app by the platform (email, public
 links) remains excluded. Traceability of leaked copies is an open
 question in ADR-0007 (Proposed).
+
+## Note (2026-10-08, owner strategy, client only)
+
+The mobile client implements the 2026-09-29 amendment behind the server flag
+`features.files` (SPEC Section 6, client contract 2026-10-08, server
+pending): an owned subject's PDFs download into the app-private cache, then
+"فتح" / "Open" hands the file to the phone's default PDF app (an Android
+`content://` URI from the app's own FileProvider with a read grant for that
+intent only, no storage permission) and "مشاركة" / "Share" opens the system
+share sheet. There is no in-app PDF viewer and no `FLAG_SECURE` for files
+(owner brief). This stays within the amendment: the copy is saved from
+inside the app, and the platform itself sends nothing outside the app;
+sharing is the student's own action. Leak traceability is still the open
+question in ADR-0007 (per-user watermark, SPEC Section 3 question 2).
