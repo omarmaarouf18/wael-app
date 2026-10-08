@@ -6,6 +6,14 @@ import (
 	"testing"
 )
 
+// Shared-secret fixtures: exactly the 32-byte floor that
+// secret strength checks require outside local/test, built at runtime.
+var (
+	testJWTSecret     = strings.Repeat("j", 32)
+	testGatewaySecret = strings.Repeat("g", 32)
+	testInternalToken = strings.Repeat("i", 32)
+)
+
 func setEnv(t *testing.T, k, v string) {
 	t.Helper()
 	if err := os.Setenv(k, v); err != nil {
@@ -17,8 +25,8 @@ func setEnv(t *testing.T, k, v string) {
 func baseEnv(t *testing.T) {
 	t.Helper()
 	setEnv(t, "APP_ENV", "local")
-	setEnv(t, "GATEWAY_SECRET", "test-gateway-secret")
-	setEnv(t, "INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	setEnv(t, "GATEWAY_SECRET", testGatewaySecret)
+	setEnv(t, "INTERNAL_SERVICE_TOKEN", testInternalToken)
 	_ = os.Unsetenv("MONGO_URI")
 	_ = os.Unsetenv("TLS_CERT_PATH")
 	_ = os.Unsetenv("TLS_KEY_PATH")
@@ -34,8 +42,8 @@ func baseEnv(t *testing.T) {
 func fullProdEnv(t *testing.T) {
 	t.Helper()
 	setEnv(t, "APP_ENV", "production")
-	setEnv(t, "GATEWAY_SECRET", "test-gateway-secret")
-	setEnv(t, "INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	setEnv(t, "GATEWAY_SECRET", testGatewaySecret)
+	setEnv(t, "INTERNAL_SERVICE_TOKEN", testInternalToken)
 	setEnv(t, "MONGO_URI", "mongodb://localhost:27017")
 	setEnv(t, "TLS_CERT_PATH", "/tmp/cert.pem")
 	setEnv(t, "TLS_KEY_PATH", "/tmp/key.pem")
@@ -44,7 +52,7 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "AUTH_ADMIN_URL", "https://auth-service:9001")
 	setEnv(t, "NOTIFICATION_SERVICE_URL", "https://notification-service:3004")
 	setEnv(t, "ADMIN_LISTEN_ADDR", ":9002")
-	setEnv(t, "JWT_SECRET", "test-jwt-secret")
+	setEnv(t, "JWT_SECRET", testJWTSecret)
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
 	setEnv(t, "SUPPORT_WHATSAPP", "+201000000000")
 	setEnv(t, "TERMS_URL", "https://elmetracademy.app/terms")
@@ -198,8 +206,8 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 			_ = os.Unsetenv(v)
 		}
 		setEnv(t, "APP_ENV", "local")
-		setEnv(t, "GATEWAY_SECRET", "test-gateway-secret")
-		setEnv(t, "INTERNAL_SERVICE_TOKEN", "test-internal-token")
+		setEnv(t, "GATEWAY_SECRET", testGatewaySecret)
+		setEnv(t, "INTERNAL_SERVICE_TOKEN", testInternalToken)
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("expected Load to succeed with local dev defaults, got: %v", err)
@@ -363,5 +371,33 @@ func TestLoad_AppConfigRequiredOutsideDev(t *testing.T) {
 	setEnv(t, "TERMS_URL", "https://elmetracademy.app/terms")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error for missing PRIVACY_URL in production")
+	}
+}
+
+// Weak shared secrets are refused outside APP_ENV=local|test (review P1);
+// the full rule table is jwtutil.TestCheckSecretStrength.
+func TestLoad_WeakSecretsRefusedOutsideLocal(t *testing.T) {
+	weak := []string{
+		"short-secret",
+		"PASTE_64_HEX" + strings.Repeat("a", 32),
+		strings.Repeat("b", 32) + "CHANGE_ME",
+		strings.Repeat("c", 32) + "devpassword123",
+	}
+	for _, name := range []string{"JWT_SECRET", "GATEWAY_SECRET", "INTERNAL_SERVICE_TOKEN"} {
+		for _, value := range weak {
+			fullProdEnv(t)
+			t.Setenv(name, value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("%s=%q in production: err = %v, want refusal naming %s", name, value, err, name)
+			}
+			if strings.Contains(err.Error(), value) {
+				t.Fatalf("error leaks the secret value: %v", err)
+			}
+			t.Setenv("APP_ENV", "local")
+			if _, err := Load(); err != nil {
+				t.Fatalf("%s=%q in local: unexpected error %v", name, value, err)
+			}
+		}
 	}
 }

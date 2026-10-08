@@ -410,6 +410,12 @@ back from the file, §6):
   --check-env`) after pulling the new images and before touching anything
   running. For `academy-service` this also validates `TERMS_URL` and
   `PRIVACY_URL` (required, `https://` outside dev).
+  *(Added 2026-10-08, review P1:)* `api-gateway`, `auth-service`,
+  `notification-service` and `academy-service` also refuse to start (and fail
+  `--check-env`) when `JWT_SECRET`, `GATEWAY_SECRET` or `INTERNAL_SERVICE_TOKEN`
+  (each one the service loads) is shorter than 32 bytes or contains `PASTE_`,
+  `CHANGE_ME` or `devpassword123` (any case), the same rule as preflight item 3.
+  `admin-console` does not apply this check to its `INTERNAL_SERVICE_TOKEN` yet.
 
 Completeness proof (run from `wael-app/infrastructure/deploy/`): every name
 set in `env.production.example` is referenced by `docker-compose.yml`, and the

@@ -7,10 +7,16 @@ import (
 	"testing"
 )
 
+// Shared-secret fixtures: exactly the 32-byte floor that
+// secret strength checks require outside local/test, built at runtime.
+var (
+	testGatewaySecret = strings.Repeat("g", 32)
+)
+
 func setGatewayProdEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "production")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret-1234567890")
+	t.Setenv("GATEWAY_SECRET", testGatewaySecret)
 	t.Setenv("REDIS_URI", "redis://localhost:6379")
 	t.Setenv("TLS_CERT_PATH", "/tmp/cert.pem")
 	t.Setenv("TLS_KEY_PATH", "/tmp/key.pem")
@@ -23,7 +29,7 @@ func setGatewayProdEnv(t *testing.T) {
 func setGatewayLocalEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret-1234567890")
+	t.Setenv("GATEWAY_SECRET", testGatewaySecret)
 	t.Setenv("REDIS_URI", "redis://localhost:6379")
 	_ = os.Unsetenv("TLS_CERT_PATH")
 	_ = os.Unsetenv("TLS_KEY_PATH")

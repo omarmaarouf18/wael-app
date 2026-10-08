@@ -6,6 +6,12 @@ import (
 	"testing"
 )
 
+// Shared-secret fixtures: exactly the 32-byte floor that
+// secret strength checks require outside local/test, built at runtime.
+var (
+	testGatewaySecret = strings.Repeat("g", 32)
+)
+
 func setEnv(t *testing.T, k, v string) {
 	t.Helper()
 	if err := os.Setenv(k, v); err != nil {
@@ -17,7 +23,7 @@ func setEnv(t *testing.T, k, v string) {
 func baseEnv(t *testing.T) {
 	t.Helper()
 	setEnv(t, "APP_ENV", "local")
-	setEnv(t, "GATEWAY_SECRET", "test-gateway-secret-1234567890")
+	setEnv(t, "GATEWAY_SECRET", testGatewaySecret)
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
 	setEnv(t, "AUTH_SERVICE_URL", "http://auth-service:3002")
 	setEnv(t, "NOTIFICATION_SERVICE_URL", "http://notification-service:3004")
@@ -32,7 +38,7 @@ func baseEnv(t *testing.T) {
 func fullProdEnv(t *testing.T) {
 	t.Helper()
 	setEnv(t, "APP_ENV", "production")
-	setEnv(t, "GATEWAY_SECRET", "test-gateway-secret-1234567890")
+	setEnv(t, "GATEWAY_SECRET", testGatewaySecret)
 	setEnv(t, "REDIS_URI", "redis://localhost:6379")
 	setEnv(t, "TLS_CERT_PATH", "/tmp/cert.pem")
 	setEnv(t, "TLS_KEY_PATH", "/tmp/key.pem")
@@ -157,4 +163,32 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 			t.Fatalf("expected error to contain %q, got %q", "REDIS_URI", err.Error())
 		}
 	})
+}
+
+// Weak shared secrets are refused outside APP_ENV=local|test (review P1);
+// the full rule table is jwtutil.TestCheckSecretStrength.
+func TestLoad_WeakSecretsRefusedOutsideLocal(t *testing.T) {
+	weak := []string{
+		"short-secret",
+		"PASTE_64_HEX" + strings.Repeat("a", 32),
+		strings.Repeat("b", 32) + "CHANGE_ME",
+		strings.Repeat("c", 32) + "devpassword123",
+	}
+	for _, name := range []string{"GATEWAY_SECRET"} {
+		for _, value := range weak {
+			fullProdEnv(t)
+			t.Setenv(name, value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("%s=%q in production: err = %v, want refusal naming %s", name, value, err, name)
+			}
+			if strings.Contains(err.Error(), value) {
+				t.Fatalf("error leaks the secret value: %v", err)
+			}
+			t.Setenv("APP_ENV", "local")
+			if _, err := Load(); err != nil {
+				t.Fatalf("%s=%q in local: unexpected error %v", name, value, err)
+			}
+		}
+	}
 }

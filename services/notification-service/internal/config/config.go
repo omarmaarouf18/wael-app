@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 	"strconv"
 )
 
@@ -52,6 +54,17 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: invalid APP_ENV %q: must be one of local, test, production", appEnv)
 	}
 	dev := appEnv == "local" || appEnv == "test"
+
+	// Shared secrets must be strong outside APP_ENV=local|test (review P1).
+	for _, s := range []struct{ name, value string }{
+		{"JWT_SECRET", jwtSecret},
+		{"GATEWAY_SECRET", gatewaySecret},
+		{"INTERNAL_SERVICE_TOKEN", internalToken},
+	} {
+		if err := jwtutil.CheckSecretStrength(s.name, s.value, appEnv); err != nil {
+			return nil, err
+		}
+	}
 
 	mongoURI := os.Getenv("MONGO_URI")
 	redisURI := os.Getenv("REDIS_URI")

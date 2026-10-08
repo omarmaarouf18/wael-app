@@ -7,11 +7,19 @@ import (
 	"testing"
 )
 
+// Shared-secret fixtures: exactly the 32-byte floor that
+// secret strength checks require outside local/test, built at runtime.
+var (
+	testJWTSecret     = strings.Repeat("j", 32)
+	testGatewaySecret = strings.Repeat("g", 32)
+	testInternalToken = strings.Repeat("i", 32)
+)
+
 func setAcademyProdEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "production")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	t.Setenv("GATEWAY_SECRET", testGatewaySecret)
+	t.Setenv("INTERNAL_SERVICE_TOKEN", testInternalToken)
 	t.Setenv("MONGO_URI", "mongodb://localhost:27017")
 	t.Setenv("TLS_CERT_PATH", "/tmp/cert.pem")
 	t.Setenv("TLS_KEY_PATH", "/tmp/key.pem")
@@ -20,7 +28,7 @@ func setAcademyProdEnv(t *testing.T) {
 	t.Setenv("AUTH_ADMIN_URL", "https://auth-service:9001")
 	t.Setenv("NOTIFICATION_SERVICE_URL", "https://notification-service:3004")
 	t.Setenv("ADMIN_LISTEN_ADDR", ":9002")
-	t.Setenv("JWT_SECRET", "test-jwt-secret")
+	t.Setenv("JWT_SECRET", testJWTSecret)
 	t.Setenv("REDIS_URI", "redis://localhost:6379")
 	t.Setenv("SUPPORT_WHATSAPP", "+201000000000")
 	t.Setenv("TERMS_URL", "https://elmetracademy.app/terms")
@@ -30,8 +38,8 @@ func setAcademyProdEnv(t *testing.T) {
 func setAcademyLocalEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	t.Setenv("GATEWAY_SECRET", testGatewaySecret)
+	t.Setenv("INTERNAL_SERVICE_TOKEN", testInternalToken)
 	for _, v := range []string{
 		"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH",
 		"TLS_CA_PATH", "AUTH_SERVICE_URL", "AUTH_ADMIN_URL", "NOTIFICATION_SERVICE_URL", "ADMIN_LISTEN_ADDR",

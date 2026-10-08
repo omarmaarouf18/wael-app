@@ -7,6 +7,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 	"strings"
 )
 
@@ -62,6 +64,15 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: invalid APP_ENV %q: must be one of local, test, production", appEnv)
 	}
 	dev := appEnv == "local" || appEnv == "test"
+
+	// Shared secrets must be strong outside APP_ENV=local|test (review P1).
+	for _, s := range []struct{ name, value string }{
+		{"GATEWAY_SECRET", gatewaySecret},
+	} {
+		if err := jwtutil.CheckSecretStrength(s.name, s.value, appEnv); err != nil {
+			return nil, err
+		}
+	}
 
 	redisURI := os.Getenv("REDIS_URI")
 	if redisURI == "" {

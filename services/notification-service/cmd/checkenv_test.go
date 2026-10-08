@@ -7,12 +7,20 @@ import (
 	"testing"
 )
 
+// Shared-secret fixtures: exactly the 32-byte floor that
+// secret strength checks require outside local/test, built at runtime.
+var (
+	testJWTSecret     = strings.Repeat("j", 32)
+	testGatewaySecret = strings.Repeat("g", 32)
+	testInternalToken = strings.Repeat("i", 32)
+)
+
 func setNotifProdEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "production")
-	t.Setenv("JWT_SECRET", "test-jwt-secret")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	t.Setenv("JWT_SECRET", testJWTSecret)
+	t.Setenv("GATEWAY_SECRET", testGatewaySecret)
+	t.Setenv("INTERNAL_SERVICE_TOKEN", testInternalToken)
 	t.Setenv("MONGO_URI", "mongodb://localhost:27017")
 	t.Setenv("REDIS_URI", "redis://localhost:6379")
 	t.Setenv("TLS_CERT_PATH", "/tmp/cert.pem")
@@ -23,9 +31,9 @@ func setNotifProdEnv(t *testing.T) {
 func setNotifLocalEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("JWT_SECRET", "test-jwt-secret")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	t.Setenv("JWT_SECRET", testJWTSecret)
+	t.Setenv("GATEWAY_SECRET", testGatewaySecret)
+	t.Setenv("INTERNAL_SERVICE_TOKEN", testInternalToken)
 	for _, v := range []string{
 		"MONGO_URI", "REDIS_URI", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH",
 	} {

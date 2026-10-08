@@ -6,12 +6,20 @@ import (
 	"testing"
 )
 
+// Shared-secret fixtures: exactly the 32-byte floor that
+// secret strength checks require outside local/test, built at runtime.
+var (
+	testJWTSecret     = strings.Repeat("j", 32)
+	testGatewaySecret = strings.Repeat("g", 32)
+	testInternalToken = strings.Repeat("i", 32)
+)
+
 func fullProdEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("APP_ENV", "production")
-	t.Setenv("JWT_SECRET", "test-jwt-secret")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	t.Setenv("JWT_SECRET", testJWTSecret)
+	t.Setenv("GATEWAY_SECRET", testGatewaySecret)
+	t.Setenv("INTERNAL_SERVICE_TOKEN", testInternalToken)
 	t.Setenv("MONGO_URI", "mongodb://localhost:27017")
 	t.Setenv("REDIS_URI", "redis://localhost:6379")
 	t.Setenv("TLS_CERT_PATH", "/tmp/cert.pem")
@@ -21,9 +29,9 @@ func fullProdEnv(t *testing.T) {
 
 func TestLoad_MinimalDev(t *testing.T) {
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("JWT_SECRET", "test-jwt-secret")
-	t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+	t.Setenv("JWT_SECRET", testJWTSecret)
+	t.Setenv("GATEWAY_SECRET", testGatewaySecret)
+	t.Setenv("INTERNAL_SERVICE_TOKEN", testInternalToken)
 	_ = os.Unsetenv("MONGO_URI")
 	_ = os.Unsetenv("REDIS_URI")
 	_ = os.Unsetenv("TLS_CERT_PATH")
@@ -132,9 +140,9 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 			_ = os.Unsetenv(v)
 		}
 		t.Setenv("APP_ENV", "local")
-		t.Setenv("JWT_SECRET", "test-jwt-secret")
-		t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-		t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+		t.Setenv("JWT_SECRET", testJWTSecret)
+		t.Setenv("GATEWAY_SECRET", testGatewaySecret)
+		t.Setenv("INTERNAL_SERVICE_TOKEN", testInternalToken)
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("expected Load to succeed with local dev defaults, got: %v", err)
@@ -161,9 +169,9 @@ func TestLoad_StreamCapsConfig(t *testing.T) {
 	setBaseDev := func(t *testing.T) {
 		t.Helper()
 		t.Setenv("APP_ENV", "local")
-		t.Setenv("JWT_SECRET", "test-jwt-secret")
-		t.Setenv("GATEWAY_SECRET", "test-gateway-secret")
-		t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
+		t.Setenv("JWT_SECRET", testJWTSecret)
+		t.Setenv("GATEWAY_SECRET", testGatewaySecret)
+		t.Setenv("INTERNAL_SERVICE_TOKEN", testInternalToken)
 		_ = os.Unsetenv("STREAM_MAX_CONCURRENT")
 		_ = os.Unsetenv("STREAM_OPEN_RATE_LIMIT")
 	}
@@ -217,4 +225,32 @@ func TestLoad_StreamCapsConfig(t *testing.T) {
 			}
 		}
 	})
+}
+
+// Weak shared secrets are refused outside APP_ENV=local|test (review P1);
+// the full rule table is jwtutil.TestCheckSecretStrength.
+func TestLoad_WeakSecretsRefusedOutsideLocal(t *testing.T) {
+	weak := []string{
+		"short-secret",
+		"PASTE_64_HEX" + strings.Repeat("a", 32),
+		strings.Repeat("b", 32) + "CHANGE_ME",
+		strings.Repeat("c", 32) + "devpassword123",
+	}
+	for _, name := range []string{"JWT_SECRET", "GATEWAY_SECRET", "INTERNAL_SERVICE_TOKEN"} {
+		for _, value := range weak {
+			fullProdEnv(t)
+			t.Setenv(name, value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("%s=%q in production: err = %v, want refusal naming %s", name, value, err, name)
+			}
+			if strings.Contains(err.Error(), value) {
+				t.Fatalf("error leaks the secret value: %v", err)
+			}
+			t.Setenv("APP_ENV", "local")
+			if _, err := Load(); err != nil {
+				t.Fatalf("%s=%q in local: unexpected error %v", name, value, err)
+			}
+		}
+	}
 }
