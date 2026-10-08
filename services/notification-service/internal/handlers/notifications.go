@@ -439,7 +439,9 @@ func (s *Server) authenticate(r *http.Request) (*jwtutil.Claims, error) {
 // JWT-authenticated user, replaying nothing and pushing live items.
 func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 	claims, err := s.authenticate(r)
-	if err != nil {
+	// The stream lives no longer than its access token, so a token without
+	// exp cannot open one.
+	if err != nil || claims.ExpiresAt == nil {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 		return
 	}
@@ -492,10 +494,17 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 
 	heartbeat := time.NewTicker(interval)
 	defer heartbeat.Stop()
+	// End the stream when the access token expires (review P1). A plain
+	// close is what the app reconnects from: it reads its current token,
+	// refreshes on 401 and opens a new stream.
+	expiry := time.NewTimer(time.Until(claims.ExpiresAt.Time))
+	defer expiry.Stop()
 	heartbeatCount := 0
 	for {
 		select {
 		case <-streamCtx.Done():
+			return
+		case <-expiry.C:
 			return
 		case n, ok := <-ch:
 			if !ok {
