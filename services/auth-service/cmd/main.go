@@ -51,6 +51,10 @@ func main() {
 	dev := cfg.AppEnv == "local" || cfg.AppEnv == "test"
 
 	jwtutil.Init(cfg.JWTSecret)
+	if err := jwtutil.SetAccessTTL(cfg.JWTAccessTTL); err != nil {
+		log.Fatalf("[AUTH] %v", err)
+	}
+	log.Printf("[AUTH] access token TTL %v", cfg.JWTAccessTTL)
 	if err := notify.InitClient(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath); err != nil {
 		log.Fatalf("[AUTH] notify mTLS client: %v", err)
 	}

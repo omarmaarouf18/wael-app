@@ -319,6 +319,7 @@ checked against each service's `config.Load()` and `env.production.example`.
 | `RESEND_FROM_EMAIL` | auth-service | yes (production) | Sender identity | `no-reply@<domain>` (verify domain in Resend) |
 | `BLOCKLIST_HMAC_KEY` | auth-service | yes (production) | HMAC key for blocked email/phone identities — do NOT rotate casually: existing entries stop matching | `<GENERATE: openssl rand -hex 32>` |
 | `DEFAULT_PHONE_REGION` | auth-service | no (default `EG`) | Phone normalization region | `EG` |
+| `JWT_ACCESS_TTL` | auth-service | no (default `24h`) | Access-token lifetime, Go duration within `5m`..`24h`; out of range or unparsable fails startup and `--check-env` (added 2026-10-08) | leave unset unless the owner decides a shorter lifetime |
 | `SUPPORT_WHATSAPP` | academy-service | yes (production) | Support link shown after access requests | international format, e.g. `+20...` |
 | `TERMS_URL` | academy-service | yes (production) | Terms page in the public app config (F-UX2 A7) | `https://` required outside dev |
 | `PRIVACY_URL` | academy-service | yes (production) | Privacy page in the public app config (F-UX2 A7) | `https://` required outside dev |

@@ -895,3 +895,39 @@ func TestValidateToken_OnlyHS256(t *testing.T) {
 		t.Fatalf("HS256 token rejected: %v", err)
 	}
 }
+
+func TestAccessTTL_Bounds(t *testing.T) {
+	defer func() { _ = SetAccessTTL(DefaultAccessTTL) }()
+	if AccessTTL() != 24*time.Hour {
+		t.Fatalf("default access TTL = %v, want 24h", AccessTTL())
+	}
+	for _, d := range []time.Duration{0, -time.Minute, 4*time.Minute + 59*time.Second, 24*time.Hour + time.Second, 48 * time.Hour} {
+		if err := SetAccessTTL(d); err == nil {
+			t.Fatalf("SetAccessTTL(%v) accepted, want refusal", d)
+		}
+		if AccessTTL() != 24*time.Hour {
+			t.Fatalf("refused SetAccessTTL(%v) changed the TTL to %v", d, AccessTTL())
+		}
+	}
+	for _, d := range []time.Duration{5 * time.Minute, time.Hour, 24 * time.Hour} {
+		if err := SetAccessTTL(d); err != nil {
+			t.Fatalf("SetAccessTTL(%v): %v", d, err)
+		}
+		before := time.Now()
+		tok, err := GenerateToken("ttl-user", "user", "ttl@example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		claims := &Claims{}
+		if _, _, err := jwt.NewParser().ParseUnverified(tok, claims); err != nil {
+			t.Fatal(err)
+		}
+		got := claims.ExpiresAt.Time.Sub(claims.IssuedAt.Time)
+		if got != d {
+			t.Fatalf("TTL %v: exp - iat = %v", d, got)
+		}
+		if claims.IssuedAt.Time.After(before.Add(time.Second)) {
+			t.Fatalf("iat %v not near issue time %v", claims.IssuedAt.Time, before)
+		}
+	}
+}

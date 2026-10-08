@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Shared-secret fixtures: exactly the 32-byte floor that
@@ -225,6 +226,46 @@ func TestLoad_WeakSecretsRefusedOutsideLocal(t *testing.T) {
 			if _, err := Load(); err != nil {
 				t.Fatalf("%s=%q in local: unexpected error %v", name, value, err)
 			}
+		}
+	}
+}
+
+func TestLoad_JWTAccessTTL(t *testing.T) {
+	cases := []struct {
+		raw     string
+		want    time.Duration
+		wantErr bool
+	}{
+		{"", 24 * time.Hour, false}, // unset keeps the 24h default
+		{"5m", 5 * time.Minute, false},
+		{"15m", 15 * time.Minute, false},
+		{"24h", 24 * time.Hour, false},
+		{"4m59s", 0, true},
+		{"24h1s", 0, true},
+		{"0", 0, true},
+		{"-1h", 0, true},
+		{"900", 0, true}, // a bare number is not a Go duration
+		{"1d", 0, true},
+	}
+	for _, tc := range cases {
+		fullProdEnv(t)
+		if tc.raw == "" {
+			_ = os.Unsetenv("JWT_ACCESS_TTL")
+		} else {
+			t.Setenv("JWT_ACCESS_TTL", tc.raw)
+		}
+		cfg, err := Load()
+		if tc.wantErr {
+			if err == nil || !strings.Contains(err.Error(), "JWT_ACCESS_TTL") {
+				t.Fatalf("JWT_ACCESS_TTL=%q: err = %v, want refusal", tc.raw, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("JWT_ACCESS_TTL=%q: %v", tc.raw, err)
+		}
+		if cfg.JWTAccessTTL != tc.want {
+			t.Fatalf("JWT_ACCESS_TTL=%q: got %v, want %v", tc.raw, cfg.JWTAccessTTL, tc.want)
 		}
 	}
 }

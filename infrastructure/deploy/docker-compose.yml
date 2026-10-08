@@ -124,6 +124,8 @@ services:
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:?RESEND_FROM_EMAIL is required}
       BLOCKLIST_HMAC_KEY: ${BLOCKLIST_HMAC_KEY:?BLOCKLIST_HMAC_KEY is required}
       DEFAULT_PHONE_REGION: ${DEFAULT_PHONE_REGION:-EG}
+      # Access-token lifetime; empty keeps the 24h default.
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-}
       # Admin listener: internal only, not published (ADR-0008).
       ADMIN_LISTEN_ADDR: ":9001"
       TLS_CERT_PATH: /app/certs/auth-service.crt

@@ -35,6 +35,48 @@ type Claims struct {
 var jwtSecret []byte
 var redisClient *redis.Client
 
+// Access-token lifetime bounds. The upper bound must stay at or below the
+// TTL of the revocation markers (RevokeSession: 24h; RevokeAllUserTokens:
+// 24h + 7d), or a revoked token could outlive its marker.
+const (
+	MinAccessTTL     = 5 * time.Minute
+	MaxAccessTTL     = 24 * time.Hour
+	DefaultAccessTTL = 24 * time.Hour
+)
+
+var (
+	accessTTLMu sync.RWMutex
+	accessTTL   = DefaultAccessTTL
+)
+
+// ValidateAccessTTL reports whether d is an allowed access-token lifetime
+// (MinAccessTTL <= d <= MaxAccessTTL).
+func ValidateAccessTTL(d time.Duration) error {
+	if d < MinAccessTTL || d > MaxAccessTTL {
+		return fmt.Errorf("jwtutil: access token TTL %v outside [%v, %v]", d, MinAccessTTL, MaxAccessTTL)
+	}
+	return nil
+}
+
+// SetAccessTTL sets the lifetime of newly issued access tokens. It refuses
+// values outside [MinAccessTTL, MaxAccessTTL] and keeps the previous value.
+func SetAccessTTL(d time.Duration) error {
+	if err := ValidateAccessTTL(d); err != nil {
+		return err
+	}
+	accessTTLMu.Lock()
+	accessTTL = d
+	accessTTLMu.Unlock()
+	return nil
+}
+
+// AccessTTL returns the lifetime of newly issued access tokens.
+func AccessTTL() time.Duration {
+	accessTTLMu.RLock()
+	defer accessTTLMu.RUnlock()
+	return accessTTL
+}
+
 type redisHealthTracker struct {
 	mu                  sync.Mutex
 	lastSuccessTime     time.Time
@@ -136,6 +178,7 @@ func GenerateTokenWithSession(userID string, role string, email string, sid stri
 		amrVal = amr[0]
 	}
 
+	now := time.Now()
 	claims := Claims{
 		UserID: userID,
 		Role:   role,
@@ -143,9 +186,9 @@ func GenerateTokenWithSession(userID string, role string, email string, sid stri
 		AMR:    amrVal,
 		SID:    sid,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			NotBefore: jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTTL())),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
 			ID:        uuidStr,
 		},
 	}

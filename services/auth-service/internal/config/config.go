@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 )
@@ -30,6 +31,9 @@ type Config struct {
 	BlocklistHMACKey     string
 	DefaultPhoneRegion   string
 	AdminListenAddr      string
+	// JWTAccessTTL is the access-token lifetime (JWT_ACCESS_TTL, a Go
+	// duration within [5m, 24h], default 24h).
+	JWTAccessTTL time.Duration
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
@@ -117,6 +121,18 @@ func Load() (*Config, error) {
 		}
 	}
 
+	accessTTL := jwtutil.DefaultAccessTTL
+	if raw := os.Getenv("JWT_ACCESS_TTL"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return nil, fmt.Errorf("config: JWT_ACCESS_TTL %q is not a Go duration (e.g. 15m, 24h)", raw)
+		}
+		if err := jwtutil.ValidateAccessTTL(d); err != nil {
+			return nil, fmt.Errorf("config: JWT_ACCESS_TTL must be between %v and %v", jwtutil.MinAccessTTL, jwtutil.MaxAccessTTL)
+		}
+		accessTTL = d
+	}
+
 	adminListenAddr := os.Getenv("ADMIN_LISTEN_ADDR")
 	if adminListenAddr == "" {
 		adminListenAddr = ":9001"
@@ -155,5 +171,6 @@ func Load() (*Config, error) {
 		BlocklistHMACKey:     blocklistHMACKey,
 		DefaultPhoneRegion:   defaultPhoneRegion,
 		AdminListenAddr:      adminListenAddr,
+		JWTAccessTTL:         accessTTL,
 	}, nil
 }

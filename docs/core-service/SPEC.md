@@ -311,7 +311,7 @@ Auth on every route: `X-Internal-Token` **and** `X-Admin-Token`. The token is ve
 ## 9. Configuration (academy-service)
 
 Follow the naming already used in `services/auth-service/internal/config`. Required unless a default is stated:
-`APP_ENV`, listen address, `ADMIN_LISTEN_ADDR`, Mongo URI and database name, Redis URL, `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN`, `AUTH_SERVICE_URL`, `NOTIFICATION_SERVICE_URL`, `STORAGE_DIR`, `DOCUMENT_ENCRYPTION_KEY`, `MAX_PDF_BYTES` (default 50 MB), `SUPPORT_WHATSAPP`, `EXPOSE_PRICE_TO_STUDENTS` (default `false`), `DEFAULT_PHONE_REGION` (default `EG`, auth-service), `TERMS_URL` and `PRIVACY_URL` (https only, required outside local/test, F-UX2 A7), `MIN_VERSION`, `LATEST_VERSION`, `UPDATE_URL` (optional, F-UX2 A7).
+`APP_ENV`, listen address, `ADMIN_LISTEN_ADDR`, Mongo URI and database name, Redis URL, `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN`, `AUTH_SERVICE_URL`, `NOTIFICATION_SERVICE_URL`, `STORAGE_DIR`, `DOCUMENT_ENCRYPTION_KEY`, `MAX_PDF_BYTES` (default 50 MB), `SUPPORT_WHATSAPP`, `EXPOSE_PRICE_TO_STUDENTS` (default `false`), `DEFAULT_PHONE_REGION` (default `EG`, auth-service), `JWT_ACCESS_TTL` (auth-service, Go duration within `5m`..`24h`, default `24h`; added 2026-10-08, review P1, the default is unchanged pending the owner), `TERMS_URL` and `PRIVACY_URL` (https only, required outside local/test, F-UX2 A7), `MIN_VERSION`, `LATEST_VERSION`, `UPDATE_URL` (optional, F-UX2 A7).
 
 ## 10. Testing requirements
 
