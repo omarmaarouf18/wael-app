@@ -54,6 +54,13 @@ func TestLoad_HTTPDevNoTLS(t *testing.T) {
 	if len(cfg.Routes) != 3 {
 		t.Fatalf("expected 3 routes, got %d", len(cfg.Routes))
 	}
+	// Each upstream has a distinct name: the gateway names one circuit
+	// breaker per upstream after it.
+	for i, want := range []string{"auth", "notification", "academy"} {
+		if got := cfg.Routes[i].Name; got != want {
+			t.Fatalf("route %d name = %q, want %q", i, got, want)
+		}
+	}
 }
 
 func TestLoad_MissingSecretFails(t *testing.T) {

@@ -12,6 +12,9 @@ import (
 
 // ServiceRoute maps a URL path prefix to a backend service address.
 type ServiceRoute struct {
+	// Name identifies the upstream (auth, notification, academy); the gateway
+	// gives each upstream its own circuit breaker named after it.
+	Name        string
 	Prefix      string
 	Target      string
 	StripPrefix string
@@ -105,13 +108,14 @@ func Load() (*Config, error) {
 	}
 
 	routeDefs := []struct {
+		name       string
 		prefix     string
 		envKey     string
 		defaultURL string
 	}{
-		{"/api/v1/auth/", "AUTH_SERVICE_URL", "http://auth-service:3002"},
-		{"/api/v1/notifications/", "NOTIFICATION_SERVICE_URL", "http://notification-service:3004"},
-		{"/api/v1/academy/", "ACADEMY_SERVICE_URL", "http://academy-service:3003"},
+		{"auth", "/api/v1/auth/", "AUTH_SERVICE_URL", "http://auth-service:3002"},
+		{"notification", "/api/v1/notifications/", "NOTIFICATION_SERVICE_URL", "http://notification-service:3004"},
+		{"academy", "/api/v1/academy/", "ACADEMY_SERVICE_URL", "http://academy-service:3003"},
 	}
 	for _, rd := range routeDefs {
 		target := envOrDefault(rd.envKey, rd.defaultURL)
@@ -122,6 +126,7 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("config: route %s target %q must use https scheme when mTLS client config is active", rd.prefix, target)
 		}
 		cfg.Routes = append(cfg.Routes, ServiceRoute{
+			Name:        rd.name,
 			Prefix:      rd.prefix,
 			Target:      target,
 			StripPrefix: "/api/v1",
