@@ -41,7 +41,7 @@ type AccessRequestResponseDTO struct {
 	SubjectID   string    `json:"subject_id"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
-	WhatsAppURL string    `json:"whatsapp_url"`
+	WhatsAppURL string    `json:"whatsapp_url,omitempty"`
 }
 
 // FormatWhatsAppURLStrict converts a phone number or URL into a WhatsApp

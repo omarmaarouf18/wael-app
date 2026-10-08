@@ -590,9 +590,16 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id str
 			return
 		}
 		if pr != nil && pr.Status == models.RequestStatusPending {
+			waCtx, waCancel := context.WithTimeout(r.Context(), dbTimeout)
+			waURL, err := s.supportWhatsAppURL(waCtx)
+			waCancel()
+			if err != nil {
+				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+				return
+			}
 			dto.Request = &models.SubjectRequestDTO{
 				Status:      models.RequestStatusPending,
-				WhatsappURL: models.FormatWhatsAppURLStrict(s.SupportWhatsApp),
+				WhatsappURL: waURL,
 			}
 		}
 	}
@@ -665,12 +672,19 @@ func (s *Server) CreateAccessRequest(w http.ResponseWriter, r *http.Request, id 
 		return
 	}
 
+	waCtx, waCancel := context.WithTimeout(r.Context(), dbTimeout)
+	waURL, err := s.supportWhatsAppURL(waCtx)
+	waCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
 	resp := models.AccessRequestResponseDTO{
 		ID:          pr.ID,
 		SubjectID:   pr.SubjectID,
 		Status:      pr.Status,
 		CreatedAt:   pr.CreatedAt,
-		WhatsAppURL: models.FormatWhatsAppURLStrict(s.SupportWhatsApp),
+		WhatsAppURL: waURL,
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, resp)
 }
@@ -722,11 +736,10 @@ func (s *Server) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	// No valid number: omit the link (FormatWhatsAppURLStrict("") would
-	// give a bare https://wa.me/).
-	var whatsappURL string
-	if settings.SupportWhatsApp != "" {
-		whatsappURL = models.FormatWhatsAppURLStrict(settings.SupportWhatsApp)
+	whatsappURL, err := s.supportWhatsAppURL(dbCtx)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
 	}
 
 	w.Header().Set("Cache-Control", "public, max-age=300")

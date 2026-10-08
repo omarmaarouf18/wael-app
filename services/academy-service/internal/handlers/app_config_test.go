@@ -441,3 +441,61 @@ func TestAppConfig_NoValidWhatsAppOmitsURL(t *testing.T) {
 		t.Fatalf("stored number not used: %s", rec.Body.String())
 	}
 }
+
+// TestSupportLinks_UseResolvedNumber: the access-request response and the
+// pending subject detail use the same resolved number as app-config: a
+// number saved in the console replaces SUPPORT_WHATSAPP, and with no valid
+// number the field is omitted (never a bare https://wa.me/).
+func TestSupportLinks_UseResolvedNumber(t *testing.T) {
+	cases := []struct {
+		name, env, stored, want string
+	}{
+		{"console number wins", "+201000000000", "201555555555", "https://wa.me/201555555555"},
+		{"env number when nothing saved", "+201000000000", "", "https://wa.me/201000000000"},
+		{"no valid number: omitted", "PASTE_WHATSAPP", "", ""},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestServer(false)
+			s.SupportWhatsApp = tc.env
+			ctx := context.Background()
+			if tc.stored != "" {
+				if err := s.Store.SaveAppSettings(ctx, &models.AppSettings{SupportWhatsApp: tc.stored}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			now := time.Now().UTC()
+			id := "subj-wa-" + strconv.Itoa(i)
+			if err := s.Store.CreateSubject(ctx, &models.Subject{
+				ID: id, LevelKey: "bachelor-y1", Term: "first", TitleAr: "مادة", TitleEn: "Subject",
+				Status: models.StatusPublished, AccessExpiresAt: now.Add(30 * 24 * time.Hour), CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			h := s.PublicHandler()
+			student := makeStudentToken(t, "wa-student-"+strconv.Itoa(i))
+
+			req := httptest.NewRequest(http.MethodPost, "/academy/subjects/"+id+"/access-request", nil)
+			req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+			req.Header.Set("Authorization", "Bearer "+student)
+			arec := httptest.NewRecorder()
+			h.ServeHTTP(arec, req)
+			drec := doPublic(t, h, http.MethodGet, "/academy/subjects/"+id, student)
+			for name, rec := range map[string]*httptest.ResponseRecorder{"access-request": arec, "detail": drec} {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("%s = %d (%s)", name, rec.Code, rec.Body.String())
+				}
+				body := rec.Body.String()
+				if tc.want == "" {
+					if strings.Contains(body, "whatsapp_url") || strings.Contains(body, "wa.me") {
+						t.Fatalf("%s: link present with no valid number: %s", name, body)
+					}
+					continue
+				}
+				if !strings.Contains(body, `"whatsapp_url":"`+tc.want+`"`) {
+					t.Fatalf("%s: want %s in %s", name, tc.want, body)
+				}
+			}
+		})
+	}
+}

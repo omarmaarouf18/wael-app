@@ -190,6 +190,22 @@ func (s *Server) effectiveAppSettings(ctx context.Context) (*models.AppSettings,
 	return models.WithWhatsAppDefault(stored, s.SupportWhatsApp), nil
 }
 
+// supportWhatsAppURL is the one resolver for every support link (app-config,
+// access-request response, pending subject detail): the resolved number
+// (stored if valid, else SUPPORT_WHATSAPP if valid) through the same 60 s
+// settings cache, as https://wa.me/<digits>, or "" when there is no valid
+// number (callers omit the field; never a bare https://wa.me/).
+func (s *Server) supportWhatsAppURL(ctx context.Context) (string, error) {
+	settings, err := s.effectiveAppSettings(ctx)
+	if err != nil {
+		return "", err
+	}
+	if settings.SupportWhatsApp == "" {
+		return "", nil
+	}
+	return models.FormatWhatsAppURLStrict(settings.SupportWhatsApp), nil
+}
+
 // WarnIfNoSupportWhatsApp logs one warning when neither the stored number
 // nor SUPPORT_WHATSAPP is a valid WhatsApp number, so app-config will omit
 // support_whatsapp_url. Called once at startup; it reports whether it
