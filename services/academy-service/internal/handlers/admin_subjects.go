@@ -355,8 +355,9 @@ func (s *Server) buildSubject(req subjectWriteRequest, subj *models.Subject, req
 	return subj, "", ""
 }
 
-// AdminSubjectSubroute dispatches PATCH /internal/admin/subjects/{id} and
-// POST /internal/admin/subjects/{id}/publish|unpublish.
+// AdminSubjectSubroute dispatches PATCH /internal/admin/subjects/{id},
+// POST /internal/admin/subjects/{id}/publish|unpublish, the video routes and
+// the file routes (GET/POST .../files, DELETE .../files/{fileId}).
 func (s *Server) AdminSubjectSubroute(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/internal/admin/subjects/")
 	rest = strings.Trim(rest, "/")
@@ -373,6 +374,22 @@ func (s *Server) AdminSubjectSubroute(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 2 && parts[1] == "videos" {
 		s.AdminSubjectVideos(w, r, id)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "files" {
+		s.AdminSubjectFiles(w, r, id)
+		return
+	}
+	if len(parts) == 3 && parts[1] == "files" {
+		if !validResourceID(parts[2]) {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_file_id", "invalid file id", nil)
+			return
+		}
+		if r.Method != http.MethodDelete {
+			handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+			return
+		}
+		s.DeleteAdminFile(w, r, id, parts[2])
 		return
 	}
 	if len(parts) == 3 && parts[1] == "videos" && parts[2] == "reorder" {

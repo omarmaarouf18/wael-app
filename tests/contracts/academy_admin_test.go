@@ -136,3 +136,21 @@ func TestContract_AcademyAdminEntitlements(t *testing.T) {
 		"TestAdminEntitlements_RevocationImpactOnR1",
 	)
 }
+
+// 15. Files (SPEC Phase 5.1/5.3): multipart PDF upload with the magic-byte and
+// MAX_PDF_BYTES checks (413), server UUID storage keys, object cleanup when the
+// row insert fails, list without storage keys, delete of row then object, and
+// one audit entry per mutation; every other admin route keeps the 1 MiB cap.
+func TestContract_AcademyAdminFiles(t *testing.T) {
+	out := runAcademyAdminTests(t, "^(TestAdminFiles_AuthWiring|TestAdminFiles_UploadListDelete|TestAdminFiles_DeleteWhenObjectAlreadyGone|TestAdminFiles_ClientMetadataIgnored|TestAdminFiles_UploadValidation|TestAdminFiles_SizeCap|TestAdminFiles_FailureCleanup|TestIsAdminUploadRoute)$")
+	requirePass(t, out,
+		"TestAdminFiles_AuthWiring",
+		"TestAdminFiles_UploadListDelete",
+		"TestAdminFiles_DeleteWhenObjectAlreadyGone",
+		"TestAdminFiles_ClientMetadataIgnored",
+		"TestAdminFiles_UploadValidation",
+		"TestAdminFiles_SizeCap",
+		"TestAdminFiles_FailureCleanup",
+		"TestIsAdminUploadRoute",
+	)
+}

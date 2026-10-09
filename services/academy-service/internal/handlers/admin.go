@@ -310,6 +310,7 @@ func (s *Server) AdminHandler() http.Handler {
 
 	var h http.Handler = mux
 	h = s.requireAdmin(h)
-	h = handlerutil.MaxBytesMiddleware(1 << 20)(h)
+	// 1 MiB per body, except the PDF upload route (MAX_PDF_BYTES + form overhead).
+	h = s.adminBodyLimit(h)
 	return h
 }
