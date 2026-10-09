@@ -48,6 +48,8 @@ type Config struct {
 	StorageDir            string
 	DocumentEncryptionKey string
 	MaxPDFBytes           int64
+	// FeaturesFiles is served as app-config features.files (FEATURES_FILES).
+	FeaturesFiles bool
 }
 
 // DefaultMaxPDFBytes is the MAX_PDF_BYTES default: 20 MB (owner decision
@@ -272,6 +274,18 @@ func Load() (*Config, error) {
 		maxPDFBytes = n
 	}
 
+	// FEATURES_FILES turns on the app's notes & books downloads
+	// (app-config features.files). Strict: empty or "false" is off, "true"
+	// is on, anything else is refused so a typo never flips it silently.
+	featuresFiles := false
+	switch v := os.Getenv("FEATURES_FILES"); v {
+	case "", "false":
+	case "true":
+		featuresFiles = true
+	default:
+		return nil, fmt.Errorf("config: invalid FEATURES_FILES %q: must be true or false", v)
+	}
+
 	return &Config{
 		Port:                   port,
 		AppEnv:                 appEnv,
@@ -302,5 +316,6 @@ func Load() (*Config, error) {
 		StorageDir:             storageDir,
 		DocumentEncryptionKey:  docKey,
 		MaxPDFBytes:            maxPDFBytes,
+		FeaturesFiles:          featuresFiles,
 	}, nil
 }

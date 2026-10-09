@@ -52,6 +52,8 @@ type Server struct {
 	Files storage.Storage
 	// MaxPDFBytes caps one uploaded PDF (MAX_PDF_BYTES, SPEC D14).
 	MaxPDFBytes int64
+	// FeaturesFiles is app-config features.files (FEATURES_FILES).
+	FeaturesFiles bool
 }
 
 // New creates a Server with dependencies.
@@ -726,8 +728,8 @@ func (s *Server) EnforceIPTier(tier string, next http.HandlerFunc) http.HandlerF
 // JWT), read tier (per-IP), cacheable for 5 min. It returns the show_prices flag,
 // the support WhatsApp URL (stored number, else SUPPORT_WHATSAPP; omitted when
 // neither is a valid number), the terms/privacy URLs,
-// optional update metadata (empty means no update prompt), and optional center info (omitted when empty).
-// No payment wording.
+// optional update metadata (empty means no update prompt), optional center info (omitted when empty),
+// and features.files (FEATURES_FILES, always present). No payment wording.
 func (s *Server) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
@@ -758,6 +760,7 @@ func (s *Server) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 		LatestVersion:      s.LatestVersion,
 		UpdateURL:          s.UpdateURL,
 		Center:             settings.CenterDTO(),
+		Features:           models.AppFeaturesDTO{Files: s.FeaturesFiles},
 	})
 }
 

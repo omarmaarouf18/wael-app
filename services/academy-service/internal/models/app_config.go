@@ -32,4 +32,13 @@ type AppConfigDTO struct {
 	LatestVersion      string     `json:"latest_version,omitempty"`
 	UpdateURL          string     `json:"update_url,omitempty"`
 	Center             *CenterDTO `json:"center,omitempty"`
+	// Features is always present (SPEC Section 6 amendment 2026-10-08).
+	Features AppFeaturesDTO `json:"features"`
+}
+
+// AppFeaturesDTO holds named feature switches the app reads from app-config.
+// files turns on notes & books downloads (SPEC Phase 5); the app treats a
+// missing, false or non-boolean value as off.
+type AppFeaturesDTO struct {
+	Files bool `json:"files"`
 }

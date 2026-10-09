@@ -53,13 +53,13 @@ func TestAppConfig_PublicShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for _, k := range []string{"show_prices", "support_whatsapp_url", "terms_url", "privacy_url", "min_version", "latest_version", "update_url"} {
+	for _, k := range []string{"show_prices", "support_whatsapp_url", "terms_url", "privacy_url", "min_version", "latest_version", "update_url", "features"} {
 		if _, ok := raw[k]; !ok {
 			t.Fatalf("missing key %q: %s", k, rec.Body.String())
 		}
 	}
-	if len(raw) != 7 {
-		t.Fatalf("unexpected keys count %d, want 7: %s", len(raw), rec.Body.String())
+	if len(raw) != 8 {
+		t.Fatalf("unexpected keys count %d, want 8: %s", len(raw), rec.Body.String())
 	}
 	var cfg models.AppConfigDTO
 	if err := json.Unmarshal(rec.Body.Bytes(), &cfg); err != nil {
@@ -497,5 +497,33 @@ func TestSupportLinks_UseResolvedNumber(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestAppConfig_FeaturesFiles: features is always an object of JSON booleans;
+// files follows FEATURES_FILES (default off) and is the only key in it.
+func TestAppConfig_FeaturesFiles(t *testing.T) {
+	for _, on := range []bool{false, true} {
+		s := appConfigTestServer()
+		s.FeaturesFiles = on
+		rec := doPublic(t, s.PublicHandler(), http.MethodGet, "/academy/app-config", "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("app-config = %d (%s)", rec.Code, rec.Body.String())
+		}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		var features map[string]any
+		if err := json.Unmarshal(raw["features"], &features); err != nil {
+			t.Fatalf("features is not an object: %s", raw["features"])
+		}
+		if len(features) != 1 {
+			t.Fatalf("features keys = %v, want only files", features)
+		}
+		files, isBool := features["files"].(bool)
+		if !isBool || files != on {
+			t.Fatalf("features.files = %#v, want JSON boolean %v", features["files"], on)
+		}
 	}
 }

@@ -42,6 +42,7 @@ func baseEnv(t *testing.T) {
 	_ = os.Unsetenv("STORAGE_DIR")
 	_ = os.Unsetenv("DOCUMENT_ENCRYPTION_KEY")
 	_ = os.Unsetenv("MAX_PDF_BYTES")
+	_ = os.Unsetenv("FEATURES_FILES")
 }
 
 func fullProdEnv(t *testing.T) {
@@ -535,4 +536,50 @@ func TestLoad_FileStorage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoad_FeaturesFiles(t *testing.T) {
+	cases := []struct {
+		value   string
+		want    bool
+		wantErr bool
+	}{
+		{"", false, false},
+		{"false", false, false},
+		{"true", true, false},
+		{"TRUE", false, true},
+		{"True", false, true},
+		{"1", false, true},
+		{"0", false, true},
+		{"yes", false, true},
+		{" true", false, true},
+		{"on", false, true},
+	}
+	for _, tc := range cases {
+		t.Run("FEATURES_FILES="+tc.value, func(t *testing.T) {
+			fullProdEnv(t)
+			setEnv(t, "FEATURES_FILES", tc.value)
+			cfg, err := Load()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "FEATURES_FILES") {
+					t.Fatalf("err = %v, want refusal naming FEATURES_FILES", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			if cfg.FeaturesFiles != tc.want {
+				t.Fatalf("FeaturesFiles = %v, want %v", cfg.FeaturesFiles, tc.want)
+			}
+		})
+	}
+	t.Run("unset_defaults_off", func(t *testing.T) {
+		fullProdEnv(t)
+		_ = os.Unsetenv("FEATURES_FILES")
+		cfg, err := Load()
+		if err != nil || cfg.FeaturesFiles {
+			t.Fatalf("unset FEATURES_FILES: %v, %v; want off", cfg, err)
+		}
+	})
 }

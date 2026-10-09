@@ -407,9 +407,9 @@ func TestContract_AuthSessionsShape(t *testing.T) {
 
 // 7b. App-config and subject pending-request contract (F-UX2 Part A, A7+A8):
 // public config shape and cacheability, whatsapp_url only with a pending
-// request, https-only links.
+// request, https-only links; features.files a JSON boolean (Phase 5).
 func TestContract_AppConfigShape(t *testing.T) {
-	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestAppConfig_PublicShape|TestAppConfig_EmptyOptionalsOmitted|TestAppConfig_ShowPricesAndCenterAfterSave|TestAppConfig_CenterExactShape|TestAppConfig_NoValidWhatsAppOmitsURL|TestSupportLinks_UseResolvedNumber|TestSubjectDetail_WhatsAppURLPresentWhenPending|TestWhatsAppURL_HTTPSOnly)$", "github.com/omarmaarouf18/wael-app/academy-service/internal/handlers")
+	cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestAppConfig_PublicShape|TestAppConfig_EmptyOptionalsOmitted|TestAppConfig_ShowPricesAndCenterAfterSave|TestAppConfig_CenterExactShape|TestAppConfig_NoValidWhatsAppOmitsURL|TestSupportLinks_UseResolvedNumber|TestSubjectDetail_WhatsAppURLPresentWhenPending|TestWhatsAppURL_HTTPSOnly|TestAppConfig_FeaturesFiles)$", "github.com/omarmaarouf18/wael-app/academy-service/internal/handlers")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("app-config contract verification failed: %v\nOutput:\n%s", err, string(out))
@@ -424,6 +424,7 @@ func TestContract_AppConfigShape(t *testing.T) {
 		"TestSupportLinks_UseResolvedNumber",
 		"TestSubjectDetail_WhatsAppURLPresentWhenPending",
 		"TestWhatsAppURL_HTTPSOnly",
+		"TestAppConfig_FeaturesFiles",
 	} {
 		if !strings.Contains(outStr, "PASS: "+name) {
 			t.Errorf("contract verification missing %s pass:\n%s", name, outStr)

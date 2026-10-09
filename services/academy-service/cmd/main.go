@@ -111,6 +111,8 @@ func main() {
 	defer func() { _ = files.Close() }()
 	srv.Files = files
 	srv.MaxPDFBytes = cfg.MaxPDFBytes
+	srv.FeaturesFiles = cfg.FeaturesFiles
+	log.Printf("[ACADEMY] app-config features.files=%t", cfg.FeaturesFiles)
 	log.Printf("[ACADEMY] file storage: %s (max PDF %d bytes)", cfg.StorageDir, cfg.MaxPDFBytes)
 
 	if err := notify.InitClient(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath); err != nil {

@@ -137,6 +137,7 @@ func TestRunCheckEnv_FileStorageValues(t *testing.T) {
 		{"non_hex_key", "DOCUMENT_ENCRYPTION_KEY", strings.Repeat("g", 64)},
 		{"zero_max_pdf", "MAX_PDF_BYTES", "0"},
 		{"text_max_pdf", "MAX_PDF_BYTES", "twenty"},
+		{"loose_features_files", "FEATURES_FILES", "1"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
