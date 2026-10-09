@@ -37,9 +37,6 @@ const (
 	uploadFormOverhead int64 = 64 << 10
 	// maxUploadFieldBytes caps one text field of the upload form.
 	maxUploadFieldBytes = 4 << 10
-	// uploadTimeout bounds the storage write and the row insert of one upload
-	// once the form fields are read.
-	uploadTimeout = 2 * time.Minute
 )
 
 // pdfMagic is the required start of every uploaded file (SPEC Section 8.6).
@@ -268,9 +265,10 @@ func (s *Server) UploadAdminFile(w http.ResponseWriter, r *http.Request, subject
 		return
 	}
 
-	upCtx, upCancel := context.WithTimeout(r.Context(), uploadTimeout)
-	defer upCancel()
-	if err := s.Files.Upload(upCtx, storageKey, br, "application/pdf"); err != nil {
+	// LocalStorage reads the part until EOF and does not watch the context;
+	// the transfer is bounded by the body cap above and by the caller's own
+	// deadline (admin-console extends only the upload route, 10 minutes).
+	if err := s.Files.Upload(r.Context(), storageKey, br, "application/pdf"); err != nil {
 		if isBodyTooLarge(err) {
 			handlerutil.WriteSafeError(w, r, http.StatusRequestEntityTooLarge, "file_too_large", "file too large", nil)
 			return
