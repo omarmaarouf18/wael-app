@@ -180,6 +180,11 @@ services:
   academy-service:
     <<: *app
     image: ghcr.io/omarmaarouf18/wael-app-academy-service:${IMAGE_TAG:?IMAGE_TAG is required}
+    # Runs as deploybot's uid/gid (not the image's appuser, whose uid is not
+    # pinned, W-10) so the encrypted files it writes into the bind-mounted
+    # STORAGE_DIR (mode 600 objects in a 700 dir) are the same owner that
+    # backup.sh and restore.sh read and write on the host. Still non-root.
+    user: "${WAEL_UID:?WAEL_UID is required}:${WAEL_GID:?WAEL_GID is required}"
     expose:
       - "3003"
     environment:
@@ -215,10 +220,21 @@ services:
       TLS_CERT_PATH: /app/certs/academy-service.crt
       TLS_KEY_PATH: /app/certs/academy-service.key
       TLS_CA_PATH: /app/certs/ca.crt
+      # Uploaded PDFs (SPEC Phase 5, ADR-0009). STORAGE_DIR in the env file is
+      # the HOST directory (backup.sh archives it); the container always sees
+      # it at /data/files. DOCUMENT_ENCRYPTION_KEY is 64 hex characters and
+      # must also be kept off-server: file backups are useless without it.
+      STORAGE_DIR: /data/files
+      DOCUMENT_ENCRYPTION_KEY: ${DOCUMENT_ENCRYPTION_KEY:?DOCUMENT_ENCRYPTION_KEY is required}
+      # Empty means the 20 MB default (SPEC D14); keep it equal to the console's.
+      MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}
+      # App-config features.files: "true" shows notes & books downloads in the app.
+      FEATURES_FILES: ${FEATURES_FILES:-false}
     volumes:
       - ${WAEL_HOME}/certs/ca.crt:/app/certs/ca.crt:ro
       - ${WAEL_HOME}/certs/academy-service.crt:/app/certs/academy-service.crt:ro
       - ${WAEL_HOME}/certs/academy-service.key:/app/certs/academy-service.key:ro
+      - ${STORAGE_DIR:?STORAGE_DIR is required}:/data/files
     mem_limit: ${ACADEMY_MEM_LIMIT:-192m}
     healthcheck:
       # Strict mTLS: the service requires a client certificate, and the probe
@@ -250,6 +266,9 @@ services:
       ACADEMY_ADMIN_URL: https://academy-service:9002
       # The console believes X-Forwarded-For only from Caddy's fixed address.
       TRUSTED_PROXY_IPS: 172.30.0.10
+      # Body cap of the PDF upload route only (every other route stays 1 MiB).
+      # Empty means 20 MB; keep it equal to academy-service's.
+      MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}
       TLS_CERT_PATH: /app/certs/admin-console.crt
       TLS_KEY_PATH: /app/certs/admin-console.key
       TLS_CA_PATH: /app/certs/ca.crt

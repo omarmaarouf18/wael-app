@@ -209,6 +209,7 @@ services:
       - ./certs/academy-service.crt:/app/certs/academy-service.crt:ro
       - ./certs/academy-service.key:/app/certs/academy-service.key:ro
       - ../shared/infra:/shared/infra:ro
+      - academy_files:/data/files
     environment:
       PORT: ${ACADEMY_SERVICE_PORT}
       MONGO_URI: ${MONGO_URI}
@@ -237,6 +238,13 @@ services:
       TLS_KEY_PATH: /app/certs/academy-service.key
       TLS_CA_PATH: /app/certs/ca.crt
       ADMIN_LISTEN_ADDR: ":9002"
+      # Uploaded PDFs (Phase 5) live in the academy_files volume. An empty
+      # DOCUMENT_ENCRYPTION_KEY means an ephemeral key (APP_ENV=local|test
+      # only): files uploaded before a restart can no longer be opened.
+      STORAGE_DIR: /data/files
+      DOCUMENT_ENCRYPTION_KEY: ${DOCUMENT_ENCRYPTION_KEY:-}
+      MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}
+      FEATURES_FILES: ${FEATURES_FILES:-false}
     depends_on:
       mongo:
         condition: service_healthy
@@ -278,6 +286,7 @@ services:
       AUTH_ADMIN_URL: https://auth-service:9001
       ACADEMY_ADMIN_URL: https://academy-service:9002
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}
       TLS_CERT_PATH: /app/certs/admin-console.crt
       TLS_KEY_PATH: /app/certs/admin-console.key
       TLS_CA_PATH: /app/certs/ca.crt
@@ -295,6 +304,8 @@ volumes:
   mongo_data:
     driver: local
   redis_data:
+    driver: local
+  academy_files:
     driver: local
 
 networks:

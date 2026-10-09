@@ -14,6 +14,9 @@
 # 12. Restore --skip-restart restores without touching services (rehearsal path)
 # 13. pull-backups.sh validates env, pulls via rsync, keeps newest N at 600
 # 14. preflight.sh redis memory checks: cap + noeviction passes; either alone fails
+# 14b. preflight.sh file storage checks (Phase 5): 64-hex key, WAEL_UID/GID of the
+#     running user, STORAGE_DIR absolute, present, mode 700, owned by WAEL_UID,
+#     strict FEATURES_FILES; the compose files wire storage, key and caps
 # 15. Caddyfile sends the exact HSTS header with includeSubDomains (no preload) on both site blocks
 # 16. Deploy takes a verified pre-deploy backup before touching containers; a failed backup
 #     aborts the deploy; first deploy (no mongo) and SKIP_PREDEPLOY_BACKUP=1 skip it; a failed
@@ -439,7 +442,17 @@ run_preflight() {
 		for v in JWT_SECRET GATEWAY_SECRET INTERNAL_SERVICE_TOKEN BLOCKLIST_HMAC_KEY; do
 			printf '%s=%s\n' "$v" "$secret"
 		done
+		# Phase 5 files: a 64-hex key built at runtime, this user's ids and a
+		# mode-700 storage dir. PF_EXTRA_ENV lines come last and win (read_var
+		# takes the last match).
+		printf 'DOCUMENT_ENCRYPTION_KEY=%s\n' "$(printf 'ab%.0s' {1..32})"
+		printf 'WAEL_UID=%s\nWAEL_GID=%s\n' "$(id -u)" "$(id -g)"
+		printf 'STORAGE_DIR=%s\n' "$box/wael/storage"
+		printf 'FEATURES_FILES=false\n'
+		[ -z "${PF_EXTRA_ENV:-}" ] || printf '%s\n' "$PF_EXTRA_ENV"
 	} > "$box/wael/.env.production"
+	mkdir -p "$box/wael/storage"
+	chmod "${PF_STORAGE_MODE:-700}" "$box/wael/storage"
 	chmod 600 "$box/wael/.env.production"
 	mkdir -p "$box/wael/secrets" "$box/wael/certs"
 	chmod 700 "$box/wael/secrets" "$box/wael/certs"
@@ -488,6 +501,62 @@ check "preflight fails when maxmemory is 0 (unlimited)" 1 "FAIL: redis maxmemory
 
 run_preflight pf-evict "$(render_redis --maxmemory 96mb --policy allkeys-lru)"
 check "preflight fails when an eviction policy is set" 1 "must not use an eviction policy"
+
+# ---------------------------------------------------------------------------
+# Test 14b: preflight file storage checks (Phase 5) and compose wiring
+# ---------------------------------------------------------------------------
+GOOD_REDIS="$(render_redis --maxmemory 96mb --policy noeviction)"
+run_preflight pf-files-ok "$GOOD_REDIS"
+check "preflight passes with a valid key, ids and storage dir" 0 "pre-flight passed"
+for line in "ok: DOCUMENT_ENCRYPTION_KEY is 64 hex characters" "ok: STORAGE_DIR mode is 700" \
+	"ok: STORAGE_DIR is owned by WAEL_UID" "ok: WAEL_UID is this user's uid"; do
+	assert "preflight reports: $line" grep -qF "$line" <<<"$OUT"
+done
+
+PF_EXTRA_ENV="DOCUMENT_ENCRYPTION_KEY=$(printf 'ab%.0s' {1..31})" run_preflight pf-key-short "$GOOD_REDIS"
+check "preflight fails on a 62-character key" 1 "FAIL: DOCUMENT_ENCRYPTION_KEY is 64 hex characters"
+PF_EXTRA_ENV="DOCUMENT_ENCRYPTION_KEY=$(printf 'zz%.0s' {1..32})" run_preflight pf-key-nonhex "$GOOD_REDIS"
+check "preflight fails on a non-hex key" 1 "FAIL: DOCUMENT_ENCRYPTION_KEY is 64 hex characters"
+PF_EXTRA_ENV="DOCUMENT_ENCRYPTION_KEY=PASTE_64_HEX" run_preflight pf-key-placeholder "$GOOD_REDIS"
+check "preflight fails on the example placeholder key" 1 "DOCUMENT_ENCRYPTION_KEY still holds a placeholder"
+PF_EXTRA_ENV="DOCUMENT_ENCRYPTION_KEY=" run_preflight pf-key-empty "$GOOD_REDIS"
+check "preflight fails on an empty key" 1 "FAIL: DOCUMENT_ENCRYPTION_KEY is set"
+PF_EXTRA_ENV="WAEL_UID=$(( $(id -u) + 1 ))" run_preflight pf-uid "$GOOD_REDIS"
+check "preflight fails when WAEL_UID is not the running user" 1 "FAIL: WAEL_UID is this user's uid"
+PF_EXTRA_ENV="WAEL_GID=PASTE_GID" run_preflight pf-gid "$GOOD_REDIS"
+check "preflight fails on a placeholder WAEL_GID" 1 "FAIL: WAEL_GID is this user's gid"
+PF_EXTRA_ENV="STORAGE_DIR=$WORK/no-such-storage" run_preflight pf-nodir "$GOOD_REDIS"
+check "preflight fails when STORAGE_DIR does not exist" 1 "FAIL: STORAGE_DIR exists and is a directory"
+PF_EXTRA_ENV="STORAGE_DIR=wael/storage" run_preflight pf-reldir "$GOOD_REDIS"
+check "preflight fails on a relative STORAGE_DIR" 1 "FAIL: STORAGE_DIR is an absolute path"
+PF_STORAGE_MODE=755 run_preflight pf-mode "$GOOD_REDIS"
+check "preflight fails when STORAGE_DIR is not mode 700" 1 "FAIL: STORAGE_DIR mode is 700"
+PF_EXTRA_ENV="FEATURES_FILES=1" run_preflight pf-features "$GOOD_REDIS"
+check "preflight fails on a loose FEATURES_FILES" 1 "FAIL: FEATURES_FILES is empty, true or false"
+
+DEPLOY_COMPOSE="$REPO_ROOT/infrastructure/deploy/docker-compose.yml"
+DEV_COMPOSE="$REPO_ROOT/infrastructure/docker-compose.yml"
+# shellcheck disable=SC2016 # literal ${...}: the text the compose file must contain
+for needle in 'user: "${WAEL_UID:?WAEL_UID is required}:${WAEL_GID:?WAEL_GID is required}"' \
+	'STORAGE_DIR: /data/files' \
+	'DOCUMENT_ENCRYPTION_KEY: ${DOCUMENT_ENCRYPTION_KEY:?DOCUMENT_ENCRYPTION_KEY is required}' \
+	'- ${STORAGE_DIR:?STORAGE_DIR is required}:/data/files' \
+	'FEATURES_FILES: ${FEATURES_FILES:-false}'; do
+	assert "deploy compose has: $needle" grep -qF -- "$needle" "$DEPLOY_COMPOSE"
+done
+# shellcheck disable=SC2016 # literal ${...}: the text the compose file must contain
+assert "deploy compose passes MAX_PDF_BYTES to academy and console" \
+	test "$(grep -cF 'MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}' "$DEPLOY_COMPOSE")" -eq 2
+assert "dev compose keeps files in the academy_files volume" grep -qF -- '- academy_files:/data/files' "$DEV_COMPOSE"
+# shellcheck disable=SC2016 # literal ${...}: the text the compose file must contain
+assert "dev compose passes MAX_PDF_BYTES to academy and console" \
+	test "$(grep -cF 'MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}' "$DEV_COMPOSE")" -eq 2
+for v in STORAGE_DIR DOCUMENT_ENCRYPTION_KEY WAEL_UID WAEL_GID FEATURES_FILES; do
+	assert "env.production.example documents $v" grep -qE "^$v=" "$REPO_ROOT/infrastructure/deploy/env.production.example"
+done
+# shellcheck disable=SC2016 # $1 expands in the inner bash
+assert "Caddyfile sets no request body limit on the admin host (the console caps uploads)" \
+	bash -c '! grep -q "max_size\|request_body" "$1"' _ "$REPO_ROOT/infrastructure/deploy/Caddyfile"
 
 # ---------------------------------------------------------------------------
 # Test 15: Caddyfile HSTS header (owner decision 2026-10-05: includeSubDomains

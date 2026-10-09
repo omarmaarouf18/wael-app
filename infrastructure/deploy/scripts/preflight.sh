@@ -29,7 +29,8 @@ check "IMAGE_TAG is a full commit sha" grep -qE '^[0-9a-f]{40}$' <<<"$tag"
 required=(API_DOMAIN ADMIN_DOMAIN ACME_EMAIL ALLOWED_ORIGIN JWT_SECRET GATEWAY_SECRET
 	INTERNAL_SERVICE_TOKEN MONGO_ROOT_USERNAME AUTH_MONGO_URI
 	NOTIFICATION_MONGO_URI ACADEMY_MONGO_URI REDIS_URI RESEND_API_KEY
-	RESEND_FROM_EMAIL BLOCKLIST_HMAC_KEY SUPPORT_WHATSAPP)
+	RESEND_FROM_EMAIL BLOCKLIST_HMAC_KEY SUPPORT_WHATSAPP
+	STORAGE_DIR DOCUMENT_ENCRYPTION_KEY WAEL_UID WAEL_GID)
 for name in "${required[@]}"; do
 	value="$(read_var "$ENV_FILE" "$name")"
 	check "$name is set" test -n "$value"
@@ -46,6 +47,24 @@ if grep -q '^APP_ENV=' "$ENV_FILE"; then
 	log "FAIL: APP_ENV must not be set in the env file (compose pins production)"
 	errors=$((errors + 1))
 fi
+
+# 3b. Uploaded files (SPEC Phase 5, ADR-0009). The key is exactly 64 hex
+# characters (never padded); academy-service runs as WAEL_UID:WAEL_GID, which
+# must be the user running this (deploybot), so the service, backup.sh and
+# restore.sh share one owner; STORAGE_DIR is that user's mode-700 directory.
+doc_key="$(read_var "$ENV_FILE" DOCUMENT_ENCRYPTION_KEY)"
+check "DOCUMENT_ENCRYPTION_KEY is 64 hex characters" grep -qE '^[0-9a-fA-F]{64}$' <<<"$doc_key"
+wael_uid="$(read_var "$ENV_FILE" WAEL_UID)"
+wael_gid="$(read_var "$ENV_FILE" WAEL_GID)"
+check "WAEL_UID is this user's uid ($(id -u))" test "$wael_uid" = "$(id -u)"
+check "WAEL_GID is this user's gid ($(id -g))" test "$wael_gid" = "$(id -g)"
+storage_dir="$(read_var "$ENV_FILE" STORAGE_DIR)"
+check "STORAGE_DIR is an absolute path" grep -q '^/' <<<"$storage_dir"
+check "STORAGE_DIR exists and is a directory" test -d "$storage_dir"
+check "STORAGE_DIR mode is 700" mode_is "$storage_dir" 700
+check "STORAGE_DIR is owned by WAEL_UID" test "$(stat -c %u "$storage_dir" 2>/dev/null)" = "$wael_uid"
+features_files="$(read_var "$ENV_FILE" FEATURES_FILES)"
+check "FEATURES_FILES is empty, true or false" grep -qxE '(|true|false)' <<<"$features_files"
 
 # 4. Certificates: present and not expiring within 14 days
 for crt in ca api-gateway auth-service notification-service academy-service admin-console; do
