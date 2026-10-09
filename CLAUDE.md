@@ -24,6 +24,12 @@ Section 12. For frontend work, read `frontend/README.md` first.
 - Never push, rewrite history, or force-push. SPEC Section 12 currently
   prohibits pushes; change that policy in the governing documentation before
   considering any push workflow.
+  *(Amended 2026-10-09, review M11: the push half of this rule is superseded
+  by the Auto-push section below (owner amendment 2026-09-30) — `develop`
+  pushes go automatically via `make push` when every gate there holds; SPEC
+  Section 12 rule 5 already points there. "Never rewrite history", "never
+  force-push", "never push `main`" and "never use --no-verify" stay in force.
+  Read this rule together with Auto-push, which is the operative push policy.)*
 
 ## Verification
 
