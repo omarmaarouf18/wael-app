@@ -18,6 +18,8 @@ export function kindForStatus(status) {
       return 'not_found';
     case 409:
       return 'conflict';
+    case 413:
+      return 'too_large';
     case 429:
       return 'rate_limited';
     default:
@@ -74,9 +76,11 @@ export function createApi({ fetchFn, getToken: tokenOf, onUnauthorized }) {
    * is the server's error code when it is a plain token (a-z and _); raw
    * error text is never kept. A 429 also carries retryAfter (seconds, or null
    * when the server sent no usable Retry-After). Never throws on HTTP or
-   * network errors.
+   * network errors. `form` (a FormData) is sent as multipart, with the
+   * browser choosing the boundary; `signal` cancels the request, which then
+   * resolves with kind 'aborted'.
    */
-  async function request(method, path, { query, body } = {}) {
+  async function request(method, path, { query, body, form, signal } = {}) {
     const token = tokenOf();
     if (!token) {
       onUnauthorized();
@@ -90,15 +94,19 @@ export function createApi({ fetchFn, getToken: tokenOf, onUnauthorized }) {
       cache: 'no-store',
       referrerPolicy: 'no-referrer',
     };
-    if (body !== undefined) {
+    if (form !== undefined) {
+      init.body = form;
+    } else if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(body);
     }
+    if (signal) init.signal = signal;
 
     let res;
     try {
       res = await fetchFn(withQuery(path, query), init);
     } catch {
+      if (signal?.aborted) return { ok: false, status: 0, kind: 'aborted', code: null, data: null };
       return { ok: false, status: 0, kind: 'unavailable', code: null, data: null };
     }
     if (res.status === 401) {
@@ -123,6 +131,7 @@ export function createApi({ fetchFn, getToken: tokenOf, onUnauthorized }) {
     request,
     get: (path, query) => request('GET', path, { query }),
     post: (path, body) => request('POST', path, { body }),
+    upload: (path, query, form, signal) => request('POST', path, { query, form, signal }),
     whoami: () => request('GET', '/api/whoami'),
   };
 }

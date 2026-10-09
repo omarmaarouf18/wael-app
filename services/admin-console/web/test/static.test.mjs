@@ -25,7 +25,7 @@ function stripJsComments(src) {
 const jsCode = Object.fromEntries(Object.entries(jsSources).map(([f, s]) => [f, stripJsComments(s)]));
 
 test('the expected modules are present', () => {
-  for (const name of ['api', 'auth', 'i18n', 'accounts', 'audit', 'app', 'account-dialog', 'tabs', 'ui', 'dom', 'catalog', 'levels', 'subjects', 'subject-dialog', 'videos', 'video-dialog', 'confirm', 'requests', 'idle', 'entitlements-dialog', 'unsaved', 'settings']) {
+  for (const name of ['api', 'auth', 'i18n', 'accounts', 'audit', 'app', 'account-dialog', 'tabs', 'ui', 'dom', 'catalog', 'levels', 'subjects', 'subject-dialog', 'videos', 'video-dialog', 'confirm', 'requests', 'idle', 'entitlements-dialog', 'unsaved', 'settings', 'files']) {
     assert.ok(jsFiles.includes(`${name}.js`), `${name}.js`);
   }
 });
@@ -140,6 +140,7 @@ test('only api.js talks to the network, and only to the console itself', () => {
   assert.deepEqual(apiPaths, [
     '/api/accounts', '/api/accounts/delete', '/api/accounts/reactivate', '/api/accounts/suspend', '/api/audit',
     '/api/entitlements', '/api/entitlements/grant', '/api/entitlements/revoke',
+    '/api/files', '/api/files/delete', '/api/files/upload',
     '/api/levels', '/api/levels/create', '/api/levels/delete', '/api/levels/update',
     '/api/requests', '/api/requests/accept', '/api/requests/reject',
     '/api/settings', '/api/settings/update',

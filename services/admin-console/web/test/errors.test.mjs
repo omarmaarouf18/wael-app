@@ -55,10 +55,16 @@ const ACADEMY_CODES = [
   'invalid_center_hours',
   'invalid_map_url',
   'settings_forbidden_word',
+  'invalid_file_id',
+  'file_not_found',
+  'invalid_upload',
+  'invalid_kind',
+  'invalid_pdf',
+  'file_too_large',
 ];
 
 test('every academy admin code has an ar and an en message', () => {
-  assert.equal(ACADEMY_CODES.length, 43);
+  assert.equal(ACADEMY_CODES.length, 49);
   for (const code of ACADEMY_CODES) {
     assert.ok(MESSAGES.ar[`err.${code}`], `ar err.${code}`);
     assert.ok(MESSAGES.en[`err.${code}`], `en err.${code}`);
@@ -66,7 +72,7 @@ test('every academy admin code has an ar and an en message', () => {
 });
 
 test('the console kinds still resolve in both languages', () => {
-  for (const kind of ['unauthorized', 'forbidden', 'not_found', 'conflict', 'rate_limited', 'bad_request', 'unavailable']) {
+  for (const kind of ['unauthorized', 'forbidden', 'not_found', 'conflict', 'too_large', 'rate_limited', 'bad_request', 'unavailable']) {
     assert.ok(MESSAGES.ar[`err.${kind}`], `ar err.${kind}`);
     assert.ok(MESSAGES.en[`err.${kind}`], `en err.${kind}`);
   }

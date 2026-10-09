@@ -14,7 +14,7 @@ import (
 // message in web/js/i18n.js (checked by web/test/errors.test.mjs against the
 // same list). Extracted with:
 //
-//	grep -rhoE 'WriteSafeError\(w, r, http\.Status[A-Za-z]+, ("[a-z_0-9]+"|handlerutil\.ErrCode[A-Za-z]+)|return nil, ("[a-z_0-9]+"|http\.Status[A-Za-z]+, "[a-z_0-9]+")' \
+//	grep -rhoE 'WriteSafeError\(w, r, http\.Status[A-Za-z]+, ("[a-z_0-9]+"|handlerutil\.ErrCode[A-Za-z]+)|return (form, )?nil, ("[a-z_0-9]+"|http\.Status[A-Za-z]+, "[a-z_0-9]+")' \
 //	  services/academy-service/internal/handlers/admin_*.go
 var academyErrorCodes = []string{
 	"unauthorized",
@@ -60,6 +60,12 @@ var academyErrorCodes = []string{
 	"invalid_center_hours",
 	"invalid_map_url",
 	"settings_forbidden_word",
+	"invalid_file_id",
+	"file_not_found",
+	"invalid_upload",
+	"invalid_kind",
+	"invalid_pdf",
+	"file_too_large",
 }
 
 var (
@@ -67,8 +73,9 @@ var (
 	// or a handlerutil constant.
 	codeArg = regexp.MustCompile(`WriteSafeError\(w, r, http\.Status[A-Za-z]+, ("[a-z_0-9]+"|handlerutil\.ErrCode[A-Za-z]+)`)
 	// buildReturn matches the (nil, "code", ...) returns of the shared
-	// subject builder and the lockout return of verifyAdminToken.
-	buildReturn = regexp.MustCompile(`return nil, (?:http\.Status[A-Za-z]+, )?("[a-z_0-9]+")`)
+	// subject builder, the lockout return of verifyAdminToken and the
+	// (form, nil, "code", status) returns of the upload form reader.
+	buildReturn = regexp.MustCompile(`return (?:form, )?nil, (?:http\.Status[A-Za-z]+, )?("[a-z_0-9]+")`)
 	quoted      = regexp.MustCompile(`^"([a-z_0-9]+)"$`)
 
 	errCodeValues = map[string]string{
@@ -85,7 +92,7 @@ var (
 // returns anymore.
 func TestAcademyErrorCodes_MatchHandlers(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "academy-service", "internal", "handlers")
-	files := []string{"admin.go", "admin_levels.go", "admin_subjects.go", "admin_videos.go", "admin_youtube.go", "admin_validate.go", "admin_requests.go", "admin_entitlements.go", "admin_settings.go"}
+	files := []string{"admin.go", "admin_levels.go", "admin_subjects.go", "admin_videos.go", "admin_youtube.go", "admin_validate.go", "admin_requests.go", "admin_entitlements.go", "admin_settings.go", "admin_files.go"}
 	found := map[string]bool{}
 	for _, name := range files {
 		raw, err := os.ReadFile(filepath.Join(dir, name))

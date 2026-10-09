@@ -55,7 +55,7 @@
       <button id="tab-requests" class="tab" type="button" role="tab" aria-controls="panel-requests" aria-selected="false" tabindex="-1" data-tab="requests"><span data-i18n="tabs.requests"></span> <span id="badge-requests" class="count" hidden></span></button>
       <button id="tab-catalog" class="tab" type="button" role="tab" aria-controls="panel-catalog" aria-selected="false" tabindex="-1" data-tab="catalog"><span data-i18n="tabs.catalog"></span></button>
       <button id="tab-settings" class="tab" type="button" role="tab" aria-controls="panel-settings" aria-selected="false" tabindex="-1" data-tab="settings"><span data-i18n="tabs.settings"></span></button>
-      <button id="tab-files" class="tab" type="button" role="tab" aria-controls="panel-files" aria-selected="false" tabindex="-1" data-tab="files" hidden><span data-i18n="tabs.files"></span></button>
+      <button id="tab-files" class="tab" type="button" role="tab" aria-controls="panel-files" aria-selected="false" tabindex="-1" data-tab="files"><span data-i18n="tabs.files"></span></button>
     </nav>
 
     <section id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts">
@@ -276,7 +276,69 @@
         </div>
       </form>
     </section>
-    <section id="panel-files" role="tabpanel" aria-labelledby="tab-files" hidden></section>
+    <section id="panel-files" role="tabpanel" aria-labelledby="tab-files" hidden>
+      <div class="section-head">
+        <div>
+          <h2 data-i18n="files.title"></h2>
+          <p class="muted small" data-i18n="files.subtitle"></p>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="field grow">
+          <label for="files-level" data-i18n="files.level"></label>
+          <select id="files-level"></select>
+        </div>
+        <div class="field grow">
+          <label for="files-subject" data-i18n="files.subject"></label>
+          <select id="files-subject" disabled></select>
+        </div>
+      </div>
+      <div id="files-banner" class="banner" role="alert" hidden></div>
+      <div class="table-wrap">
+        <table id="files-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="files.col.kind"></th>
+              <th scope="col" data-i18n="files.col.title"></th>
+              <th scope="col" data-i18n="files.col.size"></th>
+              <th scope="col" data-i18n="files.col.date"></th>
+              <th scope="col" data-i18n="files.col.actions"></th>
+            </tr>
+          </thead>
+          <tbody id="files-body"></tbody>
+        </table>
+      </div>
+      <form id="files-form" class="settings-form" novalidate>
+        <h3 data-i18n="files.uploadTitle"></h3>
+        <div class="settings-grid">
+          <div class="field">
+            <label for="files-kind" data-i18n="files.kind"></label>
+            <select id="files-kind"></select>
+          </div>
+          <div class="field">
+            <label for="files-file" data-i18n="files.file"></label>
+            <input id="files-file" type="file" accept="application/pdf,.pdf">
+            <span id="files-limit" class="muted small"></span>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <div class="field">
+            <label for="files-title-ar" data-i18n="files.titleAr"></label>
+            <input id="files-title-ar" type="text" maxlength="200" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="files-title-en" data-i18n="files.titleEn"></label>
+            <input id="files-title-en" type="text" dir="ltr" maxlength="200" autocomplete="off">
+          </div>
+        </div>
+        <div id="files-form-banner" class="banner" role="alert" hidden></div>
+        <div class="settings-actions">
+          <button id="files-submit" class="btn primary" type="submit" data-i18n="files.upload"></button>
+          <button id="files-cancel" class="btn secondary" type="button" data-i18n="files.cancelUpload" hidden></button>
+          <span id="files-status" class="muted small" role="status"></span>
+        </div>
+      </form>
+    </section>
     <div id="catalog-dialogs"></div>
     <div id="toast" class="toast" role="status" hidden></div>
   </div>

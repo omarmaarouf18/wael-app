@@ -94,13 +94,12 @@ $('panel-audit').append($('audit-source-academy'));
 
 const app = main(doc, win);
 
-test('starts on the sign-in page, Arabic and right-to-left, with the unfinished tabs hidden', () => {
+test('starts on the sign-in page, Arabic and right-to-left, with every tab shown', () => {
   assert.equal($('login-view').hidden, false);
   assert.equal($('app-view').hidden, true);
   assert.equal(doc.documentElement.lang, 'ar');
   assert.equal(doc.documentElement.dir, 'rtl');
-  for (const id of ['files']) assert.equal($(`tab-${id}`).hidden, true, id);
-  for (const id of ['accounts', 'audit', 'requests', 'catalog']) assert.equal($(`tab-${id}`).hidden, false, id);
+  for (const id of ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files']) assert.equal($(`tab-${id}`).hidden, false, id);
   assert.equal(getToken(), '');
 });
 
@@ -384,9 +383,9 @@ test('the audit source switch loads the academy log without merging pages', asyn
   assert.equal(back.url, '/api/audit?source=auth&page=1&limit=20');
 });
 
-test('hidden tabs cannot be activated', () => {
+test('unknown tabs cannot be activated', () => {
   const before = globalThis.fetch.calls.length;
-  app.activate('files');
+  app.activate('nope');
   assert.equal(globalThis.fetch.calls.length, before);
   assert.equal(app.activeTab, 'audit');
 });

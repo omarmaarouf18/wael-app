@@ -71,6 +71,11 @@ type Options struct {
 	Client *http.Client
 	// Timeout overrides UpstreamTimeout (tests only).
 	Timeout time.Duration
+	// MaxPDFBytes caps one uploaded PDF (MAX_PDF_BYTES). Only the upload
+	// route accepts a body above 1 MiB: MaxPDFBytes plus the form overhead.
+	MaxPDFBytes int64
+	// UploadTimeout overrides UploadTimeout (tests only).
+	UploadTimeout time.Duration
 }
 
 // Proxy holds the immutable state shared by all handlers.
@@ -81,6 +86,10 @@ type Proxy struct {
 	trusted       []netip.Prefix
 	client        *http.Client
 	timeout       time.Duration
+	// uploadClient is client with the longer upload timeout.
+	uploadClient  *http.Client
+	uploadTimeout time.Duration
+	maxPDFBytes   int64
 }
 
 // New validates the options and returns a Proxy. It fails fast on an empty
@@ -107,6 +116,16 @@ func New(o Options) (*Proxy, error) {
 	}
 	c.Timeout = timeout
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	uploadTimeout := o.UploadTimeout
+	if uploadTimeout <= 0 {
+		uploadTimeout = UploadTimeout
+	}
+	uc := c
+	uc.Timeout = uploadTimeout
+	maxPDF := o.MaxPDFBytes
+	if maxPDF <= 0 {
+		maxPDF = DefaultMaxPDFBytes
+	}
 	return &Proxy{
 		internalToken: o.InternalToken,
 		authURL:       base,
@@ -114,6 +133,9 @@ func New(o Options) (*Proxy, error) {
 		trusted:       o.TrustedProxies,
 		client:        &c,
 		timeout:       timeout,
+		uploadClient:  &uc,
+		uploadTimeout: uploadTimeout,
+		maxPDFBytes:   maxPDF,
 	}, nil
 }
 
@@ -558,6 +580,13 @@ func (p *Proxy) call(w http.ResponseWriter, r *http.Request, token string, c ups
 
 	// #nosec G704 //nolint:gosec -- same request as above
 	resp, err := p.client.Do(req)
+	return p.finish(w, c, resp, err)
+}
+
+// finish turns the upstream answer (or transport error) into the status and
+// JSON body to relay. When the upstream is unreachable, slow, answers 5xx or
+// an unusable body, it writes a safe 503 itself and returns ok=false.
+func (p *Proxy) finish(w http.ResponseWriter, c upstreamCall, resp *http.Response, err error) (int, []byte, bool) {
 	if err != nil {
 		reason := "error"
 		if errors.Is(err, context.DeadlineExceeded) || isTimeout(err) {
@@ -653,6 +682,8 @@ func writeError(w http.ResponseWriter, status int, code string) {
 		"method_not_allowed": "method not allowed",
 		"not_found":          "not found",
 		"unavailable":        "service unavailable",
+		"file_too_large":     "file too large",
+		"invalid_pdf":        "file is not a PDF",
 	}[code]
 	writeJSON(w, status, map[string]string{"error": msg, "code": code})
 }

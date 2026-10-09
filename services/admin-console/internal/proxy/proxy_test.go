@@ -183,7 +183,7 @@ func (rt route) want() int {
 }
 
 func routes() []route {
-	return append(append(append(baseRoutes(), catalogRoutes()...), requestsRoutes()...), settingsRoutes()...)
+	return append(append(append(append(baseRoutes(), catalogRoutes()...), requestsRoutes()...), settingsRoutes()...), filesRoutes()...)
 }
 
 func baseRoutes() []route {

@@ -64,6 +64,7 @@ func main() {
 		AcademyURL:     cfg.AcademyAdminURL,
 		TrustedProxies: cfg.TrustedProxies,
 		Client:         client,
+		MaxPDFBytes:    cfg.MaxPDFBytes,
 	})
 	if err != nil {
 		log.Fatalf("[ADMIN-CONSOLE] %v", err)
@@ -102,8 +103,8 @@ func main() {
 		_ = srv.Shutdown(ctx)
 	}()
 
-	log.Printf("[ADMIN-CONSOLE] env=%s listening %s on :%s auth_admin=%s academy_admin=%s mtls-client=%t trusted-proxies=%d",
-		cfg.AppEnv, scheme, cfg.Port, cfg.AuthAdminURL, cfg.AcademyAdminURL, cfg.MTLSClientEnabled(), len(cfg.TrustedProxies))
+	log.Printf("[ADMIN-CONSOLE] env=%s listening %s on :%s auth_admin=%s academy_admin=%s mtls-client=%t trusted-proxies=%d max-pdf-bytes=%d",
+		cfg.AppEnv, scheme, cfg.Port, cfg.AuthAdminURL, cfg.AcademyAdminURL, cfg.MTLSClientEnabled(), len(cfg.TrustedProxies), cfg.MaxPDFBytes)
 	if err := serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("[ADMIN-CONSOLE] %v", err)
 	}

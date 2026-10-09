@@ -8,7 +8,7 @@ import (
 
 var allVars = []string{
 	"APP_ENV", "PORT", "INTERNAL_SERVICE_TOKEN", "AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL",
-	"TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "TRUSTED_PROXY_IPS",
+	"TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "TRUSTED_PROXY_IPS", "MAX_PDF_BYTES",
 }
 
 // setEnv clears every variable the package reads, then applies kv.
@@ -267,5 +267,32 @@ func TestLoad_PortValidation(t *testing.T) {
 	cfg, err := Load()
 	if err != nil || cfg.Port != "8443" {
 		t.Fatalf("expected port 8443, got %v %v", cfg, err)
+	}
+}
+
+func TestLoad_MaxPDFBytes(t *testing.T) {
+	setEnv(t, prodEnv())
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MaxPDFBytes != 20971520 {
+		t.Fatalf("default MaxPDFBytes = %d, want 20971520", cfg.MaxPDFBytes)
+	}
+
+	env := prodEnv()
+	env["MAX_PDF_BYTES"] = "1048576"
+	setEnv(t, env)
+	if cfg, err = Load(); err != nil || cfg.MaxPDFBytes != 1048576 {
+		t.Fatalf("MAX_PDF_BYTES=1048576: %v, %v", cfg, err)
+	}
+
+	for _, bad := range []string{"0", "-5", "20MB", "1e6", " 1"} {
+		env := prodEnv()
+		env["MAX_PDF_BYTES"] = bad
+		setEnv(t, env)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MAX_PDF_BYTES") {
+			t.Fatalf("MAX_PDF_BYTES=%q: err = %v, want a refusal naming the variable", bad, err)
+		}
 	}
 }

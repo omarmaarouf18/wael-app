@@ -1,6 +1,7 @@
-// The tab registry. Requests and Files are declared but not enabled: their
-// buttons stay hidden until the APIs behind them exist (SPEC Phase 4.5/4.6
-// and Phase 5). Enabling one means adding its module and flipping `enabled`.
+// The tab registry. A tab whose API does not exist yet is declared with
+// `enabled: false` and its button stays hidden; enabling one means adding its
+// module and flipping `enabled`. Every tab is enabled since Files (SPEC
+// Phase 5).
 
 export const TABS = Object.freeze([
   Object.freeze({ id: 'accounts', enabled: true }),
@@ -8,7 +9,7 @@ export const TABS = Object.freeze([
   Object.freeze({ id: 'requests', enabled: true, badge: true }),
   Object.freeze({ id: 'catalog', enabled: true }),
   Object.freeze({ id: 'settings', enabled: true }),
-  Object.freeze({ id: 'files', enabled: false }),
+  Object.freeze({ id: 'files', enabled: true }),
 ]);
 
 export function visibleTabs() {

@@ -33,7 +33,13 @@ type Config struct {
 	// TrustedProxies are the only peers whose X-Forwarded-For is believed
 	// (Caddy). Empty means X-Forwarded-For is never read.
 	TrustedProxies []netip.Prefix
+	// MaxPDFBytes caps one uploaded PDF (MAX_PDF_BYTES, same value as the
+	// academy). Only the upload route accepts a body above 1 MiB.
+	MaxPDFBytes int64
 }
+
+// DefaultMaxPDFBytes is the MAX_PDF_BYTES default (20 MB, SPEC D14).
+const DefaultMaxPDFBytes int64 = 20 * 1024 * 1024
 
 // Dev reports whether APP_ENV relaxes security (local or test only).
 func (c *Config) Dev() bool {
@@ -114,6 +120,14 @@ func Load() (*Config, error) {
 	}
 	if !dev && len(cfg.TrustedProxies) == 0 {
 		return nil, errors.New("config: required env var TRUSTED_PROXY_IPS is empty")
+	}
+	cfg.MaxPDFBytes = DefaultMaxPDFBytes
+	if v := os.Getenv("MAX_PDF_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid MAX_PDF_BYTES %q: must be a positive integer", v)
+		}
+		cfg.MaxPDFBytes = n
 	}
 	return cfg, nil
 }
