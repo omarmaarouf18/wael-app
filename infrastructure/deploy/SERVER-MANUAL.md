@@ -466,11 +466,13 @@ Preflight then checks (item 3b below): the key is 64 hex characters,
 `STORAGE_DIR` is an absolute path to an existing mode-`700` directory owned by
 that uid. academy-service runs as that uid/gid (compose `user:`), not as the
 image's `appuser`, so the files it writes (mode `600`) are the same owner that
-`backup.sh` and `restore.sh` use.
+`backup.sh` and `restore.sh` use. *(Owner decision 2026-10-09: accepted. W-10,
+a pinned container uid for every image, stays open as its own item; the other
+services still run as `appuser`.)*
 
-Turning downloads on (owner). The app shows downloads only while the flag is
-on, so the phone check happens with the flag on, while only a test file
-exists:
+Turning downloads on (owner; this order accepted by the owner 2026-10-09).
+The app shows downloads only while the flag is on, so the phone check
+happens with the flag on, while only a test file exists:
 
 1. Deploy with `FEATURES_FILES=false` (students see nothing new).
 2. In the console, Catalog: create a test diploma and leave it unpublished

@@ -86,3 +86,7 @@ two things the earlier text did not say.
    `fix/infra-deploy-readiness`) read and restore them as the same user.
    The single-writer assumption holds: only the service writes while it runs,
    and a restore runs with the services stopped.
+   - *Owner decision 2026-10-09 (on the Phase 5 report): accepted.*
+     academy-service runs as `WAEL_UID:WAEL_GID` (deploybot) in production.
+     W-10 (a pinned uid for every service image) stays open as a separate
+     item; this decision covers academy-service only.
