@@ -128,8 +128,15 @@ the key means revoking the certificate and making a new one.
 - Deciding between accepting the risk, in-app purchase, or Android only
   stays with the owner.
 
+## Verified
+
+- 2026-10-09: first run in `wael-app-mobile` (run 37936859267) built the
+  signed IPA and uploaded it to App Store Connect (1.0.0, build 1).
+- App Store Connect warned ITMS-90068 (iOS 13.0 deployment target; 15.0 is
+  required for uploads from April 2027). The minimum iOS version is now
+  15.0 (`IPHONEOS_DEPLOYMENT_TARGET` in all three Runner configurations).
+
 ## Not verified
 
-The workflow has not run on a macOS runner yet (actionlint and shellcheck
-pass; the signing script was run against the real project file on Linux).
-The first run in `wael-app-mobile` is the verification.
+The 15.0 deployment target has not been built on a macOS runner yet; the
+next "Build iOS" run after the sync is the verification.
