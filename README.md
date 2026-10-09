@@ -40,4 +40,4 @@ infrastructure/docker-compose.yml up --build -d` (mongo:7, redis:7).
 
 Decisions live in `docs/adr/` (index: `docs/adr/README.md`). Work happens
 on `develop`; merges to `main` go by fast-forward after CI passes
-(`CLAUDE.md`, `AI_CONTEXT.md`).
+(`CLAUDE.md`, `AI_CONTEXT.md`). Document map: `docs/README.md`.
