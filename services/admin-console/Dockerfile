@@ -7,7 +7,7 @@
 # The static pages in web/ are embedded in the binary (go:embed).
 
 # ---- Development Stage ---------------------------------------------------
-FROM golang:1.26.9-alpine AS dev
+FROM golang:1.27.0-alpine AS dev
 
 RUN apk add --no-cache git curl \
     && go install github.com/air-verse/air@v1.52.2
@@ -24,7 +24,7 @@ EXPOSE 3005
 CMD ["air", "-c", ".air.toml"]
 
 # ---- Build Stage ---------------------------------------------------------
-FROM golang:1.26.9-alpine AS build
+FROM golang:1.27.0-alpine AS build
 
 WORKDIR /app/services/admin-console
 
@@ -37,7 +37,7 @@ COPY services/admin-console/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/service ./cmd
 
 # ---- Production Stage ----------------------------------------------------
-FROM alpine:3.20 AS prod
+FROM alpine:3.24 AS prod
 
 RUN apk --no-cache add ca-certificates curl \
     && addgroup -S appgroup && adduser -S appuser -G appgroup
