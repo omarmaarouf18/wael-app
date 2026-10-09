@@ -73,3 +73,13 @@ share sheet. There is no in-app PDF viewer and no `FLAG_SECURE` for files
 inside the app, and the platform itself sends nothing outside the app;
 sharing is the student's own action. Leak traceability is still the open
 question in ADR-0007 (per-user watermark, SPEC Section 3 question 2).
+
+## Note (2026-10-09, Phase 5 server side, not an owner decision)
+
+The server half that the 2026-10-08 note waited for is built on branch
+`feat/phase5-files` (not pushed, held for owner review): upload and delete in
+the admin console, `GET /academy/subjects/{id}/files/{fileId}/download` with an
+ownership check on every call, and `features.files` in app-config from the
+`FEATURES_FILES` setting (default off). Nothing changes for students until the
+owner deploys it and sets `FEATURES_FILES=true`. The ADR's decisions and the
+open copy-protection question are unchanged.

@@ -326,6 +326,11 @@ checked against each service's `config.Load()` and `env.production.example`.
 | `MIN_VERSION` / `LATEST_VERSION` / `UPDATE_URL` | academy-service | no (empty = no update prompt) | Update metadata in the public app config (F-UX2 A7) | `UPDATE_URL` must use `https://` when set |
 | `EXPOSE_PRICE_TO_STUDENTS` | academy-service | no (default `false`) | Show subject prices | leave `false` unless the owner decides otherwise |
 | `RATE_LIMIT_READ/PLAY/DOWNLOAD/WRITE` | academy-service | no (defaults 120/60/10/5) | Per-user per-minute tiers | uncomment to override |
+| `STORAGE_DIR` | academy-service (compose bind mount), backup.sh | yes (added 2026-10-09, Phase 5) | HOST directory of the encrypted PDFs; compose mounts it at `/data/files` | `/home/deploybot/wael/storage`, created by deploybot with mode `700` (see "Files (Phase 5)" below) |
+| `DOCUMENT_ENCRYPTION_KEY` | academy-service | yes (added 2026-10-09) | AES-256-GCM key of every stored PDF (ADR-0009). Never change it once files exist: they become unreadable | `<GENERATE: openssl rand -hex 32>`; copy it into the owner's password manager BEFORE the first upload |
+| `WAEL_UID` / `WAEL_GID` | compose (`user:` of academy-service) | yes (added 2026-10-09) | academy-service runs as deploybot so it and backup/restore share the files | `id -u deploybot` / `id -g deploybot` |
+| `MAX_PDF_BYTES` | academy-service, admin-console | no (default 20971520 = 20 MB, SPEC D14) | Max PDF upload; the console's upload-route body cap | uncomment to override; keep one value for both |
+| `FEATURES_FILES` | academy-service | no (default `false`) | App-config `features.files`: `true` shows notes & books downloads in the app | `false` until a test upload and download worked (see "Files (Phase 5)") |
 | `STREAM_MAX_CONCURRENT` / `STREAM_OPEN_RATE_LIMIT` | notification-service | no (defaults 3 / 10) | SSE caps | uncomment to override |
 | `NOTIFICATION_SERVICE_URL` | academy-service | yes (production) | Internal mTLS notification push URL for student notifications (request accept/reject, grant/revoke) | fixed in compose: `https://notification-service:3004` (requires https in production) |
 | `*_MEM_LIMIT`, `MONGO_CACHE_GB` | compose only | no | Container memory / WiredTiger cache | §1 table; "1 GB host" block for small hosts |
@@ -335,7 +340,8 @@ checked against each service's `config.Load()` and `env.production.example`.
 Fixed by compose (never in `.env.production`): `APP_ENV=production`, `PORT`,
 `ADMIN_LISTEN_ADDR` (`:9001`/`:9002`), `*_MONGO_DATABASE`, internal
 `https://<svc>:<port>` URLs (including `NOTIFICATION_SERVICE_URL=https://notification-service:3004` on `academy-service`), `TRUSTED_PROXY_IPS=172.30.0.10`,
-`TLS_*_PATH=/app/certs/...`. Infra-provided (not secrets): `IMAGE_TAG` comes
+`TLS_*_PATH=/app/certs/...`, and on `academy-service` `STORAGE_DIR=/data/files`
+(the container side of the bind mount; added 2026-10-09). Infra-provided (not secrets): `IMAGE_TAG` comes
 from `release.env` (written by publish), `WAEL_HOME` from the runner env.
 
 Generate everything on the server only, with a script that writes the file as
@@ -380,8 +386,16 @@ echo "SUPPORT_WHATSAPP=${OPERATOR_WHATSAPP}"
 echo "EXPOSE_PRICE_TO_STUDENTS=false"
 echo "TERMS_URL=https://${OPERATOR_API_DOMAIN#api.}/terms"
 echo "PRIVACY_URL=https://${OPERATOR_API_DOMAIN#api.}/privacy"
+# Phase 5 files (added 2026-10-09). On a server that already stores files,
+# never re-run this script: a new DOCUMENT_ENCRYPTION_KEY makes them unreadable.
+echo "STORAGE_DIR=$WAEL_HOME/storage"
+echo "DOCUMENT_ENCRYPTION_KEY=$(openssl rand -hex 32)"
+echo "WAEL_UID=$(id -u)"
+echo "WAEL_GID=$(id -g)"
+echo "FEATURES_FILES=false"
 } > "$WAEL_HOME/.env.production"
 chmod 600 "$WAEL_HOME/.env.production"
+mkdir -p -m 700 "$WAEL_HOME/storage"
 SCRIPT
 [server azureuser] sudo -u deploybot bash /tmp/gen-env.sh && rm /tmp/gen-env.sh
 [server azureuser] sudo -u deploybot bash -c 'ls -la ~/wael/.env.production'
@@ -417,6 +431,67 @@ back from the file, §6):
   (each one the service loads) is shorter than 32 bytes or contains `PASTE_`,
   `CHANGE_ME` or `devpassword123` (any case), the same rule as preflight item 3.
   `admin-console` does not apply this check to its `INTERNAL_SERVICE_TOKEN` yet.
+  *(Added 2026-10-09, Phase 5:)* `academy-service` also validates `STORAGE_DIR`
+  (required), `DOCUMENT_ENCRYPTION_KEY` (exactly 64 hex characters, never
+  printed), `MAX_PDF_BYTES` (positive integer) and `FEATURES_FILES` (`true` or
+  `false` only); `admin-console` validates `MAX_PDF_BYTES`.
+
+### Files (Phase 5)
+
+*(Added 2026-10-09, branch `feat/phase5-files`; applies once that release is
+deployed.)* Notes and books are PDFs the admin uploads in the console's Files
+tab. academy-service encrypts each one with `DOCUMENT_ENCRYPTION_KEY`
+(AES-256-GCM, ADR-0009) into `STORAGE_DIR` and streams it only to students who
+own the subject, checking ownership on every download. The app shows downloads
+only while `FEATURES_FILES=true`.
+
+Adding it to the running server (once, before the deploy that brings Phase 5;
+the deploy fails at preflight until these exist):
+
+```bash
+[server azureuser] sudo -u deploybot mkdir -m 700 /home/deploybot/wael/storage
+[server azureuser] sudo -u deploybot bash -c 'K="$(openssl rand -hex 32)"; printf "STORAGE_DIR=/home/deploybot/wael/storage\nDOCUMENT_ENCRYPTION_KEY=%s\nWAEL_UID=%s\nWAEL_GID=%s\nFEATURES_FILES=false\n" "$K" "$(id -u)" "$(id -g)" >> ~/wael/.env.production'
+[server azureuser] sudo -u deploybot sed -n 's/^DOCUMENT_ENCRYPTION_KEY=//p' /home/deploybot/wael/.env.production
+```
+
+The last command prints the key once: put it in the owner's password manager
+now, before the first upload, and nowhere else (not in the repo, not next to
+a backup). A files backup is useless without it, and a new key makes every
+stored file unreadable, so the key is never rotated while files exist.
+
+Preflight then checks (item 3b below): the key is 64 hex characters,
+`WAEL_UID`/`WAEL_GID` are the ids of the user running it (deploybot), and
+`STORAGE_DIR` is an absolute path to an existing mode-`700` directory owned by
+that uid. academy-service runs as that uid/gid (compose `user:`), not as the
+image's `appuser`, so the files it writes (mode `600`) are the same owner that
+`backup.sh` and `restore.sh` use.
+
+Turning downloads on (owner). The app shows downloads only while the flag is
+on, so the phone check happens with the flag on, while only a test file
+exists:
+
+1. Deploy with `FEATURES_FILES=false` (students see nothing new).
+2. In the console, Catalog: create a test diploma and leave it unpublished
+   (students never see an unpublished level or what is in it), add a subject
+   in it with one video, and publish the subject (the grant dialog lists
+   published subjects only; the diploma stays unpublished). Grant that subject
+   to your own test student account (Accounts, "المواد"). Files tab: pick the
+   subject and upload a small test PDF; it appears in the list with its size.
+3. Set `FEATURES_FILES=true` in `.env.production` and redeploy the current
+   release (Actions -> Deploy -> Run workflow). Students now see the notes tab
+   as "Notes & books", empty for everyone except your test account, because no
+   real subject has files yet.
+4. Within about 5 minutes (the app's config cache), on a phone signed in with
+   the test account: open the test subject, download the file, open it. Sign
+   in with another account and check the file is not offered and that the
+   download is refused.
+5. If anything is wrong: `FEATURES_FILES=false` and redeploy; no new APK.
+   Otherwise upload the real notes and books into the real subjects.
+
+Limits: one PDF per upload, at most `MAX_PDF_BYTES` (20 MB). A download is
+decrypted in memory before it is sent (about one copy of the file per
+download in flight), so many simultaneous downloads of large files need
+academy-service memory headroom (`ACADEMY_MEM_LIMIT`, default 192m).
 
 Completeness proof (run from `wael-app/infrastructure/deploy/`): every name
 set in `env.production.example` is referenced by `docker-compose.yml`, and the
@@ -426,7 +501,7 @@ tuning overrides, `IMAGE_TAG` (from `release.env`) and `WAEL_HOME` (host env):
 ```bash
 [laptop] grep -o -E '\$\{[A-Z_][A-Z_0-9]*' docker-compose.yml Caddyfile | sed 's/.*\${//' | sort -u > /tmp/used
 [laptop] grep -E '^[A-Z_]+=' env.production.example | cut -d= -f1 | sort -u > /tmp/set
-[laptop] grep -E '^# (RATE_LIMIT_[A-Z]+|STREAM_[A-Z_]+|[A-Z]+_MEM_LIMIT|MONGO_CACHE_GB|REDIS_MAXMEMORY|[A-Z]+_GOMEMLIMIT)=' env.production.example | cut -d= -f1 | sed 's/^# //' | sort -u > /tmp/tuning
+[laptop] grep -E '^# (RATE_LIMIT_[A-Z]+|STREAM_[A-Z_]+|[A-Z]+_MEM_LIMIT|MONGO_CACHE_GB|REDIS_MAXMEMORY|[A-Z]+_GOMEMLIMIT|MAX_PDF_BYTES)=' env.production.example | cut -d= -f1 | sed 's/^# //' | sort -u > /tmp/tuning
 [laptop] comm -23 /tmp/used <(sort -u /tmp/set /tmp/tuning); echo "only IMAGE_TAG and WAEL_HOME may remain"
 ```
 
@@ -572,9 +647,14 @@ running container (added 2026-10-06 from the script; the items are in its order)
    `devpassword123`): `API_DOMAIN`, `ADMIN_DOMAIN`, `ACME_EMAIL`, `ALLOWED_ORIGIN`,
    `JWT_SECRET`, `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN`, `MONGO_ROOT_USERNAME`,
    the three `*_MONGO_URI`, `REDIS_URI`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`,
-   `BLOCKLIST_HMAC_KEY`, `SUPPORT_WHATSAPP`; `JWT_SECRET`, `GATEWAY_SECRET`,
-   `INTERNAL_SERVICE_TOKEN` and `BLOCKLIST_HMAC_KEY` are at least 32 characters;
-   `APP_ENV` is absent.
+   `BLOCKLIST_HMAC_KEY`, `SUPPORT_WHATSAPP`, and (added 2026-10-09, Phase 5)
+   `STORAGE_DIR`, `DOCUMENT_ENCRYPTION_KEY`, `WAEL_UID`, `WAEL_GID`; `JWT_SECRET`,
+   `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN` and `BLOCKLIST_HMAC_KEY` are at
+   least 32 characters; `APP_ENV` is absent.
+   3b. *(Added 2026-10-09.)* `DOCUMENT_ENCRYPTION_KEY` is 64 hex characters;
+   `WAEL_UID`/`WAEL_GID` equal the running user's ids; `STORAGE_DIR` is an
+   absolute path to an existing directory with mode `700` owned by `WAEL_UID`;
+   `FEATURES_FILES` is empty, `true` or `false`.
 4. Certificates: the CA and the five service certificates are valid for 14 more
    days, and the five service keys exist.
 5. The compose file renders with this env. `TERMS_URL` and `PRIVACY_URL` are not in

@@ -132,7 +132,8 @@ signs out. The page is Arabic first with an English toggle. Today it offers
 Accounts (search, suspend, reactivate, delete, each with a recorded reason) and
 the Audit log; the Requests, Catalog and Files tabs stay hidden until their
 APIs exist (SPEC Phase 4), and until then the audit log shows auth-service
-actions only.
+actions only. *(Amended 2026-10-09: with the Phase 5 release (branch
+`feat/phase5-files`) the Files tab is shown too; see "Files (Phase 5)" below.)*
 
 **Sign-in problems.** `401`: wrong, expired or revoked token. `429`: five bad
 attempts from the same client address lock that address out for 30 seconds,
@@ -191,6 +192,33 @@ for host-only images. Keep loaded images: rollback needs the last-good
 release's images on the host, so do not `docker image prune` between deploys.
 The first deploy has no last-good release to roll back to. Nothing here has
 been run yet.
+
+## Files (Phase 5)
+
+*(Added 2026-10-09; applies to the release that contains branch
+`feat/phase5-files`.)* Full procedure: `SERVER-MANUAL.md` §5 "Files (Phase 5)".
+
+**Before that deploy** (preflight fails until all of these hold):
+
+1. As deploybot, create `/home/deploybot/wael/storage` with mode `700`.
+2. Add to `.env.production`: `STORAGE_DIR` (that path), a new
+   `DOCUMENT_ENCRYPTION_KEY` (`openssl rand -hex 32`), `WAEL_UID` and
+   `WAEL_GID` (deploybot's `id -u` / `id -g`), and `FEATURES_FILES=false`.
+3. Put `DOCUMENT_ENCRYPTION_KEY` in the owner's password manager before the
+   first upload. File backups are useless without it, and changing it makes
+   every stored file unreadable.
+
+**Turning downloads on:** deploy with `FEATURES_FILES=false`; upload a test PDF
+in the console into a subject that only your test account owns (a published
+subject inside an unpublished test diploma); set `FEATURES_FILES=true` and
+redeploy; within about 5 minutes download it on a phone with that account and
+check another account is refused. `FEATURES_FILES=false` and a redeploy hides
+downloads again without a new APK.
+
+**If uploads fail:** `413` is a file over `MAX_PDF_BYTES` (20 MB); `503` from
+the console or a download means academy-service could not read or write
+`STORAGE_DIR` (check its owner and mode, and `docker compose -p wael logs
+--tail 100 academy-service`).
 
 ## Operations
 

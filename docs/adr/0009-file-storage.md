@@ -54,4 +54,34 @@ SPEC.md Section 3 Open Question 3 notes: "Where PDFs live long term (ADR-0009 de
 ## To verify
 
 - Verify that `academy-service` configuration enforces `DOCUMENT_ENCRYPTION_KEY` requirement in all non-relaxed environments (fails startup unless `APP_ENV=local` or `test`) (SPEC.md Section 8 Item 7 and Section 9).
+  - *Answered 2026-10-09 (branch `feat/phase5-files`, not pushed):* yes. `config.Load()` refuses an empty key unless `APP_ENV=local|test` (empty `APP_ENV` is production) and refuses a set key that is not exactly 64 hex characters in every environment, without echoing it; `--check-env` runs the same code; `NewLocalStorage` checks again at startup. Tests: `TestLoad_FileStorage` (key matrix for production, empty, local and test) and `TestRunCheckEnv_FileStorageValues` in `services/academy-service`; production compose refuses to render without the key and preflight checks the 64-hex shape.
 - Verify that PDF upload endpoints enforce magic byte validation (`%PDF-`) and `MAX_PDF_BYTES` (SPEC.md Section 8 Item 6, Phase 5.1).
+  - *Answered 2026-10-09 (same branch):* yes. The academy upload sniffs `%PDF-` before anything is stored and caps the file part at exactly `MAX_PDF_BYTES` (413 `file_too_large`; the body at `MAX_PDF_BYTES` + 64 KiB); the console checks both again before streaming. Tests: `TestAdminFiles_UploadValidation`, `TestAdminFiles_SizeCap` (contract 15) and the console's `TestFilesUpload_*`; on the local compose stack a 20 MiB file was accepted and 20 MiB + 1 byte and a non-PDF were refused.
+- Verify how much memory concurrent downloads take on the production host (one plaintext copy per download in flight, see the 2026-10-09 note) and whether the academy `mem_limit` (192m, `GOMEMLIMIT` 160MiB) is enough for the expected number of simultaneous downloads of large files. *(Added 2026-10-09.)*
+
+## Note (2026-10-09, Phase 5 implementation, not an owner decision)
+
+Built on branch `feat/phase5-files` (not pushed, held for owner review). The
+decisions above are unchanged; this records how they were implemented and
+two things the earlier text did not say.
+
+1. **Interface (decision 6).** `Storage` now has `Upload`, `OpenFile`,
+   `Size` (plaintext size from the on-disk size, no decryption, for
+   `Content-Length`) and `Delete` (idempotent on a missing key, `os.Root`
+   contained, refuses a directory, removes a symlink entry and never its
+   target). A missing object is `storage.ErrNotFound`.
+2. **No streaming decryption with the v1 format (decision 5).** The v1 file
+   is one AES-GCM seal over the whole file, so a download is read and
+   authenticated in full before its first byte, and an upload is read in full
+   before it is sealed. Both now work in place (one buffer per operation
+   instead of two or three); the on-disk format is unchanged. Measured for a
+   20 MiB file: about 30 ms to the response headers and 20 MiB allocated per
+   download. Streaming decryption would need a new, chunked format version
+   (the version byte allows one); not built, owner question.
+3. **Production layout (decision 7, single writer).** `STORAGE_DIR` in
+   `.env.production` is a host directory (mode 700) bind-mounted at
+   `/data/files`; academy-service runs as deploybot's uid/gid there, so the
+   service writes the objects and `backup.sh`/`restore.sh` (infra branch
+   `fix/infra-deploy-readiness`) read and restore them as the same user.
+   The single-writer assumption holds: only the service writes while it runs,
+   and a restore runs with the services stopped.

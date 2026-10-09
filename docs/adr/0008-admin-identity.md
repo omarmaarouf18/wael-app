@@ -140,6 +140,14 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
    - Includes unsaved-changes guard, double-submit guard, `Retry-After` countdown on 429, success toast, and localized error messages.
 5. **Decoupling from Server Expose Flag**: `show_prices` in `app_settings` is independent of `EXPOSE_PRICE_TO_STUDENTS`. The backend flag `EXPOSE_PRICE_TO_STUDENTS` determines whether the API sends subject price fields; `show_prices` controls client-side display visibility via `GET /academy/app-config`.
 
+### 14. Note (2026-10-09, Files Tab, SPEC Phase 5)
+
+*Records the console half of Phase 5 on branch `feat/phase5-files` (not pushed, held for owner review). It changes none of the decisions above; it supersedes "Files stay hidden" in Section 11 item 3.*
+
+1. **Proxy routes**: the allowlist gains three routes to `ACADEMY_ADMIN_URL` over mTLS with the same guarantees as the catalog routes: `GET /api/files?subject_id`, `POST /api/files/upload?subject_id` (multipart) and `POST /api/files/delete` `{subject_id, id}`.
+2. **The one larger body**: only the upload route accepts a body above 1 MiB, capped at `MAX_PDF_BYTES` (console config, default 20 MB) plus 64 KiB. The console reads and checks the three text fields and the `%PDF-` magic, then streams a freshly built multipart body to the academy (no client part, header or file name is forwarded), so the file is never held in memory. Only this handler extends its own read and write deadlines (10 minutes) and uses an upload client with that timeout; the server-wide timeouts and the 10-second upstream timeout stay for every other route.
+3. **Files tab**: enabled. Level and subject pickers reuse the catalog list routes (drafts included), a list of the subject's files, an upload form (kind, Arabic and English titles, one PDF) with a cancel button (the page's `fetch` reports no upload progress), delete through the shared confirm dialog, the unsaved-changes and double-submit guards, `Retry-After` cooldown and toasts. The academy stays the authority; the page's size check mirrors the 20 MB default only.
+
 ## Consequences
 
 
