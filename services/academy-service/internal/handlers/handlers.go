@@ -60,8 +60,14 @@ type Server struct {
 	// unlimited. Read once, on the first download.
 	MaxConcurrentDownloads int
 
+	// DownloadStallTimeout is the per-chunk write deadline of a download
+	// (DOWNLOAD_STALL_TIMEOUT); zero or less means 30s.
+	DownloadStallTimeout time.Duration
+
 	downloadSlotsOnce sync.Once
 	downloadSlots     chan struct{}
+	// stallWarnOnce logs once when a writer cannot take write deadlines.
+	stallWarnOnce sync.Once
 }
 
 // New creates a Server with dependencies.

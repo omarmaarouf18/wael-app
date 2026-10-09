@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil/secretcheck"
 )
@@ -53,10 +54,20 @@ type Config struct {
 	// MaxConcurrentDownloads caps student PDF downloads in flight
 	// (MAX_CONCURRENT_DOWNLOADS, owner decision 2026-10-09).
 	MaxConcurrentDownloads int
+	// DownloadStallTimeout ends a download whose client stops reading for
+	// this long (DOWNLOAD_STALL_TIMEOUT, owner review 2026-10-09).
+	DownloadStallTimeout time.Duration
 }
 
 // DefaultMaxConcurrentDownloads is the MAX_CONCURRENT_DOWNLOADS default.
 const DefaultMaxConcurrentDownloads = 3
+
+// Download stall timeout: default and allowed range (owner review 2026-10-09).
+const (
+	DefaultDownloadStallTimeout = 30 * time.Second
+	MinDownloadStallTimeout     = 5 * time.Second
+	MaxDownloadStallTimeout     = 5 * time.Minute
+)
 
 // DefaultMaxPDFBytes is the MAX_PDF_BYTES default: 20 MB (owner decision
 // 2026-10-08, SPEC D14).
@@ -303,6 +314,18 @@ func Load() (*Config, error) {
 		maxConcurrentDownloads = n
 	}
 
+	// Neither academy nor the gateway has a server WriteTimeout (SSE and long
+	// downloads), so a download sets its own write deadline per chunk: a
+	// client that stops reading loses the response after this long.
+	downloadStallTimeout := DefaultDownloadStallTimeout
+	if v := os.Getenv("DOWNLOAD_STALL_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < MinDownloadStallTimeout || d > MaxDownloadStallTimeout {
+			return nil, fmt.Errorf("config: invalid DOWNLOAD_STALL_TIMEOUT %q: must be a Go duration from 5s to 5m", v)
+		}
+		downloadStallTimeout = d
+	}
+
 	return &Config{
 		Port:                   port,
 		AppEnv:                 appEnv,
@@ -335,5 +358,6 @@ func Load() (*Config, error) {
 		MaxPDFBytes:            maxPDFBytes,
 		FeaturesFiles:          featuresFiles,
 		MaxConcurrentDownloads: maxConcurrentDownloads,
+		DownloadStallTimeout:   downloadStallTimeout,
 	}, nil
 }

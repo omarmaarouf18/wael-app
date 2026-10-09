@@ -542,7 +542,8 @@ for needle in 'user: "${WAEL_UID:?WAEL_UID is required}:${WAEL_GID:?WAEL_GID is 
 	'DOCUMENT_ENCRYPTION_KEY: ${DOCUMENT_ENCRYPTION_KEY:?DOCUMENT_ENCRYPTION_KEY is required}' \
 	'- ${STORAGE_DIR:?STORAGE_DIR is required}:/data/files' \
 	'FEATURES_FILES: ${FEATURES_FILES:-false}' \
-	'MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-}'; do
+	'MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-}' \
+	'DOWNLOAD_STALL_TIMEOUT: ${DOWNLOAD_STALL_TIMEOUT:-}'; do
 	assert "deploy compose has: $needle" grep -qF -- "$needle" "$DEPLOY_COMPOSE"
 done
 # shellcheck disable=SC2016 # literal ${...}: the text the compose file must contain

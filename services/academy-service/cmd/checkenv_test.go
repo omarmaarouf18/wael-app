@@ -139,6 +139,7 @@ func TestRunCheckEnv_FileStorageValues(t *testing.T) {
 		{"text_max_pdf", "MAX_PDF_BYTES", "twenty"},
 		{"loose_features_files", "FEATURES_FILES", "1"},
 		{"zero_concurrent_downloads", "MAX_CONCURRENT_DOWNLOADS", "0"},
+		{"stall_timeout_too_short", "DOWNLOAD_STALL_TIMEOUT", "1s"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

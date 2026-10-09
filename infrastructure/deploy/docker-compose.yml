@@ -233,6 +233,9 @@ services:
       # Student downloads in flight (each holds one copy of its PDF in
       # memory); more get 429 + Retry-After. Empty means 3.
       MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-}
+      # A download whose client stops reading this long is cut and frees its
+      # slot (Go duration 5s..5m). Empty means 30s.
+      DOWNLOAD_STALL_TIMEOUT: ${DOWNLOAD_STALL_TIMEOUT:-}
     volumes:
       - ${WAEL_HOME}/certs/ca.crt:/app/certs/ca.crt:ro
       - ${WAEL_HOME}/certs/academy-service.crt:/app/certs/academy-service.crt:ro

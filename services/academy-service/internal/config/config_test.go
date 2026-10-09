@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Shared-secret fixtures: exactly the 32-byte floor that
@@ -44,6 +45,7 @@ func baseEnv(t *testing.T) {
 	_ = os.Unsetenv("MAX_PDF_BYTES")
 	_ = os.Unsetenv("FEATURES_FILES")
 	_ = os.Unsetenv("MAX_CONCURRENT_DOWNLOADS")
+	_ = os.Unsetenv("DOWNLOAD_STALL_TIMEOUT")
 }
 
 func fullProdEnv(t *testing.T) {
@@ -600,6 +602,27 @@ func TestLoad_MaxConcurrentDownloads(t *testing.T) {
 		setEnv(t, "MAX_CONCURRENT_DOWNLOADS", bad)
 		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MAX_CONCURRENT_DOWNLOADS") {
 			t.Fatalf("MAX_CONCURRENT_DOWNLOADS=%q: err = %v, want a refusal naming the variable", bad, err)
+		}
+	}
+}
+
+func TestLoad_DownloadStallTimeout(t *testing.T) {
+	fullProdEnv(t)
+	_ = os.Unsetenv("DOWNLOAD_STALL_TIMEOUT")
+	cfg, err := Load()
+	if err != nil || cfg.DownloadStallTimeout != 30*time.Second {
+		t.Fatalf("default: %v, %v; want 30s", cfg, err)
+	}
+	for v, want := range map[string]time.Duration{"5s": 5 * time.Second, "90s": 90 * time.Second, "5m": 5 * time.Minute} {
+		setEnv(t, "DOWNLOAD_STALL_TIMEOUT", v)
+		if cfg, err = Load(); err != nil || cfg.DownloadStallTimeout != want {
+			t.Fatalf("DOWNLOAD_STALL_TIMEOUT=%s: %v, %v", v, cfg, err)
+		}
+	}
+	for _, bad := range []string{"4s", "5m1s", "0", "-30s", "30", "thirty", "1h"} {
+		setEnv(t, "DOWNLOAD_STALL_TIMEOUT", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "DOWNLOAD_STALL_TIMEOUT") {
+			t.Fatalf("DOWNLOAD_STALL_TIMEOUT=%q: err = %v, want a refusal naming the variable", bad, err)
 		}
 	}
 }

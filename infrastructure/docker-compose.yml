@@ -246,6 +246,7 @@ services:
       MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}
       FEATURES_FILES: ${FEATURES_FILES:-false}
       MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-}
+      DOWNLOAD_STALL_TIMEOUT: ${DOWNLOAD_STALL_TIMEOUT:-}
     depends_on:
       mongo:
         condition: service_healthy

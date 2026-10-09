@@ -141,12 +141,74 @@ func (s *Server) DownloadFile(w http.ResponseWriter, r *http.Request, subjectID,
 	h.Set("Content-Disposition", contentDisposition(file))
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	if n, err := io.Copy(w, rc); err != nil || n != size {
+	if n, err := s.copyWithStallDeadline(w, rc); err != nil || n != size {
 		// Headers are gone; the client sees a short body against
-		// Content-Length and discards it. Ids only in the log.
+		// Content-Length and discards it. Ids only in the log; a stalled
+		// client shows as a deadline error here.
 		cleanID := strings.ReplaceAll(strings.ReplaceAll(file.ID, "\r", ""), "\n", "")
 		// #nosec G706 -- cleanID sanitized of CR/LF
 		log.Printf("[WARN] file_download incomplete file_id=%s sent=%d of %d: %v", cleanID, n, size, err)
+	}
+}
+
+// downloadChunk is the size of one write of a download.
+const downloadChunk = 64 << 10
+
+// defaultDownloadStallTimeout mirrors config.DefaultDownloadStallTimeout for
+// servers built without config (tests).
+const defaultDownloadStallTimeout = 30 * time.Second
+
+func (s *Server) downloadStallTimeout() time.Duration {
+	if s.DownloadStallTimeout > 0 {
+		return s.DownloadStallTimeout
+	}
+	return defaultDownloadStallTimeout
+}
+
+// copyWithStallDeadline copies src to w in 64 KiB chunks and, before each
+// chunk, moves the connection's write deadline to now + the stall timeout.
+// Neither academy nor the gateway has a server WriteTimeout (by design), so
+// this is what ends a download whose client stopped reading: the blocked
+// write fails at the deadline, the handler returns, and the deferred release
+// gives the slot back. A writer without deadline support is logged once and
+// the copy continues without one. The deadline is cleared at the end so a
+// kept-alive connection is not cut later.
+func (s *Server) copyWithStallDeadline(w http.ResponseWriter, src io.Reader) (int64, error) {
+	ctl := http.NewResponseController(w)
+	timeout := s.downloadStallTimeout()
+	deadlines := true
+	buf := make([]byte, downloadChunk)
+	var written int64
+	defer func() {
+		if deadlines {
+			_ = ctl.SetWriteDeadline(time.Time{})
+		}
+	}()
+	for {
+		if deadlines {
+			if err := ctl.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+				deadlines = false
+				if errors.Is(err, http.ErrNotSupported) {
+					s.stallWarnOnce.Do(func() {
+						log.Printf("[WARN] file_download: response writer has no write deadline support; stalled downloads are not cut")
+					})
+				}
+			}
+		}
+		n, rerr := src.Read(buf)
+		if n > 0 {
+			m, werr := w.Write(buf[:n])
+			written += int64(m)
+			if werr != nil {
+				return written, werr
+			}
+		}
+		if errors.Is(rerr, io.EOF) {
+			return written, nil
+		}
+		if rerr != nil {
+			return written, rerr
+		}
 	}
 }
 

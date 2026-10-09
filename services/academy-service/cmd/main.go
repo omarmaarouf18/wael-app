@@ -113,7 +113,8 @@ func main() {
 	srv.MaxPDFBytes = cfg.MaxPDFBytes
 	srv.FeaturesFiles = cfg.FeaturesFiles
 	srv.MaxConcurrentDownloads = cfg.MaxConcurrentDownloads
-	log.Printf("[ACADEMY] max concurrent downloads=%d", cfg.MaxConcurrentDownloads)
+	srv.DownloadStallTimeout = cfg.DownloadStallTimeout
+	log.Printf("[ACADEMY] max concurrent downloads=%d, download stall timeout=%s", cfg.MaxConcurrentDownloads, cfg.DownloadStallTimeout)
 	log.Printf("[ACADEMY] app-config features.files=%t", cfg.FeaturesFiles)
 	log.Printf("[ACADEMY] file storage: %s (max PDF %d bytes)", cfg.StorageDir, cfg.MaxPDFBytes)
 
