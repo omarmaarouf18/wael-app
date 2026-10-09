@@ -67,3 +67,21 @@ admin-accepted request creates the entitlement, per the ADR-0007 boundary).
 This answers the "Payment provider versus manual activation" open question.
 The payment flow itself remains out of scope, and the refund policy remains
 open.
+
+## Amendment (2026-10-08, owner decision; recorded 2026-10-09): center activation and price display
+
+Source: `docs/core-service/SPEC.md` Section 2 D3 (amendments 2026-10-08) and
+`AI_CONTEXT.md`. The earlier text above is unchanged.
+
+1. Activation is by the center: a student who opens a locked subject creates an
+   access request and contacts support/the center over WhatsApp to activate it.
+   No payment action is named anywhere in the app.
+2. A locked subject may show its server-sent price (`price` + `currency`) only
+   when the API sends it (`EXPOSE_PRICE_TO_STUDENTS=true`) AND the public
+   app-config flag `show_prices` is true. Either switch hides prices again with
+   no new APK.
+3. Under the consumption-only rule, content may be bought outside the app, but
+   the app must not lead users to an outside payment method: no Play Billing,
+   no pay/buy/purchase wording, no payment methods or links in-app. The
+   store-safety test (`frontend/test/store_safety_l10n_test.dart`) pins the
+   banned wording and the price-label allowlist.

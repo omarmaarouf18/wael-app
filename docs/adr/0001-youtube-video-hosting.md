@@ -59,6 +59,15 @@ When a lesson video leaks, the response is to **replace the video and change
 when it is written (`docs/core-service/SPEC.md`, Phase 8); no RUNBOOK exists
 yet as of this date.
 
+## Amendment (2026-10-09): RUNBOOK exists; leak response moves to the incident doc
+
+The 2026-09-30 note above ("no RUNBOOK exists yet as of this date") is
+superseded: `RUNBOOK.md` now exists at `infrastructure/deploy/RUNBOOK.md`
+(with the full manual in `SERVER-MANUAL.md`, same folder). The decision itself
+(replace the video, change `youtube_video_id`) is unchanged. The step-by-step
+leak-response procedure now lives in `docs/ops/INCIDENTS.md` ("Leaked YouTube
+id"); this ADR keeps the decision, the incident doc carries the procedure.
+
 ## Amendment (2026-10-03, owner decision D3): leaked ids are an accepted risk
 
 Amended 2026-10-03 (owner decision D3), recorded 2026-10-05. This adds to
