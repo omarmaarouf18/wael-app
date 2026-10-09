@@ -75,20 +75,18 @@ case "$cmd" in
     case "$base" in AuthKey_*.p8) id="${base#AuthKey_}"; id="${id%.p8}" ;; *) id="" ;; esac
     b64 "$f" "$DIR/APPSTORE_API_KEY_P8_BASE64.txt"
     if [ -n "$id" ]; then printf '%s' "$id" > "$DIR/APPSTORE_API_KEY_ID.txt"; echo "wrote $DIR/APPSTORE_API_KEY_ID.txt ($id)"; fi
-    echo "APPSTORE_API_ISSUER_ID: copy the Issuer ID from App Store Connect > Users and Access > Integrations"
+    [ -f "$DIR/APPSTORE_API_ISSUER_ID.txt" ] || echo "Write the Issuer ID (App Store Connect > Users and Access > Integrations) to $DIR/APPSTORE_API_ISSUER_ID.txt"
     ;;
   secrets)
     repo="${2:-}"
-    names="IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROFILE_BASE64 APPSTORE_API_KEY_P8_BASE64 APPSTORE_API_KEY_ID"
+    names="IOS_DIST_CERT_P12_BASE64 IOS_DIST_CERT_PASSWORD IOS_PROFILE_BASE64 APPSTORE_API_KEY_P8_BASE64 APPSTORE_API_KEY_ID APPSTORE_API_ISSUER_ID"
     if command -v gh >/dev/null && [ -n "$repo" ]; then
       for n in $names; do
         if [ -f "$DIR/$n.txt" ]; then gh secret set "$n" --repo "$repo" < "$DIR/$n.txt"; echo "set $n"; else echo "skip $n (no $DIR/$n.txt)"; fi
       done
-      echo "Set APPSTORE_API_ISSUER_ID yourself: gh secret set APPSTORE_API_ISSUER_ID --repo $repo"
     else
       echo "Paste each file's content as a secret of wael-app-mobile (Settings > Secrets and variables > Actions):"
       for n in $names; do echo "  $n  <-  $DIR/$n.txt"; done
-      echo "  APPSTORE_API_ISSUER_ID  <-  App Store Connect > Users and Access > Integrations"
     fi
     ;;
   *)
