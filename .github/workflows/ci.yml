@@ -23,7 +23,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.6'
+          go-version: '1.26.9'
           cache: false
 
       - name: Verify Go Formatting
@@ -55,8 +55,8 @@ jobs:
       - name: Verify Go Version Consistency (Drift Guard)
         run: |
           CANONICAL_GO_VERSION="1.26.0"
-          CANONICAL_GO_PATCH_VERSION="1.26.6"
-          CANONICAL_GO_TOOLCHAIN="go1.26.6"
+          CANONICAL_GO_PATCH_VERSION="1.26.9"
+          CANONICAL_GO_TOOLCHAIN="go1.26.9"
           CANONICAL_GOSEC_VERSION="v2.29.0"
           DRIFT_FAILED=0
           for f in go.work services/*/go.mod shared/infra/go.mod tools/*/go.mod tests/*/go.mod; do
@@ -142,7 +142,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.6'
+          go-version: '1.26.9'
           cache: false
 
       - name: Build
@@ -221,7 +221,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.6'
+          go-version: '1.26.9'
           cache: false
 
       # Plain step (not the govulncheck action) so the scan runs with
@@ -253,7 +253,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.6'
+          go-version: '1.26.9'
           cache: false
 
       # Full history, all refs. Known test-fixture false positives are
@@ -313,7 +313,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.6'
+          go-version: '1.26.9'
           cache: false
 
       - name: Generate mTLS Certificates
@@ -402,7 +402,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.6'
+          go-version: '1.26.9'
           cache: false
 
       - name: Validate deploy compose config

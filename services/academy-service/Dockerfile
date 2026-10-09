@@ -3,7 +3,7 @@
 # ===========================================================================
 
 # ---- Development Stage ---------------------------------------------------
-FROM golang:1.26.6-alpine AS dev
+FROM golang:1.26.9-alpine AS dev
 
 RUN apk add --no-cache git curl \
     && go install github.com/air-verse/air@v1.52.2
@@ -20,7 +20,7 @@ EXPOSE 3003
 CMD ["air", "-c", ".air.toml"]
 
 # ---- Build Stage ---------------------------------------------------------
-FROM golang:1.26.6-alpine AS build
+FROM golang:1.26.9-alpine AS build
 
 WORKDIR /app/services/academy-service
 

@@ -141,7 +141,7 @@ contract tests -> `flutter analyze` and `flutter test`. The CI job "Flutter Lint
 uses the same frontend order: format, composition gate, gate self-test, analyze, test.
 
 *(Owner decision 2026-10-02: canonical Go language line is `go 1.26.0`; toolchain stays
-`go1.26.6`.)*
+`go1.26.6`.)* *(Amended 2026-10-09, owner decision: toolchain raised to `go1.26.9` for the Go security release of 2026-10-08 (GO-2026-6603, -6605, -6607, -6608, -6610..-6613, -6617 in net/http, net/textproto, crypto/tls; govulncheck failed CI on go1.26.6). Language line stays `go 1.26.0`.)*
 
 Makefile targets worth keeping: `ensure-hooks`, `setup`, `ci`, `commit`, `push` (verifies
 local HEAD equals remote HEAD and writes `PUSH_VERIFIED`), `report-hash`,

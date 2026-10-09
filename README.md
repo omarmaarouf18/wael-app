@@ -21,7 +21,7 @@ real gateway auth.
   `--dart-define=API_BASE_URL`, see `frontend/README.md`).
 - Go: pinned `1.26.0` / toolchain `go1.26.6` via `go.work` (drift-guarded in
   the hook and CI). *(Owner decision 2026-10-02: canonical Go language line is
-  `go 1.26.0`; toolchain stays `go1.26.6`.)*
+  `go 1.26.0`; toolchain stays `go1.26.6`.)* *(Amended 2026-10-09, owner decision: toolchain raised to `go1.26.9` for the Go security release of 2026-10-08 (GO-2026-6603, -6605, -6607, -6608, -6610..-6613, -6617 in net/http, net/textproto, crypto/tls; govulncheck failed CI on go1.26.6). Language line stays `go 1.26.0`.)*
 
 ## Make targets
 

@@ -64,8 +64,8 @@ fi
 # 4. Go version drift guard (single pinned version everywhere)
 echo "-- checking Go version consistency --"
 CANONICAL_GO_VERSION="1.26.0"
-CANONICAL_GO_PATCH_VERSION="1.26.6"
-CANONICAL_GO_TOOLCHAIN="go1.26.6"
+CANONICAL_GO_PATCH_VERSION="1.26.9"
+CANONICAL_GO_TOOLCHAIN="go1.26.9"
 CANONICAL_GOSEC_VERSION="v2.29.0"
 DRIFT_FAILED=0
 
