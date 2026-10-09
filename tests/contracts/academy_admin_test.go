@@ -163,9 +163,10 @@ func TestContract_AcademyAdminFiles(t *testing.T) {
 // the gateway's 2 s; sanitized Content-Disposition; at most
 // MAX_CONCURRENT_DOWNLOADS in flight (429 + Retry-After when full), the slot
 // released on success, client abort and storage error; a client that stops
-// reading is cut at DOWNLOAD_STALL_TIMEOUT and frees its slot.
+// reading is cut at DOWNLOAD_STALL_TIMEOUT and frees its slot; one download
+// per student at a time, with no entry left behind.
 func TestContract_AcademyFileDownload(t *testing.T) {
-	out := runAcademyAdminTests(t, "^(TestDownloadFile_OwnedStreamsExactBytes|TestDownloadFile_Refusals|TestDownloadFile_RateLimit429|TestDownloadFile_FailClosed503|TestDownloadFile_20MBWithinGatewayBudget|TestContentDisposition_Sanitized|TestDownloadFile_ConcurrencyCapEnforced|TestDownloadFile_SlotReleasedOnStorageError|TestDownloadFile_SlotReleasedOnClientAbort|TestAcquireDownloadSlot_DefaultAndRelease|TestDownloadFile_StalledClientFreesSlot|TestDownloadFile_DeadlineClearedAfterDownload|TestDownloadFile_NoDeadlineSupportLoggedOnce)$")
+	out := runAcademyAdminTests(t, "^(TestDownloadFile_OwnedStreamsExactBytes|TestDownloadFile_Refusals|TestDownloadFile_RateLimit429|TestDownloadFile_FailClosed503|TestDownloadFile_20MBWithinGatewayBudget|TestContentDisposition_Sanitized|TestDownloadFile_ConcurrencyCapEnforced|TestDownloadFile_SlotReleasedOnStorageError|TestDownloadFile_SlotReleasedOnClientAbort|TestAcquireDownloadSlot_DefaultAndRelease|TestDownloadFile_StalledClientFreesSlot|TestDownloadFile_DeadlineClearedAfterDownload|TestDownloadFile_NoDeadlineSupportLoggedOnce|TestDownloadFile_OnePerStudent|TestDownloadFile_StudentEntryRemovedOnErrorAndAbort|TestDownloadFile_NoPerStudentLeak)$")
 	requirePass(t, out,
 		"TestDownloadFile_OwnedStreamsExactBytes",
 		"TestDownloadFile_Refusals",
@@ -180,5 +181,8 @@ func TestContract_AcademyFileDownload(t *testing.T) {
 		"TestDownloadFile_StalledClientFreesSlot",
 		"TestDownloadFile_DeadlineClearedAfterDownload",
 		"TestDownloadFile_NoDeadlineSupportLoggedOnce",
+		"TestDownloadFile_OnePerStudent",
+		"TestDownloadFile_StudentEntryRemovedOnErrorAndAbort",
+		"TestDownloadFile_NoPerStudentLeak",
 	)
 }

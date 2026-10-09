@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -70,11 +71,11 @@ func TestDownloadFile_ConcurrencyCapEnforced(t *testing.T) {
 	path := downloadPath(f.subj.ID, f.file.ID)
 
 	first := f.getAsync(t, path, dlOwner)
-	second := f.getAsync(t, path, dlOwner)
+	second := f.getAsync(t, path, dlOwner2(t, f))
 	<-g.entered
 	<-g.entered // both slots are held inside OpenFile
 
-	assertBusy429(t, f.get(t, path, dlOwner))
+	assertBusy429(t, f.get(t, path, dlOwner3(t, f))) // a third student: no slot left
 	// A refusal decided before storage takes no slot: still 403, not 429.
 	if rec := f.get(t, path, dlStudent); rec.Code != http.StatusForbidden {
 		t.Fatalf("non-owner with full slots: expected 403, got %d", rec.Code)
@@ -151,21 +152,21 @@ func TestAcquireDownloadSlot_DefaultAndRelease(t *testing.T) {
 	s := newTestServer(false) // MaxConcurrentDownloads unset: the default 3, never unlimited
 	var releases []func()
 	for i := 0; i < 3; i++ {
-		release, ok := s.acquireDownloadSlot()
+		release, ok := s.acquireDownloadSlot(fmt.Sprintf("user-%d", i))
 		if !ok {
 			t.Fatalf("slot %d refused under the default cap", i+1)
 		}
 		releases = append(releases, release)
 	}
-	if _, ok := s.acquireDownloadSlot(); ok {
+	if _, ok := s.acquireDownloadSlot("user-3"); ok {
 		t.Fatal("a fourth slot was granted; default cap is 3")
 	}
 	releases[0]()
 	releases[0]() // a second call must not free another slot
-	if _, ok := s.acquireDownloadSlot(); !ok {
+	if _, ok := s.acquireDownloadSlot("user-4"); !ok {
 		t.Fatal("released slot not available")
 	}
-	if _, ok := s.acquireDownloadSlot(); ok {
+	if _, ok := s.acquireDownloadSlot("user-5"); ok {
 		t.Fatal("a double release freed two slots")
 	}
 
@@ -177,9 +178,9 @@ func TestAcquireDownloadSlot_DefaultAndRelease(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
-			release, ok := s2.acquireDownloadSlot()
+			release, ok := s2.acquireDownloadSlot(fmt.Sprintf("user-%d", i))
 			if !ok {
 				return
 			}
@@ -194,7 +195,7 @@ func TestAcquireDownloadSlot_DefaultAndRelease(t *testing.T) {
 			inFlight--
 			mu.Unlock()
 			release()
-		}()
+		}(i)
 	}
 	wg.Wait()
 	if peak > 2 {

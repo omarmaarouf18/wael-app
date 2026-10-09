@@ -66,6 +66,11 @@ type Server struct {
 
 	downloadSlotsOnce sync.Once
 	downloadSlots     chan struct{}
+	// downloadUsers holds the students with a download in flight (one each,
+	// owner review 2026-10-09); guarded by downloadMu, entries removed on
+	// release.
+	downloadMu    sync.Mutex
+	downloadUsers map[string]struct{}
 	// stallWarnOnce logs once when a writer cannot take write deadlines.
 	stallWarnOnce sync.Once
 }

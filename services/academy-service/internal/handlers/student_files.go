@@ -32,9 +32,10 @@ import (
 //
 // Downloads in flight are capped (MAX_CONCURRENT_DOWNLOADS, default 3): each
 // holds one plaintext copy of its file in memory. The slot is taken after the
-// ownership decision, only for the part that reads the object, and when every
-// slot is busy the answer is 429 with Retry-After (the rate limiter's shape);
-// nothing waits in a queue.
+// ownership decision, only for the part that reads the object, and a student
+// has at most one download in flight. When every slot is busy, or this
+// student already has a download running, the answer is 429 with
+// Retry-After (the rate limiter's shape); nothing waits in a queue.
 //
 // Answers: unknown subject, unknown file, or a file of another subject 404;
 // a subject the student does not own 403 (404 instead when the subject is
@@ -117,7 +118,7 @@ func (s *Server) DownloadFile(w http.ResponseWriter, r *http.Request, subjectID,
 		unavailable(errors.New("file storage unconfigured"))
 		return
 	}
-	release, ok := s.acquireDownloadSlot()
+	release, ok := s.acquireDownloadSlot(claims.UserID)
 	if !ok {
 		limiter.WriteRateLimitedResponse(w, downloadBusyRetryAfter)
 		return
@@ -303,22 +304,46 @@ const downloadBusyRetryAfter = 5 * time.Second
 // for servers built without config (tests); the cap is never unlimited.
 const defaultMaxConcurrentDownloads = 3
 
-// acquireDownloadSlot takes a download slot without waiting. It returns the
-// release function, or ok=false when every slot is busy. The release runs
-// once however the download ends (success, client abort, storage error).
-func (s *Server) acquireDownloadSlot() (release func(), ok bool) {
+// acquireDownloadSlot takes a download slot for userID without waiting. It
+// returns the release function, or ok=false when this student already has a
+// download in flight or every slot is busy. Both are decided under one lock,
+// so a refused call changes nothing. The release runs once however the
+// download ends (success, client abort, stall, storage error) and removes the
+// student's entry.
+func (s *Server) acquireDownloadSlot(userID string) (release func(), ok bool) {
 	s.downloadSlotsOnce.Do(func() {
 		n := s.MaxConcurrentDownloads
 		if n <= 0 {
 			n = defaultMaxConcurrentDownloads
 		}
 		s.downloadSlots = make(chan struct{}, n)
+		s.downloadUsers = make(map[string]struct{})
 	})
+	s.downloadMu.Lock()
+	defer s.downloadMu.Unlock()
+	if _, busy := s.downloadUsers[userID]; busy {
+		return nil, false
+	}
 	select {
 	case s.downloadSlots <- struct{}{}:
-		var once sync.Once
-		return func() { once.Do(func() { <-s.downloadSlots }) }, true
 	default:
 		return nil, false
 	}
+	s.downloadUsers[userID] = struct{}{}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.downloadMu.Lock()
+			delete(s.downloadUsers, userID)
+			s.downloadMu.Unlock()
+			<-s.downloadSlots
+		})
+	}, true
+}
+
+// downloadsInFlight reports the students with a download in flight (tests).
+func (s *Server) downloadsInFlight() int {
+	s.downloadMu.Lock()
+	defer s.downloadMu.Unlock()
+	return len(s.downloadUsers)
 }
