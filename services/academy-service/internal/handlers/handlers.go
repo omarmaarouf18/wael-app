@@ -800,6 +800,7 @@ func (s *Server) EnforceTier(tier string, next http.HandlerFunc) http.HandlerFun
 // Handles:
 // - GET /academy/subjects/{id} -> GetSubjectDetail (Read tier)
 // - POST /academy/subjects/{id}/access-request -> CreateAccessRequest (Write tier)
+// - GET /academy/subjects/{id}/files/{fileId}/download -> DownloadFile (Download tier)
 func (s *Server) SubjectSubroute(w http.ResponseWriter, r *http.Request) {
 	subpath := strings.TrimPrefix(r.URL.Path, "/academy/subjects/")
 	subpath = strings.Trim(subpath, "/")
@@ -818,6 +819,12 @@ func (s *Server) SubjectSubroute(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 && parts[0] != "" && parts[1] == "access-request" {
 		s.EnforceTier(limiter.TierWrite, func(w http.ResponseWriter, r *http.Request) {
 			s.CreateAccessRequest(w, r, parts[0])
+		})(w, r)
+		return
+	}
+	if len(parts) == 4 && parts[0] != "" && parts[1] == "files" && parts[2] != "" && parts[3] == "download" {
+		s.EnforceTier(limiter.TierDownload, func(w http.ResponseWriter, r *http.Request) {
+			s.DownloadFile(w, r, parts[0], parts[2])
 		})(w, r)
 		return
 	}
