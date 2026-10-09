@@ -18,6 +18,7 @@ import (
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
+	"github.com/omarmaarouf18/wael-app/shared/infra/storage"
 )
 
 const dbTimeout = 5 * time.Second
@@ -46,6 +47,11 @@ type Server struct {
 	LatestVersion string
 	UpdateURL     string
 	Limiter       limiter.TierLimiter
+	// Files is the encrypted PDF storage (SPEC Phase 5, ADR-0009). Nil means
+	// file routes fail closed with 503.
+	Files storage.Storage
+	// MaxPDFBytes caps one uploaded PDF (MAX_PDF_BYTES, SPEC D14).
+	MaxPDFBytes int64
 }
 
 // New creates a Server with dependencies.

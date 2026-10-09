@@ -13,6 +13,7 @@ var (
 	testJWTSecret     = strings.Repeat("j", 32)
 	testGatewaySecret = strings.Repeat("g", 32)
 	testInternalToken = strings.Repeat("i", 32)
+	testDocumentKey   = strings.Repeat("ab", 32)
 )
 
 func setAcademyProdEnv(t *testing.T) {
@@ -33,6 +34,8 @@ func setAcademyProdEnv(t *testing.T) {
 	t.Setenv("SUPPORT_WHATSAPP", "+201000000000")
 	t.Setenv("TERMS_URL", "https://elmetracademy.app/terms")
 	t.Setenv("PRIVACY_URL", "https://elmetracademy.app/privacy")
+	t.Setenv("STORAGE_DIR", "/data/files")
+	t.Setenv("DOCUMENT_ENCRYPTION_KEY", testDocumentKey)
 }
 
 func setAcademyLocalEnv(t *testing.T) {
@@ -44,6 +47,7 @@ func setAcademyLocalEnv(t *testing.T) {
 		"MONGO_URI", "TLS_CERT_PATH", "TLS_KEY_PATH",
 		"TLS_CA_PATH", "AUTH_SERVICE_URL", "AUTH_ADMIN_URL", "NOTIFICATION_SERVICE_URL", "ADMIN_LISTEN_ADDR",
 		"JWT_SECRET", "REDIS_URI", "SUPPORT_WHATSAPP",
+		"STORAGE_DIR", "DOCUMENT_ENCRYPTION_KEY", "MAX_PDF_BYTES",
 	} {
 		_ = os.Unsetenv(v)
 	}
@@ -80,6 +84,8 @@ func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 		"SUPPORT_WHATSAPP",
 		"TERMS_URL",
 		"PRIVACY_URL",
+		"STORAGE_DIR",
+		"DOCUMENT_ENCRYPTION_KEY",
 	}
 	for _, v := range requiredVars {
 		t.Run("missing_"+v, func(t *testing.T) {
@@ -121,4 +127,39 @@ func TestRunCheckEnv_LocalMinimal(t *testing.T) {
 	if !strings.Contains(stdout.String(), "check-env: ok") {
 		t.Fatalf("expected stdout to contain 'check-env: ok', got: %s", stdout.String())
 	}
+}
+
+func TestRunCheckEnv_FileStorageValues(t *testing.T) {
+	cases := []struct {
+		name, key, value string
+	}{
+		{"short_key", "DOCUMENT_ENCRYPTION_KEY", testDocumentKey[:63]},
+		{"non_hex_key", "DOCUMENT_ENCRYPTION_KEY", strings.Repeat("g", 64)},
+		{"zero_max_pdf", "MAX_PDF_BYTES", "0"},
+		{"text_max_pdf", "MAX_PDF_BYTES", "twenty"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setAcademyProdEnv(t)
+			t.Setenv(tc.key, tc.value)
+			var stdout, stderr bytes.Buffer
+			if code := runCheckEnv(&stdout, &stderr); code != 1 {
+				t.Fatalf("exit code = %d, want 1", code)
+			}
+			if !strings.Contains(stderr.String(), tc.key) {
+				t.Fatalf("stderr does not name %s: %s", tc.key, stderr.String())
+			}
+			if tc.key == "DOCUMENT_ENCRYPTION_KEY" && strings.Contains(stderr.String(), tc.value) {
+				t.Fatal("stderr leaks the key value")
+			}
+		})
+	}
+
+	t.Run("local_without_key_ok", func(t *testing.T) {
+		setAcademyLocalEnv(t)
+		var stdout, stderr bytes.Buffer
+		if code := runCheckEnv(&stdout, &stderr); code != 0 {
+			t.Fatalf("exit code = %d, want 0 (stderr: %s)", code, stderr.String())
+		}
+	})
 }

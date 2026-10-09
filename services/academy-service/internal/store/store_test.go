@@ -242,6 +242,40 @@ func runStoreSuite(t *testing.T, s Store) {
 		t.Fatalf("expected 2 files, got %d", len(files))
 	}
 
+	// 9b. Files: get and delete are scoped to the subject
+	gotF, err := s.GetFile(ctx, "subj-pub-1", "f-1")
+	if err != nil {
+		t.Fatalf("GetFile failed: %v", err)
+	}
+	if gotF == nil || gotF.ID != "f-1" || gotF.StorageKey != "uuid-storage-1" || gotF.SizeBytes != 5000 || gotF.Kind != "book" {
+		t.Fatalf("GetFile f-1 unexpected: %+v", gotF)
+	}
+	if other, err := s.GetFile(ctx, "subj-other", "f-1"); err != nil || other != nil {
+		t.Fatalf("GetFile of another subject = %+v, %v; want nil, nil", other, err)
+	}
+	if missing, err := s.GetFile(ctx, "subj-pub-1", "f-missing"); err != nil || missing != nil {
+		t.Fatalf("GetFile missing = %+v, %v; want nil, nil", missing, err)
+	}
+	f3 := &models.SubjectFile{ID: "f-3", SubjectID: "subj-pub-1", Kind: "note", TitleAr: "مذكرة 2", SizeBytes: 10, StorageKey: "uuid-storage-3", CreatedAt: time.Now()}
+	if err := s.CreateFile(ctx, f3); err != nil {
+		t.Fatalf("CreateFile 3 failed: %v", err)
+	}
+	if err := s.CreateFile(ctx, f3); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("CreateFile duplicate id = %v, want ErrDuplicate", err)
+	}
+	if err := s.DeleteFile(ctx, "subj-other", "f-3"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DeleteFile of another subject = %v, want ErrNotFound", err)
+	}
+	if err := s.DeleteFile(ctx, "subj-pub-1", "f-3"); err != nil {
+		t.Fatalf("DeleteFile failed: %v", err)
+	}
+	if err := s.DeleteFile(ctx, "subj-pub-1", "f-3"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DeleteFile twice = %v, want ErrNotFound", err)
+	}
+	if gone, err := s.GetFile(ctx, "subj-pub-1", "f-3"); err != nil || gone != nil {
+		t.Fatalf("GetFile after delete = %+v, %v; want nil, nil", gone, err)
+	}
+
 	// 10. Counts verification
 	counts, err := s.GetSubjectCounts(ctx, "subj-pub-1")
 	if err != nil {

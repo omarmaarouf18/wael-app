@@ -22,6 +22,7 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 	"github.com/omarmaarouf18/wael-app/shared/infra/ratelimit"
 	"github.com/omarmaarouf18/wael-app/shared/infra/redact"
+	"github.com/omarmaarouf18/wael-app/shared/infra/storage"
 	"github.com/omarmaarouf18/wael-app/shared/infra/tlsutil"
 )
 
@@ -99,6 +100,18 @@ func main() {
 	srv.LatestVersion = cfg.LatestVersion
 	srv.UpdateURL = cfg.UpdateURL
 	srv.WarnIfNoSupportWhatsApp(ctx)
+
+	// Encrypted PDF storage (ADR-0009). The key policy is enforced by
+	// config.Load and again by storage: outside local/test a missing or
+	// invalid DOCUMENT_ENCRYPTION_KEY stops startup. The key is never logged.
+	files, err := storage.NewLocalStorage(cfg.StorageDir, cfg.DocumentEncryptionKey, cfg.AppEnv)
+	if err != nil {
+		log.Fatalf("[ACADEMY] file storage: %v", err)
+	}
+	defer func() { _ = files.Close() }()
+	srv.Files = files
+	srv.MaxPDFBytes = cfg.MaxPDFBytes
+	log.Printf("[ACADEMY] file storage: %s (max PDF %d bytes)", cfg.StorageDir, cfg.MaxPDFBytes)
 
 	if err := notify.InitClient(cfg.TLSCertPath, cfg.TLSKeyPath, cfg.TLSCAPath); err != nil {
 		log.Fatalf("[ACADEMY] notify client: %v", err)

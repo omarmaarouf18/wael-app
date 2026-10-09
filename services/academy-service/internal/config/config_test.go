@@ -12,6 +12,8 @@ var (
 	testJWTSecret     = strings.Repeat("j", 32)
 	testGatewaySecret = strings.Repeat("g", 32)
 	testInternalToken = strings.Repeat("i", 32)
+	// 64 hex characters (32 bytes), built at runtime like the secrets above.
+	testDocumentKey = strings.Repeat("ab", 32)
 )
 
 func setEnv(t *testing.T, k, v string) {
@@ -37,6 +39,9 @@ func baseEnv(t *testing.T) {
 	_ = os.Unsetenv("ADMIN_LISTEN_ADDR")
 	_ = os.Unsetenv("JWT_SECRET")
 	_ = os.Unsetenv("REDIS_URI")
+	_ = os.Unsetenv("STORAGE_DIR")
+	_ = os.Unsetenv("DOCUMENT_ENCRYPTION_KEY")
+	_ = os.Unsetenv("MAX_PDF_BYTES")
 }
 
 func fullProdEnv(t *testing.T) {
@@ -57,6 +62,9 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "SUPPORT_WHATSAPP", "+201000000000")
 	setEnv(t, "TERMS_URL", "https://elmetracademy.app/terms")
 	setEnv(t, "PRIVACY_URL", "https://elmetracademy.app/privacy")
+	setEnv(t, "STORAGE_DIR", "/data/files")
+	setEnv(t, "DOCUMENT_ENCRYPTION_KEY", testDocumentKey)
+	_ = os.Unsetenv("MAX_PDF_BYTES")
 }
 
 func TestLoad_MinimalDev(t *testing.T) {
@@ -160,6 +168,8 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"JWT_SECRET",
 		"REDIS_URI",
 		"SUPPORT_WHATSAPP",
+		"STORAGE_DIR",
+		"DOCUMENT_ENCRYPTION_KEY",
 	}
 
 	for _, v := range requiredVars {
@@ -399,5 +409,130 @@ func TestLoad_WeakSecretsRefusedOutsideLocal(t *testing.T) {
 				t.Fatalf("%s=%q in local: unexpected error %v", name, value, err)
 			}
 		}
+	}
+}
+
+func TestLoad_FileStorage(t *testing.T) {
+	t.Run("production_values_kept", func(t *testing.T) {
+		fullProdEnv(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+		if cfg.StorageDir != "/data/files" {
+			t.Errorf("StorageDir = %q, want /data/files", cfg.StorageDir)
+		}
+		if cfg.DocumentEncryptionKey != testDocumentKey {
+			t.Error("DocumentEncryptionKey not kept as given")
+		}
+		if cfg.MaxPDFBytes != 20971520 {
+			t.Errorf("MaxPDFBytes = %d, want default 20971520", cfg.MaxPDFBytes)
+		}
+	})
+
+	t.Run("dev_defaults", func(t *testing.T) {
+		baseEnv(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+		if cfg.StorageDir == "" {
+			t.Error("StorageDir empty in dev, want a temp default")
+		}
+		if cfg.DocumentEncryptionKey != "" {
+			t.Error("DocumentEncryptionKey set in dev without env, want empty (ephemeral key)")
+		}
+		if cfg.MaxPDFBytes != DefaultMaxPDFBytes {
+			t.Errorf("MaxPDFBytes = %d, want %d", cfg.MaxPDFBytes, DefaultMaxPDFBytes)
+		}
+	})
+
+	// The key policy holds in every environment: only local/test may omit
+	// it; a set key must be exactly 64 hex characters, never padded.
+	keyCases := []struct {
+		name  string
+		key   string
+		valid bool
+	}{
+		{"valid_lower_hex", testDocumentKey, true},
+		{"valid_upper_hex", strings.ToUpper(testDocumentKey), true},
+		{"62_chars", testDocumentKey[:62], false},
+		{"66_chars", testDocumentKey + "ab", false},
+		{"32_raw_bytes_not_hex", strings.Repeat("k", 32), false},
+		{"64_chars_not_hex", strings.Repeat("zz", 32), false},
+		{"64_chars_with_space", " " + testDocumentKey[1:], false},
+	}
+	for _, env := range []string{"production", "", "local", "test"} {
+		for _, tc := range keyCases {
+			t.Run("key_"+tc.name+"_APP_ENV="+env, func(t *testing.T) {
+				fullProdEnv(t)
+				if env == "" {
+					_ = os.Unsetenv("APP_ENV")
+				} else {
+					setEnv(t, "APP_ENV", env)
+				}
+				setEnv(t, "DOCUMENT_ENCRYPTION_KEY", tc.key)
+				_, err := Load()
+				if tc.valid && err != nil {
+					t.Fatalf("Load failed for valid key: %v", err)
+				}
+				if !tc.valid {
+					if err == nil {
+						t.Fatal("expected error for invalid DOCUMENT_ENCRYPTION_KEY, got nil")
+					}
+					if !strings.Contains(err.Error(), "DOCUMENT_ENCRYPTION_KEY") {
+						t.Fatalf("error %q does not name DOCUMENT_ENCRYPTION_KEY", err)
+					}
+					if strings.Contains(err.Error(), tc.key) {
+						t.Fatal("error message leaks the key value")
+					}
+				}
+			})
+		}
+	}
+
+	t.Run("missing_key_allowed_only_in_local_and_test", func(t *testing.T) {
+		for _, env := range []string{"local", "test"} {
+			fullProdEnv(t)
+			setEnv(t, "APP_ENV", env)
+			_ = os.Unsetenv("DOCUMENT_ENCRYPTION_KEY")
+			if _, err := Load(); err != nil {
+				t.Fatalf("APP_ENV=%s without key: %v", env, err)
+			}
+		}
+		for _, env := range []string{"production", ""} {
+			fullProdEnv(t)
+			if env == "" {
+				_ = os.Unsetenv("APP_ENV")
+			} else {
+				setEnv(t, "APP_ENV", env)
+			}
+			_ = os.Unsetenv("DOCUMENT_ENCRYPTION_KEY")
+			if _, err := Load(); err == nil {
+				t.Fatalf("APP_ENV=%q without key: want error", env)
+			}
+		}
+	})
+
+	t.Run("max_pdf_bytes_custom", func(t *testing.T) {
+		baseEnv(t)
+		setEnv(t, "MAX_PDF_BYTES", "1048576")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+		if cfg.MaxPDFBytes != 1048576 {
+			t.Errorf("MaxPDFBytes = %d, want 1048576", cfg.MaxPDFBytes)
+		}
+	})
+	for _, v := range []string{"0", "-1", "abc", "20MB", "1.5", " 100"} {
+		t.Run("max_pdf_bytes_invalid_"+v, func(t *testing.T) {
+			baseEnv(t)
+			setEnv(t, "MAX_PDF_BYTES", v)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), "MAX_PDF_BYTES") {
+				t.Fatalf("MAX_PDF_BYTES=%q: err = %v, want refusal naming the variable", v, err)
+			}
+		})
 	}
 }

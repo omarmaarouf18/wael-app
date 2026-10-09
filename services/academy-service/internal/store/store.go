@@ -62,6 +62,12 @@ type Store interface {
 	ListVideosBySubject(ctx context.Context, subjectID string, onlyPublished bool) ([]*models.Video, error)
 	CreateFile(ctx context.Context, f *models.SubjectFile) error
 	ListFilesBySubject(ctx context.Context, subjectID string) ([]*models.SubjectFile, error)
+	// GetFile returns the file only when it belongs to subjectID; a missing
+	// file, or a file of another subject, is (nil, nil).
+	GetFile(ctx context.Context, subjectID, fileID string) (*models.SubjectFile, error)
+	// DeleteFile removes the file row of subjectID; no matching row (missing,
+	// or a file of another subject) is ErrNotFound.
+	DeleteFile(ctx context.Context, subjectID, fileID string) error
 
 	// Entitlements (Phase 3.1)
 	Grant(ctx context.Context, e *models.Entitlement) error
@@ -506,6 +512,32 @@ func (s *MemoryStore) ListFilesBySubject(_ context.Context, subjectID string) ([
 	})
 
 	return result, nil
+}
+
+// GetFile returns a copy of the file when it belongs to subjectID.
+func (s *MemoryStore) GetFile(_ context.Context, subjectID, fileID string) (*models.SubjectFile, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	f, ok := s.files[fileID]
+	if !ok || f.SubjectID != subjectID {
+		return nil, nil
+	}
+	cp := *f
+	return &cp, nil
+}
+
+// DeleteFile removes the file row when it belongs to subjectID.
+func (s *MemoryStore) DeleteFile(_ context.Context, subjectID, fileID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, ok := s.files[fileID]
+	if !ok || f.SubjectID != subjectID {
+		return ErrNotFound
+	}
+	delete(s.files, fileID)
+	return nil
 }
 
 func generateID() string {

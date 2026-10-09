@@ -5,9 +5,11 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -42,7 +44,15 @@ type Config struct {
 	RateLimitPlay          int
 	RateLimitDownload      int
 	RateLimitWrite         int
+	// File storage (SPEC Phase 5, ADR-0009, SPEC Section 8 items 6-7).
+	StorageDir            string
+	DocumentEncryptionKey string
+	MaxPDFBytes           int64
 }
+
+// DefaultMaxPDFBytes is the MAX_PDF_BYTES default: 20 MB (owner decision
+// 2026-10-08, SPEC D14).
+const DefaultMaxPDFBytes int64 = 20 * 1024 * 1024
 
 // TLSEnabled reports whether server-side TLS is configured.
 func (c *Config) TLSEnabled() bool {
@@ -230,6 +240,38 @@ func Load() (*Config, error) {
 		rateLimitWrite = n
 	}
 
+	// File storage (ADR-0009 as amended 2026-09-30): STORAGE_DIR is required
+	// outside local/test. DOCUMENT_ENCRYPTION_KEY must be exactly 64 hex
+	// characters (32 bytes) in every environment when set; only local/test may
+	// omit it, and then storage uses an ephemeral key with a logged warning.
+	// It is never padded or truncated.
+	storageDir := strings.TrimSpace(os.Getenv("STORAGE_DIR"))
+	if storageDir == "" {
+		if !dev {
+			return nil, errors.New("config: required env var STORAGE_DIR is empty")
+		}
+		storageDir = filepath.Join(os.TempDir(), "wael-academy-files")
+	}
+	docKey := os.Getenv("DOCUMENT_ENCRYPTION_KEY")
+	if docKey == "" {
+		if !dev {
+			return nil, errors.New("config: required env var DOCUMENT_ENCRYPTION_KEY is empty")
+		}
+	} else if len(docKey) != 64 {
+		return nil, fmt.Errorf("config: DOCUMENT_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes), got %d characters", len(docKey))
+	} else if _, err := hex.DecodeString(docKey); err != nil {
+		return nil, errors.New("config: DOCUMENT_ENCRYPTION_KEY must be 64 hex characters")
+	}
+
+	maxPDFBytes := DefaultMaxPDFBytes
+	if v := os.Getenv("MAX_PDF_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid MAX_PDF_BYTES %q: must be a positive integer", v)
+		}
+		maxPDFBytes = n
+	}
+
 	return &Config{
 		Port:                   port,
 		AppEnv:                 appEnv,
@@ -257,5 +299,8 @@ func Load() (*Config, error) {
 		RateLimitPlay:          rateLimitPlay,
 		RateLimitDownload:      rateLimitDownload,
 		RateLimitWrite:         rateLimitWrite,
+		StorageDir:             storageDir,
+		DocumentEncryptionKey:  docKey,
+		MaxPDFBytes:            maxPDFBytes,
 	}, nil
 }

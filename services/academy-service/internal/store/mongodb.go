@@ -585,6 +585,31 @@ func (s *MongoStore) ListFilesBySubject(ctx context.Context, subjectID string) (
 	return result, nil
 }
 
+// GetFile returns the file when it belongs to subjectID; otherwise (nil, nil).
+func (s *MongoStore) GetFile(ctx context.Context, subjectID, fileID string) (*models.SubjectFile, error) {
+	var f models.SubjectFile
+	err := s.db.Collection("subject_files").FindOne(ctx, bson.M{"_id": fileID, "subject_id": subjectID}).Decode(&f)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find file: %w", err)
+	}
+	return &f, nil
+}
+
+// DeleteFile removes the file row when it belongs to subjectID; no match is ErrNotFound.
+func (s *MongoStore) DeleteFile(ctx context.Context, subjectID, fileID string) error {
+	res, err := s.db.Collection("subject_files").DeleteOne(ctx, bson.M{"_id": fileID, "subject_id": subjectID})
+	if err != nil {
+		return fmt.Errorf("store: delete file: %w", err)
+	}
+	if res.DeletedCount == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Ping verifies MongoDB connectivity.
 func (s *MongoStore) Ping(ctx context.Context) error {
 	return s.client.Ping(ctx, nil)
