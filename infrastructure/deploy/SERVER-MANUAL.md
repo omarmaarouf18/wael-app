@@ -330,7 +330,8 @@ checked against each service's `config.Load()` and `env.production.example`.
 | `DOCUMENT_ENCRYPTION_KEY` | academy-service | yes (added 2026-10-09) | AES-256-GCM key of every stored PDF (ADR-0009). Never change it once files exist: they become unreadable | `<GENERATE: openssl rand -hex 32>`; copy it into the owner's password manager BEFORE the first upload |
 | `WAEL_UID` / `WAEL_GID` | compose (`user:` of academy-service) | yes (added 2026-10-09) | academy-service runs as deploybot so it and backup/restore share the files | `id -u deploybot` / `id -g deploybot` |
 | `MAX_PDF_BYTES` | academy-service, admin-console | no (default 20971520 = 20 MB, SPEC D14) | Max PDF upload; the console's upload-route body cap | uncomment to override; keep one value for both |
-| `MAX_CONCURRENT_DOWNLOADS` | academy-service | no (default `3`, added 2026-10-09, owner decision) | Student PDF downloads in flight at once; each holds one copy of its file in memory. When all are busy the next download gets `429` with `Retry-After: 5` (nothing queues) | raise only with `ACADEMY_MEM_LIMIT` headroom: about 20 MB per slot at the 20 MB cap |
+| `MAX_CONCURRENT_DOWNLOADS` | academy-service | no (default `3`, added 2026-10-09, owner decision) | Student PDF downloads in flight at once; each holds one copy of its file in memory. When all are busy, or the same student already has a download running (one per student, owner review 2026-10-09), the next download gets `429` with `Retry-After: 5` (nothing queues) | raise only with `ACADEMY_MEM_LIMIT` headroom: about 20 MB per slot at the 20 MB cap |
+| `DOWNLOAD_STALL_TIMEOUT` | academy-service | no (default `30s`, added 2026-10-09, owner review) | A download whose client stops reading for this long is cut and its slot freed (there is no server WriteTimeout, so this is what ends a stalled transfer) | Go duration from `5s` to `5m`; leave unset unless slow phones get cut off |
 | `FEATURES_FILES` | academy-service | no (default `false`) | App-config `features.files`: `true` shows notes & books downloads in the app | `false` until a test upload and download worked (see "Files (Phase 5)") |
 | `STREAM_MAX_CONCURRENT` / `STREAM_OPEN_RATE_LIMIT` | notification-service | no (defaults 3 / 10) | SSE caps | uncomment to override |
 | `NOTIFICATION_SERVICE_URL` | academy-service | yes (production) | Internal mTLS notification push URL for student notifications (request accept/reject, grant/revoke) | fixed in compose: `https://notification-service:3004` (requires https in production) |
@@ -435,7 +436,8 @@ back from the file, §6):
   *(Added 2026-10-09, Phase 5:)* `academy-service` also validates `STORAGE_DIR`
   (required), `DOCUMENT_ENCRYPTION_KEY` (exactly 64 hex characters, never
   printed), `MAX_PDF_BYTES` (positive integer) and `FEATURES_FILES` (`true` or
-  `false` only) and `MAX_CONCURRENT_DOWNLOADS` (positive integer); `admin-console`
+  `false` only), `MAX_CONCURRENT_DOWNLOADS` (positive integer) and
+  `DOWNLOAD_STALL_TIMEOUT` (Go duration from `5s` to `5m`); `admin-console`
   validates `MAX_PDF_BYTES`.
 
 ### Files (Phase 5)
@@ -496,10 +498,16 @@ Limits: one PDF per upload, at most `MAX_PDF_BYTES` (20 MB). A download is
 decrypted in memory before it is sent (about one copy of the file per
 download in flight), so academy-service serves at most
 `MAX_CONCURRENT_DOWNLOADS` (default 3) at once (owner decision 2026-10-09):
-about 60 MB at the 20 MB cap, inside `ACADEMY_MEM_LIMIT` (192m). The next
-student gets `429` with `Retry-After: 5`, which the app shows as "try again
-later"; nothing waits in a queue. Raise the cap only together with
-`ACADEMY_MEM_LIMIT` (and `ACADEMY_GOMEMLIMIT`).
+about 60 MB at the 20 MB cap, inside `ACADEMY_MEM_LIMIT` (192m), and a
+student has at most one download running at a time (owner review
+2026-10-09). The next download beyond either limit gets `429` with
+`Retry-After: 5`, which the app shows as "try again later"; nothing waits in
+a queue. A phone that stops reading (lost signal, app in the background)
+keeps its slot at most `DOWNLOAD_STALL_TIMEOUT` (default 30 s) per chunk:
+academy-service sets a write deadline before every 64 KiB, the blocked write
+fails, the slot is freed and the log shows `file_download incomplete` with
+ids only. Raise the cap only together with `ACADEMY_MEM_LIMIT` (and
+`ACADEMY_GOMEMLIMIT`).
 
 Completeness proof (run from `wael-app/infrastructure/deploy/`): every name
 set in `env.production.example` is referenced by `docker-compose.yml`, and the
@@ -509,7 +517,7 @@ tuning overrides, `IMAGE_TAG` (from `release.env`) and `WAEL_HOME` (host env):
 ```bash
 [laptop] grep -o -E '\$\{[A-Z_][A-Z_0-9]*' docker-compose.yml Caddyfile | sed 's/.*\${//' | sort -u > /tmp/used
 [laptop] grep -E '^[A-Z_]+=' env.production.example | cut -d= -f1 | sort -u > /tmp/set
-[laptop] grep -E '^# (RATE_LIMIT_[A-Z]+|STREAM_[A-Z_]+|[A-Z]+_MEM_LIMIT|MONGO_CACHE_GB|REDIS_MAXMEMORY|[A-Z]+_GOMEMLIMIT|MAX_PDF_BYTES|MAX_CONCURRENT_DOWNLOADS)=' env.production.example | cut -d= -f1 | sed 's/^# //' | sort -u > /tmp/tuning
+[laptop] grep -E '^# (RATE_LIMIT_[A-Z]+|STREAM_[A-Z_]+|[A-Z]+_MEM_LIMIT|MONGO_CACHE_GB|REDIS_MAXMEMORY|[A-Z]+_GOMEMLIMIT|MAX_PDF_BYTES|MAX_CONCURRENT_DOWNLOADS|DOWNLOAD_STALL_TIMEOUT|JWT_ACCESS_TTL|MIN_VERSION|LATEST_VERSION|UPDATE_URL)=' env.production.example | cut -d= -f1 | sed 's/^# //' | sort -u > /tmp/tuning
 [laptop] comm -23 /tmp/used <(sort -u /tmp/set /tmp/tuning); echo "only IMAGE_TAG and WAEL_HOME may remain"
 ```
 
