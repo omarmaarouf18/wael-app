@@ -50,7 +50,13 @@ type Config struct {
 	MaxPDFBytes           int64
 	// FeaturesFiles is served as app-config features.files (FEATURES_FILES).
 	FeaturesFiles bool
+	// MaxConcurrentDownloads caps student PDF downloads in flight
+	// (MAX_CONCURRENT_DOWNLOADS, owner decision 2026-10-09).
+	MaxConcurrentDownloads int
 }
+
+// DefaultMaxConcurrentDownloads is the MAX_CONCURRENT_DOWNLOADS default.
+const DefaultMaxConcurrentDownloads = 3
 
 // DefaultMaxPDFBytes is the MAX_PDF_BYTES default: 20 MB (owner decision
 // 2026-10-08, SPEC D14).
@@ -286,6 +292,17 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("config: invalid FEATURES_FILES %q: must be true or false", v)
 	}
 
+	// Each download in flight holds one plaintext copy of its PDF (the v1
+	// storage format is one AES-GCM seal), so the number in flight is capped.
+	maxConcurrentDownloads := DefaultMaxConcurrentDownloads
+	if v := os.Getenv("MAX_CONCURRENT_DOWNLOADS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 {
+			return nil, fmt.Errorf("config: invalid MAX_CONCURRENT_DOWNLOADS %q: must be a positive integer", v)
+		}
+		maxConcurrentDownloads = n
+	}
+
 	return &Config{
 		Port:                   port,
 		AppEnv:                 appEnv,
@@ -317,5 +334,6 @@ func Load() (*Config, error) {
 		DocumentEncryptionKey:  docKey,
 		MaxPDFBytes:            maxPDFBytes,
 		FeaturesFiles:          featuresFiles,
+		MaxConcurrentDownloads: maxConcurrentDownloads,
 	}, nil
 }

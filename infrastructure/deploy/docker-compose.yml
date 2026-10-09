@@ -230,6 +230,9 @@ services:
       MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}
       # App-config features.files: "true" shows notes & books downloads in the app.
       FEATURES_FILES: ${FEATURES_FILES:-false}
+      # Student downloads in flight (each holds one copy of its PDF in
+      # memory); more get 429 + Retry-After. Empty means 3.
+      MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-}
     volumes:
       - ${WAEL_HOME}/certs/ca.crt:/app/certs/ca.crt:ro
       - ${WAEL_HOME}/certs/academy-service.crt:/app/certs/academy-service.crt:ro

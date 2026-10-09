@@ -43,6 +43,7 @@ func baseEnv(t *testing.T) {
 	_ = os.Unsetenv("DOCUMENT_ENCRYPTION_KEY")
 	_ = os.Unsetenv("MAX_PDF_BYTES")
 	_ = os.Unsetenv("FEATURES_FILES")
+	_ = os.Unsetenv("MAX_CONCURRENT_DOWNLOADS")
 }
 
 func fullProdEnv(t *testing.T) {
@@ -582,4 +583,23 @@ func TestLoad_FeaturesFiles(t *testing.T) {
 			t.Fatalf("unset FEATURES_FILES: %v, %v; want off", cfg, err)
 		}
 	})
+}
+
+func TestLoad_MaxConcurrentDownloads(t *testing.T) {
+	fullProdEnv(t)
+	_ = os.Unsetenv("MAX_CONCURRENT_DOWNLOADS")
+	cfg, err := Load()
+	if err != nil || cfg.MaxConcurrentDownloads != 3 {
+		t.Fatalf("default: %v, %v; want 3", cfg, err)
+	}
+	setEnv(t, "MAX_CONCURRENT_DOWNLOADS", "8")
+	if cfg, err = Load(); err != nil || cfg.MaxConcurrentDownloads != 8 {
+		t.Fatalf("MAX_CONCURRENT_DOWNLOADS=8: %v, %v", cfg, err)
+	}
+	for _, bad := range []string{"0", "-1", "three", "2.5", " 3"} {
+		setEnv(t, "MAX_CONCURRENT_DOWNLOADS", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MAX_CONCURRENT_DOWNLOADS") {
+			t.Fatalf("MAX_CONCURRENT_DOWNLOADS=%q: err = %v, want a refusal naming the variable", bad, err)
+		}
+	}
 }

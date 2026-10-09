@@ -160,9 +160,11 @@ func TestContract_AcademyAdminFiles(t *testing.T) {
 // bytes and the R6 headers; unowned, revoked, expired 403; another subject's
 // file, unknown ids and hidden subjects 404; Download tier 429 with
 // Retry-After; storage failure 503 without detail; a 20 MiB file starts within
-// the gateway's 2 s; sanitized Content-Disposition.
+// the gateway's 2 s; sanitized Content-Disposition; at most
+// MAX_CONCURRENT_DOWNLOADS in flight (429 + Retry-After when full), the slot
+// released on success, client abort and storage error.
 func TestContract_AcademyFileDownload(t *testing.T) {
-	out := runAcademyAdminTests(t, "^(TestDownloadFile_OwnedStreamsExactBytes|TestDownloadFile_Refusals|TestDownloadFile_RateLimit429|TestDownloadFile_FailClosed503|TestDownloadFile_20MBWithinGatewayBudget|TestContentDisposition_Sanitized)$")
+	out := runAcademyAdminTests(t, "^(TestDownloadFile_OwnedStreamsExactBytes|TestDownloadFile_Refusals|TestDownloadFile_RateLimit429|TestDownloadFile_FailClosed503|TestDownloadFile_20MBWithinGatewayBudget|TestContentDisposition_Sanitized|TestDownloadFile_ConcurrencyCapEnforced|TestDownloadFile_SlotReleasedOnStorageError|TestDownloadFile_SlotReleasedOnClientAbort|TestAcquireDownloadSlot_DefaultAndRelease)$")
 	requirePass(t, out,
 		"TestDownloadFile_OwnedStreamsExactBytes",
 		"TestDownloadFile_Refusals",
@@ -170,5 +172,9 @@ func TestContract_AcademyFileDownload(t *testing.T) {
 		"TestDownloadFile_FailClosed503",
 		"TestDownloadFile_20MBWithinGatewayBudget",
 		"TestContentDisposition_Sanitized",
+		"TestDownloadFile_ConcurrencyCapEnforced",
+		"TestDownloadFile_SlotReleasedOnStorageError",
+		"TestDownloadFile_SlotReleasedOnClientAbort",
+		"TestAcquireDownloadSlot_DefaultAndRelease",
 	)
 }

@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/limiter"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/shared/infra/handlerutil"
 )
@@ -27,6 +29,12 @@ import (
 // plaintext size. The body is written by one io.Copy from the decrypted
 // reader, so a per-user watermark (SPEC Section 3 question 2) can later wrap
 // that reader without changing the route or the response shape.
+//
+// Downloads in flight are capped (MAX_CONCURRENT_DOWNLOADS, default 3): each
+// holds one plaintext copy of its file in memory. The slot is taken after the
+// ownership decision, only for the part that reads the object, and when every
+// slot is busy the answer is 429 with Retry-After (the rate limiter's shape);
+// nothing waits in a queue.
 //
 // Answers: unknown subject, unknown file, or a file of another subject 404;
 // a subject the student does not own 403 (404 instead when the subject is
@@ -109,6 +117,12 @@ func (s *Server) DownloadFile(w http.ResponseWriter, r *http.Request, subjectID,
 		unavailable(errors.New("file storage unconfigured"))
 		return
 	}
+	release, ok := s.acquireDownloadSlot()
+	if !ok {
+		limiter.WriteRateLimitedResponse(w, downloadBusyRetryAfter)
+		return
+	}
+	defer release()
 	size, err := s.Files.Size(file.StorageKey)
 	if err != nil {
 		unavailable(err)
@@ -217,4 +231,32 @@ func rfc5987Encode(s string) string {
 		b.WriteByte(hex[c&0x0f])
 	}
 	return b.String()
+}
+
+// downloadBusyRetryAfter is the Retry-After sent when every download slot is
+// busy.
+const downloadBusyRetryAfter = 5 * time.Second
+
+// defaultMaxConcurrentDownloads mirrors config.DefaultMaxConcurrentDownloads
+// for servers built without config (tests); the cap is never unlimited.
+const defaultMaxConcurrentDownloads = 3
+
+// acquireDownloadSlot takes a download slot without waiting. It returns the
+// release function, or ok=false when every slot is busy. The release runs
+// once however the download ends (success, client abort, storage error).
+func (s *Server) acquireDownloadSlot() (release func(), ok bool) {
+	s.downloadSlotsOnce.Do(func() {
+		n := s.MaxConcurrentDownloads
+		if n <= 0 {
+			n = defaultMaxConcurrentDownloads
+		}
+		s.downloadSlots = make(chan struct{}, n)
+	})
+	select {
+	case s.downloadSlots <- struct{}{}:
+		var once sync.Once
+		return func() { once.Do(func() { <-s.downloadSlots }) }, true
+	default:
+		return nil, false
+	}
 }

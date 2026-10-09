@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/limiter"
@@ -54,6 +55,13 @@ type Server struct {
 	MaxPDFBytes int64
 	// FeaturesFiles is app-config features.files (FEATURES_FILES).
 	FeaturesFiles bool
+	// MaxConcurrentDownloads caps student downloads in flight
+	// (MAX_CONCURRENT_DOWNLOADS); zero or less means the default of 3, never
+	// unlimited. Read once, on the first download.
+	MaxConcurrentDownloads int
+
+	downloadSlotsOnce sync.Once
+	downloadSlots     chan struct{}
 }
 
 // New creates a Server with dependencies.
