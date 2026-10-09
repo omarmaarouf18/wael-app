@@ -75,7 +75,7 @@ publishing and deploying kept off until the prerequisites exist.
 
 - Android application id is still `com.wael.app` (template TODO). Changing
   it after the first store upload is not possible; owner to confirm.
-- iOS distribution (SPEC Q8) is not covered.
+- iOS distribution (SPEC Q8) is not covered. *(Amended 2026-10-09, owner decision: `frontend/.github/workflows/build-ios.yml` builds and uploads the iOS app from `wael-app-mobile` on a GitHub macOS runner, manual dispatch only, with its signing secrets in `wael-app-mobile` like the Android ones; guide `docs/frontend/IOS-RELEASE.md`. The App Store review question (SPEC Q8) stays with the owner.)*
 
 ## To verify
 

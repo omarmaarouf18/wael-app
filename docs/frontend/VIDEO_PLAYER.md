@@ -73,7 +73,7 @@ YouTube URL (a test scans for `youtube.com`, `youtu.be`, `watch?v=`, `embed/`).
 - Stop a rooted device, a camera pointed at the screen, or someone who obtains
   the unlisted URL by other means. The watermark and the per-play check are the
   deterrent.
-- Work off Android: iOS is deferred, and desktop has no WebView (the screen then
+- Work off Android: iOS is deferred *(amended 2026-10-09: an iOS build pipeline now exists, `docs/frontend/IOS-RELEASE.md`; the player is not yet verified on an iPhone)*, and desktop has no WebView (the screen then
   shows an error instead of playing).
 
 ## Screen capture protection (Android)
