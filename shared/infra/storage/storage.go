@@ -27,12 +27,25 @@ var (
 	ErrKeyExists = errors.New("storage: key already exists")
 	// ErrLinkUnsupported indicates that the underlying filesystem does not support hard links.
 	ErrLinkUnsupported = errors.New("storage: hard links not supported by underlying filesystem")
+	// ErrNotFound indicates that no object is stored under the key.
+	ErrNotFound = errors.New("storage: object not found")
 )
 
 // Storage defines the interface for secure document and attachment storage.
 type Storage interface {
 	Upload(ctx context.Context, key string, reader io.Reader, contentType string) error
 	OpenFile(key string) (io.ReadCloser, error)
+	// Size returns the plaintext size of the stored object in bytes, without
+	// decrypting it (used for Content-Length). A missing object is ErrNotFound.
+	Size(key string) (int64, error)
+	// Delete removes the stored object. A missing object is not an error, so
+	// Delete is idempotent.
+	Delete(ctx context.Context, key string) error
+}
+
+// headerSize is the on-disk prefix before the ciphertext: version byte + nonce.
+func (l *LocalStorage) headerSize() int {
+	return 1 + l.aead.NonceSize()
 }
 
 // LocalStorage implements Storage using local disk with AES-256-GCM encryption at rest and os.Root containment.
@@ -209,23 +222,24 @@ func (l *LocalStorage) Upload(ctx context.Context, key string, reader io.Reader,
 		return fmt.Errorf("storage: directory traversal detected: %w", err)
 	}
 
-	plaintext, err := io.ReadAll(reader)
-	if err != nil {
+	// File format: [version=1][nonce 12][ciphertext+tag]. The plaintext is
+	// read into one buffer right after room for the header and sealed in
+	// place, so an upload holds about one copy of the file in memory.
+	hdr := l.headerSize()
+	buf := bytes.NewBuffer(make([]byte, hdr, hdr+bytes.MinRead))
+	if _, err := buf.ReadFrom(reader); err != nil {
 		return fmt.Errorf("storage: failed to read file content: %w", err)
 	}
+	data := buf.Bytes()
 
-	nonce := make([]byte, l.aead.NonceSize())
+	nonce := data[1:hdr]
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return fmt.Errorf("storage: failed to generate nonce: %w", err)
 	}
-
-	// File format: [version=1][nonce 12][ciphertext+tag]
-	header := make([]byte, 1+len(nonce))
-	header[0] = fileFormatVersion
-	copy(header[1:], nonce)
+	data[0] = fileFormatVersion
 	aad := append([]byte{fileFormatVersion}, []byte(key)...)
 
-	ciphertext := l.aead.Seal(header, nonce, plaintext, aad)
+	ciphertext := l.aead.Seal(data[:hdr], nonce, data[hdr:], aad)
 
 	tmpFile, tmpName, err := l.createTemp()
 	if err != nil {
@@ -277,6 +291,9 @@ func (l *LocalStorage) OpenFile(key string) (io.ReadCloser, error) {
 		if isEscapeError(err) {
 			return nil, fmt.Errorf("storage: directory traversal detected: %w", err)
 		}
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, key)
+		}
 		return nil, fmt.Errorf("storage: failed to open file %s: %w", key, err)
 	}
 
@@ -292,10 +309,76 @@ func (l *LocalStorage) OpenFile(key string) (io.ReadCloser, error) {
 
 	nonce, ciphertext := data[1:1+nonceSize], data[1+nonceSize:]
 	aad := append([]byte{version}, []byte(key)...)
-	plaintext, err := l.aead.Open(nil, nonce, ciphertext, aad)
+	// Decrypt in place (ciphertext[:0]): the format is one AES-GCM seal over
+	// the whole file, so the plaintext is authenticated only after all of it
+	// is read; holding one buffer instead of two halves the peak memory.
+	plaintext, err := l.aead.Open(ciphertext[:0], nonce, ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("storage: failed to decrypt file %s: %w", key, err)
 	}
 
 	return io.NopCloser(bytes.NewReader(plaintext)), nil
+}
+
+// Size returns the plaintext size of the object stored under key, computed
+// from the on-disk size minus the fixed header and GCM tag (no decryption).
+// Only a regular file inside the root counts; a missing key is ErrNotFound.
+func (l *LocalStorage) Size(key string) (int64, error) {
+	if err := validateUUIDKey(key); err != nil {
+		return 0, err
+	}
+	info, err := l.root.Stat(key)
+	if err != nil {
+		if isEscapeError(err) {
+			return 0, fmt.Errorf("storage: directory traversal detected: %w", err)
+		}
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, fmt.Errorf("%w: %s", ErrNotFound, key)
+		}
+		return 0, fmt.Errorf("storage: failed to stat file %s: %w", key, err)
+	}
+	if !info.Mode().IsRegular() {
+		return 0, fmt.Errorf("storage: %s is not a regular file", key)
+	}
+	size := info.Size() - int64(l.headerSize()+l.aead.Overhead())
+	if size < 0 {
+		return 0, fmt.Errorf("storage: file %s is too short to contain valid header", key)
+	}
+	return size, nil
+}
+
+// Delete removes the object stored under key inside the root. It is
+// idempotent: a missing key returns nil. The key must be a canonical UUID,
+// and only a regular file or a symlink entry (the link itself, never its
+// target) is removed; a directory is refused.
+func (l *LocalStorage) Delete(ctx context.Context, key string) error {
+	if err := validateUUIDKey(key); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	info, err := l.root.Lstat(key)
+	if err != nil {
+		if isEscapeError(err) {
+			return fmt.Errorf("storage: directory traversal detected: %w", err)
+		}
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("storage: failed to stat file %s: %w", key, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("storage: %s is a directory, refusing to delete", key)
+	}
+	if err := l.root.Remove(key); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if isEscapeError(err) {
+			return fmt.Errorf("storage: directory traversal detected: %w", err)
+		}
+		return fmt.Errorf("storage: failed to delete file %s: %w", key, err)
+	}
+	return nil
 }
