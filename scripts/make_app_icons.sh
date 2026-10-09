@@ -1,20 +1,33 @@
 #!/usr/bin/env bash
-# Builds the Android app icon set and the Play Store icon from the character
-# art, with ImageMagick. Re-run it after changing the art or a crop box below.
+# Builds the Android and iOS app icon sets and the Play Store icon from the
+# character art, with ImageMagick. Re-run it after changing the art or a crop
+# box below.
 #
-#   scripts/make_app_icons.sh
+#   scripts/make_app_icons.sh            # android and ios
+#   scripts/make_app_icons.sh android    # android + Play Store icon only
+#   scripts/make_app_icons.sh ios        # iOS AppIcon set only
 #
 # Source:  frontend/assets/branding/el_metr_character_art.png (1024 x 1536)
 # Output:  Android adaptive icon (foreground + solid background colour),
-#          legacy mipmap PNGs for every density, and the 512 x 512 store icon.
-# Not generated: iOS, macOS, web and Windows icons (Android first, SPEC
-# decision 20; those keep their current files).
+#          legacy mipmap PNGs for every density, the 512 x 512 store icon,
+#          and the iOS AppIcon.appiconset PNGs (same square crop, no alpha:
+#          App Store Connect rejects a 1024 icon with an alpha channel).
+# Not generated: macOS, web and Windows icons (those keep their current
+# files). *(Amended 2026-10-09, owner decision: iOS icons are generated too,
+# for the iOS App Store pipeline; previously Android only, SPEC decision 20.)*
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ART="$REPO/frontend/assets/branding/el_metr_character_art.png"
 RES="$REPO/frontend/android/app/src/main/res"
 STORE="$REPO/frontend/assets/branding/store_icon_512.png"
+IOS_SET="$REPO/frontend/ios/Runner/Assets.xcassets/AppIcon.appiconset"
+
+TARGET="${1:-all}"
+case "$TARGET" in
+  all|android|ios) ;;
+  *) echo "usage: $0 [all|android|ios]" >&2; exit 2 ;;
+esac
 
 command -v magick >/dev/null || { echo "ImageMagick (magick) is required" >&2; exit 1; }
 [ -f "$ART" ] || { echo "missing $ART" >&2; exit 1; }
@@ -44,6 +57,22 @@ trap 'rm -rf "$tmp"' EXIT
 # Square crop for the legacy and store icons.
 magick "$ART" -crop "${SQ_W}x${SQ_W}+${SQ_X}+${SQ_Y}" +repage \
   -background "$BG" -alpha remove -alpha off "$tmp/square.png"
+
+if [ "$TARGET" = all ] || [ "$TARGET" = ios ]; then
+  # iOS: every file listed in AppIcon.appiconset/Contents.json, by pixel size.
+  # iOS applies its own rounded mask, so the square is used full bleed.
+  [ -d "$IOS_SET" ] || { echo "missing $IOS_SET" >&2; exit 1; }
+  for spec in 20x20@1x:20 20x20@2x:40 20x20@3x:60 29x29@1x:29 29x29@2x:58 \
+    29x29@3x:87 40x40@1x:40 40x40@2x:80 40x40@3x:120 60x60@2x:120 60x60@3x:180 \
+    76x76@1x:76 76x76@2x:152 83.5x83.5@2x:167 1024x1024@1x:1024; do
+    IFS=: read -r name px <<<"$spec"
+    magick "$tmp/square.png" -resize "${px}x${px}" -background "$BG" \
+      -alpha remove -alpha off "$IOS_SET/Icon-App-$name.png"
+  done
+  echo "iOS icons written under $IOS_SET"
+fi
+
+[ "$TARGET" = ios ] && exit 0
 
 # Foreground layer: a BG canvas with the art placed at (-FG_X, -FG_Y).
 magick -size "${FG_W}x${FG_W}" "xc:$BG" "$ART" \

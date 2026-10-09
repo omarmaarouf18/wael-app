@@ -52,7 +52,7 @@ that has not been recorded; treat all as UNCONFIRMED.
 | Path (set) | Platform | Source | License |
 |---|---|---|---|
 | `frontend/android/app/src/main/res/mipmap-*/ic_launcher.png` (5 densities), `ic_launcher_foreground.png` (5 densities), `mipmap-anydpi-v26/ic_launcher.xml`, `values/ic_launcher_background.xml` | Android launcher (adaptive and legacy) | Generated 2026-10-02 from `el_metr_character_art.png` by `scripts/make_app_icons.sh` | Owner-approved 2026-10-02 |
-| `frontend/ios/Runner/Assets.xcassets/AppIcon.appiconset/*` (15 icons) | iOS app icon | UNCONFIRMED | UNCONFIRMED |
+| `frontend/ios/Runner/Assets.xcassets/AppIcon.appiconset/*` (15 icons) | iOS app icon | Generated 2026-10-09 from `el_metr_character_art.png` by `scripts/make_app_icons.sh ios` (same square crop as the Android legacy icon, alpha removed) | Same source as the owner-approved Android icon (2026-10-02) |
 | `frontend/ios/Runner/Assets.xcassets/LaunchImage.imageset/*` (3 images) | iOS launch image | UNCONFIRMED | UNCONFIRMED |
 | `frontend/macos/Runner/Assets.xcassets/AppIcon.appiconset/*` (7 icons) | macOS app icon | UNCONFIRMED | UNCONFIRMED |
 | `frontend/web/favicon.png`, `frontend/web/icons/*` (5 files) | Web | UNCONFIRMED | UNCONFIRMED |
