@@ -4,13 +4,14 @@ One entry per production release, reconstructable from git
 (`git log <previous>..<sha> --oneline`). Hashes are 7-char short refs.
 `origin/main` and `origin/develop` are both at `620da53` (2026-10-08).
 
-## Unreleased (`develop` = `620da53`)
+## Unreleased (`develop` = `d1a49f5`)
 
-116 commits since `32d185e` (2026-10-03..2026-10-08): P1 gateway/JWT
+120 commits since `32d185e` (2026-10-03..2026-10-09): iOS store-ready + CI
+(`d549dbd`..`e962f81`), Go security release (`d1a49f5`), P1 gateway/JWT
 hardening, verified pre-deploy backup (`93bb0e7`), console settings with
 `show_prices` + center, legal links + signup summary, 10-07 review fixes,
 10-08 frontend hardening. See "Pending release" in `AI_CONTEXT.md` and
-`git log 32d185e..620da53 --oneline`.
+`git log 32d185e..origin/develop --oneline`.
 
 ## `32d185e` — 2026-10-03
 

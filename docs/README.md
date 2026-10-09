@@ -23,6 +23,8 @@ everything else follows it or records a point in time.
   `frontend/android/app/build.gradle.kts` and the build-apk workflow.
 - `docs/mobile/PLAY-STORE.md` — Play Console answers mapped to code.
   Unknown answers are marked TODO(owner).
+- `docs/frontend/IOS-RELEASE.md` — iOS pipeline and store checklist (iOS lane).
+  Follows the build-ios workflow; App Store review risk stays with the owner.
 - `docs/admin/CONSOLE-GUIDE.ar.md` — Arabic console guide for center staff.
   Follows `services/admin-console/web`.
 - `docs/ops/INCIDENTS.md` — incident response (leaks, rotation, restore).

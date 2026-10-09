@@ -13,6 +13,11 @@ Mover notes (2026-10-09, status only; moved text unchanged):
 - The console-settings note ("on feat/console-settings") is superseded: the
   work landed on origin/develop as e3b1cd2..d0c378d with app gates d9f3540,
   b6c52cb (now also on origin/main); the Settings tab is live in the console.
+- Rebased 2026-10-09 onto d1a49f5: ec030b1 had amended the F5 paragraph (iOS
+  AppIcon note) and added an iOS release-pipeline paragraph plus a Pending
+  bullet in the pre-split AI_CONTEXT. The moved text below stays verbatim at
+  620da53; the iOS/toolchain content is summarized in AI_CONTEXT.md "Pending
+  release" instead.
 
 ## Done
 Skeleton, shared/infra, gateway+auth, notifications, Flutter wiring+rename,

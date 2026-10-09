@@ -11,18 +11,22 @@ live since 2026-10-03), shared/infra,
 Flutter app with real gateway auth, local compose (mongo:7, redis:7, mTLS),
 pre-push hook, CI. Branch: `develop` (work), `main` (fast-forward merges after CI).
 *(Amended 2026-10-06: `main` = `32d185e` is production. `develop` is ahead of it by 31 commits, `8e71d72`..`79e1962`, before this docs refresh: Redis cap, F-UX1 session resilience, F-UX4 offline/fonts/forms/a11y, F-UX2 Part A account backend, S1/S2, the D1/D3 records and the player overlay masks. They reach production only by the owner's fast-forward of `main`; see "Pending release".)*
-*(Amended 2026-10-09: fetched 2026-10-09, `origin/main` and `origin/develop` are both at `620da53`, so `git log origin/main..origin/develop` is empty and the 2026-10-06 note above no longer holds. The 116 commits `32d185e`..`620da53` are on `main` (see "Pending release"); whether the server runs them is owner-confirmed on the host. Finished-phase history moved to `docs/HISTORY.md`.)*
+*(Amended 2026-10-09: fetched 2026-10-09, `origin/main` = `620da53`, `origin/develop` = `d1a49f5` (4 commits ahead: iOS store-ready + CI and the Go security release); the 2026-10-06 note above no longer holds. The 116 commits `32d185e`..`620da53` are on `main` (see "Pending release"); whether the server runs them is owner-confirmed on the host. Finished-phase history moved to `docs/HISTORY.md`.)*
 
-## Pending release (develop and main in sync)
-Fetched 2026-10-09: `origin/main` and `origin/develop` are both at `620da53`, so `git log origin/main..origin/develop` is empty. The 116 commits `32d185e`..`620da53` (2026-10-03..2026-10-08) reached `main` by fast-forward. Whether the server runs them is not visible from the repo; the owner confirms on the host. First deploy of this content follows `docs/RELEASE-CHECKLIST.md`.
-What the fast-forward carried (detail in `docs/HISTORY.md`; releases in `CHANGELOG.md`):
+## Pending release (develop 4 ahead of main)
+Fetched 2026-10-09: `origin/main` = `620da53`, `origin/develop` = `d1a49f5`; `git log origin/main..origin/develop` holds 4 commits (iOS store-ready + CI, Go security release). The 116 commits `32d185e`..`620da53` (2026-10-03..2026-10-08) are on `main` by fast-forward. Whether the server runs them is not visible from the repo; the owner confirms on the host. First deploy of this content follows `docs/RELEASE-CHECKLIST.md`.
+On `main` since `32d185e` (detail in `docs/HISTORY.md`; releases in `CHANGELOG.md`):
 - P1 gateway/JWT (`9067085`, `80c88bc`, `675f771`, `d4a1efe`, `6b446a6`, `44b40d8`, `81af77e`, `904ab5e`, `f35ae6d`, `0cebb9d`): one gateway circuit breaker per upstream; HS256-only access tokens; api-gateway, auth, notification and academy refuse to start (and fail `--check-env`) outside `APP_ENV=local|test` when `JWT_SECRET`, `GATEWAY_SECRET` or `INTERNAL_SERVICE_TOKEN` is under 32 bytes or carries a placeholder (deploy blocker, also preflight item 3); `JWT_ACCESS_TTL` (default `24h`); strict one-second revoke-all; SSE ends at token `exp`; gateway read/idle timeouts with no WriteTimeout; uncapped proxied bodies.
 - Pre-deploy backup (`93bb0e7`): every deploy takes a verified backup first (`BACKUP_LABEL=predeploy`, `gzip -t`, failure stops the deploy); `BACKUP_PING_URL` pings healthchecks.io so a failed or missed nightly backup alerts.
 - Console settings, `show_prices`, center (`e3b1cd2`, `3082985`, `8f59e1e`, `4371f07`, `5ca88d4`, `7877461`, `80f6509`, `d0c378d`; app gates `d9f3540`, `b6c52cb`): academy `app_settings` doc, admin Settings tab, public `show_prices`/`center` in app-config; a price renders only when `EXPOSE_PRICE_TO_STUDENTS=true` AND `show_prices` is on.
 - Legal links and signup summary (`9531d31`, `3ae708d`; SPEC D3 record `6445fd7`; price UI `1164755`, `fc154f8`, `91c4cc5`): always-working terms/privacy/delete-account links, in-app summary sheet, center-activation wording, no payment action anywhere.
 - 10-07 review fixes (`946ac5d`, `ce00110`, `2b6e4e3`, `355b455`, `eec66d5`, `244c738`, `d15055b`; S5 `3d748e5`; F-UX3 player `b5561e8`, `199cb2a`; forced-logout chain `7619b93`..`da35a19`).
 - 10-08 frontend hardening (`599508c`, `613cd2c`, `4d57025`, `fba6e3b`, `ba9cf88`, `743104c`, `0468b82`, `e6a95d6`, `6ce6f58`, `620da53`): R8 suppress, release config, forward-compat audit, notes and books client with persisted flag, banner, portrait v2, owner content, 20 MB PDF cap.
-Not on `origin/develop` (separate lanes, not pending release): iOS store-ready commits in the main checkout (`d549dbd`..`e962f81`) and `fix/infra-deploy-readiness` (`c147595`, `dce1dba`).
+Pending past `main` (develop only):
+- iOS store-ready (`d549dbd`, owner decision 2026-10-09): brand AppIcon set, `ITSAppUsesNonExemptEncryption=false`, iPhone-only, asset-provenance row.
+- iOS CI (`ec030b1`, `e962f81`): `build-ios.yml` in wael-app-mobile (macOS runner, manual dispatch; signed IPA + TestFlight upload with secrets, unsigned compile check otherwise); CSR/`.p12` via `scripts/ios_signing.sh` on Linux; guide `docs/frontend/IOS-RELEASE.md`; not run on macOS yet.
+- Go toolchain (`d1a49f5`): go1.26.9 security release (GO-2026-6603 and siblings in net/http, net/textproto, crypto/tls); go.work, go.mod files, Dockerfiles, CI and pre-push move together, language stays go 1.26.0.
+Not on `origin/develop` (separate lane, not pending release): `fix/infra-deploy-readiness` (`c147595`, `dce1dba`).
 
 ## Next task
 Agreed order (owner, 2026-10-08; supersedes the 2026-10-06 order):
