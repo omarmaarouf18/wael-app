@@ -91,13 +91,14 @@ or URL), so reloading the page signs the admin out. Any `401` clears the token
 and returns to the sign-in page. The page is Arabic first (right-to-left) with
 an English toggle; the choice is kept in the URL hash only.
 
-Requests, Catalog, Accounts, and Audit tabs are active in `web/js/tabs.js`;
+Requests, Catalog, Accounts, Audit, and Settings tabs are active in `web/js/tabs.js`;
 Files stays hidden until the Phase 5 APIs exist.
 
 The UI is split into small ES modules:
 - Accounts: search, status filter, pagination, suspend/reactivate/delete dialogs (`accounts.js`, `account-dialog.js`), and "المواد" button opening the student entitlements modal (`entitlements-dialog.js`) for active/expired/revoked lists, manual grant, and revoke with mandatory reason.
 - Requests: purchase requests queue with student identity join via auth-service, Cairo date formatting, live `pending_count` badge with 60-second polling, accept dialog, and reject dialog with mandatory reason (`requests.js`).
 - Catalog: levels, subjects, videos, publish/unpublish, reorder, and force-delete (`catalog.js`, `levels.js`, `subjects.js`, `subject-dialog.js`, `videos.js`, `video-dialog.js`, `confirm.js`).
+- Settings: app-facing settings form (`settings.js`): `show_prices` toggle, support WhatsApp number, center name/address/hours (Arabic and English) and map URL, with the last-saved state and update time shown. Unsaved-changes guard, double-submit guard, `429` cooldown, and a toast on save; validation errors (for example `settings_forbidden_word`) offer no Retry button because they need an edit, not a retry.
 - Unsaved changes: the catalog add/edit forms and an unsaved video order ask before they are closed, left through the tabs or breadcrumb, or the page is closed or reloaded (`unsaved.js`; the browser's own prompt for `beforeunload`, an in-page dialog for the rest).
 - Rate limits: a `429` with a `Retry-After` (whole seconds, relayed by the proxy; capped at an hour in the page) shows "حاول بعد N ثانية", counts down, and keeps the action's button and the banner's retry button disabled until the wait ends (`api.js` `parseRetryAfter`, `ui.js` `createCooldown`).
 - Double submit: every save, confirm and publish button is disabled while its request is in flight, a second submit (Enter, a second click, the banner's retry) sends nothing, and Esc cannot close a dialog during the request (`ui.js` `keepOpenWhile`, `unsaved.js` `guardDialog`, the per-dialog `busy`/`inFlight` flags).
