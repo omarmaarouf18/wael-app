@@ -54,7 +54,7 @@ SPEC.md Section 3 Open Question 3 notes: "Where PDFs live long term (ADR-0009 de
 ## To verify
 
 - Verify that `academy-service` configuration enforces `DOCUMENT_ENCRYPTION_KEY` requirement in all non-relaxed environments (fails startup unless `APP_ENV=local` or `test`) (SPEC.md Section 8 Item 7 and Section 9).
-  - *Answered 2026-10-09 (branch `feat/phase5-files`, not pushed):* yes. `config.Load()` refuses an empty key unless `APP_ENV=local|test` (empty `APP_ENV` is production) and refuses a set key that is not exactly 64 hex characters in every environment, without echoing it; `--check-env` runs the same code; `NewLocalStorage` checks again at startup. Tests: `TestLoad_FileStorage` (key matrix for production, empty, local and test) and `TestRunCheckEnv_FileStorageValues` in `services/academy-service`; production compose refuses to render without the key and preflight checks the 64-hex shape.
+  - *Answered 2026-10-09 (branch `feat/phase5-files`, not pushed):* yes. `config.Load()` refuses an empty key unless `APP_ENV=local|test` (empty `APP_ENV` is production) and refuses a set key that is not exactly 64 hex characters in every environment, without echoing it; `--check-env` runs the same code; `NewLocalStorage` checks again at startup. Tests: `TestLoad_FileStorage` (key matrix for production, empty, local and test) and `TestRunCheckEnv_FileStorageValues` in `services/academy-service`; production compose refuses to render without the key and preflight checks the 64-hex shape. *(Amended 2026-10-11: the branch merged and shipped on `main` with `b0de4d4` (2026-10-09) — "not pushed" no longer holds.)*
 - Verify that PDF upload endpoints enforce magic byte validation (`%PDF-`) and `MAX_PDF_BYTES` (SPEC.md Section 8 Item 6, Phase 5.1).
   - *Answered 2026-10-09 (same branch):* yes. The academy upload sniffs `%PDF-` before anything is stored and caps the file part at exactly `MAX_PDF_BYTES` (413 `file_too_large`; the body at `MAX_PDF_BYTES` + 64 KiB); the console checks both again before streaming. Tests: `TestAdminFiles_UploadValidation`, `TestAdminFiles_SizeCap` (contract 15) and the console's `TestFilesUpload_*`; on the local compose stack a 20 MiB file was accepted and 20 MiB + 1 byte and a non-PDF were refused.
 - Verify how much memory concurrent downloads take on the production host (one plaintext copy per download in flight, see the 2026-10-09 note) and whether the academy `mem_limit` (192m, `GOMEMLIMIT` 160MiB) is enough for the expected number of simultaneous downloads of large files. *(Added 2026-10-09.)*
@@ -65,6 +65,10 @@ SPEC.md Section 3 Open Question 3 notes: "Where PDFs live long term (ADR-0009 de
 Built on branch `feat/phase5-files` (not pushed, held for owner review). The
 decisions above are unchanged; this records how they were implemented and
 two things the earlier text did not say.
+*(Amended 2026-10-11: the branch merged and shipped on `main` with `b0de4d4`
+(2026-10-09) — "not pushed, held for owner review" no longer holds. The
+production turn-on of the storage directory and key stays an owner step on the
+host, per `infrastructure/deploy/SERVER-MANUAL.md` §5 "Files (Phase 5)".)*
 
 1. **Interface (decision 6).** `Storage` now has `Upload`, `OpenFile`,
    `Size` (plaintext size from the on-disk size, no decryption, for

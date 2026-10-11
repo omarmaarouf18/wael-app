@@ -5,12 +5,14 @@ academy-service, admin-console), shared Go libraries, and a Flutter app with
 real gateway auth.
 
 - Services: `services/api-gateway`, `services/auth-service`
-  (signup/login/OTP/JWT refresh, single `user` role, two-device sessions, and on
-  `develop` the self-service account endpoints: sessions, password, profile, email,
+  (signup/login/OTP/JWT refresh, single `user` role, two-device sessions, and
+  the self-service account endpoints: sessions, password, profile, email,
   account deletion),
   `services/notification-service` (SSE stream, list, mark-read, internal
   push), `services/academy-service` (catalog, entitlements, access
-  requests, admin review and manual grant/revoke, the protected-video play check), `services/admin-console` (thin admin proxy and static pages,
+  requests, admin review and manual grant/revoke, the protected-video play
+  check, and the Phase 5 PDF files feature — admin upload/list/delete and
+  student download — behind `FEATURES_FILES`), `services/admin-console` (thin admin proxy and static pages,
   Go plus Node tests, see its README).
 - Shared: `shared/infra` (`jwtutil, ratelimit, handlerutil, redact,
   resilience, tlsutil`).

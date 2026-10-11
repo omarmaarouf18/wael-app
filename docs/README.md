@@ -3,7 +3,7 @@
 One line per document. "Source of truth" means the file decides on its topic;
 everything else follows it or records a point in time.
 
-- `AI_CONTEXT.md` (repo root) — current state, pending release, next task.
+- `AI_CONTEXT.md` (repo root) — current state, release state, next task.
   Source of truth for where the repo stands.
 - `CHANGELOG.md` (repo root) — one entry per production release.
   Reconstructable from git; source of truth for release history.

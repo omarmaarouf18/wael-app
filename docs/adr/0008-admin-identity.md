@@ -142,7 +142,7 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 
 ### 14. Note (2026-10-09, Files Tab, SPEC Phase 5)
 
-*Records the console half of Phase 5 on branch `feat/phase5-files` (not pushed, held for owner review). It changes none of the decisions above; it supersedes "Files stay hidden" in Section 11 item 3.*
+*Records the console half of Phase 5 on branch `feat/phase5-files` (not pushed, held for owner review). It changes none of the decisions above; it supersedes "Files stay hidden" in Section 11 item 3. Amended 2026-10-11: the branch merged and shipped on `main` with `b0de4d4` (2026-10-09) — "not pushed, held for owner review" no longer holds.*
 
 1. **Proxy routes**: the allowlist gains three routes to `ACADEMY_ADMIN_URL` over mTLS with the same guarantees as the catalog routes: `GET /api/files?subject_id`, `POST /api/files/upload?subject_id` (multipart) and `POST /api/files/delete` `{subject_id, id}`.
 2. **The one larger body**: only the upload route accepts a body above 1 MiB, capped at `MAX_PDF_BYTES` (console config, default 20 MB) plus 64 KiB. The console reads and checks the three text fields and the `%PDF-` magic, then streams a freshly built multipart body to the academy (no client part, header or file name is forwarded), so the file is never held in memory. Only this handler extends its own read and write deadlines (10 minutes) and uses an upload client with that timeout; the server-wide timeouts and the 10-second upstream timeout stay for every other route.

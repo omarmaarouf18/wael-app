@@ -139,4 +139,8 @@ the key means revoking the certificate and making a new one.
 ## Not verified
 
 The 15.0 deployment target has not been built on a macOS runner yet; the
-next "Build iOS" run after the sync is the verification.
+next "Build iOS" run after the sync is the verification. *(Added 2026-10-11:
+the same unbuilt range carries the 2026-10-09 TestFlight fixes — the YouTube
+frame on iOS (`32bc53d`) and iOS PDF open/share via Quick Look and the share
+sheet (`b0de4d4`) — so that run re-tests all three; `origin/main` is now at
+`b0de4d4`.)*

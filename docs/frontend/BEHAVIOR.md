@@ -1,5 +1,7 @@
 # Frontend & Service Behavior Matrix
 
+*(Point-in-time capture from 2026-09-30 (last touched `0e7e9f1`, 2026-10-01), kept verbatim; the app and services have changed since — check `frontend/README.md`, `docs/frontend/CONTENT-GAPS.md` and `docs/frontend/STATUS.md` for current behavior. Note added 2026-10-11.)*
+
 Real behavior observed between the Flutter frontend application and the backend services stack (`api-gateway`, `auth-service`, `notification-service`, `redis`, `mongo`) running locally via Docker Compose.
 
 All scenarios were driven through the real application code paths using `ApiClient`, `HttpAuthRepository`, `HttpNotificationRepository`, `AuthProvider`, `NotificationsProvider`, and `NotificationStream`.

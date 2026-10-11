@@ -443,7 +443,10 @@ back from the file, §6):
 ### Files (Phase 5)
 
 *(Added 2026-10-09, branch `feat/phase5-files`; applies once that release is
-deployed.)* Notes and books are PDFs the admin uploads in the console's Files
+deployed. Amended 2026-10-11: that branch is merged and the release shipped —
+`origin/main` = `b0de4d4` since 2026-10-09; whether the server runs it is
+owner-confirmed on the host, and the steps below are still pending owner
+actions there.)* Notes and books are PDFs the admin uploads in the console's Files
 tab. academy-service encrypts each one with `DOCUMENT_ENCRYPTION_KEY`
 (AES-256-GCM, ADR-0009) into `STORAGE_DIR` and streams it only to students who
 own the subject, checking ownership on every download. The app shows downloads

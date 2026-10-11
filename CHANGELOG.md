@@ -2,16 +2,25 @@
 
 One entry per production release, reconstructable from git
 (`git log <previous>..<sha> --oneline`). Hashes are 7-char short refs.
-`origin/main` and `origin/develop` are both at `620da53` (2026-10-08).
+`origin/main` and `origin/develop` are both at `b0de4d4` (2026-10-09).
 
-## Unreleased (`develop` = `d1a49f5`)
+## `b0de4d4` — 2026-10-09
 
-120 commits since `32d185e` (2026-10-03..2026-10-09): iOS store-ready + CI
-(`d549dbd`..`e962f81`), Go security release (`d1a49f5`), P1 gateway/JWT
-hardening, verified pre-deploy backup (`93bb0e7`), console settings with
-`show_prices` + center, legal links + signup summary, 10-07 review fixes,
-10-08 frontend hardening. See "Pending release" in `AI_CONTEXT.md` and
-`git log 32d185e..origin/develop --oneline`.
+`main` fast-forwarded `620da53` → `b0de4d4` (`620da53` itself had
+fast-forwarded `32d185e` on 2026-10-08 with the P1 gateway/JWT, pre-deploy
+backup, console settings, legal links, review and hardening wave recorded in
+`docs/HISTORY.md`). The 39 commits: SPEC Phase 5 files server side — storage
+config, admin PDF upload/list/delete, student download with per-call ownership
+check, app-config `features.files` — with the console Files tab and file proxy
+routes; download limits (one download per student, `MAX_CONCURRENT_DOWNLOADS`
+default 3, `DOWNLOAD_STALL_TIMEOUT` default 30s); infra I1/I2 (backups archive
+`STORAGE_DIR` as one set; restore validates first, never restarts a failed
+restore healthy); faster CI (parallel E2E, per-job Go cache, Flutter cache);
+iOS store-ready + TestFlight fixes (AppIcon, `build-ios.yml`, iOS 15.0
+deployment target after ITMS-90068, YouTube frame on iOS, iOS PDF
+open/share), plus the go1.26.9 security release. Whether the server runs
+`b0de4d4` is owner-confirmed on the host.
+Reconstruct: `git log 620da53..b0de4d4 --oneline`.
 
 ## `32d185e` — 2026-10-03
 

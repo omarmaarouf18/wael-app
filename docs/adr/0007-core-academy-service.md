@@ -215,6 +215,10 @@ amendment). In short: the admin sets a subject's expiry date when creating it;
 each activation copies that date and expires on it; an expired subject can be
 bought and activated again; every activation writes an append-only payment
 record at the subject's price; Android ships first and iOS is deferred.
+*(Amended 2026-10-11: iOS is no longer deferred — the owner's 2026-10-09
+store-ready decision (`d549dbd`) and the iOS build-and-TestFlight pipeline
+(`ec030b1`, ADR-0011 amendment) landed and TestFlight builds have run; store
+submission stays with the owner.)*
 Earlier decisions in this ADR are unchanged except where SPEC Section 5
 replaces the unique (`user_id`, `subject_id`) entitlement index.
 

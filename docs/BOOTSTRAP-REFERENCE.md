@@ -306,7 +306,10 @@ and `Prod Image Build`) is the release gate per the Q1 decision, real contract
 tests run in CI, the academy-service read path and entitlements (SPEC Phases 2-3)
 and the admin console (SPEC Phase 6.1) with the admin CLI identity tooling
 (Phase 1.4) are built; the console's academy pages (requests, catalog, files)
-are still open.)
+are still open. Amended 2026-10-11: the requests and catalog tabs landed
+2026-10-03 (`32d185e`, `70ec845`) and the Files tab with SPEC Phase 5 on
+`b0de4d4` (2026-10-09), all on `main`; staging, `docs/DEPLOYMENT.md` and a
+real `tools/docgen` remain open from the list above.)
 `shared/infra/storage` (removed at review time; restored in Phase 0.4 and covered by contract tests).
 
 ---

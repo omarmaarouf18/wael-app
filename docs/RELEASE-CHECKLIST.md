@@ -14,6 +14,10 @@ them and does not duplicate them.
   Services refuse to start otherwise — this is a deploy blocker.
 - [ ] `TERMS_URL` and `PRIVACY_URL` are set to existing `https://` pages
   (manual §5). The compose file refuses to render without them.
+- [ ] *(Added 2026-10-11, for the 2026-10-09 release `b0de4d4` and later:)* the
+  Phase 5 values exist per manual §5 "Files (Phase 5)": `STORAGE_DIR` (mode
+  `700`), `DOCUMENT_ENCRYPTION_KEY` (64 hex, in the owner's password manager),
+  `WAEL_UID`/`WAEL_GID` — preflight item 3b fails without them.
 - [ ] Backup cron points at the repo script: deploybot `17 0 * * *` runs
   `<deploy-checkout>/scripts/backup.sh` (manual §10). The old
   `$WAEL_HOME/backup.sh` can go once the new cron has produced an archive.
@@ -42,7 +46,9 @@ them and does not duplicate them.
 - [ ] Admin host by hand: `curl -fsS https://admin.<domain>/healthz` prints
   `ok` (RUNBOOK "Admin console"; `deploy.sh` does not check it).
 - [ ] Console sign-in with a fresh admin token; Accounts, Requests, Catalog,
-  Audit and Settings tabs load.
+  Audit, Settings and Files tabs load. *(Amended 2026-10-11: the Files tab was
+  added with the 2026-10-09 release; it needs the Phase 5 server values above,
+  and uploads stay internal until the owner flips `FEATURES_FILES`.)*
 
 ## 5. Rollback (if the health gate fails)
 
@@ -76,4 +82,7 @@ them and does not duplicate them.
   runs in wael-app-mobile (see `docs/mobile/RELEASE.md`).
 - [ ] Dependabot hygiene: close the redis-8 PR that targets `main`; check the
   Dependabot page for configuration errors; dismiss the 16 stale `x/crypto`
-  alerts only if the owner agrees.
+  alerts only if the owner agrees. *(Not re-checked 2026-10-11: GitHub-side PR
+  and alert state is not visible from the repo; the owner verifies on GitHub.
+  The go1.26.9 toolchain release `d1a49f5` (2026-10-08) addressed the Go
+  security advisories that failing govulncheck flagged on go1.26.6.)*

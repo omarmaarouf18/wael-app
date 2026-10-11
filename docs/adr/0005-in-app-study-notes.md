@@ -83,3 +83,7 @@ ownership check on every call, and `features.files` in app-config from the
 `FEATURES_FILES` setting (default off). Nothing changes for students until the
 owner deploys it and sets `FEATURES_FILES=true`. The ADR's decisions and the
 open copy-protection question are unchanged.
+*(Amended 2026-10-11: the branch merged and shipped on `main` with `b0de4d4`
+(2026-10-09) — "not pushed, held for owner review" no longer holds. The last
+sentence still applies to production: the server-side turn-on and the
+`FEATURES_FILES=true` flip are pending owner actions on the host.)*

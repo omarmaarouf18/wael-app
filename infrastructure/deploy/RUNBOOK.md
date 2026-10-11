@@ -1,6 +1,10 @@
 # wael-app production runbook
 
 Status: **LIVE in production.** Production has been live since `557f367`, and the deploy pipeline has run three releases successfully (`557f367`, `6bd6c12`, `b6a11fe`). Publishing (`PUBLISH_ENABLED=true` in `wael-app`) and deploys (`DEPLOY_ENABLED=true` in `wael-app-deploy`) are active and enabled.
+*(Amended 2026-10-11: more releases have gone through the pipeline since —
+`9e0c8b2`, `70ec845`, `32d185e` (2026-10-02/03, live per `CHANGELOG.md`), then
+the 2026-10-08/09 owner fast-forwards of `main` to `620da53` and `b0de4d4`;
+whether the server currently runs `b0de4d4` is owner-confirmed on the host.)*
 
 Full install/run/operate manual: [SERVER-MANUAL.md](SERVER-MANUAL.md) (same
 folder, mirrored to `wael-app-deploy`). This runbook is the short day-2
@@ -134,6 +138,12 @@ the Audit log; the Requests, Catalog and Files tabs stay hidden until their
 APIs exist (SPEC Phase 4), and until then the audit log shows auth-service
 actions only. *(Amended 2026-10-09: with the Phase 5 release (branch
 `feat/phase5-files`) the Files tab is shown too; see "Files (Phase 5)" below.)*
+*(Amended 2026-10-11: the base sentence above no longer holds — the console
+offers Accounts, Audit (with a per-source switch covering auth-service and
+academy-service actions), Requests, Catalog, Settings and Files, as their APIs
+landed with SPEC Phases 4, 6.3 and 5; the Files tab reached `main` with
+`b0de4d4` on 2026-10-09, and whether the server runs it is owner-confirmed on
+the host.)*
 
 **Sign-in problems.** `401`: wrong, expired or revoked token. `429`: five bad
 attempts from the same client address lock that address out for 30 seconds,
@@ -196,7 +206,10 @@ been run yet.
 ## Files (Phase 5)
 
 *(Added 2026-10-09; applies to the release that contains branch
-`feat/phase5-files`.)* Full procedure: `SERVER-MANUAL.md` §5 "Files (Phase 5)".
+`feat/phase5-files`. Amended 2026-10-11: that release shipped — `origin/main`
+= `b0de4d4` since 2026-10-09; whether the server runs it is owner-confirmed
+on the host, and the steps below are still pending owner actions there.)*
+Full procedure: `SERVER-MANUAL.md` §5 "Files (Phase 5)".
 
 **Before that deploy** (preflight fails until all of these hold):
 
@@ -253,5 +266,9 @@ guard, backups, restore, logs, cleanup, rotation, base-image updates).
   `redis`) are pinned by digest with weekly Dependabot updates (W-07 done
   2026-10-02).
 - No certificate rotation job; preflight only refuses certs expiring within 14 days.
-- The admin console shows accounts and the auth-service audit log only; its academy pages and the academy half of the audit log arrive with SPEC Phase 4. `deploy.sh` checks the API host through Caddy but not `ADMIN_DOMAIN`.
+- The admin console offers Accounts, Audit (auth-service and academy-service
+  sources via the per-source switch), Requests, Catalog, Settings and Files;
+  the earlier "accounts and the auth-service audit log only" gap closed as
+  SPEC Phases 4, 6.3 and 5 landed. `deploy.sh` checks the API host through
+  Caddy but not `ADMIN_DOMAIN`.
 - The admin listeners of auth-service (:9001) and academy-service (:9002) run inside their containers and are not published.

@@ -53,7 +53,7 @@ YouTube URL (a test scans for `youtube.com`, `youtu.be`, `watch?v=`, `embed/`).
 | Annotations / cards | Off: `iv_load_policy=3`. |
 | Caption overlay | Off: `cc_load_policy=0`. |
 | Taps, long-press, text selection, drag, copy on the embed | Blocked three ways: `pointer-events: none` on the embed page, a script that disables selection, callouts, context menu, drag, copy and cut, and an opaque Flutter gesture layer above the WebView. |
-| Links (title, logo, share, watch-later, "watch on YouTube", related videos) | Cannot be tapped (above) and every WebView navigation is refused. The package's own policy would open some in the browser or load another video id taken from the URL; it is replaced by "never navigate". |
+| Links (title, logo, share, watch-later, "watch on YouTube", related videos) | Cannot be tapped (above) and every WebView navigation is refused. The package's own policy would open some in the browser or load another video id taken from the URL; it is replaced by "never navigate". *(Amended 2026-10-11, recording `32bc53d` (2026-10-09): on iOS WKWebView the navigation delegate is asked for every frame, and refusing YouTube's own sub-frames meant the video never loaded in TestFlight. The policy now allows the player page itself and YouTube's own `https`/`about:` sub-frames, and refuses every other navigation and any non-https scheme in any frame. Android asks only for main-frame navigations, so nothing changes there, and sub-frames still cannot be tapped because the page ignores touches.)* |
 | Related videos | Limited to the same channel (`rel=0`); the end screen is covered by an opaque cover with a replay button. |
 | Remote debugging | Off (the package disables it). |
 
@@ -73,7 +73,7 @@ YouTube URL (a test scans for `youtube.com`, `youtu.be`, `watch?v=`, `embed/`).
 - Stop a rooted device, a camera pointed at the screen, or someone who obtains
   the unlisted URL by other means. The watermark and the per-play check are the
   deterrent.
-- Work off Android: iOS is deferred *(amended 2026-10-09: an iOS build pipeline now exists, `docs/frontend/IOS-RELEASE.md`; the player is not yet verified on an iPhone)*, and desktop has no WebView (the screen then
+- Work off Android: iOS is deferred *(amended 2026-10-09: an iOS build pipeline now exists, `docs/frontend/IOS-RELEASE.md`; the player is not yet verified on an iPhone)* *(amended 2026-10-11: a TestFlight install on an iPhone ran the player and exposed the sub-frame refusal above — fixed by `32bc53d` (2026-10-09); the post-fix rebuild and a TestFlight re-test are the next check, and the manual device checks below stay Android-only)*, and desktop has no WebView (the screen then
   shows an error instead of playing).
 
 ## Screen capture protection (Android)
