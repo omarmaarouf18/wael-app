@@ -24,14 +24,21 @@ type CenterDTO struct {
 // terms and privacy URLs, optional update metadata, show_prices flag, and optional center info.
 // It carries no payment wording and no per-user data, so it is public and cacheable.
 type AppConfigDTO struct {
-	ShowPrices         bool       `json:"show_prices"`
-	SupportWhatsAppURL string     `json:"support_whatsapp_url,omitempty"`
-	TermsURL           string     `json:"terms_url"`
-	PrivacyURL         string     `json:"privacy_url"`
-	MinVersion         string     `json:"min_version,omitempty"`
-	LatestVersion      string     `json:"latest_version,omitempty"`
-	UpdateURL          string     `json:"update_url,omitempty"`
-	Center             *CenterDTO `json:"center,omitempty"`
+	ShowPrices         bool   `json:"show_prices"`
+	SupportWhatsAppURL string `json:"support_whatsapp_url,omitempty"`
+	TermsURL           string `json:"terms_url"`
+	PrivacyURL         string `json:"privacy_url"`
+	MinVersion         string `json:"min_version,omitempty"`
+	LatestVersion      string `json:"latest_version,omitempty"`
+	UpdateURL          string `json:"update_url,omitempty"`
+	// Per-platform update metadata (owner decision 2026-10-12): omitted when
+	// empty; the shared min_version/latest_version/update_url keep meaning
+	// the fallback so 1.0.0 installs keep working.
+	UpdateURLAndroid string     `json:"update_url_android,omitempty"`
+	UpdateURLIOS     string     `json:"update_url_ios,omitempty"`
+	MinVersionIOS    string     `json:"min_version_ios,omitempty"`
+	LatestVersionIOS string     `json:"latest_version_ios,omitempty"`
+	Center           *CenterDTO `json:"center,omitempty"`
 	// Features is always present (SPEC Section 6 amendment 2026-10-08).
 	Features AppFeaturesDTO `json:"features"`
 }

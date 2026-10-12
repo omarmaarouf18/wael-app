@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,6 +42,10 @@ type Config struct {
 	MinVersion             string
 	LatestVersion          string
 	UpdateURL              string
+	UpdateURLAndroid       string
+	UpdateURLIOS           string
+	MinVersionIOS          string
+	LatestVersionIOS       string
 	RateLimitRead          int
 	RateLimitPlay          int
 	RateLimitDownload      int
@@ -176,11 +181,26 @@ func Load() (*Config, error) {
 	minVersion := strings.TrimSpace(os.Getenv("MIN_VERSION"))
 	latestVersion := strings.TrimSpace(os.Getenv("LATEST_VERSION"))
 	updateURL := strings.TrimSpace(os.Getenv("UPDATE_URL"))
+	// Per-platform update metadata (owner decision 2026-10-12): optional;
+	// empty means the shared update_url/min_version/latest_version are the
+	// fallback and the per-platform fields are absent from app-config.
+	updateURLAndroid := strings.TrimSpace(os.Getenv("UPDATE_URL_ANDROID"))
+	updateURLIOS := strings.TrimSpace(os.Getenv("UPDATE_URL_IOS"))
+	minVersionIOS := strings.TrimSpace(os.Getenv("MIN_VERSION_IOS"))
+	latestVersionIOS := strings.TrimSpace(os.Getenv("LATEST_VERSION_IOS"))
 	for _, v := range []struct {
 		name, val string
-	}{{"TERMS_URL", termsURL}, {"PRIVACY_URL", privacyURL}, {"UPDATE_URL", updateURL}} {
+	}{{"TERMS_URL", termsURL}, {"PRIVACY_URL", privacyURL}, {"UPDATE_URL", updateURL}, {"UPDATE_URL_ANDROID", updateURLAndroid}, {"UPDATE_URL_IOS", updateURLIOS}} {
 		if v.val != "" && !strings.HasPrefix(v.val, "https://") {
 			return nil, fmt.Errorf("config: %s must use https", v.name)
+		}
+	}
+	// An iOS update link must be the App Store: anything else (a Play link,
+	// a bare APK) is an App Store rejection risk, so fail closed.
+	if updateURLIOS != "" {
+		u, err := url.Parse(updateURLIOS)
+		if err != nil || u.Host != "apps.apple.com" {
+			return nil, errors.New("config: UPDATE_URL_IOS must be an https://apps.apple.com/... App Store link")
 		}
 	}
 	if !dev {
@@ -349,6 +369,10 @@ func Load() (*Config, error) {
 		MinVersion:             minVersion,
 		LatestVersion:          latestVersion,
 		UpdateURL:              updateURL,
+		UpdateURLAndroid:       updateURLAndroid,
+		UpdateURLIOS:           updateURLIOS,
+		MinVersionIOS:          minVersionIOS,
+		LatestVersionIOS:       latestVersionIOS,
 		RateLimitRead:          rateLimitRead,
 		RateLimitPlay:          rateLimitPlay,
 		RateLimitDownload:      rateLimitDownload,

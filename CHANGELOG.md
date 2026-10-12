@@ -2,7 +2,19 @@
 
 One entry per production release, reconstructable from git
 (`git log <previous>..<sha> --oneline`). Hashes are 7-char short refs.
-`origin/main` and `origin/develop` are both at `b0de4d4` (2026-10-09).
+`origin/main` and `origin/develop` were both at `b0de4d4` (2026-10-09); the
+2026-10-12 stable-release pass lands new commits on `develop` only.
+
+## develop — 2026-10-12 stable-release pass (staging for the 1.0.1 store build)
+
+- academy-service: per-platform update metadata (owner decision 2026-10-12) —
+  env `UPDATE_URL_ANDROID`, `UPDATE_URL_IOS` (https, must be an
+  `https://apps.apple.com/...` App Store link), `MIN_VERSION_IOS`,
+  `LATEST_VERSION_IOS`; app-config serves them as `update_url_android`,
+  `update_url_ios`, `min_version_ios`, `latest_version_ios` with the shared
+  `update_url`/`min_version`/`latest_version` unchanged so installed 1.0.0
+  apps keep working; a bad value fails startup and `--check-env`. Contract
+  tests, `.env` examples and SPEC §6/§9 amended; SERVER-MANUAL §5 rows added.
 
 ## `b0de4d4` — 2026-10-09
 

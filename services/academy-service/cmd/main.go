@@ -99,6 +99,10 @@ func main() {
 	srv.MinVersion = cfg.MinVersion
 	srv.LatestVersion = cfg.LatestVersion
 	srv.UpdateURL = cfg.UpdateURL
+	srv.UpdateURLAndroid = cfg.UpdateURLAndroid
+	srv.UpdateURLIOS = cfg.UpdateURLIOS
+	srv.MinVersionIOS = cfg.MinVersionIOS
+	srv.LatestVersionIOS = cfg.LatestVersionIOS
 	srv.WarnIfNoSupportWhatsApp(ctx)
 
 	// Encrypted PDF storage (ADR-0009). The key policy is enforced by
