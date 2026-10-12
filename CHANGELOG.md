@@ -31,6 +31,14 @@ One entry per production release, reconstructable from git
   Home, Courses, Notes & books and Notifications in the background on tab
   visible / screen open / app resume (≥30 s apart), cached first; concurrent
   catalog loads share one request. Tests: `frontend/test/refresh_freshness_test.dart`.
+- app: iOS screen-capture cover for the player (owner decision 2026-10-12:
+  recording protection covers iOS too) — native channel + event stream in
+  `AppDelegate.swift` (`sceneCaptureState` on iOS 17+, `isCaptured` +
+  `capturedDidChangeNotification` before); the player checks before the first
+  play, on every change and on resume, pauses and covers the video while the
+  screen is recorded or mirrored, blocks play, never auto-resumes, and fails
+  closed when the channel is missing. Screenshots are a documented iOS limit.
+  Android `FLAG_SECURE` unchanged. Tests: `frontend/test/ios_capture_cover_test.dart`.
 
 ## `b0de4d4` — 2026-10-09
 

@@ -15,6 +15,9 @@ on a phone.
 3. The player screen, in this order: turns on Android `FLAG_SECURE`, calls
    `POST /api/v1/academy/videos/{video_id}/play`, and only then hands the
    returned `youtube_video_id` to the embedded player.
+   *(Amended 2026-10-12, owner decision: on iOS the first step is the capture
+   check instead — see "Screen capture protection (iOS)"; while the screen is
+   recorded or mirrored the play call is not made at all.)*
 4. On every app resume it calls play again. A 404 (on open or resume) closes the
    player with `PlayerExit.locked`; the subject screen shows the tile locked,
    refetches the subject and says the content is restricted. Other failures
@@ -73,7 +76,7 @@ YouTube URL (a test scans for `youtube.com`, `youtu.be`, `watch?v=`, `embed/`).
 - Stop a rooted device, a camera pointed at the screen, or someone who obtains
   the unlisted URL by other means. The watermark and the per-play check are the
   deterrent.
-- Work off Android: iOS is deferred *(amended 2026-10-09: an iOS build pipeline now exists, `docs/frontend/IOS-RELEASE.md`; the player is not yet verified on an iPhone)* *(amended 2026-10-11: a TestFlight install on an iPhone ran the player and exposed the sub-frame refusal above — fixed by `32bc53d` (2026-10-09); the post-fix rebuild and a TestFlight re-test are the next check, and the manual device checks below stay Android-only)*, and desktop has no WebView (the screen then
+- Work off Android: iOS is deferred *(amended 2026-10-09: an iOS build pipeline now exists, `docs/frontend/IOS-RELEASE.md`; the player is not yet verified on an iPhone)* *(amended 2026-10-11: a TestFlight install on an iPhone ran the player and exposed the sub-frame refusal above — fixed by `32bc53d` (2026-10-09); the post-fix rebuild and a TestFlight re-test are the next check, and the manual device checks below stay Android-only)* *(amended 2026-10-12, owner decision: recording protection now covers iOS too — "Screen capture protection (iOS)" and "Manual check on an iPhone" below; the iPhone checks are the owner's, not yet run)*, and desktop has no WebView (the screen then
   shows an error instead of playing).
 
 ## Screen capture protection (Android)
@@ -83,6 +86,48 @@ YouTube URL (a test scans for `youtube.com`, `youtu.be`, `watch?v=`, `embed/`).
 when it closes, nowhere else. If it cannot be set on Android the player does not
 play (fail closed). It also blanks the recent-apps thumbnail. Re-asserted on every
 resume.
+
+## Screen capture protection (iOS)
+
+*(Added 2026-10-12. Owner decision 2026-10-12: video recording protection
+covers iOS too; before, it was Android-only. The Android `FLAG_SECURE` path
+above is unchanged.)*
+
+iOS has no `FLAG_SECURE`: an app cannot stop a recording, so it detects one
+and hides the video.
+
+- Native side (`ios/Runner/AppDelegate.swift`, `SecureScreenCapture`): the same
+  method channel `com.wael.app/secure_screen` answers `enable`/`disable` (no-ops
+  that prove the channel exists) and `isCaptured`; the event channel
+  `com.wael.app/secure_screen/capture` sends the state on listen and on every
+  change. The state is the window scene's `traitCollection.sceneCaptureState
+  == .active` on iOS 17+ (where `isCaptured` is deprecated) and the scene
+  screen's `isCaptured` before that; changes come from
+  `UIScreen.capturedDidChangeNotification` and, on iOS 17+, the scene's
+  `sceneCaptureState` trait. It covers screen recording (Control Center),
+  AirPlay / cable mirroring and QuickTime capture. No window scene answers
+  "captured" (fail closed).
+- Player (`lib/screens/video_player_screen.dart`, `lib/services/secure_screen.dart`):
+  the state is checked before the first play (captured: no play call, no video
+  loaded, only the cover; when capture stops, a "Play lesson" button — no
+  auto-start), followed on every change, and checked again on every app resume.
+  While captured the video is paused, an opaque black cover with a localized
+  message ("Screen recording or mirroring is not allowed while a lesson is
+  playing…") lies over the whole video, full screen too, takes every touch, and
+  play, replay and the next-lesson countdown are blocked; a play the embed
+  reports anyway is paused again. When capture stops the cover goes and the
+  video stays paused until the student taps play.
+- Fail closed, as on Android: a missing channel, an error or a non-bool answer
+  means no play (the "cannot protect the screen" message); an error on the
+  event stream or on the resume check counts as captured.
+- **Known limit: screenshots.** iOS cannot prevent or blank a screenshot, and
+  the app does not report them (`userDidTakeScreenshotNotification` only fires
+  after the fact). The private secure-text-field layer trick is not used (App
+  Review risk). The moving watermark is the deterrent, as for a camera pointed
+  at the screen.
+- Tests: `test/ios_capture_cover_test.dart` (fake channel: capture on before
+  play, capture stops before play, capture starts mid-play, capture stops, a
+  stream error, channel missing, app resume) and `test/secure_screen_test.dart`.
 
 ## Watermark
 
@@ -114,3 +159,21 @@ back to the email if empty). The app reads both fields.
 6. Send the app to the background and back: playback pauses, then the app asks
    again (a video the admin unpublished meanwhile closes the player and shows the
    tile locked).
+
+## Manual check on an iPhone (TestFlight)
+
+*(Added 2026-10-12; not yet run.)*
+
+1. Open a playable video, then start a screen recording from Control Center:
+   the video pauses at once and a black cover with the message hides it, in
+   full screen too; tapping it does nothing. Stop the recording: the cover goes
+   and the video stays paused until you tap play. The saved recording shows the
+   cover, not the lesson.
+2. Start a recording first, then open a video: only the cover shows and the
+   video never starts; stop the recording: a "Play lesson" button appears.
+3. AirPlay or Screen Mirroring to a TV or Mac: same as 1 while mirroring.
+4. Start a recording, send the app to the background, stop the recording there,
+   come back: the cover goes on resume (and the reverse: start it in the
+   background, come back, the cover is up).
+5. Take a screenshot during playback: it is NOT blocked (known iOS limit); the
+   watermark with name and phone must be visible in it.
