@@ -40,10 +40,21 @@ read_var() {
 }
 
 # external_health checks the public endpoint through Caddy on this host.
+# WAEL_CURL_CA_FILE is a rehearsal-only override (shell-only, never set by
+# the pipeline): it points curl at a CA file, so a local stack's non-public
+# certificate is still FULLY verified (chain + hostname) instead of the
+# check being skipped. Unset in production, where the public certificate is
+# system-trusted.
 external_health() {
 	local domain
 	domain="$(read_var "${ENV_FILE}" API_DOMAIN)"
 	[ -n "${domain}" ] || return 1
-	curl -fsS --max-time 10 --resolve "${domain}:443:127.0.0.1" \
-		"https://${domain}/health" >/dev/null
+	if [ -n "${WAEL_CURL_CA_FILE:-}" ]; then
+		curl -fsS --max-time 10 --cacert "${WAEL_CURL_CA_FILE}" \
+			--resolve "${domain}:443:127.0.0.1" \
+			"https://${domain}/health" >/dev/null
+	else
+		curl -fsS --max-time 10 --resolve "${domain}:443:127.0.0.1" \
+			"https://${domain}/health" >/dev/null
+	fi
 }

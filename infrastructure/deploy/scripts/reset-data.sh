@@ -38,9 +38,9 @@
 # system.*. Counts are printed before and after — counts only, never
 # documents.
 #
-# Order: 1 backup; 2 stop the five app services (mongo, redis and caddy stay
-# up); 3 wipe; 4 start the services; 5 wait for health (same checks as
-# deploy.sh); 6 print the next owner steps.
+# Order: 1 backup; 2 stop the five app services (mongo, redis and caddy —
+# when the compose file defines it — stay up); 3 wipe; 4 start the services;
+# 5 wait for health (same checks as deploy.sh); 6 print the next owner steps.
 #
 # On any failure after the stop: print the restore.sh command for the
 # pre-reset backup set and exit non-zero. Nothing is ever auto-restored —
@@ -108,11 +108,17 @@ EXPECTED_CONFIRM="reset production data on ${API_DOMAIN}"
 # --- precondition 2: the whole compose project is up ------------------------
 compose_up() {
 	local svc
-	for svc in "${APP_SERVICES[@]}" mongo redis caddy; do
+	for svc in "${APP_SERVICES[@]}" mongo redis; do
 		[ -n "$(compose ps -q "$svc" 2>/dev/null | head -n 1 || true)" ] || return 1
 	done
+	# A compose file without caddy (the local dev stack used for rehearsals)
+	# is checked for exactly the services it defines; production always
+	# defines caddy and keeps requiring it.
+	if compose config --services 2>/dev/null | grep -q '^caddy$'; then
+		[ -n "$(compose ps -q caddy 2>/dev/null | head -n 1 || true)" ] || return 1
+	fi
 }
-compose_up || fail "the compose project is not up (all 8 containers must be running); nothing was touched"
+compose_up || fail "the compose project is not up (every defined container must be running); nothing was touched"
 
 # --- mongo access (same sources as backup.sh / restore.sh) ------------------
 CID="${MONGO_CONTAINER:-$(compose ps -q mongo 2>/dev/null | head -n 1 || true)}"
