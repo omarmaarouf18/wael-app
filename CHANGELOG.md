@@ -15,6 +15,12 @@ One entry per production release, reconstructable from git
   `update_url`/`min_version`/`latest_version` unchanged so installed 1.0.0
   apps keep working; a bad value fails startup and `--check-env`. Contract
   tests, `.env` examples and SPEC §6/§9 amended; SERVER-MANUAL §5 rows added.
+- app: per-platform update link and version (owner decisions 2026-10-12) —
+  the platform's own fields first, the shared ones as fallback; iOS only ever
+  opens an `https://apps.apple.com/...` link; a required update with no usable
+  link shows the support WhatsApp button; the Settings "Update available" tile
+  follows the same rule. Version `1.0.1+2`. Tests:
+  `frontend/test/update_per_platform_test.dart`.
 
 ## `b0de4d4` — 2026-10-09
 

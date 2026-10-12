@@ -15,6 +15,12 @@ and `frontend/lib/core/app_config.dart`.
 ## Version
 
 - Current: `1.0.0+1` (`pubspec.yaml`): `versionName 1.0.0`, `versionCode 1`.
+  *(Amended 2026-10-12, owner decision: the next store build is `1.0.1+2` —
+  `versionName 1.0.1`, `versionCode 2`, iOS `CFBundleShortVersionString 1.0.1`,
+  `CFBundleVersion 2` — and `pubspec.yaml` now says so. The update gate
+  compares the version name only (`PackageInfo.version`), so `1.0.1` is the
+  first build an app-config `min_version` can tell apart from the `1.0.0`
+  installs.)*
 - Bump rule: raise the build number (`+N`, Android `versionCode`) on EVERY
   release build — Android refuses an upload whose `versionCode` is not higher
   than the last one. Raise the version name (`1.0.0`) for user-visible
@@ -64,3 +70,25 @@ flutter build appbundle --release --obfuscate --split-debug-info=build/app/outpu
   clearly labelled NOT for distribution.
 - Toolchain pinned in the workflow: Java 17 (Temurin), Flutter `3.44.6`
   (same pin as wael-app CI).
+
+## Update gate values (per platform)
+
+*(Added 2026-10-12, owner decision: the update link is set per platform; iOS
+must never show an Android/APK link.)* The app reads these app-config fields
+(server env in brackets, `infrastructure/deploy/SERVER-MANUAL.md` §5):
+
+| Platform | Link (first non-empty wins) | Minimum / latest version |
+|----------|-----------------------------|--------------------------|
+| Android | `update_url_android` (`UPDATE_URL_ANDROID`), else `update_url` (`UPDATE_URL`) | `min_version` / `latest_version` (`MIN_VERSION` / `LATEST_VERSION`) |
+| iOS | `update_url_ios` (`UPDATE_URL_IOS`), else `update_url` — either one **only** when it is an `https://apps.apple.com/...` link | `min_version_ios` / `latest_version_ios` (`MIN_VERSION_IOS` / `LATEST_VERSION_IOS`), else the shared ones |
+
+- With no usable link, a required update shows the support WhatsApp button
+  (from app-config) instead of a dead end, and the Settings "Update available"
+  tile opens the same chat; with neither, the gate shows the contact-support
+  text and the tile is hidden.
+- Installed `1.0.0` apps read only the shared fields. Keep `UPDATE_URL` an
+  Android link (they show it on iOS too) until no `1.0.0` iOS install is left,
+  or leave it empty.
+- Code: `AppConfigProvider.updateUrlFor` / `updateState`
+  (`frontend/lib/providers/app_config_provider.dart`); tests:
+  `frontend/test/update_per_platform_test.dart`.
