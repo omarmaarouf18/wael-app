@@ -36,6 +36,13 @@
 # 22. Deploy compose wires every required *_ADMIN_URL (Phase 7 review
 #     2026-10-12: missing URLs made services refuse to start in production,
 #     failing the deploy health gate into a rollback)
+# 23. reset-data.sh: confirm gate (exact phrase with the API domain),
+#     compose-up gate, fresh verified pre-reset backup, collections dropped
+#     one by one (never dropDatabase, never users), system.* and the levels
+#     collection skipped, Phase 7 broadcast collections included, dry-run
+#     touches nothing, the files wipe keeps the directory at mode 700, the
+#     redis password is never on argv or stdout, and a failure after the
+#     stop prints the restore command and restarts nothing
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -77,6 +84,7 @@ setup_sandbox() {
 	cp "$REPO_ROOT/infrastructure/deploy/scripts/rollback.sh" "$d/repo/scripts/"
 	cp "$REPO_ROOT/infrastructure/deploy/scripts/backup.sh" "$d/repo/scripts/"
 	cp "$REPO_ROOT/infrastructure/deploy/scripts/restore.sh" "$d/repo/scripts/"
+	cp "$REPO_ROOT/infrastructure/deploy/scripts/reset-data.sh" "$d/repo/scripts/"
 	chmod +x "$d/repo/scripts/"*.sh
 
 	# Minimal docker-compose.yml and Caddyfile in repo
@@ -120,6 +128,60 @@ case "$*" in
  	fi
  	cat >/dev/null
  	;;
+*--eval*)
+	# mongosh mock for reset-data.sh: an enumeration eval
+	# (getCollectionNames) prints canned "name|count" lines for its
+	# database (MOCK_COLL_AUTH / MOCK_COLL_ACADEMY /
+	# MOCK_COLL_NOTIFICATIONS), minus every name recorded as dropped in
+	# $MOCK_DROP_STATE ("db|name" lines); a drop eval (".drop()") records
+	# its names there and fails when MOCK_MONGOSH_FAIL=1. dropDatabase is
+	# never allowed.
+	case "$*" in
+	*dropDatabase*)
+		echo "mock: dropDatabase is never allowed" >&2
+		exit 1
+		;;
+	*getCollectionNames*)
+		db=""
+		case "$*" in
+		*auth_db*) db="auth_db" ;;
+		*academy_db*) db="academy_db" ;;
+		*notification_db*) db="notification_db" ;;
+		esac
+		canned=""
+		case "$db" in
+		auth_db) canned="${MOCK_COLL_AUTH:-}" ;;
+		academy_db) canned="${MOCK_COLL_ACADEMY:-}" ;;
+		notification_db) canned="${MOCK_COLL_NOTIFICATIONS:-}" ;;
+		esac
+		while IFS= read -r line; do
+			[ -n "$line" ] || continue
+			name="${line%%|*}"
+			if [ -n "${MOCK_DROP_STATE:-}" ] && grep -qxF "$db|$name" "$MOCK_DROP_STATE" 2>/dev/null; then
+				continue
+			fi
+			printf '%s\n' "$line"
+		done <<<"$canned"
+		;;
+	*".drop()"*)
+		if [ "${MOCK_MONGOSH_FAIL:-0}" = 1 ]; then
+			exit 1
+		fi
+		if [ -n "${MOCK_DROP_STATE:-}" ]; then
+			db=""
+			case "$*" in
+			*auth_db*) db="auth_db" ;;
+			*academy_db*) db="academy_db" ;;
+			*notification_db*) db="notification_db" ;;
+			esac
+			printf '%s' "$*" | grep -oE '"[A-Za-z0-9_.-]+"' | tr -d '"' | while IFS= read -r n; do
+				printf '%s|%s\n' "$db" "$n" >>"$MOCK_DROP_STATE"
+			done
+		fi
+		;;
+	esac
+	exit 0
+	;;
 *" up "*)
 	# MOCK_UP_FAIL_ONCE=<file>: the first 'up' fails, later ones (rollback) succeed.
 	if [ -n "${MOCK_UP_FAIL_ONCE:-}" ] && [ ! -f "$MOCK_UP_FAIL_ONCE" ]; then
@@ -864,6 +926,142 @@ grep -vF 'NOTIFICATION_ADMIN_URL: https://notification-service:9003' "$PROD_COMP
 # shellcheck disable=SC2016 # $0/$1/$2 expand in the inner bash
 assert "missing NOTIFICATION_ADMIN_URL is caught" \
 	bash -c '! service_block "$0" "$1" | grep -qF -- "$2"' "$BROKEN_COMPOSE" admin-console 'NOTIFICATION_ADMIN_URL: https://notification-service:9003'
+# Test 23: reset-data.sh (owner decision 2026-10-09, part B). The mongo mock
+# enumerates with the exact collections the services hold on origin/develop
+# (auth_db: users, sessions, blocklist, admins, admin_audit_log,
+# account_events; academy_db: levels, subjects, videos, subject_files,
+# entitlements, purchase_requests, payment_records, video_plays,
+# app_settings; notification_db: notifications plus the Phase 7 broadcast
+# collections broadcasts, broadcast_targets, admin_audit_log; system.users
+# in every database).
+# ---------------------------------------------------------------------------
+BOX23="$(setup_sandbox test23)"
+give_backup_creds "$BOX23"
+mkdir -p "$BOX23/wael/secrets" "$BOX23/storage/uploads"
+printf 'requirepass pw-for-test23-redis-never-logged\nappendonly yes\n' > "$BOX23/wael/secrets/redis.conf"
+printf 'object-bytes' > "$BOX23/storage/obj1"
+printf 'nested-object' > "$BOX23/storage/uploads/obj2"
+CONFIRM23="reset production data on api.test.local"
+export MOCK_DROP_STATE="$BOX23/wael/state/drops.log"
+export MOCK_COLL_AUTH=$'users|3\nsessions|5\nblocklist|1\nadmins|2\nadmin_audit_log|4\naccount_events|9\nsystem.users|1'
+export MOCK_COLL_ACADEMY=$'levels|6\nsubjects|4\nvideos|12\nsubject_files|3\nentitlements|8\npurchase_requests|2\npayment_records|2\nvideo_plays|30\napp_settings|1\nsystem.users|1'
+export MOCK_COLL_NOTIFICATIONS=$'notifications|7\nbroadcasts|2\nbroadcast_targets|2\nadmin_audit_log|1\nsystem.users|1'
+export DOCKER_LOG="$BOX23/docker.log" CURL_LOG="$BOX23/curl.log"
+
+# 23a: refuses without --confirm and touches nothing.
+RC=0
+OUT="$(PATH="$BOX23/bin:$PATH" WAEL_HOME="$BOX23/wael" bash "$BOX23/repo/scripts/reset-data.sh" 2>&1)" || RC=$?
+check "reset refuses without --confirm" 1 "refusing to reset: --confirm must be exactly"
+assert "reset without --confirm ran no docker command" test ! -f "$BOX23/docker.log"
+
+# 23b: refuses a wrong --confirm and touches nothing.
+RC=0
+OUT="$(PATH="$BOX23/bin:$PATH" WAEL_HOME="$BOX23/wael" bash "$BOX23/repo/scripts/reset-data.sh" --confirm "yes wipe everything" 2>&1)" || RC=$?
+check "reset refuses a wrong --confirm" 1 "reset production data on api.test.local"
+assert "wrong --confirm ran no docker command" test ! -f "$BOX23/docker.log"
+
+# 23c: refuses when the compose project is not up, before any backup.
+RC=0
+OUT="$(PATH="$BOX23/bin:$PATH" WAEL_HOME="$BOX23/wael" MOCK_NO_MONGO=1 bash "$BOX23/repo/scripts/reset-data.sh" --confirm "$CONFIRM23" 2>&1)" || RC=$?
+check "reset refuses when the compose project is not up" 1 "compose project is not up"
+assert "refused reset took no backup" bash -c "! grep -qF mongodump \"$BOX23/docker.log\""
+assert "refused reset stopped nothing" bash -c "! grep -qF ' stop ' \"$BOX23/docker.log\""
+
+# 23d: dry-run prints what would be dropped and touches nothing.
+RC=0
+OUT="$(PATH="$BOX23/bin:$PATH" WAEL_HOME="$BOX23/wael" STORAGE_DIR="$BOX23/storage" bash "$BOX23/repo/scripts/reset-data.sh" --confirm "$CONFIRM23" --dry-run 2>&1)" || RC=$?
+check "dry-run completes" 0 "DRY-RUN complete; nothing was changed"
+check "dry-run prints what would be dropped with counts" 0 "auth_db.users: 3 (would drop)"
+check "dry-run keeps the levels collection" 0 "academy_db.levels: 6 (kept)"
+check "dry-run includes the Phase 7 broadcast collections" 0 "notification_db.broadcasts: 2 (would drop)"
+check "dry-run includes broadcast_targets" 0 "notification_db.broadcast_targets: 2 (would drop)"
+check "dry-run counts the stored files" 0 "would empty $BOX23/storage (2 entries; directory kept, mode 700)"
+if [[ "$OUT" == *"system.users"* ]]; then
+	bad "dry-run printed a system.* collection"
+else
+	ok "dry-run never lists system.* collections"
+fi
+assert "dry-run stopped nothing" bash -c "! grep -qF ' stop ' \"$BOX23/docker.log\""
+assert "dry-run dropped nothing" bash -c "! grep -qF '.drop()' \"$BOX23/docker.log\""
+assert "dry-run took no backup" bash -c "! grep -qF mongodump \"$BOX23/docker.log\""
+assert "dry-run flushed no redis" bash -c "! grep -qF FLUSHALL \"$BOX23/docker.log\""
+assert "dry-run kept the stored files" test -s "$BOX23/storage/obj1"
+
+# 23e: the real run — backup, scoped wipes, health, next steps.
+RC=0
+OUT="$(PATH="$BOX23/bin:$PATH" WAEL_HOME="$BOX23/wael" STORAGE_DIR="$BOX23/storage" bash "$BOX23/repo/scripts/reset-data.sh" --confirm "$CONFIRM23" 2>&1)" || RC=$?
+check "reset completes and is healthy" 0 "reset complete and healthy"
+check "reset prints the next owner steps" 0 "reset complete and healthy; next owner steps:"
+check "reset tells the owner to mint a new admin token" 0 "onboard-admin"
+check "reset printed the pre-reset backup path" 0 "pre-reset backup verified: $BOX23/wael/backups/mongo-pre-reset-"
+ARCHIVE23="$(echo "$BOX23"/wael/backups/mongo-pre-reset-*.archive.gz)"
+assert "pre-reset archive exists and passes gzip -t" gzip -t "$ARCHIVE23"
+assert "the backup ran before the stop" bash -c "grep -nE 'mongodump| stop ' \"$BOX23/docker.log\" | head -n 1 | grep -qF mongodump"
+assert "reset stopped the five app services" grep -qF "stop api-gateway auth-service notification-service academy-service admin-console" "$BOX23/docker.log"
+assert "reset restarted with --wait" grep -qF -- "--wait" "$BOX23/docker.log"
+assert "reset passed the public health gate" grep -qF "https://api.test.local/health" "$BOX23/curl.log"
+# collections are dropped one by one; never databases, never users
+check "counts are printed before and after" 0 "auth_db.users: 3 -> 0 (dropped)"
+check "kept levels are printed with their count" 0 "academy_db.levels: 6 (kept)"
+for coll23 in users sessions blocklist admins admin_audit_log account_events; do
+	assert "auth_db drops $coll23" grep -qF "\"$coll23\"" "$BOX23/docker.log"
+done
+for coll23 in subjects videos subject_files entitlements purchase_requests payment_records video_plays app_settings; do
+	assert "academy_db drops $coll23" grep -qF "\"$coll23\"" "$BOX23/docker.log"
+done
+for coll23 in notifications broadcasts broadcast_targets; do
+	assert "notification_db drops $coll23 (Phase 7 included)" grep -qF "\"$coll23\"" "$BOX23/docker.log"
+done
+assert "notification_db drops its admin_audit_log" grep -qF '"admin_audit_log"' "$BOX23/docker.log"
+check "broadcast collections counted after the drop" 0 "notification_db.broadcasts: 2 -> 0 (dropped)"
+check "broadcast_targets counted after the drop" 0 "notification_db.broadcast_targets: 2 -> 0 (dropped)"
+if grep -qF '"levels"' "$BOX23/docker.log"; then
+	bad "the levels collection was in a drop call"
+else
+	ok "the levels collection is never dropped"
+fi
+if grep -qF '"system.users"' "$BOX23/docker.log"; then
+	bad "a system.* collection was in a drop call"
+else
+	ok "system.* collections are never dropped"
+fi
+if grep -qF dropDatabase "$BOX23/docker.log"; then
+	bad "dropDatabase was called"
+else
+	ok "reset never calls dropDatabase"
+fi
+# the files wipe keeps the directory itself, mode 700
+assert "files wipe kept the directory" test -d "$BOX23/storage"
+assert "files wipe kept mode 700" test "$(stat -c %a "$BOX23/storage")" = 700
+assert "files wipe emptied the contents" bash -c "[ -z \"\$(ls -A \"$BOX23/storage\")\" ]"
+# redis: FLUSHALL ran; the password is never on argv or stdout
+assert "redis FLUSHALL ran" grep -qF "FLUSHALL" "$BOX23/docker.log"
+if grep -qF "pw-for-test23-redis-never-logged" <<<"$OUT" || grep -qF "pw-for-test23-redis-never-logged" "$BOX23/docker.log"; then
+	bad "the redis password leaked to stdout or argv"
+else
+	ok "the redis password is never on argv or stdout"
+fi
+if grep -qF "pw-for-test23" <<<"$OUT"; then
+	bad "the mongo root password was printed"
+else
+	ok "the mongo root password is never printed"
+fi
+
+# 23f: a wipe failure after the stop prints the restore command and
+# restarts nothing.
+BOX23F="$(setup_sandbox test23f)"
+give_backup_creds "$BOX23F"
+export MOCK_DROP_STATE="$BOX23F/wael/state/drops.log"
+export DOCKER_LOG="$BOX23F/docker.log"
+RC=0
+OUT="$(PATH="$BOX23F/bin:$PATH" WAEL_HOME="$BOX23F/wael" MOCK_MONGOSH_FAIL=1 bash "$BOX23F/repo/scripts/reset-data.sh" --confirm "reset production data on api.test.local" 2>&1)" || RC=$?
+check "a wipe failure after the stop exits non-zero" 1 "FAILED: the auth_db wipe failed"
+check "the failure prints the restore command with the pre-reset path" 1 "restore.sh \"$BOX23F/wael/backups/mongo-pre-reset-"
+check "the failure says nothing is auto-restored" 1 "deliberate human step, never automatic"
+assert "the failed reset restarted nothing" bash -c "! grep -qF ' up ' \"$BOX23F/docker.log\""
+assert "the failed reset still took the backup first" bash -c "grep -qF mongodump \"$BOX23F/docker.log\""
+
+unset MOCK_DROP_STATE MOCK_COLL_AUTH MOCK_COLL_ACADEMY MOCK_COLL_NOTIFICATIONS CURL_LOG
 
 # ---------------------------------------------------------------------------
 # Summary

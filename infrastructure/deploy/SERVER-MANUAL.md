@@ -968,6 +968,84 @@ also covers gomod, pub, github-actions and the service Dockerfiles, weekly; GitH
 reads that file from the default branch, so it takes effect only after `main` is
 fast-forwarded to a `develop` that contains it.)*
 
+### Resetting production data (one-time, before launch)
+
+*(Added 2026-10-12, owner decision 2026-10-09: after the store reviews pass,
+production data is wiped once and real data is entered. "Production data"
+means the test accounts, the test catalog, the reviewer accounts and the test
+PDFs. The reset is scripted and rehearsable — never manual mongo commands.
+It has not run on the real server; rehearse it with `--dry-run` first.)*
+
+**When to use it.** Exactly once, after both store reviews pass and before
+real students are onboarded. It is not a day-2 tool: every run wipes the
+user-facing data of the app databases.
+
+**What it keeps** (everything else in the app databases is dropped):
+- the seeded academy `levels` (academy-service re-seeds them idempotently at
+  startup anyway) — subjects, videos and file rows are NOT kept;
+- the three per-service Mongo users `auth_svc`, `notif_svc`, `academy_svc`:
+  collections are dropped one by one (enumerated with `listCollections`),
+  never databases and never users — dropping a database would delete the
+  user in its `authSource` and break every service login;
+- every secret and key: `.env.production` (including
+  `DOCUMENT_ENCRYPTION_KEY`), `secrets/`, `certs/` — untouched;
+- backups: `$WAEL_HOME/backups/` is not touched — the run first writes a
+  fresh backup set labelled `pre-reset` (`backup.sh`), verifies both
+  archives with `gzip -t` and prints the mongo archive's path.
+
+**What it drops** (default: all scopes; `--auth`, `--academy`,
+`--notifications`, `--files`, `--redis` select):
+
+| Scope | Drops |
+|---|---|
+| `auth_db` | users (test + reviewer accounts), sessions (access + refresh tokens), blocklist, admins (admin tokens), admin_audit_log, account_events |
+| `academy_db` | subjects, videos, subject_files, entitlements, purchase_requests, payment_records, video_plays, admin_audit_log, app_settings |
+| `notification_db` | notifications and the Phase 7 broadcast collections (broadcasts, broadcast_targets, admin_audit_log) |
+| `--files` | empties `STORAGE_DIR` (the encrypted test PDFs); the directory itself stays, mode `700` |
+| `--redis` | FLUSHALL (OTPs, session keys, rate-limit counters) — the requirepass from `secrets/redis.conf` is used but never printed and never put on a command line |
+
+Refusals: no run without `--confirm "<exact phrase containing the API
+domain>"` (the phrase is printed by the refusal message), with the compose
+project down, or with a failed backup — a failed backup stops the script
+before anything is touched. Order: fresh `pre-reset` backup → stop the five
+app services (mongo, redis and caddy stay up) → drop collections, empty
+storage, FLUSHALL → start the services again → the same health gate as
+`deploy.sh` (`up --wait` plus the public check through Caddy) → print the
+next owner steps. Counts are printed before and after — counts only, never
+documents. On any failure after the stop the script prints the exact
+`restore.sh` command for the pre-reset set and exits non-zero; nothing is
+ever auto-restored (the same policy as `restore.sh`).
+
+**The commands** — always dry-run first, and read the list it prints:
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cd /home/deploybot/<deploy-checkout> && export WAEL_HOME=/home/deploybot/wael && ./scripts/reset-data.sh --confirm "reset production data on api.elmetracademy.app" --dry-run'
+```
+
+The real run is the same command without `--dry-run`. The `--confirm` phrase
+must match exactly; only the `API_DOMAIN` inside it ever changes:
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cd /home/deploybot/<deploy-checkout> && export WAEL_HOME=/home/deploybot/wael && ./scripts/reset-data.sh --confirm "reset production data on api.elmetracademy.app"'
+```
+
+**After-steps, in order:**
+
+1. Mint a new admin token with `onboard-admin` (§9): the reset wipes the
+   `admins` collection, so every operator token is gone. One token per
+   person, copied straight into the password manager.
+2. Re-enter the console Settings: `show_prices`, the WhatsApp support number
+   and the Academy info (the tab now says "Academy", formerly "center") —
+   the single `app_settings` document was dropped.
+3. Recreate the catalog in the "دوراتي / Courses" tab: the seeded levels are
+   kept, but every subject and video is gone.
+4. Re-upload the PDFs in the Files tab (`STORAGE_DIR` was emptied;
+   `DOCUMENT_ENCRYPTION_KEY` is unchanged, so the pre-reset backups of the
+   test PDFs stay readable if ever needed).
+5. Keep `FEATURES_FILES` as decided — `.env.production` was not touched.
+6. Recreate the store-review demo account with one active subject: Apple and
+   Google need one for every future review.
+
 ## 11. Moving to a new server
 
 **Not yet rehearsed.** Expected downtime with the steps below (TTL lowered a

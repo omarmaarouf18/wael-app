@@ -264,6 +264,7 @@ guard, backups, restore, logs, cleanup, rotation, base-image updates).
   Because `deploybot` has no login, this workflow input is the supported operational override.
 - **Manual rollback:** as deploybot, `cd` into the runner's checkout and run
   `WAEL_HOME=/home/deploybot/wael ./scripts/rollback.sh`.
+- **One-time production data reset (before launch, owner decision 2026-10-09):** `scripts/reset-data.sh`, always `--dry-run` first — full procedure, scope table and after-steps: `SERVER-MANUAL.md` §10 "Resetting production data (one-time, before launch)".
 - **Logs:** `docker compose -p wael logs --tail 100 <service>`.
 
 ## Known gaps (not solved by this scaffold)
