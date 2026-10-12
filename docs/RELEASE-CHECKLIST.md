@@ -55,6 +55,9 @@ them and does not duplicate them.
   built on branch `feat/phase7-broadcast` and not on `main` yet — until it
   ships, expect six tabs; the audit log gains a "notifications" source with
   it. Delivery is in-app only, no phone push.)*
+  *(Amended 2026-10-12, release PR: the broadcast work is on `develop` and in
+  the 2026-10-12 release; after that fast-forward expect seven tabs — see
+  "Release 2026-10-12 (app 1.0.1)" below.)*
 
 ## 5. Rollback (if the health gate fails)
 
@@ -92,3 +95,71 @@ them and does not duplicate them.
   and alert state is not visible from the repo; the owner verifies on GitHub.
   The go1.26.9 toolchain release `d1a49f5` (2026-10-08) addressed the Go
   security advisories that failing govulncheck flagged on go1.26.6.)*
+
+## Release 2026-10-12 (app 1.0.1)
+
+*(Added 2026-10-12.)* Release PR `develop` → `main` from `b0de4d4`; contents
+in `CHANGELOG.md` "Release 2026-10-12 (app 1.0.1)". This section only orders
+the steps; the procedures are in §1–§7 above, SERVER-MANUAL, RUNBOOK,
+`docs/mobile/RELEASE.md` and `docs/frontend/RELEASE-QA-1.0.1.md`.
+
+### Server (before or with the fast-forward)
+
+- [ ] No new secrets.
+- [ ] Compose-only env, shipped in the compose file by the deploy (nothing to
+  add to `.env.production`): notification-service `ADMIN_LISTEN_ADDR=":9003"`,
+  `AUTH_ADMIN_URL`, `ACADEMY_ADMIN_URL`; admin-console
+  `NOTIFICATION_ADMIN_URL` (SERVER-MANUAL §5). `:9003` is `expose` only, no
+  new published port.
+- [ ] Optional, academy-service (SERVER-MANUAL §5 rows, `docs/mobile/RELEASE.md`
+  "Update gate values"): `UPDATE_URL_ANDROID`, `UPDATE_URL_IOS`
+  (`https://apps.apple.com/...` only), `MIN_VERSION_IOS`, `LATEST_VERSION_IOS`.
+  Keep the shared `UPDATE_URL` an Android link or empty while 1.0.0 iPhones
+  exist (1.0.0 reads only the shared field).
+- [ ] The Phase 5 files turn-on if not yet done: SERVER-MANUAL §5 "Files
+  (Phase 5)" and §1 above (`FEATURES_FILES=false` first, test, then `true`).
+- [ ] Preflight (§2), then the owner fast-forward (§3).
+
+### Smoke checks (after Deploy goes green; §4 first)
+
+- [ ] Console tabs load: Accounts, Requests, دوراتي / Courses, Audit (sources
+  auth, academy and notifications), Settings with «بيانات الأكاديمية», Files,
+  Notifications.
+- [ ] Send a test announcement to the owner's test account (Notifications
+  tab, check the preview count before confirming) and see it in the app.
+- [ ] `GET /academy/app-config` shows `update_url_android`, `update_url_ios`,
+  `min_version_ios`, `latest_version_ios` when they are set.
+
+### Production data reset (after the smoke checks, before store review)
+
+*(Order changed by the owner 2026-10-12: the reset runs BEFORE store review,
+not after it.)*
+
+- [ ] Run `reset-data.sh` — `--dry-run` first and read the counts, then the
+  real reset (SERVER-MANUAL §10 "Resetting production data (one-time, before
+  launch)", including its after-steps: new admin token, health). Run it before
+  entering any real data; `BLOCKLIST_HMAC_KEY` stays unchanged.
+- [ ] Then enter the real data (subjects, videos, files, academy settings,
+  the reviewer demo account) before store review.
+
+### Mobile
+
+- [ ] wael-app-mobile: "Build Android" (signed) and "Build iOS" (upload to
+  TestFlight) on the released commit (`docs/mobile/RELEASE.md`,
+  `docs/frontend/IOS-RELEASE.md`).
+- [ ] `docs/frontend/RELEASE-QA-1.0.1.md` on one real Android phone and one
+  iPhone.
+
+### Store
+
+- [ ] App Store Connect App Privacy adds "Device ID" (matches the app's
+  `PrivacyInfo.xcprivacy`).
+- [ ] Review notes: students enrol and pay at the academy; the address is in
+  Settings → Help; include the reviewer demo account.
+- [ ] Prices are shown as in production (§6 switches) during review.
+- [ ] Google Play: closed testing (12 testers for 14 days) first if the
+  developer account is personal.
+
+### Rollback
+
+- [ ] As in §5 above.

@@ -986,6 +986,11 @@ back. It has still not run on the real server; dry-run first.)*
 **When to use it.** Exactly once, after both store reviews pass and before
 real students are onboarded. It is not a day-2 tool: every run wipes the
 user-facing data of the app databases.
+*(Amended 2026-10-12, owner: the order changed — the reset now runs BEFORE
+store review, not after it: once the 2026-10-12 release is deployed and
+smoke-checked, run it (dry-run first), then enter the real data and the
+reviewer demo account, then submit to the stores. "After the store reviews
+pass" above and in the note at the top of this subsection no longer holds.)*
 
 **What it keeps** (everything else in the app databases is dropped):
 - the seeded academy `levels` (academy-service re-seeds them idempotently at
