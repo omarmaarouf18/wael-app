@@ -66,6 +66,12 @@ Pipeline hardening & required checks decisions (owner 2026-10-02): (1) E2E as re
 "دوراتي" / "Courses", and "center" is renamed "الأكاديمية" / "Academy" in the
 Settings tab. Labels only — i18n keys, element ids, JS file names, API paths
 and JSON fields are unchanged.)*
+*(Amended 2026-10-12, owner: the student app follows — "السنتر" / "center"
+became "الأكاديمية" / "academy" in its two user-visible strings (the legal
+summary bullet and the locked-subject activation line). Labels only; the
+l10n getters and the app-config field `center` are unchanged. The published
+legal terms page still says "السنتر" / "center" for the same point and needs
+the same edit on the legal site.)*
 - [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)
 - [ADR-0002: Single-Role Student App With a Separate Web Admin Panel](docs/adr/0002-single-role-student-app.md)
 - [ADR-0003: Payment Per Subject (Materia)](docs/adr/0003-per-subject-payment.md)

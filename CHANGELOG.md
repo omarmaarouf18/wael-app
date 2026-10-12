@@ -57,6 +57,9 @@ One entry per production release, reconstructable from git
 - app: new director portrait (owner decision 2026-10-12) — a 720 x 720
   head-and-shoulders crop of the owner's studio photo (Hazem El layub
   Photography), metadata stripped, same asset path; provenance updated.
+- app: "السنتر" / "center" → "الأكاديمية" / "academy" in the legal summary
+  bullet and the locked-subject activation line (owner decision 2026-10-12,
+  as in the admin console). The legal terms page needs the same edit.
 
 ## `b0de4d4` — 2026-10-09
 
