@@ -60,6 +60,10 @@ One entry per production release, reconstructable from git
 - app: "السنتر" / "center" → "الأكاديمية" / "academy" in the legal summary
   bullet and the locked-subject activation line (owner decision 2026-10-12,
   as in the admin console). The legal terms page needs the same edit.
+- app: one shared `LaunchGuard` (`lib/core/external_links.dart`) for every
+  external launch — WhatsApp, update and legal links: a second tap on the
+  same link while it launches or within 1 s is ignored, so a double tap
+  opens it once. Tests: `frontend/test/launch_guard_test.dart`.
 
 ## `b0de4d4` — 2026-10-09
 
