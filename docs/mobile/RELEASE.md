@@ -89,6 +89,7 @@ must never show an Android/APK link.)* The app reads these app-config fields
 - Installed `1.0.0` apps read only the shared fields. Keep `UPDATE_URL` an
   Android link (they show it on iOS too) until no `1.0.0` iOS install is left,
   or leave it empty.
+- Device checks for the 1.0.1 build: `docs/frontend/RELEASE-QA-1.0.1.md`.
 - Code: `AppConfigProvider.updateUrlFor` / `updateState`
   (`frontend/lib/providers/app_config_provider.dart`); tests:
   `frontend/test/update_per_platform_test.dart`.

@@ -49,6 +49,11 @@ One entry per production release, reconstructable from git
   profile-edit forms; system back (and the iOS swipe) in full-screen video
   leaves full screen first; the subject screen's WhatsApp button is 48 dp.
   Tests: `frontend/test/autofill_forms_test.dart`, a new full-screen back test.
+- tests and QA: an SSE reconnect test (the last function of the pass's test
+  list without a named test) and `docs/frontend/RELEASE-QA-1.0.1.md`, the
+  device checklist for one Android phone and one iPhone (TestFlight), one row
+  per function with its automated test, plus the earlier unverified iOS fixes
+  (iOS 15 target, YouTube frame, PDF Quick Look / share).
 
 ## `b0de4d4` — 2026-10-09
 
