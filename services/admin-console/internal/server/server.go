@@ -53,6 +53,10 @@ func APIRoutes() []string {
 		"/api/files",
 		"/api/files/upload",
 		"/api/files/delete",
+		"/api/broadcasts",
+		"/api/broadcasts/preview",
+		"/api/broadcasts/create",
+		"/api/broadcasts/retry",
 	}
 }
 
@@ -95,6 +99,10 @@ func New(p *proxy.Proxy, assets fs.FS) (http.Handler, error) {
 		"/api/files":               p.FilesList,
 		"/api/files/upload":        p.FilesUpload,
 		"/api/files/delete":        p.FilesDelete,
+		"/api/broadcasts":          p.BroadcastsList,
+		"/api/broadcasts/preview":  p.BroadcastsPreview,
+		"/api/broadcasts/create":   p.BroadcastsCreate,
+		"/api/broadcasts/retry":    p.BroadcastsRetry,
 	}
 	for _, route := range APIRoutes() {
 		mux.HandleFunc(route, handlers[route])

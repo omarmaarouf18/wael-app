@@ -7,7 +7,7 @@ import (
 )
 
 var allVars = []string{
-	"APP_ENV", "PORT", "INTERNAL_SERVICE_TOKEN", "AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL",
+	"APP_ENV", "PORT", "INTERNAL_SERVICE_TOKEN", "AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL", "NOTIFICATION_ADMIN_URL",
 	"TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "TRUSTED_PROXY_IPS", "MAX_PDF_BYTES",
 }
 
@@ -29,6 +29,7 @@ func prodEnv() map[string]string {
 		"INTERNAL_SERVICE_TOKEN": "internal-secret",
 		"AUTH_ADMIN_URL":         "https://auth-service:9001",
 		"ACADEMY_ADMIN_URL":      "https://academy-service:9002",
+		"NOTIFICATION_ADMIN_URL": "https://notification-service:9003",
 		"TLS_CERT_PATH":          "/certs/admin-console.crt",
 		"TLS_KEY_PATH":           "/certs/admin-console.key",
 		"TLS_CA_PATH":            "/certs/ca.crt",
@@ -45,7 +46,7 @@ func TestLoad_ProductionHappyPath(t *testing.T) {
 	if cfg.Dev() || cfg.AppEnv != "production" {
 		t.Fatalf("expected production, got %q", cfg.AppEnv)
 	}
-	if cfg.Port != "3005" || cfg.AuthAdminURL != "https://auth-service:9001" || cfg.AcademyAdminURL != "https://academy-service:9002" {
+	if cfg.Port != "3005" || cfg.AuthAdminURL != "https://auth-service:9001" || cfg.AcademyAdminURL != "https://academy-service:9002" || cfg.NotifAdminURL != "https://notification-service:9003" {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 	if !cfg.TLSEnabled() || !cfg.MTLSClientEnabled() || len(cfg.TrustedProxies) != 1 {
@@ -104,7 +105,7 @@ func TestLoad_InternalTokenAlwaysRequired(t *testing.T) {
 
 func TestLoad_ProductionMissingVarsTable(t *testing.T) {
 	for _, name := range []string{
-		"INTERNAL_SERVICE_TOKEN", "AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL",
+		"INTERNAL_SERVICE_TOKEN", "AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL", "NOTIFICATION_ADMIN_URL",
 		"TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "TRUSTED_PROXY_IPS",
 	} {
 		t.Run("missing_"+name, func(t *testing.T) {
@@ -152,7 +153,7 @@ func TestLoad_DevDefaults(t *testing.T) {
 			if !cfg.Dev() || cfg.TLSEnabled() || cfg.MTLSClientEnabled() {
 				t.Fatalf("expected dev without TLS: %+v", cfg)
 			}
-			if cfg.AuthAdminURL != "http://localhost:9001" || cfg.AcademyAdminURL != "http://localhost:9002" {
+			if cfg.AuthAdminURL != "http://localhost:9001" || cfg.AcademyAdminURL != "http://localhost:9002" || cfg.NotifAdminURL != "http://localhost:9003" {
 				t.Fatalf("unexpected dev defaults: %+v", cfg)
 			}
 			if len(cfg.TrustedProxies) != 0 {

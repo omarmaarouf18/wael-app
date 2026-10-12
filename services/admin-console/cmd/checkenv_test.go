@@ -14,6 +14,7 @@ func setProdEnv(t *testing.T) {
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "test-internal-token")
 	t.Setenv("AUTH_ADMIN_URL", "https://auth-service:9001")
 	t.Setenv("ACADEMY_ADMIN_URL", "https://academy-service:9002")
+	t.Setenv("NOTIFICATION_ADMIN_URL", "https://notification-service:9003")
 	t.Setenv("TLS_CERT_PATH", "/tmp/cert.pem")
 	t.Setenv("TLS_KEY_PATH", "/tmp/key.pem")
 	t.Setenv("TLS_CA_PATH", "/tmp/ca.pem")
@@ -33,7 +34,7 @@ func TestRunCheckEnv_ProductionOK(t *testing.T) {
 
 func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 	for _, name := range []string{
-		"INTERNAL_SERVICE_TOKEN", "AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL",
+		"INTERNAL_SERVICE_TOKEN", "AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL", "NOTIFICATION_ADMIN_URL",
 		"TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "TRUSTED_PROXY_IPS",
 	} {
 		t.Run("missing_"+name, func(t *testing.T) {
@@ -68,7 +69,7 @@ func TestRunCheckEnv_FailsOnEmptySecretEvenInLocal(t *testing.T) {
 func TestRunCheckEnv_LocalOK(t *testing.T) {
 	t.Setenv("APP_ENV", "local")
 	t.Setenv("INTERNAL_SERVICE_TOKEN", "x")
-	for _, v := range []string{"AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "TRUSTED_PROXY_IPS", "PORT"} {
+	for _, v := range []string{"AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL", "NOTIFICATION_ADMIN_URL", "TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH", "TRUSTED_PROXY_IPS", "PORT"} {
 		t.Setenv(v, "")
 	}
 	var stdout, stderr bytes.Buffer

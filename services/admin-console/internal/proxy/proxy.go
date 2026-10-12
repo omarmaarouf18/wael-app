@@ -64,6 +64,9 @@ type Options struct {
 	// AcademyURL is the academy-service admin listener, scheme://host[:port].
 	// Required: the catalog routes forward to it.
 	AcademyURL string
+	// NotifURL is the notification-service admin listener, scheme://host[:port].
+	// Required: the broadcast routes forward to it.
+	NotifURL string
 	// TrustedProxies are the peers whose X-Forwarded-For is believed.
 	TrustedProxies []netip.Prefix
 	// Client performs upstream calls (mTLS in production). Nil uses a default
@@ -83,6 +86,7 @@ type Proxy struct {
 	internalToken string
 	authURL       string
 	academyURL    string
+	notifURL      string
 	trusted       []netip.Prefix
 	client        *http.Client
 	timeout       time.Duration
@@ -105,6 +109,10 @@ func New(o Options) (*Proxy, error) {
 	academy := strings.TrimRight(strings.TrimSpace(o.AcademyURL), "/")
 	if academy == "" {
 		return nil, errors.New("proxy: academy admin URL is empty")
+	}
+	notif := strings.TrimRight(strings.TrimSpace(o.NotifURL), "/")
+	if notif == "" {
+		return nil, errors.New("proxy: notification admin URL is empty")
 	}
 	timeout := o.Timeout
 	if timeout <= 0 {
@@ -130,6 +138,7 @@ func New(o Options) (*Proxy, error) {
 		internalToken: o.InternalToken,
 		authURL:       base,
 		academyURL:    academy,
+		notifURL:      notif,
 		trusted:       o.TrustedProxies,
 		client:        &c,
 		timeout:       timeout,
@@ -270,6 +279,10 @@ func (p *Proxy) Audit(w http.ResponseWriter, r *http.Request) {
 	case "academy":
 		p.relayAcademy(w, r, token, upstreamCall{
 			route: "audit.academy", method: http.MethodGet, path: "/internal/admin/audit-log", query: q,
+		})
+	case "notifications":
+		p.relayNotif(w, r, token, upstreamCall{
+			route: "audit.notifications", method: http.MethodGet, path: "/internal/admin/audit-log", query: q,
 		})
 	default:
 		writeError(w, http.StatusBadRequest, "bad_request")
@@ -531,6 +544,7 @@ type upstreamCall struct {
 	body     []byte
 	targetID string // validated id, logged for account and catalog actions
 	academy  bool   // send to ACADEMY_ADMIN_URL instead of the auth listener
+	notif    bool   // send to NOTIFICATION_ADMIN_URL instead of the auth listener
 }
 
 // relayCall performs the call and relays a usable answer to the browser.
@@ -550,6 +564,9 @@ func (p *Proxy) call(w http.ResponseWriter, r *http.Request, token string, c ups
 	target := p.authURL + c.path
 	if c.academy {
 		target = p.academyURL + c.path
+	}
+	if c.notif {
+		target = p.notifURL + c.path
 	}
 	if len(c.query) > 0 {
 		target += "?" + c.query.Encode()

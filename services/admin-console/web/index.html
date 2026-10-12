@@ -56,6 +56,7 @@
       <button id="tab-catalog" class="tab" type="button" role="tab" aria-controls="panel-catalog" aria-selected="false" tabindex="-1" data-tab="catalog"><span data-i18n="tabs.catalog"></span></button>
       <button id="tab-settings" class="tab" type="button" role="tab" aria-controls="panel-settings" aria-selected="false" tabindex="-1" data-tab="settings"><span data-i18n="tabs.settings"></span></button>
       <button id="tab-files" class="tab" type="button" role="tab" aria-controls="panel-files" aria-selected="false" tabindex="-1" data-tab="files"><span data-i18n="tabs.files"></span></button>
+      <button id="tab-notifications" class="tab" type="button" role="tab" aria-controls="panel-notifications" aria-selected="false" tabindex="-1" data-tab="notifications"><span data-i18n="tabs.notifications"></span></button>
     </nav>
 
     <section id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts">
@@ -114,6 +115,7 @@
           <div id="audit-source" class="segment" role="group">
             <button id="audit-source-auth" class="btn small secondary" type="button" data-i18n="audit.source.auth" aria-pressed="true"></button>
             <button id="audit-source-academy" class="btn small secondary" type="button" data-i18n="audit.source.academy" aria-pressed="false"></button>
+            <button id="audit-source-notifications" class="btn small secondary" type="button" data-i18n="audit.source.notifications" aria-pressed="false"></button>
           </div>
           <button id="audit-refresh" class="btn secondary" type="button" data-i18n="common.refresh"></button>
         </div>
@@ -338,6 +340,84 @@
           <span id="files-status" class="muted small" role="status"></span>
         </div>
       </form>
+    </section>
+
+    <section id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications" hidden>
+      <div class="section-head">
+        <div>
+          <h2 data-i18n="notifications.title"></h2>
+          <p class="muted small" data-i18n="notifications.subtitle"></p>
+          <p class="muted small" data-i18n="notifications.hint"></p>
+        </div>
+      </div>
+      <div id="notifications-banner" class="banner" role="alert" hidden></div>
+      <form id="notifications-form" class="settings-form" novalidate>
+        <div class="settings-grid">
+          <div class="field">
+            <label for="notifications-title-ar" data-i18n="notifications.titleAr"></label>
+            <input id="notifications-title-ar" type="text" maxlength="80" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="notifications-title-en" data-i18n="notifications.titleEn"></label>
+            <input id="notifications-title-en" type="text" dir="ltr" maxlength="80" autocomplete="off">
+          </div>
+        </div>
+        <div class="settings-grid">
+          <div class="field">
+            <label for="notifications-body-ar" data-i18n="notifications.bodyAr"></label>
+            <textarea id="notifications-body-ar" rows="3" maxlength="500" required></textarea>
+          </div>
+          <div class="field">
+            <label for="notifications-body-en" data-i18n="notifications.bodyEn"></label>
+            <textarea id="notifications-body-en" dir="ltr" rows="3" maxlength="500"></textarea>
+          </div>
+        </div>
+        <fieldset class="field">
+          <legend data-i18n="notifications.audience"></legend>
+          <label><input id="notifications-audience-all" type="radio" name="notifications-audience" value="all" checked> <span data-i18n="notifications.audienceAll"></span></label>
+          <label><input id="notifications-audience-subject" type="radio" name="notifications-audience" value="subject"> <span data-i18n="notifications.audienceSubject"></span></label>
+        </fieldset>
+        <div class="toolbar">
+          <div class="field grow">
+            <label for="notifications-level" data-i18n="notifications.level"></label>
+            <select id="notifications-level" disabled></select>
+          </div>
+          <div class="field grow">
+            <label for="notifications-subject" data-i18n="notifications.subject"></label>
+            <select id="notifications-subject" disabled></select>
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button id="notifications-preview" class="btn secondary" type="button" data-i18n="notifications.preview"></button>
+          <span id="notifications-preview-count" role="status"></span>
+          <button id="notifications-submit" class="btn primary" type="submit" data-i18n="notifications.send"></button>
+        </div>
+      </form>
+      <h3 data-i18n="notifications.history"></h3>
+      <div class="table-wrap">
+        <table id="notifications-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="notifications.col.time"></th>
+              <th scope="col" data-i18n="notifications.col.title"></th>
+              <th scope="col" data-i18n="notifications.col.audience"></th>
+              <th scope="col" data-i18n="notifications.col.status"></th>
+              <th scope="col" data-i18n="notifications.col.sent"></th>
+              <th scope="col" data-i18n="notifications.col.failed"></th>
+              <th scope="col" data-i18n="notifications.col.actions"></th>
+            </tr>
+          </thead>
+          <tbody id="notifications-history-body"></tbody>
+        </table>
+      </div>
+      <div id="notifications-pager" class="pager">
+        <span class="muted" data-role="total"></span>
+        <div class="pager-controls">
+          <button class="btn secondary small" type="button" data-role="prev" data-i18n="common.prev"></button>
+          <span data-role="info"></span>
+          <button class="btn secondary small" type="button" data-role="next" data-i18n="common.next"></button>
+        </div>
+      </div>
     </section>
     <div id="catalog-dialogs"></div>
     <div id="toast" class="toast" role="status" hidden></div>

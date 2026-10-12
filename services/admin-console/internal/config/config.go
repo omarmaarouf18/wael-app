@@ -27,9 +27,12 @@ type Config struct {
 	// AcademyAdminURL is the academy-service admin listener. The catalog
 	// routes (/api/levels, /api/subjects, /api/videos) forward to it.
 	AcademyAdminURL string
-	TLSCertPath     string
-	TLSKeyPath      string
-	TLSCAPath       string
+	// NotifAdminURL is the notification-service admin listener (SPEC Phase
+	// 7 broadcast). The /api/broadcasts routes forward to it.
+	NotifAdminURL string
+	TLSCertPath   string
+	TLSKeyPath    string
+	TLSCAPath     string
 	// TrustedProxies are the only peers whose X-Forwarded-For is believed
 	// (Caddy). Empty means X-Forwarded-For is never read.
 	TrustedProxies []netip.Prefix
@@ -61,6 +64,7 @@ const (
 	defaultPort            = "3005"
 	devDefaultAuthAdminURL = "http://localhost:9001"
 	devDefaultAcademyURL   = "http://localhost:9002"
+	devDefaultNotifURL     = "http://localhost:9003"
 )
 
 // Load reads and validates configuration. Errors name the variable, never
@@ -89,7 +93,7 @@ func Load() (*Config, error) {
 
 	if !dev {
 		for _, name := range []string{
-			"AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL",
+			"AUTH_ADMIN_URL", "ACADEMY_ADMIN_URL", "NOTIFICATION_ADMIN_URL",
 			"TLS_CERT_PATH", "TLS_KEY_PATH", "TLS_CA_PATH",
 			"TRUSTED_PROXY_IPS",
 		} {
@@ -113,6 +117,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	if cfg.AcademyAdminURL, err = upstreamURL("ACADEMY_ADMIN_URL", devDefaultAcademyURL, dev); err != nil {
+		return nil, err
+	}
+	if cfg.NotifAdminURL, err = upstreamURL("NOTIFICATION_ADMIN_URL", devDefaultNotifURL, dev); err != nil {
 		return nil, err
 	}
 	if cfg.TrustedProxies, err = parseTrustedProxies(os.Getenv("TRUSTED_PROXY_IPS")); err != nil {

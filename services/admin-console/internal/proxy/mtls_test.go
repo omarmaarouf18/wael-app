@@ -118,7 +118,7 @@ func mtlsUpstream(t *testing.T, pki *testPKI) string {
 
 func whoamiStatus(t *testing.T, client *http.Client, url string) int {
 	t.Helper()
-	p, err := New(Options{InternalToken: testInternal, AuthURL: url, AcademyURL: url, Client: client, Timeout: 3 * time.Second})
+	p, err := New(Options{InternalToken: testInternal, AuthURL: url, AcademyURL: url, NotifURL: url, Client: client, Timeout: 3 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func academyUpstream(t *testing.T, pki *testPKI) string {
 
 func levelsStatus(t *testing.T, client *http.Client, authURL, academyURL string) int {
 	t.Helper()
-	p, err := New(Options{InternalToken: testInternal, AuthURL: authURL, AcademyURL: academyURL, Client: client, Timeout: 3 * time.Second})
+	p, err := New(Options{InternalToken: testInternal, AuthURL: authURL, AcademyURL: academyURL, NotifURL: academyURL, Client: client, Timeout: 3 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}

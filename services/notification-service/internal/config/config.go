@@ -6,7 +6,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil/secretcheck"
 	"strconv"
@@ -26,11 +28,33 @@ type Config struct {
 	TLSCAPath            string
 	StreamMaxConcurrent  int
 	StreamOpenRateLimit  int
+	// AdminListenAddr is the internal admin listener (broadcast API, ADR-0008).
+	AdminListenAddr string
+	// AuthAdminURL verifies admin tokens (auth-service admin listener).
+	AuthAdminURL string
+	// AcademyAdminURL resolves subject audiences (academy admin listener).
+	AcademyAdminURL string
 }
 
 // TLSEnabled reports whether server-side TLS is configured.
 func (c *Config) TLSEnabled() bool {
 	return c.TLSCertPath != "" && c.TLSKeyPath != ""
+}
+
+// validateAdminURL requires scheme://host[:port] only, https outside dev,
+// so a path, query or credentials can never reach an upstream request.
+func validateAdminURL(name, raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || u.Hostname() == "" {
+		return fmt.Errorf("config: invalid %s: must be an absolute http(s) URL", name)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("config: invalid %s: scheme must be https outside local/test", name)
+	}
+	if u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("config: invalid %s: must be scheme://host[:port] only", name)
+	}
+	return nil
 }
 
 func Load() (*Config, error) {
@@ -119,6 +143,29 @@ func Load() (*Config, error) {
 		streamOpenRateLimit = n
 	}
 
+	adminListenAddr := os.Getenv("ADMIN_LISTEN_ADDR")
+	if adminListenAddr == "" {
+		adminListenAddr = ":9003"
+	}
+	authAdminURL := strings.TrimSpace(os.Getenv("AUTH_ADMIN_URL"))
+	academyAdminURL := strings.TrimSpace(os.Getenv("ACADEMY_ADMIN_URL"))
+	if !dev {
+		if authAdminURL == "" {
+			return nil, errors.New("config: required env var AUTH_ADMIN_URL is empty")
+		}
+		if academyAdminURL == "" {
+			return nil, errors.New("config: required env var ACADEMY_ADMIN_URL is empty")
+		}
+		for _, u := range []struct{ name, value string }{
+			{"AUTH_ADMIN_URL", authAdminURL},
+			{"ACADEMY_ADMIN_URL", academyAdminURL},
+		} {
+			if err := validateAdminURL(u.name, u.value); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &Config{
 		Port:                 port,
 		AppEnv:               appEnv,
@@ -133,5 +180,8 @@ func Load() (*Config, error) {
 		TLSCAPath:            tlsCAPath,
 		StreamMaxConcurrent:  streamMaxConcurrent,
 		StreamOpenRateLimit:  streamOpenRateLimit,
+		AdminListenAddr:      adminListenAddr,
+		AuthAdminURL:         authAdminURL,
+		AcademyAdminURL:      academyAdminURL,
 	}, nil
 }

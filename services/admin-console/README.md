@@ -20,7 +20,14 @@ route under `/internal/`.
 | `POST /api/accounts/suspend` `{id, reason}` | `POST /internal/admin/accounts/{id}/suspend` `{reason}` |
 | `POST /api/accounts/reactivate` `{id}` | `POST /internal/admin/accounts/{id}/reactivate` |
 | `POST /api/accounts/delete` `{id, reason}` | `DELETE /internal/admin/accounts/{id}` `{reason}` |
-| `GET /api/audit?source&page&limit` | `source=academy` goes to the academy listener (see below); anything else goes to auth-service. |
+| `GET /api/audit?source&page&limit` | `source=academy` goes to the academy listener, `source=notifications` to the notification listener (see below); anything else goes to auth-service. |
+
+| Console route | Upstream (notification-service admin listener, SPEC Phase 7) |
+|---|---|
+| `POST /api/broadcasts/preview` `{audience}` | `POST /internal/admin/broadcasts/preview` (dry run: recipient count, nothing sent) |
+| `POST /api/broadcasts/create` `{audience, title_ar, title_en?, body_ar, body_en?}` | `POST /internal/admin/broadcasts` (validates, rate limits, fans out async) |
+| `GET /api/broadcasts?page&limit` | `GET /internal/admin/broadcasts` (history with counts) |
+| `POST /api/broadcasts/retry` `{id}` | `POST /internal/admin/broadcasts/{id}/retry` (failed targets go pending again) |
 
 | Console route | Upstream (academy-service admin listener) |
 |---|---|
@@ -56,8 +63,9 @@ embedded static UI (`web/`).
 There is no catch-all and nothing under `/internal/`. *(Amended 2026-10-09:
 this sentence used to say the files routes did not exist; they are the three
 `/api/files` rows above, SPEC Phase 5.)* The audit log is served per source (`source=auth`, the
-default, or `source=academy`); the two logs are never merged into one page,
-because merged pagination over two sources is wrong without a shared cursor.
+default, `source=academy`, or `source=notifications`); the logs are never merged into one page,
+because merged pagination over two sources is wrong without a shared cursor. *(Amended 2026-10-12:
+the notifications source is the notification-service broadcast audit log, SPEC Phase 7.)*
 
 Every handler: requires `X-Admin-Token` (401 with no upstream call when
 missing or malformed), validates input (UUID id, reason 1-1000 characters with
@@ -93,6 +101,7 @@ anything; an empty `APP_ENV` is production and an unknown value is refused.
 | `INTERNAL_SERVICE_TOKEN` | always | Sent as `X-Internal-Token`. Empty or blank fails startup. |
 | `AUTH_ADMIN_URL` | outside local/test | `https://auth-service:9001`. Must be `https` outside dev, `scheme://host[:port]` only. |
 | `ACADEMY_ADMIN_URL` | outside local/test | `https://academy-service:9002`. The catalog routes forward to it. |
+| `NOTIFICATION_ADMIN_URL` | outside local/test | `https://notification-service:9003`. The broadcast routes forward to it. |
 | `TLS_CERT_PATH`, `TLS_KEY_PATH`, `TLS_CA_PATH` | outside local/test | Server certificate for the listener, and the mTLS client certificate and local CA for calls to the admin listeners. |
 | `TRUSTED_PROXY_IPS` | outside local/test | Comma-separated IPs or CIDRs (Caddy). `/0` is refused. |
 | `PORT` | no | Default `3005`. |
@@ -107,12 +116,12 @@ or URL), so reloading the page signs the admin out. Any `401` clears the token
 and returns to the sign-in page. The page is Arabic first (right-to-left) with
 an English toggle; the choice is kept in the URL hash only.
 
-Requests, Courses, Accounts, Audit, Settings and Files tabs are active in
+Requests, Courses, Accounts, Audit, Settings, Files and Notifications tabs are active in
 `web/js/tabs.js`. *(Amended 2026-10-09: Files was hidden until the Phase 5
 APIs existed.)* *(Amended 2026-10-12, owner: the "Catalog" tab is now
 "دوراتي" / "Courses", and the Settings "center" labels are now "الأكاديمية" /
 "Academy"; labels only — i18n keys, element ids, JS file names, API paths and
-JSON fields are unchanged.)*
+JSON fields are unchanged.)* *(Amended 2026-10-12: the Notifications tab is SPEC Phase 7 broadcast.)*
 
 The UI is split into small ES modules:
 - Accounts: search, status filter, pagination, suspend/reactivate/delete dialogs (`accounts.js`, `account-dialog.js`), and "المواد" button opening the student entitlements modal (`entitlements-dialog.js`) for active/expired/revoked lists, manual grant, and revoke with mandatory reason.
@@ -123,11 +132,12 @@ The UI is split into small ES modules:
 - Rate limits: a `429` with a `Retry-After` (whole seconds, relayed by the proxy; capped at an hour in the page) shows "حاول بعد N ثانية", counts down, and keeps the action's button and the banner's retry button disabled until the wait ends (`api.js` `parseRetryAfter`, `ui.js` `createCooldown`).
 - Double submit: every save, confirm and publish button is disabled while its request is in flight, a second submit (Enter, a second click, the banner's retry) sends nothing, and Esc cannot close a dialog during the request (`ui.js` `keepOpenWhile`, `unsaved.js` `guardDialog`, the per-dialog `busy`/`inFlight` flags).
 - Toasts: every save and confirm ends with a short success note (`ui.js` `toast`): account suspend/reactivate/delete, request accept/reject, Courses saves, publish, delete and reorder. Grant and revoke in the student-subjects dialog use a toast inside that dialog (`#entitlements-toast`), because the page toast would sit under its backdrop. Draft/published badges show on every level card and subject row.
-- Audit: per-source audit log switch (`audit.js`).
+- Audit: per-source audit log switch (`audit.js`): auth, academy, notifications (broadcast sends and retries).
 - Files (SPEC Phase 5): level and subject pickers from the catalog list routes (drafts included), the subject's PDFs (kind, titles, size, upload date), an upload form (kind, Arabic and English titles, one `.pdf`) and delete through the shared confirm dialog (`files.js`). The page pre-checks the name, emptiness and the 20 MB default as a convenience only; if `MAX_PDF_BYTES` is changed, the server's limit applies and the page's check stays at 20 MB. `fetch` reports no upload progress, so an upload shows an "uploading" state with a Cancel button (`api.js` `upload`, AbortController). Unsaved-changes guard on tab switch and on level or subject change, double-submit guard, `Retry-After` cooldown, toasts.
+- Notifications (SPEC Phase 7): compose form (Arabic title/body required, English optional; audience everyone or one subject picked from the catalog lists), a dry-run preview of the exact recipient count, a confirm dialog showing that count, history with status and delivered/failed counts, and retry of failed targets (`notifications.js`). Delivery is in-app only (no phone push). Unsaved-changes guard, double-submit guard, `Retry-After` cooldown, toasts.
 - Idle Lock: 19-minute idle warning with 60-second live countdown dialog and automatic 20-minute logout (`idle.js`).
 
-Server error codes are mapped to Arabic/English text in one map in `web/js/i18n.js` (`err.<code>`); `web/test/errors.test.mjs` fails when a code the academy admin handlers can return (the checked-in list in `internal/proxy/catalog_codes_test.go`) has no message.
+Server error codes are mapped to Arabic/English text in one map in `web/js/i18n.js` (`err.<code>`); `web/test/errors.test.mjs` fails when a code the academy admin handlers can return (the checked-in list in `internal/proxy/catalog_codes_test.go`) or the notification broadcast handlers can return (the checked-in list in `internal/proxy/notification_codes_test.go`) has no message.
 
 ## Tests
 

@@ -138,6 +138,7 @@ func newSplitProxy(t *testing.T, authUp, academyUp *fakeUpstream) *Proxy {
 		InternalToken: testInternal,
 		AuthURL:       authUp.srv.URL,
 		AcademyURL:    academyUp.srv.URL,
+		NotifURL:      academyUp.srv.URL,
 		Timeout:       2 * time.Second,
 	})
 	if err != nil {

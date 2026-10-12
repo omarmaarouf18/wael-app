@@ -151,8 +151,8 @@ test('console tab "Courses" and Settings "Academy" labels (owner 2026-10-12)', (
 });
 
 test('every tab is active, Files included since SPEC Phase 5', () => {
-  assert.deepEqual(TABS.map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files']);
-  assert.deepEqual(visibleTabs().map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files']);
+  assert.deepEqual(TABS.map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files', 'notifications']);
+  assert.deepEqual(visibleTabs().map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files', 'notifications']);
   assert.equal(isTabEnabled('catalog'), true);
   assert.equal(isTabEnabled('settings'), true);
   assert.equal(isTabEnabled('requests'), true);

@@ -99,7 +99,7 @@ test('starts on the sign-in page, Arabic and right-to-left, with every tab shown
   assert.equal($('app-view').hidden, true);
   assert.equal(doc.documentElement.lang, 'ar');
   assert.equal(doc.documentElement.dir, 'rtl');
-  for (const id of ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files']) assert.equal($(`tab-${id}`).hidden, false, id);
+  for (const id of ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files', 'notifications']) assert.equal($(`tab-${id}`).hidden, false, id);
   assert.equal(getToken(), '');
 });
 

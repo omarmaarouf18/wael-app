@@ -10,6 +10,7 @@ export const TABS = Object.freeze([
   Object.freeze({ id: 'catalog', enabled: true }),
   Object.freeze({ id: 'settings', enabled: true }),
   Object.freeze({ id: 'files', enabled: true }),
+  Object.freeze({ id: 'notifications', enabled: true }),
 ]);
 
 export function visibleTabs() {

@@ -1,8 +1,9 @@
 // Error-code coverage: every code the academy admin handlers can return
 // (the checked-in list in internal/proxy/catalog_codes_test.go, extracted
 // from the handlers with the grep command quoted there) needs an ar and en
-// message, plus the console's own kinds. Fails closed: an unknown code falls
-// back to the status kind, never to raw server text.
+// message, plus the broadcast admin codes (notification_codes_test.go) and
+// the console's own kinds. Fails closed: an unknown code falls back to the
+// status kind, never to raw server text.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -66,6 +67,34 @@ const ACADEMY_CODES = [
 test('every academy admin code has an ar and an en message', () => {
   assert.equal(ACADEMY_CODES.length, 49);
   for (const code of ACADEMY_CODES) {
+    assert.ok(MESSAGES.ar[`err.${code}`], `ar err.${code}`);
+    assert.ok(MESSAGES.en[`err.${code}`], `en err.${code}`);
+  }
+});
+
+// Keep in sync with notificationErrorCodes in
+// services/admin-console/internal/proxy/notification_codes_test.go.
+const NOTIFICATION_CODES = [
+  'unauthorized',
+  'locked_out',
+  'service_unavailable',
+  'invalid_json',
+  'method_not_allowed',
+  'not_found',
+  'invalid_audience',
+  'invalid_title',
+  'invalid_body',
+  'broadcast_forbidden_word',
+  'empty_audience',
+  'subject_not_found',
+  'broadcast_not_found',
+  'broadcast_in_progress',
+  'rate_limited',
+];
+
+test('every broadcast admin code has an ar and an en message', () => {
+  assert.equal(NOTIFICATION_CODES.length, 15);
+  for (const code of NOTIFICATION_CODES) {
     assert.ok(MESSAGES.ar[`err.${code}`], `ar err.${code}`);
     assert.ok(MESSAGES.en[`err.${code}`], `en err.${code}`);
   }

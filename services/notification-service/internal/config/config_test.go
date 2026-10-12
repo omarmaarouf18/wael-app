@@ -25,6 +25,8 @@ func fullProdEnv(t *testing.T) {
 	t.Setenv("TLS_CERT_PATH", "/tmp/cert.pem")
 	t.Setenv("TLS_KEY_PATH", "/tmp/key.pem")
 	t.Setenv("TLS_CA_PATH", "/tmp/ca.pem")
+	t.Setenv("AUTH_ADMIN_URL", "https://auth-service:9001")
+	t.Setenv("ACADEMY_ADMIN_URL", "https://academy-service:9002")
 }
 
 func TestLoad_MinimalDev(t *testing.T) {
@@ -106,6 +108,8 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"TLS_CERT_PATH",
 		"TLS_KEY_PATH",
 		"TLS_CA_PATH",
+		"AUTH_ADMIN_URL",
+		"ACADEMY_ADMIN_URL",
 	}
 
 	for _, v := range requiredVars {
@@ -161,6 +165,12 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		}
 		if cfg.StreamOpenRateLimit != 10 {
 			t.Errorf("expected default StreamOpenRateLimit 10, got %d", cfg.StreamOpenRateLimit)
+		}
+		if cfg.AdminListenAddr != ":9003" {
+			t.Errorf("expected default AdminListenAddr :9003, got %q", cfg.AdminListenAddr)
+		}
+		if cfg.AuthAdminURL != "" || cfg.AcademyAdminURL != "" {
+			t.Errorf("expected empty admin URLs in local dev, got %q %q", cfg.AuthAdminURL, cfg.AcademyAdminURL)
 		}
 	})
 }

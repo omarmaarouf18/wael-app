@@ -380,6 +380,10 @@ func (s *Server) AdminSubjectSubroute(w http.ResponseWriter, r *http.Request) {
 		s.AdminSubjectFiles(w, r, id)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "owner-ids" {
+		s.AdminBroadcastAudience(w, r, id)
+		return
+	}
 	if len(parts) == 3 && parts[1] == "files" {
 		if !validResourceID(parts[2]) {
 			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_file_id", "invalid file id", nil)

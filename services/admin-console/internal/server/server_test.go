@@ -38,7 +38,7 @@ func newHarness(t *testing.T) *harness {
 		_, _ = w.Write([]byte(`{"name":"Wael","items":[],"total":0}`))
 	}))
 	t.Cleanup(up.Close)
-	p, err := proxy.New(proxy.Options{InternalToken: "internal", AuthURL: up.URL, AcademyURL: up.URL, Timeout: 2 * time.Second})
+	p, err := proxy.New(proxy.Options{InternalToken: "internal", AuthURL: up.URL, AcademyURL: up.URL, NotifURL: up.URL, Timeout: 2 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,8 +163,8 @@ func TestEveryAllowlistedRouteIsRegistered(t *testing.T) {
 			t.Fatalf("route %s answered %d without a token", route, w.Code)
 		}
 	}
-	if got := len(APIRoutes()); got != 31 {
-		t.Fatalf("expected exactly 31 API routes, got %d", got)
+	if got := len(APIRoutes()); got != 35 {
+		t.Fatalf("expected exactly 35 API routes, got %d", got)
 	}
 }
 
@@ -295,7 +295,7 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestNewRequiresIndexAndIgnoresUnknownExtensions(t *testing.T) {
-	p, err := proxy.New(proxy.Options{InternalToken: "x", AuthURL: "http://127.0.0.1:1", AcademyURL: "http://127.0.0.1:2"})
+	p, err := proxy.New(proxy.Options{InternalToken: "x", AuthURL: "http://127.0.0.1:1", AcademyURL: "http://127.0.0.1:2", NotifURL: "http://127.0.0.1:3"})
 	if err != nil {
 		t.Fatal(err)
 	}

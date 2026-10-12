@@ -100,6 +100,7 @@ func newProxy(t *testing.T, up *fakeUpstream, trusted ...string) *Proxy {
 		InternalToken:  testInternal,
 		AuthURL:        up.srv.URL,
 		AcademyURL:     up.srv.URL,
+		NotifURL:       up.srv.URL,
 		TrustedProxies: prefixes,
 		Timeout:        2 * time.Second,
 	})
@@ -400,7 +401,7 @@ func TestRoutes_UpstreamFailuresBecomeSafe503(t *testing.T) {
 		t.Run(rt.name+"/timeout", func(t *testing.T) {
 			up := newUpstream(t, 200, rt.upstreamReply)
 			up.delay = 400 * time.Millisecond
-			p, err := New(Options{InternalToken: testInternal, AuthURL: up.srv.URL, AcademyURL: up.srv.URL, Timeout: 50 * time.Millisecond})
+			p, err := New(Options{InternalToken: testInternal, AuthURL: up.srv.URL, AcademyURL: up.srv.URL, NotifURL: up.srv.URL, Timeout: 50 * time.Millisecond})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -926,6 +927,8 @@ func TestNew_FailsFastOnEmptySecretOrURL(t *testing.T) {
 		"blank auth url":    {InternalToken: "x", AuthURL: "  ", AcademyURL: "https://a:9002"},
 		"empty academy url": {InternalToken: "x", AuthURL: "https://a:9001", AcademyURL: ""},
 		"blank academy url": {InternalToken: "x", AuthURL: "https://a:9001", AcademyURL: "  "},
+		"empty notif url":   {InternalToken: "x", AuthURL: "https://a:9001", AcademyURL: "https://a:9002", NotifURL: ""},
+		"blank notif url":   {InternalToken: "x", AuthURL: "https://a:9001", AcademyURL: "https://a:9002", NotifURL: "  "},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := New(o); err == nil {
@@ -936,7 +939,7 @@ func TestNew_FailsFastOnEmptySecretOrURL(t *testing.T) {
 }
 
 func TestNew_DefaultsToTenSecondTimeout(t *testing.T) {
-	p, err := New(Options{InternalToken: "x", AuthURL: "https://a:9001/", AcademyURL: "https://a:9002/"})
+	p, err := New(Options{InternalToken: "x", AuthURL: "https://a:9001/", AcademyURL: "https://a:9002/", NotifURL: "https://a:9003/"})
 	if err != nil {
 		t.Fatal(err)
 	}

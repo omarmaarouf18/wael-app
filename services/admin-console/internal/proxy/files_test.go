@@ -125,6 +125,7 @@ func newUploadProxy(t *testing.T, academyURL string, maxPDF int64) *Proxy {
 		InternalToken: testInternal,
 		AuthURL:       academyURL,
 		AcademyURL:    academyURL,
+		NotifURL:      academyURL,
 		Timeout:       2 * time.Second,
 		UploadTimeout: 10 * time.Second,
 		MaxPDFBytes:   maxPDF,

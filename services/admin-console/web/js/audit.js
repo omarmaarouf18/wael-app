@@ -1,7 +1,7 @@
 // Audit log tab: newest first, paginated. The page shows one source at a
-// time: the auth-service log (accounts) or the academy log (content). The two
-// are never merged: merged pagination over two sources is wrong without a
-// shared cursor.
+// time: the auth-service log (accounts), the academy log (content) or the
+// notification-service log (broadcasts). The logs are never merged: merged
+// pagination over two sources is wrong without a shared cursor.
 
 import { clear, h } from './dom.js';
 import { MESSAGES, t } from './i18n.js';
@@ -32,6 +32,7 @@ export function mountAudit({ api, doc = document }) {
   const refreshButton = doc.getElementById('audit-refresh');
   const sourceAuth = doc.getElementById('audit-source-auth');
   const sourceAcademy = doc.getElementById('audit-source-academy');
+  const sourceNotifications = doc.getElementById('audit-source-notifications');
 
   const state = { source: 'auth', page: 1, total: 0, items: [], loaded: false, error: null };
   let seq = 0;
@@ -39,6 +40,7 @@ export function mountAudit({ api, doc = document }) {
   function renderSource() {
     sourceAuth.setAttribute('aria-pressed', String(state.source === 'auth'));
     sourceAcademy.setAttribute('aria-pressed', String(state.source === 'academy'));
+    if (sourceNotifications) sourceNotifications.setAttribute('aria-pressed', String(state.source === 'notifications'));
   }
 
   function row(entry) {
@@ -98,6 +100,12 @@ export function mountAudit({ api, doc = document }) {
   sourceAcademy.addEventListener('click', () => {
     if (state.source === 'academy') return;
     state.source = 'academy';
+    state.page = 1;
+    load();
+  });
+  sourceNotifications?.addEventListener('click', () => {
+    if (state.source === 'notifications') return;
+    state.source = 'notifications';
     state.page = 1;
     load();
   });

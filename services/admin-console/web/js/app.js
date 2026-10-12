@@ -6,6 +6,7 @@ import { api } from './api.js';
 import { mountAudit } from './audit.js';
 import { mountCatalog } from './catalog.js';
 import { mountFiles } from './files.js';
+import { mountNotifications } from './notifications.js';
 import { mountRequests } from './requests.js';
 import { mountSettings } from './settings.js';
 import { createIdleLock } from './idle.js';
@@ -41,6 +42,7 @@ export function main(doc = document, win = window) {
     catalog: mountCatalog({ api, doc }),
     settings: mountSettings({ api, doc }),
     files: mountFiles({ api, doc }),
+    notifications: mountNotifications({ api, doc }),
   };
   const idleLock = createIdleLock({ doc, win });
   let badgePollTimer = null;
@@ -102,6 +104,7 @@ export function main(doc = document, win = window) {
       modules.catalog.discard();
       if (modules.settings?.discard) modules.settings.discard();
       if (modules.files?.discard) modules.files.discard();
+      if (modules.notifications?.discard) modules.notifications.discard();
     });
     if (!moved) doc.getElementById(`tab-${activeTab}`)?.focus();
   }

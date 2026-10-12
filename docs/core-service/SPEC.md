@@ -390,6 +390,7 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 
 **Phase 7 - broadcast (write a short ADR first)**
 - Admin creates a broadcast with audience `all` or `subject:<id>`. Fan-out pages through target user ids and pushes per user in bounded batches, idempotent per (broadcast, user). Failures are logged and retryable. Per-user rows are kept, because the existing list, read, and SSE path serves per-user rows.
+- *Note 2026-10-12:* built on branch `feat/phase7-broadcast` (not pushed; new admin routes and audience logic, so it waits for the owner per Section 12 rule 6): ADR-0013 first, then the notification-service admin listener (`:9003`) with create/preview/history/get/retry plus its own audit log, the broadcasts/targets collections with deterministic per-(broadcast, user) rows and resume-after-restart fan-out, the academy owner-ids route, the console Notifications tab (dry-run confirm count, history, retry) with a third audit source, 10 sends/hour/admin with 429 + Retry-After, and contract tests pinning the app row shape. In-app only (no phone push); no app change. Verified with unit, contract and node tests and on a local compose stack (send to one subject: owner gets the row over SSE and in the list, non-owner does not).
 
 **Phase 8 - hardening and release gate**
 - Short `RELEASE-GATE.md`, `RUNBOOK.md`, single source of truth for the production `.env`, staging notes.
