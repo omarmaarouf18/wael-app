@@ -54,6 +54,9 @@ One entry per production release, reconstructable from git
   device checklist for one Android phone and one iPhone (TestFlight), one row
   per function with its automated test, plus the earlier unverified iOS fixes
   (iOS 15 target, YouTube frame, PDF Quick Look / share).
+- app: new director portrait (owner decision 2026-10-12) — a 720 x 720
+  head-and-shoulders crop of the owner's studio photo (Hazem El layub
+  Photography), metadata stripped, same asset path; provenance updated.
 
 ## `b0de4d4` — 2026-10-09
 
