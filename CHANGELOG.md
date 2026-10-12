@@ -21,6 +21,16 @@ One entry per production release, reconstructable from git
   link shows the support WhatsApp button; the Settings "Update available" tile
   follows the same rule. Version `1.0.1+2`. Tests:
   `frontend/test/update_per_platform_test.dart`.
+- app: notes & books freshness — a file the admin adds shows without a
+  reload. Causes found: the shell mounts every tab at once and the notes tab's
+  `ensureLoaded()` returned while Home's load was running, so it saw no owned
+  subjects and loaded no files; it loaded only in `initState`; subject details
+  cached earlier were never refetched; subjects with cached zero file counts
+  were skipped; app-config (`features.files`) was read once per cold start.
+  One shared mechanism (`RefreshWhenVisible` + `TabVisibility`) refreshes
+  Home, Courses, Notes & books and Notifications in the background on tab
+  visible / screen open / app resume (≥30 s apart), cached first; concurrent
+  catalog loads share one request. Tests: `frontend/test/refresh_freshness_test.dart`.
 
 ## `b0de4d4` — 2026-10-09
 
