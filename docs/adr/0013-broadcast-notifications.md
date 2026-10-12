@@ -107,3 +107,36 @@ per-user rows. Owner decisions 2026-10-08 (admin sends from the console) and
 - Check retry after a mid-fan-out restart delivers exactly one row per
   user.
 - Check the audit entry carries counts but no message text.
+
+## Deployment notes (2026-10-12 owner review fix)
+
+- Compose wiring (no new secrets, static URLs only): notification-service
+  gets `AUTH_ADMIN_URL=https://auth-service:9001`,
+  `ACADEMY_ADMIN_URL=https://academy-service:9002` and
+  `ADMIN_LISTEN_ADDR=":9003"` (exposed inside the container network, never
+  published); admin-console gets
+  `NOTIFICATION_ADMIN_URL=https://notification-service:9003`. Both compose
+  files carry them; `scripts/deploy_scripts_test.sh` Test 22 fails the
+  pipeline if any required `*_ADMIN_URL` line is missing from its service
+  block, so a repeat of the review finding (services refusing to start in
+  production) cannot ship again.
+- mTLS coverage of the new paths (verified on the local compose stack):
+  every service cert carries `subjectAltName = DNS:<service>,
+  DNS:localhost, IP:127.0.0.1` from the shared local CA
+  (`infrastructure/certs/generate-certs.sh`); servers use
+  `tlsutil.LoadServerTLSConfig` (`RequireAndVerifyClientCert` against the
+  local CA) and callers use `tlsutil.LoadClientTLSConfig` (own cert plus
+  CA-verified server names). So the notification-service certificate
+  serves `:9003` as `notification-service`, authenticates as a client to
+  auth `:9001` and academy `:9002` (any CA-signed peer, per the D1 "today"
+  state), and admin-console (same CA in `TLS_CA_PATH`) trusts `:9003`.
+- D1 implication (planned per-pair allowlist, ADR-0008): when D1 lands,
+  the allowlist must cover notification-service → auth/academy admin
+  listeners (verify + audience resolution) and admin-console →
+  notification `:9003`, or broadcasts stop working.
+- Restart behaviour: already-resolved recipients resume automatically
+  after a restart (pending targets are delivered, counts reconciled). A
+  broadcast interrupted during audience resolution resumes only when an
+  admin presses retry, because resolution needs a live admin token to
+  re-page auth/academy; no token is ever persisted. The console sends and
+  retries audit the counts.

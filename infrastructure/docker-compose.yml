@@ -176,6 +176,10 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       GATEWAY_SECRET: ${GATEWAY_SECRET}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      # SPEC Phase 7 broadcast: audience resolution and admin-token verify.
+      AUTH_ADMIN_URL: https://auth-service:9001
+      ACADEMY_ADMIN_URL: https://academy-service:9002
+      ADMIN_LISTEN_ADDR: ":9003"
       TLS_CERT_PATH: /app/certs/notification-service.crt
       TLS_KEY_PATH: /app/certs/notification-service.key
       TLS_CA_PATH: /app/certs/ca.crt
@@ -287,6 +291,7 @@ services:
       # The admin listeners are internal only; the console calls them over mTLS.
       AUTH_ADMIN_URL: https://auth-service:9001
       ACADEMY_ADMIN_URL: https://academy-service:9002
+      NOTIFICATION_ADMIN_URL: https://notification-service:9003
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}
       TLS_CERT_PATH: /app/certs/admin-console.crt

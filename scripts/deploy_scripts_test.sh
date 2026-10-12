@@ -33,6 +33,9 @@
 # 21. Restore validates the mongo archive before stopping anything; on a
 #     mongorestore failure it does NOT restart the apps as healthy but
 #     prints the exact retry command and exits non-zero (review M6)
+# 22. Deploy compose wires every required *_ADMIN_URL (Phase 7 review
+#     2026-10-12: missing URLs made services refuse to start in production,
+#     failing the deploy health gate into a rollback)
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -824,6 +827,43 @@ check "a failed mongorestore exits non-zero" 1 "NOT restarted as healthy"
 check "a failed mongorestore prints the exact retry command" 1 "restore.sh \"$BOX21/wael/backups/mongo-good.archive.gz\" --yes"
 assert "a failed mongorestore stopped the apps" grep -qF "stop api-gateway" "$BOX21/docker.log"
 assert "a failed mongorestore restarted nothing" bash -c "! grep -qF ' up ' \"$BOX21/docker.log\""
+
+# ---------------------------------------------------------------------------
+# Test 22: compose wires every required *_ADMIN_URL (Phase 7 review
+# 2026-10-12). The Go configs require these outside local/test, so a missing
+# line means the service refuses to start and the deploy health gate fails
+# into a rollback. Each line is asserted inside its own service block.
+# ---------------------------------------------------------------------------
+service_block() { # $1: compose file, $2: service name; prints the block
+	awk -v svc="^  $2:" '$0 ~ svc {p=1; next} /^  [a-zA-Z0-9_-]+:/ {p=0} p' "$1"
+}
+export -f service_block
+PROD_COMPOSE="$REPO_ROOT/infrastructure/deploy/docker-compose.yml"
+DEV_COMPOSE="$REPO_ROOT/infrastructure/docker-compose.yml"
+for spec in \
+	"$PROD_COMPOSE notification-service|AUTH_ADMIN_URL: https://auth-service:9001" \
+	"$PROD_COMPOSE notification-service|ACADEMY_ADMIN_URL: https://academy-service:9002" \
+	"$PROD_COMPOSE notification-service|ADMIN_LISTEN_ADDR: \":9003\"" \
+	"$PROD_COMPOSE notification-service|- \"9003\"" \
+	"$PROD_COMPOSE admin-console|NOTIFICATION_ADMIN_URL: https://notification-service:9003" \
+	"$DEV_COMPOSE notification-service|AUTH_ADMIN_URL: https://auth-service:9001" \
+	"$DEV_COMPOSE notification-service|ACADEMY_ADMIN_URL: https://academy-service:9002" \
+	"$DEV_COMPOSE notification-service|ADMIN_LISTEN_ADDR: \":9003\"" \
+	"$DEV_COMPOSE admin-console|NOTIFICATION_ADMIN_URL: https://notification-service:9003"; do
+	file="${spec%% *}"
+	rest="${spec#* }"
+	svc="${rest%%|*}"
+	needle="${rest#*|}"
+	# shellcheck disable=SC2016 # $0/$1/$2 expand in the inner bash
+	assert "$(basename "$file") $svc has: $needle" bash -c 'service_block "$0" "$1" | grep -qF -- "$2"' "$file" "$svc" "$needle"
+done
+# The same check must fail when a required line is missing: strip the console
+# URL from a copy and prove the assertion catches it.
+BROKEN_COMPOSE="$WORK/docker-compose.broken.yml"
+grep -vF 'NOTIFICATION_ADMIN_URL: https://notification-service:9003' "$PROD_COMPOSE" > "$BROKEN_COMPOSE"
+# shellcheck disable=SC2016 # $0/$1/$2 expand in the inner bash
+assert "missing NOTIFICATION_ADMIN_URL is caught" \
+	bash -c '! service_block "$0" "$1" | grep -qF -- "$2"' "$BROKEN_COMPOSE" admin-console 'NOTIFICATION_ADMIN_URL: https://notification-service:9003'
 
 # ---------------------------------------------------------------------------
 # Summary

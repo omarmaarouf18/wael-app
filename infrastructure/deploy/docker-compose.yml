@@ -148,6 +148,7 @@ services:
     image: ghcr.io/omarmaarouf18/wael-app-notification-service:${IMAGE_TAG:?IMAGE_TAG is required}
     expose:
       - "3004"
+      - "9003"
     environment:
       APP_ENV: production
       # Go runtime heap cap (~85% of the container mem_limit, overridable).
@@ -159,6 +160,13 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       GATEWAY_SECRET: ${GATEWAY_SECRET}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      # Admin listeners of auth-service and academy-service (SPEC Phase 7
+      # broadcast: audience resolution and admin-token verify). Required:
+      # without them the service refuses to start.
+      AUTH_ADMIN_URL: https://auth-service:9001
+      ACADEMY_ADMIN_URL: https://academy-service:9002
+      # Admin listener: internal only, not published (ADR-0008).
+      ADMIN_LISTEN_ADDR: ":9003"
       # Optional; empty means the service default (3 and 10).
       STREAM_MAX_CONCURRENT: ${STREAM_MAX_CONCURRENT:-}
       STREAM_OPEN_RATE_LIMIT: ${STREAM_OPEN_RATE_LIMIT:-}
@@ -270,6 +278,7 @@ services:
       # Admin listeners: internal only, called over mTLS (ADR-0008).
       AUTH_ADMIN_URL: https://auth-service:9001
       ACADEMY_ADMIN_URL: https://academy-service:9002
+      NOTIFICATION_ADMIN_URL: https://notification-service:9003
       # The console believes X-Forwarded-For only from Caddy's fixed address.
       TRUSTED_PROXY_IPS: 172.30.0.10
       # Body cap of the PDF upload route only (every other route stays 1 MiB).
