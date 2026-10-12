@@ -22,6 +22,10 @@ func appConfigTestServer() *Server {
 	s.MinVersion = "1.4.0"
 	s.LatestVersion = "1.5.0"
 	s.UpdateURL = "https://elmetracademy.app/app"
+	s.UpdateURLAndroid = "https://play.google.com/store/apps/details?id=app.elmetr"
+	s.UpdateURLIOS = "https://apps.apple.com/app/id123"
+	s.MinVersionIOS = "1.4.0"
+	s.LatestVersionIOS = "1.5.0"
 	return s
 }
 
@@ -53,13 +57,13 @@ func TestAppConfig_PublicShape(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for _, k := range []string{"show_prices", "support_whatsapp_url", "terms_url", "privacy_url", "min_version", "latest_version", "update_url", "features"} {
+	for _, k := range []string{"show_prices", "support_whatsapp_url", "terms_url", "privacy_url", "min_version", "latest_version", "update_url", "update_url_android", "update_url_ios", "min_version_ios", "latest_version_ios", "features"} {
 		if _, ok := raw[k]; !ok {
 			t.Fatalf("missing key %q: %s", k, rec.Body.String())
 		}
 	}
-	if len(raw) != 8 {
-		t.Fatalf("unexpected keys count %d, want 8: %s", len(raw), rec.Body.String())
+	if len(raw) != 12 {
+		t.Fatalf("unexpected keys count %d, want 12: %s", len(raw), rec.Body.String())
 	}
 	var cfg models.AppConfigDTO
 	if err := json.Unmarshal(rec.Body.Bytes(), &cfg); err != nil {
@@ -79,6 +83,13 @@ func TestAppConfig_PublicShape(t *testing.T) {
 	}
 	if cfg.MinVersion != "1.4.0" || cfg.LatestVersion != "1.5.0" || cfg.UpdateURL != "https://elmetracademy.app/app" {
 		t.Errorf("versions = %+v", cfg)
+	}
+	// Per-platform fields (owner decision 2026-10-12) ride beside the shared
+	// ones; the shared values above stay the fallback and are unchanged.
+	if cfg.UpdateURLAndroid != "https://play.google.com/store/apps/details?id=app.elmetr" ||
+		cfg.UpdateURLIOS != "https://apps.apple.com/app/id123" ||
+		cfg.MinVersionIOS != "1.4.0" || cfg.LatestVersionIOS != "1.5.0" {
+		t.Errorf("per-platform fields = %+v", cfg)
 	}
 	assertNoForbiddenStoreWords(t, "app-config", strings.ReplaceAll(rec.Body.String(), "show_prices", ""))
 	if tok := makeStudentToken(t, "cfg-student"); true {
@@ -100,9 +111,37 @@ func TestAppConfig_EmptyOptionalsOmitted(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("app-config = %d (%s)", rec.Code, rec.Body.String())
 	}
-	for _, k := range []string{"min_version", "latest_version", "update_url", "center"} {
+	for _, k := range []string{"min_version", "latest_version", "update_url", "update_url_android", "update_url_ios", "min_version_ios", "latest_version_ios", "center"} {
 		if strings.Contains(rec.Body.String(), k) {
 			t.Fatalf("empty optional %q present: %s", k, rec.Body.String())
+		}
+	}
+}
+
+// TestAppConfig_PerPlatformOnly: with only the shared values set (the 1.0.0
+// configuration) the response is byte-for-byte the old shape: the three
+// shared fields present with their values, and no per-platform key.
+func TestAppConfig_PerPlatformOnly(t *testing.T) {
+	s := newTestServer(false)
+	s.TermsURL = "https://elmetracademy.app/terms"
+	s.PrivacyURL = "https://elmetracademy.app/privacy"
+	s.MinVersion = "1.4.0"
+	s.LatestVersion = "1.5.0"
+	s.UpdateURL = "https://elmetracademy.app/app"
+	h := s.PublicHandler()
+
+	rec := doPublic(t, h, http.MethodGet, "/academy/app-config", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("app-config = %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"min_version":"1.4.0"`) ||
+		!strings.Contains(rec.Body.String(), `"latest_version":"1.5.0"`) ||
+		!strings.Contains(rec.Body.String(), `"update_url":"https://elmetracademy.app/app"`) {
+		t.Fatalf("shared update fields changed: %s", rec.Body.String())
+	}
+	for _, k := range []string{"update_url_android", "update_url_ios", "min_version_ios", "latest_version_ios"} {
+		if strings.Contains(rec.Body.String(), k) {
+			t.Fatalf("unset per-platform %q present: %s", k, rec.Body.String())
 		}
 	}
 }

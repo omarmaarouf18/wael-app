@@ -375,6 +375,85 @@ func TestLoad_AppConfigHTTPSOnly(t *testing.T) {
 	}
 }
 
+// Per-platform update metadata (owner decision 2026-10-12): the four new
+// vars are optional, empty by default, https-only where URLs, and the iOS
+// update link must be an apps.apple.com link (fail closed otherwise).
+func TestLoad_AppConfigPerPlatform(t *testing.T) {
+	t.Run("unset_defaults_empty", func(t *testing.T) {
+		baseEnv(t)
+		_ = os.Unsetenv("UPDATE_URL_ANDROID")
+		_ = os.Unsetenv("UPDATE_URL_IOS")
+		_ = os.Unsetenv("MIN_VERSION_IOS")
+		_ = os.Unsetenv("LATEST_VERSION_IOS")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("dev Load without per-platform env: %v", err)
+		}
+		if cfg.UpdateURLAndroid != "" || cfg.UpdateURLIOS != "" || cfg.MinVersionIOS != "" || cfg.LatestVersionIOS != "" {
+			t.Fatalf("expected empty per-platform values, got %+v", cfg)
+		}
+	})
+
+	t.Run("set_values_parse", func(t *testing.T) {
+		baseEnv(t)
+		setEnv(t, "UPDATE_URL_ANDROID", "https://play.google.com/store/apps/details?id=app.elmetr")
+		setEnv(t, "UPDATE_URL_IOS", "https://apps.apple.com/app/id123")
+		setEnv(t, "MIN_VERSION_IOS", "1.4.0")
+		setEnv(t, "LATEST_VERSION_IOS", "1.5.0")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("dev Load with per-platform env: %v", err)
+		}
+		if cfg.UpdateURLAndroid != "https://play.google.com/store/apps/details?id=app.elmetr" {
+			t.Fatalf("UpdateURLAndroid = %q", cfg.UpdateURLAndroid)
+		}
+		if cfg.UpdateURLIOS != "https://apps.apple.com/app/id123" {
+			t.Fatalf("UpdateURLIOS = %q", cfg.UpdateURLIOS)
+		}
+		// Version strings are free-form, same as MIN_VERSION/LATEST_VERSION.
+		if cfg.MinVersionIOS != "1.4.0" || cfg.LatestVersionIOS != "1.5.0" {
+			t.Fatalf("iOS versions = %q %q", cfg.MinVersionIOS, cfg.LatestVersionIOS)
+		}
+	})
+
+	t.Run("android_url_must_use_https", func(t *testing.T) {
+		baseEnv(t)
+		setEnv(t, "UPDATE_URL_ANDROID", "http://play.google.com/store/apps/details?id=app.elmetr")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected https-only error for UPDATE_URL_ANDROID")
+		}
+	})
+
+	t.Run("ios_url_must_be_app_store", func(t *testing.T) {
+		for _, bad := range []string{
+			"http://apps.apple.com/app/id123",
+			"https://play.google.com/store",
+			"https://example.com/app",
+			"https://apps.apple.com.evil.example/app/id123",
+		} {
+			t.Run(bad, func(t *testing.T) {
+				baseEnv(t)
+				setEnv(t, "UPDATE_URL_IOS", bad)
+				if _, err := Load(); err == nil {
+					t.Fatalf("expected refusal for UPDATE_URL_IOS=%q", bad)
+				}
+			})
+		}
+	})
+
+	t.Run("ios_app_store_link_accepted", func(t *testing.T) {
+		baseEnv(t)
+		setEnv(t, "UPDATE_URL_IOS", "https://apps.apple.com/app/id123")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load failed for a valid App Store link: %v", err)
+		}
+		if cfg.UpdateURLIOS != "https://apps.apple.com/app/id123" {
+			t.Fatalf("UpdateURLIOS = %q", cfg.UpdateURLIOS)
+		}
+	})
+}
+
 func TestLoad_AppConfigRequiredOutsideDev(t *testing.T) {
 	fullProdEnv(t)
 	_ = os.Unsetenv("TERMS_URL")

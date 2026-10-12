@@ -47,7 +47,13 @@ type Server struct {
 	MinVersion    string
 	LatestVersion string
 	UpdateURL     string
-	Limiter       limiter.TierLimiter
+	// Per-platform update metadata (owner decision 2026-10-12); empty is
+	// omitted from app-config, shared fields stay the fallback.
+	UpdateURLAndroid string
+	UpdateURLIOS     string
+	MinVersionIOS    string
+	LatestVersionIOS string
+	Limiter          limiter.TierLimiter
 	// Files is the encrypted PDF storage (SPEC Phase 5, ADR-0009). Nil means
 	// file routes fail closed with 503.
 	Files storage.Storage
@@ -778,6 +784,10 @@ func (s *Server) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 		MinVersion:         s.MinVersion,
 		LatestVersion:      s.LatestVersion,
 		UpdateURL:          s.UpdateURL,
+		UpdateURLAndroid:   s.UpdateURLAndroid,
+		UpdateURLIOS:       s.UpdateURLIOS,
+		MinVersionIOS:      s.MinVersionIOS,
+		LatestVersionIOS:   s.LatestVersionIOS,
 		Center:             settings.CenterDTO(),
 		Features:           models.AppFeaturesDTO{Files: s.FeaturesFiles},
 	})
