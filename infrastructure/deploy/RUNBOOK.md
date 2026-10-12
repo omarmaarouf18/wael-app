@@ -93,7 +93,8 @@ Production is live since `557f367`. For reference, the setup order was:
 `admin-console` (SPEC Phase 6.1, ADR-0008) runs in the stack with the other
 services. It is reached only through Caddy on `ADMIN_DOMAIN`
 (`admin.elmetracademy.app`), has no published port, and calls the admin
-listeners of auth-service (`:9001`) over mTLS. It decides nothing itself: every
+listeners of auth-service (`:9001`), academy-service (`:9002`) and, since SPEC
+Phase 7 broadcast, notification-service (`:9003`) over mTLS. It decides nothing itself: every
 request is checked by auth-service against the operator's token.
 
 **Before the first deploy that includes it**
@@ -146,6 +147,11 @@ landed with SPEC Phases 4, 6.3 and 5; the Files tab reached `main` with
 the host.)*
 *(Amended 2026-10-12, owner: the "Catalog" tab above is now "دوراتي" /
 "Courses", and the Settings "center" labels are now "الأكاديمية" / "Academy".)*
+*(Amended 2026-10-12: SPEC Phase 7 broadcast is built on branch
+`feat/phase7-broadcast` (not on `main` yet): the console gains a
+Notifications tab (compose to all students or one subject, dry-run count,
+confirm, history with delivered/failed counts and retry) and the audit log
+gains a "notifications" source. Delivery is in-app only, no phone push.)*
 
 **Sign-in problems.** `401`: wrong, expired or revoked token. `429`: five bad
 attempts from the same client address lock that address out for 30 seconds,
@@ -153,6 +159,13 @@ growing on repeats. The address is the browser's, taken from Caddy's
 `X-Forwarded-For`; it is what auth-service keys the lockout on. `503`:
 auth-service did not answer within 10 seconds: check
 `docker compose -p wael ps` and `docker compose -p wael logs --tail 100 auth-service`.
+
+**Broadcast retry (day-2).** A broadcast interrupted by a restart keeps every
+delivered row: already-resolved recipients resume automatically, and the
+history counts reconcile. If it stopped during audience resolution, open the
+Notifications tab history and press retry on that broadcast to finish
+resolving and sending. Retrying a finished broadcast with no failed targets
+changes nothing.
 
 ## Memory profiles
 
@@ -268,10 +281,14 @@ guard, backups, restore, logs, cleanup, rotation, base-image updates).
   `redis`) are pinned by digest with weekly Dependabot updates (W-07 done
   2026-10-02).
 - No certificate rotation job; preflight only refuses certs expiring within 14 days.
-- The admin console offers Accounts, Audit (auth-service and academy-service
-  sources via the per-source switch), Requests, Courses, Settings and Files;
+- The admin console offers Accounts, Audit (auth-service, academy-service and
+  notification-service sources via the per-source switch), Requests, Courses,
+  Settings, Files and Notifications;
   the earlier "accounts and the auth-service audit log only" gap closed as
-  SPEC Phases 4, 6.3 and 5 landed. *(Amended 2026-10-12, owner: the "Catalog"
-  tab is now "Courses".)* `deploy.sh` checks the API host through
+  SPEC Phases 4, 6.3, 5 and 7 landed. *(Amended 2026-10-12, owner: the "Catalog"
+  tab is now "Courses".)* *(Amended 2026-10-12: the Notifications tab and the
+  "notifications" audit source are SPEC Phase 7 broadcast, built on branch
+  `feat/phase7-broadcast` and not on `main` yet.)* `deploy.sh` checks the API host through
   Caddy but not `ADMIN_DOMAIN`.
-- The admin listeners of auth-service (:9001) and academy-service (:9002) run inside their containers and are not published.
+- The admin listeners of auth-service (:9001), academy-service (:9002) and
+  notification-service (:9003, SPEC Phase 7 broadcast) run inside their containers and are not published.

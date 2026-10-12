@@ -30,7 +30,8 @@ internet (80/443) ──► Caddy ──┬──► https://api-gateway:8080 �
                               │                                ├──► https://notification-service:3004 ──► mongo / redis
                               │                                └──► https://academy-service:3003 ──► mongo / redis
                               └──► https://admin-console:3005 ──► https://auth-service:9001 (admin listener, mTLS)
-                                                              └──► https://academy-service:9002 (admin listener, mTLS)
+                                                              ├──► https://academy-service:9002 (admin listener, mTLS)
+                                                              └──► https://notification-service:9003 (admin listener, mTLS)
 ```
 
 - Caddy terminates public TLS (Let's Encrypt) for `api.<domain>` and
@@ -38,7 +39,7 @@ internet (80/443) ──► Caddy ──┬──► https://api-gateway:8080 �
   (`tls_trusted_ca_certs /certs/ca.crt` in `Caddyfile`; never
   `tls_insecure_skip_verify`).
 - Service-to-service traffic is mTLS with per-service certificates signed by
-  the offline CA (§4). The `:9001`/`:9002` admin listeners are bound inside
+  the offline CA (§4). The `:9001`/`:9002`/`:9003` admin listeners are bound inside
   their containers and never published.
 - 8 containers: `caddy`, `api-gateway`, `auth-service`, `notification-service`,
   `academy-service`, `admin-console`, `mongo:7`, `redis:7-alpine`. Only Caddy
@@ -341,8 +342,8 @@ checked against each service's `config.Load()` and `env.production.example`.
 | `GATEWAY_GOMEMLIMIT`, `AUTH_GOMEMLIMIT`, `NOTIFICATION_GOMEMLIMIT`, `ACADEMY_GOMEMLIMIT`, `ADMIN_GOMEMLIMIT` | compose only (Go runtime) | no (defaults `108MiB` / `160MiB` / `160MiB` / `160MiB` / `54MiB`, ~85% of each container `mem_limit`) | Go heap caps so the runtime GCs before the container OOMs; read by the Go runtime itself, ignored by `config.Load()` | uncomment to override per service |
 
 Fixed by compose (never in `.env.production`): `APP_ENV=production`, `PORT`,
-`ADMIN_LISTEN_ADDR` (`:9001`/`:9002`), `*_MONGO_DATABASE`, internal
-`https://<svc>:<port>` URLs (including `NOTIFICATION_SERVICE_URL=https://notification-service:3004` on `academy-service`), `TRUSTED_PROXY_IPS=172.30.0.10`,
+`ADMIN_LISTEN_ADDR` (`:9001`/`:9002`/`:9003`), `*_MONGO_DATABASE`, internal
+`https://<svc>:<port>` URLs (including `NOTIFICATION_SERVICE_URL=https://notification-service:3004` on `academy-service` and the `*_ADMIN_URL` admin-listener URLs: `AUTH_ADMIN_URL`, `ACADEMY_ADMIN_URL` and, since SPEC Phase 7, `NOTIFICATION_ADMIN_URL=https://notification-service:9003` on `admin-console`), `TRUSTED_PROXY_IPS=172.30.0.10`,
 `TLS_*_PATH=/app/certs/...`, and on `academy-service` `STORAGE_DIR=/data/files`
 (the container side of the bind mount; added 2026-10-09). Infra-provided (not secrets): `IMAGE_TAG` comes
 from `release.env` (written by publish), `WAEL_HOME` from the runner env.

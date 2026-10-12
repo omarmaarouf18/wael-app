@@ -46,11 +46,15 @@ them and does not duplicate them.
 - [ ] Admin host by hand: `curl -fsS https://admin.<domain>/healthz` prints
   `ok` (RUNBOOK "Admin console"; `deploy.sh` does not check it).
 - [ ] Console sign-in with a fresh admin token; Accounts, Requests, Courses,
-  Audit, Settings and Files tabs load. *(Amended 2026-10-11: the Files tab was
+  Audit, Settings, Files and Notifications tabs load. *(Amended 2026-10-11: the Files tab was
   added with the 2026-10-09 release; it needs the Phase 5 server values above,
   and uploads stay internal until the owner flips `FEATURES_FILES`.)*
   *(Amended 2026-10-12, owner: the "Catalog" tab is now "Courses", and the
   Settings "center" labels are now "الأكاديمية" / "Academy".)*
+  *(Amended 2026-10-12: the Notifications tab is SPEC Phase 7 broadcast,
+  built on branch `feat/phase7-broadcast` and not on `main` yet — until it
+  ships, expect six tabs; the audit log gains a "notifications" source with
+  it. Delivery is in-app only, no phone push.)*
 
 ## 5. Rollback (if the health gate fails)
 
