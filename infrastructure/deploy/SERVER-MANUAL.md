@@ -974,9 +974,14 @@ fast-forwarded to a `develop` that contains it.)*
 production data is wiped once and real data is entered. "Production data"
 means the test accounts, the test catalog, the reviewer accounts and the test
 PDFs. The reset is scripted and rehearsable — never manual mongo commands.
-It has not run on the real server; rehearse it with `--dry-run` first.
 Amended 2026-10-12, owner review: the `auth_db` blocklist is never dropped,
-like the academy levels.)*
+like the academy levels. Rehearsed end-to-end on a local compose stack the
+same day — seeded students, an admin, a banned (blocklisted) student, two
+subjects with videos, an entitlement, a PDF, a broadcast and console
+settings; the wrong `--confirm` was refused, the dry-run changed nothing,
+the real reset wiped everything except the blocklist and levels with the
+health gate passing, and the restore drill brought the exact pre-reset state
+back. It has still not run on the real server; dry-run first.)*
 
 **When to use it.** Exactly once, after both store reviews pass and before
 real students are onboarded. It is not a day-2 tool: every run wipes the
