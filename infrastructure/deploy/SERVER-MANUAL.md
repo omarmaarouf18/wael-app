@@ -480,7 +480,7 @@ The app shows downloads only while the flag is on, so the phone check
 happens with the flag on, while only a test file exists:
 
 1. Deploy with `FEATURES_FILES=false` (students see nothing new).
-2. In the console, Catalog: create a test diploma and leave it unpublished
+2. In the console, Courses: create a test diploma and leave it unpublished
    (students never see an unpublished level or what is in it), add a subject
    in it with one video, and publish the subject (the grant dialog lists
    published subjects only; the diploma stays unpublished). Grant that subject

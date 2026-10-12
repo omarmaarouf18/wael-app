@@ -144,6 +144,8 @@ academy-service actions), Requests, Catalog, Settings and Files, as their APIs
 landed with SPEC Phases 4, 6.3 and 5; the Files tab reached `main` with
 `b0de4d4` on 2026-10-09, and whether the server runs it is owner-confirmed on
 the host.)*
+*(Amended 2026-10-12, owner: the "Catalog" tab above is now "دوراتي" /
+"Courses", and the Settings "center" labels are now "الأكاديمية" / "Academy".)*
 
 **Sign-in problems.** `401`: wrong, expired or revoked token. `429`: five bad
 attempts from the same client address lock that address out for 30 seconds,
@@ -267,8 +269,9 @@ guard, backups, restore, logs, cleanup, rotation, base-image updates).
   2026-10-02).
 - No certificate rotation job; preflight only refuses certs expiring within 14 days.
 - The admin console offers Accounts, Audit (auth-service and academy-service
-  sources via the per-source switch), Requests, Catalog, Settings and Files;
+  sources via the per-source switch), Requests, Courses, Settings and Files;
   the earlier "accounts and the auth-service audit log only" gap closed as
-  SPEC Phases 4, 6.3 and 5 landed. `deploy.sh` checks the API host through
+  SPEC Phases 4, 6.3 and 5 landed. *(Amended 2026-10-12, owner: the "Catalog"
+  tab is now "Courses".)* `deploy.sh` checks the API host through
   Caddy but not `ADMIN_DOMAIN`.
 - The admin listeners of auth-service (:9001) and academy-service (:9002) run inside their containers and are not published.

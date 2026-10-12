@@ -123,6 +123,33 @@ test('date and time formatting tolerates bad input and is split in two', () => {
   assert.notEqual(formatDate('2026-10-02T10:00:00Z'), formatTime('2026-10-02T10:00:00Z'));
 });
 
+test('console tab "Courses" and Settings "Academy" labels (owner 2026-10-12)', () => {
+  setLang('ar');
+  assert.equal(t('tabs.catalog'), 'دوراتي');
+  assert.equal(t('catalog.title'), 'دوراتي');
+  assert.equal(t('settings.centerSection'), 'بيانات الأكاديمية');
+  assert.equal(t('settings.centerNameAr'), 'اسم الأكاديمية (بالعربية)');
+  assert.equal(t('settings.centerNameEn'), 'اسم الأكاديمية (بالإنجليزية)');
+  assert.equal(t('settings.centerAddressAr'), 'عنوان الأكاديمية (بالعربية)');
+  assert.equal(t('settings.centerAddressEn'), 'عنوان الأكاديمية (بالإنجليزية)');
+  assert.equal(t('err.subject_expired'), 'تاريخ انتهاء المادة فات، عدّله من دوراتي الأول.');
+  assert.equal(t('err.invalid_center_name'), 'اسم الأكاديمية طويل جدًا (بحد أقصى ١٠٠ حرف).');
+  assert.equal(t('err.invalid_center_address'), 'عنوان الأكاديمية طويل جدًا (بحد أقصى ٣٠٠ حرف).');
+  setLang('en');
+  assert.equal(t('tabs.catalog'), 'Courses');
+  assert.equal(t('catalog.title'), 'Courses');
+  assert.equal(t('settings.centerSection'), 'Academy information');
+  assert.equal(t('settings.centerNameAr'), 'Academy name (Arabic)');
+  assert.equal(t('settings.centerNameEn'), 'Academy name (English)');
+  assert.equal(t('settings.centerAddressAr'), 'Academy address (Arabic)');
+  assert.equal(t('settings.centerAddressEn'), 'Academy address (English)');
+  assert.equal(t('err.subject_expired'), 'Subject access date has expired; update it in Courses first.');
+  assert.equal(t('err.invalid_center_name'), 'The academy name is too long (at most 100 characters).');
+  assert.equal(t('err.invalid_center_address'), 'The academy address is too long (at most 300 characters).');
+  assert.equal(t('err.invalid_center_hours'), 'The academy hours are too long (at most 200 characters).');
+  setLang('ar');
+});
+
 test('every tab is active, Files included since SPEC Phase 5', () => {
   assert.deepEqual(TABS.map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files']);
   assert.deepEqual(visibleTabs().map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files']);

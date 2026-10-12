@@ -45,10 +45,12 @@ them and does not duplicate them.
 - [ ] `curl -fsS https://api.<domain>/health` returns `{"status":"ok"}`.
 - [ ] Admin host by hand: `curl -fsS https://admin.<domain>/healthz` prints
   `ok` (RUNBOOK "Admin console"; `deploy.sh` does not check it).
-- [ ] Console sign-in with a fresh admin token; Accounts, Requests, Catalog,
+- [ ] Console sign-in with a fresh admin token; Accounts, Requests, Courses,
   Audit, Settings and Files tabs load. *(Amended 2026-10-11: the Files tab was
   added with the 2026-10-09 release; it needs the Phase 5 server values above,
   and uploads stay internal until the owner flips `FEATURES_FILES`.)*
+  *(Amended 2026-10-12, owner: the "Catalog" tab is now "Courses", and the
+  Settings "center" labels are now "الأكاديمية" / "Academy".)*
 
 ## 5. Rollback (if the health gate fails)
 
@@ -68,7 +70,7 @@ them and does not duplicate them.
   when both are on; hiding needs no new APK (either switch off).
 - [ ] Support WhatsApp: set the number in the console Settings tab (falls back
   to the `SUPPORT_WHATSAPP` server env when empty; no dummy fallback).
-- [ ] Center info: set name/address/hours and map URL in the console Settings
+- [ ] Academy info: set name/address/hours and map URL in the console Settings
   tab (shown in Settings > Help; absent means nothing shown).
 - [ ] Optional update lever: `MIN_VERSION` / `LATEST_VERSION` / `UPDATE_URL`
   (`UPDATE_URL` must be `https://` when set).

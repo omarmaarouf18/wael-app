@@ -60,6 +60,10 @@ Pipeline hardening & required checks decisions (owner 2026-10-02): (1) E2E as re
 *(Amended 2026-10-09: the console-settings work (`e3b1cd2`..`d0c378d`, app gates `d9f3540`, `b6c52cb`; moved text in `docs/HISTORY.md`) landed on `origin/develop` and `origin/main`; the console Settings tab is live.)*
 
 ## Decisions
+*(Amended 2026-10-12, owner: the admin-console tab "Catalog" is renamed
+"دوراتي" / "Courses", and "center" is renamed "الأكاديمية" / "Academy" in the
+Settings tab. Labels only — i18n keys, element ids, JS file names, API paths
+and JSON fields are unchanged.)*
 - [ADR-0001: Lesson Videos Hosted on YouTube](docs/adr/0001-youtube-video-hosting.md)
 - [ADR-0002: Single-Role Student App With a Separate Web Admin Panel](docs/adr/0002-single-role-student-app.md)
 - [ADR-0003: Payment Per Subject (Materia)](docs/adr/0003-per-subject-payment.md)
