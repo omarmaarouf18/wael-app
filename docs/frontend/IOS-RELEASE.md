@@ -110,6 +110,18 @@ the key means revoking the certificate and making a new one.
 - **App Privacy**: name, email, phone number and user ID are collected and
   linked to the user for app functionality; no tracking; no third-party
   analytics in the app.
+  *(Amended 2026-10-12: the app now ships an app-level privacy manifest,
+  `frontend/ios/Runner/PrivacyInfo.xcprivacy` (in the Runner target's
+  resources), declaring no tracking and these collected types: name, email,
+  phone number, user ID **and device ID** — the per-install id the app sends
+  for the two-device session cap and the "My devices" list. Add "Device ID"
+  (linked, app functionality, no tracking) to the App Store Connect answers so
+  both match.)*
+- *(Added 2026-10-12, owner decision: the app display name is
+  **"EL METR ACADEMY"** on both platforms — iOS `CFBundleDisplayName` (was
+  "El Metr Academy") now matches Android's `android:label` and the app title.
+  `CFBundleLocalizations` lists `ar` and `en`, so iOS shows system UI —
+  share sheet, Quick Look, permission prompts — in the app's languages.)*
 - **Sign-in for review**: the app needs an account, so App Review needs a
   demo account (email + password) with at least one active subject, and a
   note explaining that access is granted by the center.

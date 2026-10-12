@@ -32,6 +32,7 @@ Android app icon set), which say so. UNCONFIRMED rows block the release review
 | Path | Used as (constants.dart) | Source | License |
 |---|---|---|---|
 | `el_metr_character_art.png` | `imgCharacterArt`; the director portrait; the source of the app icon *(amended 2026-10-08: no longer the director portrait, replaced by `director_portrait.jpg`; still the Home hero art, the subject-image fallback and the icon source)* | Owner-supplied | Owner-approved 2026-10-02 |
+| `el_metr_character_art.jpg` | `imgCharacterArt` *(added 2026-10-12: the bundled copy; the PNG above is no longer bundled and stays the icon source)* | A JPEG copy (1024 x 1536, quality 88, metadata stripped, PSNR 41.4 dB against the PNG, 190 KB instead of 2 MB) of `el_metr_character_art.png` | Same picture as the owner-approved character art (2026-10-02) |
 | `el_metr_poster.jpg` | `imgPoster`; shown on the login screen only | Owner-supplied (the EL METR poster, 548 x 871 JPEG) | Owner-approved 2026-10-02 |
 | `store_icon_512.png` | none (Play Store listing icon, not bundled in the app) | Generated 2026-10-02 from `el_metr_character_art.png` by `scripts/make_app_icons.sh` | Owner-approved 2026-10-02 |
 | `el_metr_landscape.jpg` | `imgLandscape` | UNCONFIRMED | UNCONFIRMED |

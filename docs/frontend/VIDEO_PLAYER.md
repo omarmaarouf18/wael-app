@@ -28,6 +28,8 @@ on a phone.
    countdown card with cancel on the ended cover, and an end card with back
    on the last lesson. Loading the next video keeps the ended cover until the
    new video plays and re-holds the title mask for 4 seconds.
+6. *(Added 2026-10-12, UX pass.)* System back (Android) and the iOS edge
+   swipe leave full screen first; a second back closes the player.
 
 Backend contract (from the backend lane, **not verified against the real
 service yet**): subject detail has `videos[].playable`; the play endpoint answers

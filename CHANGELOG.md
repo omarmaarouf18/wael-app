@@ -39,6 +39,16 @@ One entry per production release, reconstructable from git
   screen is recorded or mirrored, blocks play, never auto-resumes, and fails
   closed when the channel is missing. Screenshots are a documented iOS limit.
   Android `FLAG_SECURE` unchanged. Tests: `frontend/test/ios_capture_cover_test.dart`.
+- app: store items and UX pass — iOS `CFBundleDisplayName` "EL METR ACADEMY"
+  (owner decision 2026-10-12, same as Android), `CFBundleLocalizations` ar/en,
+  an app-level `PrivacyInfo.xcprivacy` (no tracking; name, email, phone, user
+  ID, device ID for app functionality) in the Runner resources; the Home hero
+  art is bundled as a 190 KB JPEG instead of the 2 MB PNG (the PNG stays the
+  icon source); autofill hints, keyboard types and next/done actions in an
+  `AutofillGroup` on the password-change, email-change, delete-account and
+  profile-edit forms; system back (and the iOS swipe) in full-screen video
+  leaves full screen first; the subject screen's WhatsApp button is 48 dp.
+  Tests: `frontend/test/autofill_forms_test.dart`, a new full-screen back test.
 
 ## `b0de4d4` — 2026-10-09
 
