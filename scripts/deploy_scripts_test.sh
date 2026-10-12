@@ -38,11 +38,12 @@
 #     failing the deploy health gate into a rollback)
 # 23. reset-data.sh: confirm gate (exact phrase with the API domain),
 #     compose-up gate, fresh verified pre-reset backup, collections dropped
-#     one by one (never dropDatabase, never users), system.* and the levels
-#     collection skipped, Phase 7 broadcast collections included, dry-run
-#     touches nothing, the files wipe keeps the directory at mode 700, the
-#     redis password is never on argv or stdout, and a failure after the
-#     stop prints the restore command and restarts nothing
+#     one by one (never dropDatabase, never users), system.*, the levels
+#     collection and the blocklist skipped (owner decision 2026-10-12: the
+#     blocklist is never dropped), Phase 7 broadcast collections included,
+#     dry-run touches nothing, the files wipe keeps the directory at mode
+#     700, the redis password is never on argv or stdout, and a failure
+#     after the stop prints the restore command and restarts nothing
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -926,7 +927,8 @@ grep -vF 'NOTIFICATION_ADMIN_URL: https://notification-service:9003' "$PROD_COMP
 # shellcheck disable=SC2016 # $0/$1/$2 expand in the inner bash
 assert "missing NOTIFICATION_ADMIN_URL is caught" \
 	bash -c '! service_block "$0" "$1" | grep -qF -- "$2"' "$BROKEN_COMPOSE" admin-console 'NOTIFICATION_ADMIN_URL: https://notification-service:9003'
-# Test 23: reset-data.sh (owner decision 2026-10-09, part B). The mongo mock
+# Test 23: reset-data.sh (owner decision 2026-10-09, part B; amended
+# 2026-10-12: the auth_db blocklist is never dropped). The mongo mock
 # enumerates with the exact collections the services hold on origin/develop
 # (auth_db: users, sessions, blocklist, admins, admin_audit_log,
 # account_events; academy_db: levels, subjects, videos, subject_files,
@@ -973,6 +975,7 @@ OUT="$(PATH="$BOX23/bin:$PATH" WAEL_HOME="$BOX23/wael" STORAGE_DIR="$BOX23/stora
 check "dry-run completes" 0 "DRY-RUN complete; nothing was changed"
 check "dry-run prints what would be dropped with counts" 0 "auth_db.users: 3 (would drop)"
 check "dry-run keeps the levels collection" 0 "academy_db.levels: 6 (kept)"
+check "dry-run keeps the blocklist" 0 "auth_db.blocklist: 1 (kept)"
 check "dry-run includes the Phase 7 broadcast collections" 0 "notification_db.broadcasts: 2 (would drop)"
 check "dry-run includes broadcast_targets" 0 "notification_db.broadcast_targets: 2 (would drop)"
 check "dry-run counts the stored files" 0 "would empty $BOX23/storage (2 entries; directory kept, mode 700)"
@@ -1003,7 +1006,8 @@ assert "reset passed the public health gate" grep -qF "https://api.test.local/he
 # collections are dropped one by one; never databases, never users
 check "counts are printed before and after" 0 "auth_db.users: 3 -> 0 (dropped)"
 check "kept levels are printed with their count" 0 "academy_db.levels: 6 (kept)"
-for coll23 in users sessions blocklist admins admin_audit_log account_events; do
+check "kept blocklist is printed with its count" 0 "auth_db.blocklist: 1 (kept)"
+for coll23 in users sessions admins admin_audit_log account_events; do
 	assert "auth_db drops $coll23" grep -qF "\"$coll23\"" "$BOX23/docker.log"
 done
 for coll23 in subjects videos subject_files entitlements purchase_requests payment_records video_plays app_settings; do
@@ -1019,6 +1023,11 @@ if grep -qF '"levels"' "$BOX23/docker.log"; then
 	bad "the levels collection was in a drop call"
 else
 	ok "the levels collection is never dropped"
+fi
+if grep -qF '"blocklist"' "$BOX23/docker.log"; then
+	bad "the blocklist was in a drop call"
+else
+	ok "the blocklist is never dropped"
 fi
 if grep -qF '"system.users"' "$BOX23/docker.log"; then
 	bad "a system.* collection was in a drop call"

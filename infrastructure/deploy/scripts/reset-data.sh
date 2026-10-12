@@ -15,8 +15,10 @@
 #   anything.
 #
 # Scope flags (default: all):
-# - --auth: users, sessions (access + refresh), account events, admin tokens,
-#   the admin audit log and the blocklist;
+# - --auth: users, sessions (access + refresh), account events, admin tokens
+#   and the admin audit log — the `blocklist` is KEPT (owner decision
+#   2026-10-12: a future feature needs it; BLOCKLIST_HMAC_KEY must stay
+#   unchanged or the kept entries stop matching any identity);
 # - --academy: subjects, videos, entitlements, requests, payment records,
 #   plays, subject_files, app_settings — the seeded `levels` are KEPT
 #   (academy-service re-seeds them idempotently at startup anyway);
@@ -144,10 +146,17 @@ mongo_drop() {
 		"var dbx=db.getSiblingDB(\"$db\");[$list].forEach(function(n){dbx.getCollection(n).drop()});"
 }
 
-# is_kept DB NAME: the only collection any reset keeps.
+# is_kept DB NAME: the collections a reset never drops (owner decisions).
 is_kept() {
+	case "$1-$2" in
 	# the seeded academy levels survive every reset (re-seeded at startup)
-	[ "$1" = "academy_db" ] && [ "$2" = "levels" ]
+	academy_db-levels) return 0 ;;
+	# the auth blocklist survives every reset (owner decision 2026-10-12: a
+	# future feature needs it; the entries are HMACs keyed by
+	# BLOCKLIST_HMAC_KEY, which must therefore stay unchanged)
+	auth_db-blocklist) return 0 ;;
+	esac
+	return 1
 }
 
 # mongo_counts DB -> prints "name|count" lines for the collections that
@@ -276,8 +285,15 @@ wipe_db() {
 			return 1
 		fi
 	done
-	if [ "$db" = "academy_db" ] && [ -n "${AFTER[levels]:-}" ]; then
-		log "academy_db.levels: ${AFTER[levels]} (kept)"
+	if [ "$db" = "academy_db" ]; then
+		if [ -n "${AFTER[levels]:-}" ]; then
+			log "academy_db.levels: ${AFTER[levels]} (kept)"
+		fi
+	fi
+	if [ "$db" = "auth_db" ]; then
+		if [ -n "${AFTER[blocklist]:-}" ]; then
+			log "auth_db.blocklist: ${AFTER[blocklist]} (kept)"
+		fi
 	fi
 }
 

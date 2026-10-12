@@ -974,7 +974,9 @@ fast-forwarded to a `develop` that contains it.)*
 production data is wiped once and real data is entered. "Production data"
 means the test accounts, the test catalog, the reviewer accounts and the test
 PDFs. The reset is scripted and rehearsable — never manual mongo commands.
-It has not run on the real server; rehearse it with `--dry-run` first.)*
+It has not run on the real server; rehearse it with `--dry-run` first.
+Amended 2026-10-12, owner review: the `auth_db` blocklist is never dropped,
+like the academy levels.)*
 
 **When to use it.** Exactly once, after both store reviews pass and before
 real students are onboarded. It is not a day-2 tool: every run wipes the
@@ -983,6 +985,11 @@ user-facing data of the app databases.
 **What it keeps** (everything else in the app databases is dropped):
 - the seeded academy `levels` (academy-service re-seeds them idempotently at
   startup anyway) — subjects, videos and file rows are NOT kept;
+- the `auth_db` `blocklist` (owner decision 2026-10-12: it is kept because a
+  future feature needs it). This only works together with an UNCHANGED
+  `BLOCKLIST_HMAC_KEY`: the kept entries are HMACs keyed by it, so rotating
+  the key would leave kept entries that match no identity — never rotate
+  that key (already the §5 rule) and never drop the collection;
 - the three per-service Mongo users `auth_svc`, `notif_svc`, `academy_svc`:
   collections are dropped one by one (enumerated with `listCollections`),
   never databases and never users — dropping a database would delete the
@@ -998,7 +1005,7 @@ user-facing data of the app databases.
 
 | Scope | Drops |
 |---|---|
-| `auth_db` | users (test + reviewer accounts), sessions (access + refresh tokens), blocklist, admins (admin tokens), admin_audit_log, account_events |
+| `auth_db` | users (test + reviewer accounts), sessions (access + refresh tokens), admins (admin tokens), admin_audit_log, account_events — the blocklist is kept (owner decision 2026-10-12) |
 | `academy_db` | subjects, videos, subject_files, entitlements, purchase_requests, payment_records, video_plays, admin_audit_log, app_settings |
 | `notification_db` | notifications and the Phase 7 broadcast collections (broadcasts, broadcast_targets, admin_audit_log) |
 | `--files` | empties `STORAGE_DIR` (the encrypted test PDFs); the directory itself stays, mode `700` |
