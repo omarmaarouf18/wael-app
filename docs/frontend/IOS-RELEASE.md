@@ -105,6 +105,17 @@ the key means revoking the certificate and making a new one.
   1290 x 2796); screenshots from a Pro Max / Plus iPhone fit directly.
   From a smaller iPhone they must be resized to an accepted size first.
   3 to 10 screenshots.
+  *(Added 2026-10-13: the manual workflow **Store screenshots (iOS)**
+  (`frontend/.github/workflows/screenshots-ios.yml`, runs in
+  wael-app-mobile on `macos-26`) takes them with no Mac: it runs the real app
+  on the newest 6.9-inch iPhone Simulator (1320 x 2868, status bar fixed at
+  9:41) against production, signs in with a demo account, and captures login,
+  home, courses, a course, files, settings and notifications in Arabic and
+  English (`tool/screenshots/main.dart` is the tour; it never ships). It
+  needs the secrets `SCREENSHOT_EMAIL` / `SCREENSHOT_PASSWORD` for a
+  dedicated account that owns at least one subject; the tour signs out at
+  the end, so it does not hold one of the account's two device slots. The
+  PNGs come back as the workflow artifact `ios-screenshots-6.9-<run>`.)*
 - Privacy Policy URL (`PRIVACY_URL`), Support URL, description, keywords,
   category Education, age rating questionnaire.
 - **App Privacy**: name, email, phone number and user ID are collected and
