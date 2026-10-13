@@ -7,6 +7,14 @@ pull request (`develop` → `main`) was opened; the entry below is that release.
 
 ## Release 2026-10-12 (app 1.0.1) — release PR open, `main` still `b0de4d4`
 
+*(Amended 2026-10-13: released. The owner fast-forwarded `main` to
+`dcc4fca`, then to `17d1c0d`, which adds one fix found by the first "Build
+iOS" run of this release: `fix(ios)` wraps the iOS 17 trait-registration
+calls in `CaptureStreamHandler` in `MainActor.assumeIsolated`, because Xcode
+26.6 rejected them as main-actor calls from a nonisolated context; no
+behaviour change. The released range is `b0de4d4..17d1c0d`. "Build iOS" run
+38353982883 uploaded it to App Store Connect as 1.0.1 build 4.)*
+
 Range `b0de4d4..<develop HEAD>`: the 19 commits `7f9397a`..`3b6df3e` plus the
 release-prep docs commit that adds this entry (a commit cannot cite its own
 hash). `main` moves only by the owner's fast-forward; after it, the `main` tip

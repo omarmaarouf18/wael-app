@@ -158,8 +158,23 @@ the key means revoking the certificate and making a new one.
 - App Store Connect warned ITMS-90068 (iOS 13.0 deployment target; 15.0 is
   required for uploads from April 2027). The minimum iOS version is now
   15.0 (`IPHONEOS_DEPLOYMENT_TARGET` in all three Runner configurations).
+- 2026-10-13: run 38353982883 on `macos-26` built `17d1c0d` (1.0.1, iOS
+  15.0 target, the 2026-10-09 TestFlight fixes, iOS screen-capture cover)
+  and uploaded build 4 to App Store Connect. The run before it
+  (38265421984) had failed on Xcode 26.6: `ActorIsolatedCall` errors for
+  `registerForTraitChanges` / `unregisterForTraitChanges` in
+  `AppDelegate.swift`, fixed in `17d1c0d`. Flutter only prints those lines
+  as `... (Xcode): ...` after "Failed to build iOS app", so search a failed
+  log for `(Xcode):`.
 
 ## Not verified
+
+*(Amended 2026-10-13: the paragraph below is superseded. The 15.0 target and
+the 2026-10-09 fixes have now been built on a macOS runner (see Verified).
+Still not verified: App Store Connect processing of build 4, installing it
+from TestFlight, and every iPhone row of `docs/frontend/RELEASE-QA-1.0.1.md`,
+including the screen-recording cover. The "Store screenshots (iOS)" workflow
+has not run yet.)*
 
 The 15.0 deployment target has not been built on a macOS runner yet; the
 next "Build iOS" run after the sync is the verification. *(Added 2026-10-11:

@@ -147,6 +147,9 @@ not after it.)*
 - [ ] wael-app-mobile: "Build Android" (signed) and "Build iOS" (upload to
   TestFlight) on the released commit (`docs/mobile/RELEASE.md`,
   `docs/frontend/IOS-RELEASE.md`).
+  *(2026-10-13: `main` fast-forwarded to `17d1c0d` and synced. "Build iOS"
+  done: run 38353982883 uploaded 1.0.1 build 4 to TestFlight. "Build
+  Android" ran on the sync push; its result is not recorded here.)*
 - [ ] `docs/frontend/RELEASE-QA-1.0.1.md` on one real Android phone and one
   iPhone.
 

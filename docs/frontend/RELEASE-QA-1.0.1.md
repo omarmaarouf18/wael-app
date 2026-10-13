@@ -6,6 +6,11 @@ the wael-app-mobile build-apk workflow) and **one iPhone** (TestFlight build
 from the "Build iOS" workflow). Write `pass`, `fail` (with a note) or `n/a` in
 the two result columns. Nothing below has been run on a device yet.
 
+*(Added 2026-10-13: the iPhone build to test is TestFlight **1.0.1 build 4**
+("Build iOS" run 38353982883, commit `17d1c0d`). iOS build numbers come from
+the workflow run number, so they differ from the `+2` in `pubspec.yaml`; the
+code is the same 1.0.1+2 release.)*
+
 Each row names the automated test that covers the same function (file: test
 name). The tests run against fakes; this checklist is the real-device check.
 
