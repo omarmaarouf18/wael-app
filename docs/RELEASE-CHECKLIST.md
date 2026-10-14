@@ -150,6 +150,10 @@ not after it.)*
   *(2026-10-13: `main` fast-forwarded to `17d1c0d` and synced. "Build iOS"
   done: run 38353982883 uploaded 1.0.1 build 4 to TestFlight. "Build
   Android" ran on the sync push; its result is not recorded here.)*
+  *(2026-10-14: `main` fast-forwarded to `6d1b2b3` (new app icon,
+  bottom-nav fix) and synced. "Build Android" run 38521448486 built the
+  signed APK and AAB (1.0.1+2) into a GitHub Release. No "Build iOS" run on
+  `6d1b2b3` is recorded here; build 4 has the old icon.)*
 - [ ] `docs/frontend/RELEASE-QA-1.0.1.md` on one real Android phone and one
   iPhone.
 
@@ -162,6 +166,12 @@ not after it.)*
 - [ ] Prices are shown as in production (§6 switches) during review.
 - [ ] Google Play: closed testing (12 testers for 14 days) first if the
   developer account is personal.
+
+- [x] Google Play listing app icon: `frontend/assets/branding/store_icon_512.png`
+  uploaded to the default store listing (2026-10-14, saved as part of the
+  draft, not yet sent for review).
+- [ ] Google Play: confirm no AAB with versionCode 2 was uploaded before the
+  first upload (otherwise bump `pubspec.yaml` to `1.0.1+3` and rebuild).
 
 ### Rollback
 

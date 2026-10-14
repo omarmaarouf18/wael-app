@@ -11,6 +11,11 @@ the two result columns. Nothing below has been run on a device yet.
 the workflow run number, so they differ from the `+2` in `pubspec.yaml`; the
 code is the same 1.0.1+2 release.)*
 
+*(Added 2026-10-14: the Android APK to test is the signed one from "Build
+Android" run 38521448486, commit `6d1b2b3` (new app icon, bottom-nav fix
+`ccc914c`). TestFlight build 4 has neither; check the icon and the bottom
+bar on iPhone with the next "Build iOS" build of `6d1b2b3`.)*
+
 Each row names the automated test that covers the same function (file: test
 name). The tests run against fakes; this checklist is the real-device check.
 

@@ -5,6 +5,28 @@ One entry per production release, reconstructable from git
 `origin/main` was at `b0de4d4` (2026-10-09) when the 2026-10-12 release
 pull request (`develop` → `main`) was opened; the entry below is that release.
 
+## Release 2026-10-14 (app icon) — `17d1c0d..6d1b2b3`
+
+`main` was at `ccc914c`; the owner fast-forwarded it to `6d1b2b3`, so
+`main` = `develop` = `6d1b2b3`. Version unchanged: `1.0.1+2`.
+Reconstruct: `git log 17d1c0d..6d1b2b3 --oneline`.
+
+- app: new EL METR app icon for Android (legacy and adaptive), iOS and the
+  Play Store listing; the owner's 180 px icon upscaled 4x, its small text
+  taken from `el_metr_poster.jpg` so it stays legible;
+  `scripts/make_app_icons.sh` builds every size from
+  `frontend/assets/branding/app_icon_1024.png`. (`6d1b2b3`)
+- app: the bottom navigation bar grows by the home-indicator inset; on Face
+  ID iPhones its labels were clipped. (`ccc914c`)
+- ci: manual "Store screenshots (iOS)" workflow for wael-app-mobile on a
+  6.9-inch Simulator. (`66b2977`)
+- docs: the 1.0.1 release on `main` and TestFlight build 4 recorded.
+  (`193795a`)
+
+Builds: wael-app-mobile "Build Android" run 38521448486 (signed APK + AAB,
+GitHub Release). No iOS build of this range is recorded here; TestFlight
+build 4 is `17d1c0d`.
+
 ## Release 2026-10-12 (app 1.0.1) — release PR open, `main` still `b0de4d4`
 
 *(Amended 2026-10-13: released. The owner fast-forwarded `main` to
