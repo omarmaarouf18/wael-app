@@ -35,7 +35,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/service ./cmd/mai
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/revoke-admin ./cmd/revoke-admin/main.go
 
 # ---- Production Stage ----------------------------------------------------
-FROM alpine:3.20 AS prod
+FROM alpine:3.24 AS prod
 
 RUN apk --no-cache add ca-certificates curl \
     && addgroup -S appgroup && adduser -S appuser -G appgroup
