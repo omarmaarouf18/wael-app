@@ -11,7 +11,7 @@ here; see "Review risks" before submitting.
 | Workflow | `frontend/.github/workflows/build-ios.yml` (runs in the `wael-app-mobile` mirror, manual only) |
 | CI-only signing switch | `frontend/ios/ci/configure_signing.rb` (edits the runner's copy of the Xcode project; never committed) |
 | Certificates on Linux | `scripts/ios_signing.sh` (OpenSSL only; writes to `~/ios-signing`, outside the repo) |
-| App icons | `scripts/make_app_icons.sh ios` (same crop as Android, no alpha) |
+| App icons | `scripts/make_app_icons.sh ios` (same source as Android, `assets/branding/app_icon_1024.png`, no alpha) *(amended 2026-10-14: new owner icon; previously a crop of the character art)* |
 
 What the workflow does: `macos-26` runner, Flutter 3.44.6 (same pin as CI),
 temporary keychain with the distribution certificate, checks that the
