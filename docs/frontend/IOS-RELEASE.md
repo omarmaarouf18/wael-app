@@ -166,6 +166,10 @@ the key means revoking the certificate and making a new one.
   `AppDelegate.swift`, fixed in `17d1c0d`. Flutter only prints those lines
   as `... (Xcode): ...` after "Failed to build iOS app", so search a failed
   log for `(Xcode):`.
+- 2026-10-14: run 38524255616 built `6d1b2b3` (1.0.1, new app icon,
+  bottom-nav inset fix `ccc914c`) from wael-app-mobile `main` and uploaded
+  build 6 to App Store Connect. Not verified here: processing, TestFlight
+  install, and the icon and bottom bar on an iPhone.
 
 ## Not verified
 

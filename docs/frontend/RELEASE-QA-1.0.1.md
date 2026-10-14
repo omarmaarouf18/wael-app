@@ -15,6 +15,8 @@ code is the same 1.0.1+2 release.)*
 Android" run 38521448486, commit `6d1b2b3` (new app icon, bottom-nav fix
 `ccc914c`). TestFlight build 4 has neither; check the icon and the bottom
 bar on iPhone with the next "Build iOS" build of `6d1b2b3`.)*
+*(Added 2026-10-14, later: that build is TestFlight **1.0.1 build 6** ("Build
+iOS" run 38524255616, commit `6d1b2b3`); test the iPhone rows on it.)*
 
 Each row names the automated test that covers the same function (file: test
 name). The tests run against fakes; this checklist is the real-device check.

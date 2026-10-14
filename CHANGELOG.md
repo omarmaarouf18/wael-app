@@ -24,8 +24,8 @@ Reconstruct: `git log 17d1c0d..6d1b2b3 --oneline`.
   (`193795a`)
 
 Builds: wael-app-mobile "Build Android" run 38521448486 (signed APK + AAB,
-GitHub Release). No iOS build of this range is recorded here; TestFlight
-build 4 is `17d1c0d`.
+GitHub Release); "Build iOS" run 38524255616 (signed IPA, uploaded to App
+Store Connect as 1.0.1 build 6). TestFlight build 4 is `17d1c0d`.
 
 ## Release 2026-10-12 (app 1.0.1) — release PR open, `main` still `b0de4d4`
 

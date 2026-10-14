@@ -154,6 +154,8 @@ not after it.)*
   bottom-nav fix) and synced. "Build Android" run 38521448486 built the
   signed APK and AAB (1.0.1+2) into a GitHub Release. No "Build iOS" run on
   `6d1b2b3` is recorded here; build 4 has the old icon.)*
+  *(2026-10-14, later: "Build iOS" run 38524255616 built `6d1b2b3` and
+  uploaded 1.0.1 build 6 to App Store Connect.)*
 - [ ] `docs/frontend/RELEASE-QA-1.0.1.md` on one real Android phone and one
   iPhone.
 
