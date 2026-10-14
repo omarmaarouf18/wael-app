@@ -21,6 +21,10 @@ and `frontend/lib/core/app_config.dart`.
   compares the version name only (`PackageInfo.version`), so `1.0.1` is the
   first build an app-config `min_version` can tell apart from the `1.0.0`
   installs.)*
+  *(Amended 2026-10-14, owner decision: `1.0.1+3` — `versionCode 3`, same
+  version name — for the new owner-supplied app icon. No AAB was uploaded to
+  Play before it (the 1.0.1+2 AAB was saved to closed testing as a draft and
+  is replaced by this one before sending for review).)*
 - Bump rule: raise the build number (`+N`, Android `versionCode`) on EVERY
   release build — Android refuses an upload whose `versionCode` is not higher
   than the last one. Raise the version name (`1.0.0`) for user-visible

@@ -19,6 +19,12 @@
 # Not generated: macOS, web and Windows icons.
 # *(Amended 2026-10-14, owner decision: new icon source; previously cropped
 # from el_metr_character_art.png.)*
+# *(Amended 2026-10-14, later, owner decision: new source art supplied by the
+# owner (1254 x 1254, black background, full text block kept as requested).
+# app_icon_1024.png = the art at 900 px centred on black; the adaptive
+# foreground = the art at 600 px centred on a black 1080 square, so the text
+# stays inside the launcher masks. The upscaling note above describes the
+# previous source.)*
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
