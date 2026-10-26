@@ -128,6 +128,14 @@ the key means revoking the certificate and making a new one.
   for the two-device session cap and the "My devices" list. Add "Device ID"
   (linked, app functionality, no tracking) to the App Store Connect answers so
   both match.)*
+  *(Amended 2026-10-26, store compliance review 2026-10-14: the manifest also
+  declares **Product Interaction** (the server's `video_plays` log) and
+  **Purchase History** (access requests, entitlements and `payment_records`),
+  both linked, app functionality, no tracking, as the privacy policy already
+  says. App Store Connect > App Privacy must list all seven types: name,
+  email address, phone number, user ID, device ID, product interaction,
+  purchase history. `CFBundleName` is now "EL METR ACADEMY" (was
+  `wael_app`), matching `CFBundleDisplayName`.)*
 - *(Added 2026-10-12, owner decision: the app display name is
   **"EL METR ACADEMY"** on both platforms — iOS `CFBundleDisplayName` (was
   "El Metr Academy") now matches Android's `android:label` and the app title.
