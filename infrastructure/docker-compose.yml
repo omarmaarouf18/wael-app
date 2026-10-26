@@ -99,7 +99,11 @@ services:
       test: ["CMD-SHELL", "wget -q -O /dev/null --no-check-certificate https://localhost:${API_GATEWAY_PORT}/health || wget -q -O /dev/null http://localhost:${API_GATEWAY_PORT}/health"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      # 30 x 10s after start_period: the dev image compiles with air and, because
+      # go.mod replaces shared/infra with a runtime mount, downloads modules at
+      # start. On a cold CI runner 12 retries (~3.5 min) was not enough for
+      # auth-service (E2E 2026-10-26). Only bounds how long a broken start waits.
+      retries: 30
       start_period: 60s
     networks:
       - wael-net
@@ -148,7 +152,11 @@ services:
       test: ["CMD-SHELL", "curl -sf --cert /app/certs/auth-service.crt --key /app/certs/auth-service.key --cacert /app/certs/ca.crt https://localhost:${AUTH_SERVICE_PORT}/health"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      # 30 x 10s after start_period: the dev image compiles with air and, because
+      # go.mod replaces shared/infra with a runtime mount, downloads modules at
+      # start. On a cold CI runner 12 retries (~3.5 min) was not enough for
+      # auth-service (E2E 2026-10-26). Only bounds how long a broken start waits.
+      retries: 30
       start_period: 90s
     networks:
       - wael-net
@@ -193,7 +201,11 @@ services:
       test: ["CMD-SHELL", "curl -sf --cert /app/certs/notification-service.crt --key /app/certs/notification-service.key --cacert /app/certs/ca.crt https://localhost:${NOTIFICATION_SERVICE_PORT}/health"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      # 30 x 10s after start_period: the dev image compiles with air and, because
+      # go.mod replaces shared/infra with a runtime mount, downloads modules at
+      # start. On a cold CI runner 12 retries (~3.5 min) was not enough for
+      # auth-service (E2E 2026-10-26). Only bounds how long a broken start waits.
+      retries: 30
       start_period: 90s
     networks:
       - wael-net
@@ -261,7 +273,11 @@ services:
       test: ["CMD-SHELL", "curl -sf --cert /app/certs/academy-service.crt --key /app/certs/academy-service.key --cacert /app/certs/ca.crt https://localhost:${ACADEMY_SERVICE_PORT}/health"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      # 30 x 10s after start_period: the dev image compiles with air and, because
+      # go.mod replaces shared/infra with a runtime mount, downloads modules at
+      # start. On a cold CI runner 12 retries (~3.5 min) was not enough for
+      # auth-service (E2E 2026-10-26). Only bounds how long a broken start waits.
+      retries: 30
       start_period: 90s
     networks:
       - wael-net
@@ -302,7 +318,11 @@ services:
       test: ["CMD-SHELL", "curl -sf --cacert /app/certs/ca.crt https://localhost:${ADMIN_CONSOLE_PORT:-3005}/healthz"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      # 30 x 10s after start_period: the dev image compiles with air and, because
+      # go.mod replaces shared/infra with a runtime mount, downloads modules at
+      # start. On a cold CI runner 12 retries (~3.5 min) was not enough for
+      # auth-service (E2E 2026-10-26). Only bounds how long a broken start waits.
+      retries: 30
       start_period: 90s
     networks:
       - wael-net
