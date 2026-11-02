@@ -86,6 +86,13 @@ func catalogRoutes() []route {
 			upstreamStatus: 200, upstreamReply: `{"id":"` + testID + `"}`,
 		},
 		{
+			name: "subjects.delete", handler: func(p *Proxy) http.HandlerFunc { return p.SubjectsDelete },
+			method: http.MethodPost, target: "/api/subjects/delete",
+			body:           `{"id":"` + testID + `"}`,
+			upstreamMethod: http.MethodDelete, upstreamPath: "/internal/admin/subjects/" + testID,
+			upstreamStatus: 200, upstreamReply: `{"status":"ok"}`,
+		},
+		{
 			name: "videos.list", handler: func(p *Proxy) http.HandlerFunc { return p.VideosList },
 			method: http.MethodGet, target: "/api/videos?subject_id=" + testID,
 			upstreamMethod: http.MethodGet, upstreamPath: "/internal/admin/subjects/" + testID + "/videos",
@@ -358,6 +365,7 @@ func TestSubjects_BadInputIs400(t *testing.T) {
 	for handlerName, handler := range map[string]func(*Proxy) http.HandlerFunc{
 		"publish":   func(p *Proxy) http.HandlerFunc { return p.SubjectsPublish },
 		"unpublish": func(p *Proxy) http.HandlerFunc { return p.SubjectsUnpublish },
+		"delete":    func(p *Proxy) http.HandlerFunc { return p.SubjectsDelete },
 	} {
 		for name, body := range map[string]string{
 			"missing id":  `{}`,

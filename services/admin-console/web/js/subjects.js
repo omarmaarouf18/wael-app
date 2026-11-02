@@ -1,6 +1,7 @@
 // Subjects view: the subjects of one level with a draft/published filter
 // and pagination. Publish needs at least one video upstream; the button is
-// disabled with a hint at zero videos.
+// disabled with a hint at zero videos. Drafts can be deleted (owner
+// amendment 2026-11-02); published subjects offer unpublish only.
 
 import { clear, h } from './dom.js';
 import { formatCairoDate } from './subject-dialog.js';
@@ -74,6 +75,12 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
       button.disabled = !canPublish || lock.active;
       if (!canPublish) button.title = t('catalog.publishDisabledHint');
       actions.append(button);
+      actions.append(
+        h('button', {
+          class: 'btn small danger-outline', text: t('catalog.delete'), attrs: { type: 'button' },
+          on: { click: () => askDelete(subject) },
+        }),
+      );
       if (!canPublish) {
         actions.append(h('div', { class: 'muted small', text: t('catalog.publishDisabledHint') }));
       }
@@ -123,6 +130,23 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
       body: { id: subject.id },
       onDone: () => {
         toast(doc, t('catalog.toast.unpublished'));
+        load();
+      },
+    });
+  }
+
+  // Delete is offered on drafts only; the academy also refuses a subject
+  // with students or requests (subject_has_students), shown in the dialog.
+  function askDelete(subject) {
+    confirm.open({
+      titleKey: 'catalog.deleteSubjectTitle',
+      noteText: t('catalog.deleteSubjectNote'),
+      confirmKey: 'catalog.confirmDelete',
+      tone: 'danger',
+      path: '/api/subjects/delete',
+      body: { id: subject.id },
+      onDone: () => {
+        toast(doc, t('catalog.toast.deleted'));
         load();
       },
     });

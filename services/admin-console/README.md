@@ -40,6 +40,7 @@ route under `/internal/`.
 | `POST /api/subjects/update` `{id, ...}` | `PATCH /internal/admin/subjects/{id}` |
 | `POST /api/subjects/publish` `{id}` | `POST /internal/admin/subjects/{id}/publish` |
 | `POST /api/subjects/unpublish` `{id}` | `POST /internal/admin/subjects/{id}/unpublish` |
+| `POST /api/subjects/delete` `{id}` | `DELETE /internal/admin/subjects/{id}` (draft subjects with no students only; 409 `subject_published` / `subject_has_students`) |
 | `GET /api/videos?subject_id` | `GET /internal/admin/subjects/{id}/videos` |
 | `POST /api/videos/create` `{subject_id, title_ar, youtube, ...}` | `POST /internal/admin/subjects/{id}/videos` |
 | `POST /api/videos/update` `{id, ...}` | `PATCH /internal/admin/videos/{id}` |

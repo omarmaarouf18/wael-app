@@ -44,6 +44,7 @@ function routes(overrides = {}) {
     'POST /api/subjects/update': { body: SUBJECTS[0] },
     'POST /api/subjects/publish': { body: { ...SUBJECTS[0], published: true } },
     'POST /api/subjects/unpublish': { body: { ...SUBJECTS[0], published: false } },
+    'POST /api/subjects/delete': { body: { status: 'ok' } },
     'GET /api/videos': { body: { videos: VIDEOS } },
     'POST /api/videos/create': { status: 201, body: { ...VIDEOS[0], id: 'vid-3' } },
     'POST /api/videos/update': { body: VIDEOS[0] },
@@ -209,6 +210,40 @@ test('a server error code shows the mapped message, never raw text', async () =>
   assert.equal(banner.hidden, false);
   assert.ok(banner.textContent.includes(t('err.level_has_subjects')));
   assert.ok(!banner.textContent.includes('SECRET'));
+});
+
+test('drafts offer delete, published subjects do not; a refusal shows the mapped message', async () => {
+  let attempts = 0;
+  await signInOk({
+    'POST /api/subjects/delete': () => {
+      attempts += 1;
+      if (attempts === 1) return { status: 409, body: { error: 'SECRET detail', code: 'subject_has_students' } };
+      return { status: 200, body: { status: 'ok' } };
+    },
+  });
+  await openCatalog();
+  openLevel();
+  await flush();
+  const rows = bodyRows();
+  assert.ok(buttonByText(rows[0], t('catalog.delete')), 'draft subject offers delete');
+  assert.equal(buttonByText(rows[1], t('catalog.delete')), undefined, 'published subject offers no delete');
+
+  globalThis.fetch.calls.length = 0;
+  clickText(rows[0], t('catalog.delete'));
+  const dialog = openDialog();
+  assert.ok(dialog.textContent.includes(t('catalog.deleteSubjectNote')));
+  dialog.findAll((c) => c.tagName === 'FORM')[0].fire('submit');
+  await flush();
+  const posts = postsTo('/api/subjects/delete');
+  assert.equal(posts.length, 1);
+  assert.deepEqual(JSON.parse(posts[0].init.body), { id: 'sub-draft' });
+  assert.ok(dialog.textContent.includes(t('err.subject_has_students')), 'refusal is shown in the dialog');
+  assert.ok(!dialog.textContent.includes('SECRET'));
+
+  dialog.findAll((c) => c.tagName === 'FORM')[0].fire('submit');
+  await flush();
+  assert.equal(attempts, 2);
+  assert.equal($('toast').textContent.includes(t('catalog.toast.deleted')), true);
 });
 
 test('videos show duration, the id as text and a plain watch link', async () => {

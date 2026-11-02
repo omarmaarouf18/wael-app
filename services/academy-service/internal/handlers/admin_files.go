@@ -408,6 +408,14 @@ func (s *Server) removeStoredObject(storageKey, fileID, reason string) {
 	}
 }
 
+// logStoredObjectLeft records a stored object that could not be removed
+// because file storage is not configured. Ids only.
+func logStoredObjectLeft(fileID, reason string) {
+	cleanID := strings.ReplaceAll(strings.ReplaceAll(fileID, "\r", ""), "\n", "")
+	// #nosec G706 -- cleanID sanitized of CR/LF
+	log.Printf("[ERROR] file object left in storage (%s) file_id=%s", reason, cleanID)
+}
+
 // DeleteAdminFile handles DELETE /internal/admin/subjects/{id}/files/{fileId}.
 // The row is deleted first, so students stop seeing the file at once; then
 // the stored object. An object that is already gone, or fails to delete, is

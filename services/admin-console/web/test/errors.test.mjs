@@ -34,6 +34,8 @@ const ACADEMY_CODES = [
   'invalid_expires_at',
   'invalid_published',
   'subject_has_no_videos',
+  'subject_published',
+  'subject_has_students',
   'invalid_video_id',
   'video_not_found',
   'invalid_youtube_id',
@@ -65,7 +67,7 @@ const ACADEMY_CODES = [
 ];
 
 test('every academy admin code has an ar and an en message', () => {
-  assert.equal(ACADEMY_CODES.length, 49);
+  assert.equal(ACADEMY_CODES.length, 51);
   for (const code of ACADEMY_CODES) {
     assert.ok(MESSAGES.ar[`err.${code}`], `ar err.${code}`);
     assert.ok(MESSAGES.en[`err.${code}`], `en err.${code}`);

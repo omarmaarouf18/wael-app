@@ -163,8 +163,8 @@ func TestEveryAllowlistedRouteIsRegistered(t *testing.T) {
 			t.Fatalf("route %s answered %d without a token", route, w.Code)
 		}
 	}
-	if got := len(APIRoutes()); got != 35 {
-		t.Fatalf("expected exactly 35 API routes, got %d", got)
+	if got := len(APIRoutes()); got != 36 {
+		t.Fatalf("expected exactly 36 API routes, got %d", got)
 	}
 }
 

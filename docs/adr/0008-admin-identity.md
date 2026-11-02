@@ -148,6 +148,13 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
 2. **The one larger body**: only the upload route accepts a body above 1 MiB, capped at `MAX_PDF_BYTES` (console config, default 20 MB) plus 64 KiB. The console reads and checks the three text fields and the `%PDF-` magic, then streams a freshly built multipart body to the academy (no client part, header or file name is forwarded), so the file is never held in memory. Only this handler extends its own read and write deadlines (10 minutes) and uses an upload client with that timeout; the server-wide timeouts and the 10-second upstream timeout stay for every other route.
 3. **Files tab**: enabled. Level and subject pickers reuse the catalog list routes (drafts included), a list of the subject's files, an upload form (kind, Arabic and English titles, one PDF) with a cancel button (the page's `fetch` reports no upload progress), delete through the shared confirm dialog, the unsaved-changes and double-submit guards, `Retry-After` cooldown and toasts. The academy stays the authority; the page's size check mirrors the 20 MB default only.
 
+### 15. Note (2026-11-02, Subject Delete)
+
+*Records one more catalog route. It changes none of the decisions above.*
+
+1. **Proxy route**: the allowlist gains `POST /api/subjects/delete` `{id}` to `DELETE {ACADEMY_ADMIN_URL}/internal/admin/subjects/{id}` over mTLS with the same guarantees as the other catalog routes (36 routes in all). The academy decides what may be deleted (ADR-0012 decision 5, amended 2026-11-02).
+2. **Catalog tab**: draft subject rows gain a delete button behind the shared confirm dialog; published rows keep unpublish only. A refusal (`subject_published`, `subject_has_students`) shows its Arabic/English message in the dialog.
+
 ## Consequences
 
 

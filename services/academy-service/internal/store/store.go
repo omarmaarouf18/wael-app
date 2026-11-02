@@ -20,6 +20,12 @@ var (
 	ErrDuplicate      = errors.New("store: duplicate key")
 	ErrNotFound       = errors.New("store: not found")
 	ErrSubjectExpired = errors.New("store: subject access has expired")
+	// ErrSubjectPublished: a published subject cannot be deleted; unpublish
+	// it first (owner amendment 2026-11-02 to ADR-0012 decision 5).
+	ErrSubjectPublished = errors.New("store: subject is published")
+	// ErrSubjectHasStudents: an entitlement, purchase request or payment
+	// record (any state) references the subject, so it cannot be deleted.
+	ErrSubjectHasStudents = errors.New("store: subject has students")
 )
 
 // SubjectFilter specifies criteria for querying subjects.
@@ -68,6 +74,14 @@ type Store interface {
 	// DeleteFile removes the file row of subjectID; no matching row (missing,
 	// or a file of another subject) is ErrNotFound.
 	DeleteFile(ctx context.Context, subjectID, fileID string) error
+	// DeleteDraftSubject hard-deletes a draft subject that no student ever
+	// touched, with its videos and file rows (owner amendment 2026-11-02 to
+	// ADR-0012 decision 5). It returns the deleted file rows so the caller
+	// can remove their stored objects. A missing subject is ErrNotFound, a
+	// published one ErrSubjectPublished, and one referenced by any
+	// entitlement, purchase request or payment record (any state)
+	// ErrSubjectHasStudents.
+	DeleteDraftSubject(ctx context.Context, id string) ([]*models.SubjectFile, error)
 
 	// Entitlements (Phase 3.1)
 	Grant(ctx context.Context, e *models.Entitlement) error
@@ -538,6 +552,52 @@ func (s *MemoryStore) DeleteFile(_ context.Context, subjectID, fileID string) er
 	}
 	delete(s.files, fileID)
 	return nil
+}
+
+// DeleteDraftSubject removes a draft subject nobody references, with its
+// videos and file rows, under one lock.
+func (s *MemoryStore) DeleteDraftSubject(_ context.Context, id string) ([]*models.SubjectFile, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	subj, ok := s.subjects[id]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	if subj.Status == models.StatusPublished {
+		return nil, ErrSubjectPublished
+	}
+	for _, e := range s.entitlements {
+		if e.SubjectID == id {
+			return nil, ErrSubjectHasStudents
+		}
+	}
+	for _, pr := range s.purchaseRequests {
+		if pr.SubjectID == id {
+			return nil, ErrSubjectHasStudents
+		}
+	}
+	for _, rec := range s.paymentRecords {
+		if rec.SubjectID == id {
+			return nil, ErrSubjectHasStudents
+		}
+	}
+
+	var files []*models.SubjectFile
+	for fid, f := range s.files {
+		if f.SubjectID == id {
+			cp := *f
+			files = append(files, &cp)
+			delete(s.files, fid)
+		}
+	}
+	for vid, v := range s.videos {
+		if v.SubjectID == id {
+			delete(s.videos, vid)
+		}
+	}
+	delete(s.subjects, id)
+	return files, nil
 }
 
 func generateID() string {

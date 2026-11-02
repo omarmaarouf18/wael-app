@@ -95,7 +95,7 @@ func (s *Server) AdminSubjects(w http.ResponseWriter, r *http.Request) {
 
 // ListAdminSubjects handles GET /internal/admin/subjects with optional
 // level_id and published filters and page/limit pagination (max 100).
-// Draft subjects are included: unpublish is the only way to hide a subject.
+// Draft subjects are included.
 func (s *Server) ListAdminSubjects(w http.ResponseWriter, r *http.Request) {
 	if _, ok := AdminFromRequest(r); !ok {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
@@ -355,7 +355,7 @@ func (s *Server) buildSubject(req subjectWriteRequest, subj *models.Subject, req
 	return subj, "", ""
 }
 
-// AdminSubjectSubroute dispatches PATCH /internal/admin/subjects/{id},
+// AdminSubjectSubroute dispatches PATCH and DELETE /internal/admin/subjects/{id},
 // POST /internal/admin/subjects/{id}/publish|unpublish, the video routes and
 // the file routes (GET/POST .../files, DELETE .../files/{fileId}).
 func (s *Server) AdminSubjectSubroute(w http.ResponseWriter, r *http.Request) {
@@ -370,6 +370,10 @@ func (s *Server) AdminSubjectSubroute(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) == 1 && r.Method == http.MethodPatch {
 		s.PatchAdminSubject(w, r, id)
+		return
+	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		s.DeleteAdminSubject(w, r, id)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "videos" {
@@ -529,8 +533,8 @@ func (s *Server) PublishAdminSubject(w http.ResponseWriter, r *http.Request, id 
 }
 
 // UnpublishAdminSubject handles POST /internal/admin/subjects/{id}/unpublish.
-// Unpublish is the only way to hide a subject (no hard delete: students may
-// own it).
+// Unpublish hides a subject; only a draft subject no student ever touched
+// can be deleted (DeleteAdminSubject, owner amendment 2026-11-02).
 func (s *Server) UnpublishAdminSubject(w http.ResponseWriter, r *http.Request, id string) {
 	s.setSubjectStatus(w, r, id, models.StatusDraft, "subject_unpublish")
 }

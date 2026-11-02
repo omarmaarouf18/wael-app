@@ -241,7 +241,7 @@ func (p *Proxy) LevelsDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // catalogIDBody is the body of the id-only actions (level delete, subject
-// publish/unpublish).
+// publish/unpublish/delete).
 type catalogIDBody struct {
 	ID string `json:"id"`
 }
@@ -465,6 +465,28 @@ func (p *Proxy) subjectStatus(w http.ResponseWriter, r *http.Request, route, suf
 	p.relayAcademy(w, r, token, upstreamCall{
 		route: route, method: http.MethodPost,
 		path: "/internal/admin/subjects/" + in.ID + suffix, targetID: in.ID,
+	})
+}
+
+// SubjectsDelete handles POST /api/subjects/delete {id} -> DELETE academy
+// .../subjects/{id}. The academy deletes only a draft subject no student ever
+// touched (owner amendment 2026-11-02 to ADR-0012 decision 5).
+func (p *Proxy) SubjectsDelete(w http.ResponseWriter, r *http.Request) {
+	token, ok := p.begin(w, r, http.MethodPost)
+	if !ok {
+		return
+	}
+	var in catalogIDBody
+	if !decodeCatalogBody(w, r, &in) {
+		return
+	}
+	if !validCatalogID(in.ID) {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	p.relayAcademy(w, r, token, upstreamCall{
+		route: "subjects.delete", method: http.MethodDelete,
+		path: "/internal/admin/subjects/" + in.ID, targetID: in.ID,
 	})
 }
 

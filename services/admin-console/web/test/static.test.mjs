@@ -145,7 +145,7 @@ test('only api.js talks to the network, and only to the console itself', () => {
     '/api/levels', '/api/levels/create', '/api/levels/delete', '/api/levels/update',
     '/api/requests', '/api/requests/accept', '/api/requests/reject',
     '/api/settings', '/api/settings/update',
-    '/api/subjects', '/api/subjects/create', '/api/subjects/publish', '/api/subjects/unpublish', '/api/subjects/update',
+    '/api/subjects', '/api/subjects/create', '/api/subjects/delete', '/api/subjects/publish', '/api/subjects/unpublish', '/api/subjects/update',
     '/api/videos', '/api/videos/create', '/api/videos/delete', '/api/videos/reorder', '/api/videos/update',
     '/api/whoami',
   ]);

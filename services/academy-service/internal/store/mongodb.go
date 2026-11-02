@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -608,6 +609,90 @@ func (s *MongoStore) DeleteFile(ctx context.Context, subjectID, fileID string) e
 		return ErrNotFound
 	}
 	return nil
+}
+
+// subjectReferenced reports whether any entitlement, purchase request or
+// payment record (any state) references the subject.
+func (s *MongoStore) subjectReferenced(ctx context.Context, id string) (bool, error) {
+	for _, coll := range []string{"entitlements", "purchase_requests", "payment_records"} {
+		n, err := s.db.Collection(coll).CountDocuments(ctx, bson.M{"subject_id": id}, options.Count().SetLimit(1))
+		if err != nil {
+			return false, fmt.Errorf("store: count %s for subject: %w", coll, err)
+		}
+		if n > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// DeleteDraftSubject removes a draft subject nobody references, then its
+// videos and file rows. MongoDB runs standalone here (no transactions), so
+// the subject row goes first with a draft-only filter (a concurrent publish
+// makes it match nothing), and the references are checked again afterwards:
+// a reference that appeared in between puts the subject back and the call
+// fails with ErrSubjectHasStudents. Children are removed only after that;
+// a failure there is logged, not returned.
+func (s *MongoStore) DeleteDraftSubject(ctx context.Context, id string) ([]*models.SubjectFile, error) {
+	subj, err := s.GetSubjectByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if subj == nil {
+		return nil, ErrNotFound
+	}
+	if subj.Status == models.StatusPublished {
+		return nil, ErrSubjectPublished
+	}
+	referenced, err := s.subjectReferenced(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if referenced {
+		return nil, ErrSubjectHasStudents
+	}
+
+	files, err := s.ListFilesBySubject(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := s.db.Collection("subjects").DeleteOne(ctx, bson.M{"_id": id, "status": bson.M{"$ne": models.StatusPublished}})
+	if err != nil {
+		return nil, fmt.Errorf("store: delete subject: %w", err)
+	}
+	if res.DeletedCount == 0 {
+		again, getErr := s.GetSubjectByID(ctx, id)
+		if getErr != nil {
+			return nil, getErr
+		}
+		if again == nil {
+			return nil, ErrNotFound
+		}
+		return nil, ErrSubjectPublished
+	}
+
+	referenced, err = s.subjectReferenced(ctx, id)
+	if err != nil || referenced {
+		if _, insErr := s.db.Collection("subjects").InsertOne(ctx, subj); insErr != nil {
+			return nil, fmt.Errorf("store: restore subject after reference race: %w", insErr)
+		}
+		if err != nil {
+			return nil, err
+		}
+		return nil, ErrSubjectHasStudents
+	}
+
+	// The subject is gone; children left behind by a failure here are
+	// unreachable (every read goes through the subject), so the failure is
+	// logged and the delete still succeeds.
+	if _, err := s.db.Collection("videos").DeleteMany(ctx, bson.M{"subject_id": id}); err != nil {
+		log.Printf("[ERROR] delete videos of deleted subject %s: %v", id, err)
+	}
+	if _, err := s.db.Collection("subject_files").DeleteMany(ctx, bson.M{"subject_id": id}); err != nil {
+		log.Printf("[ERROR] delete file rows of deleted subject %s: %v", id, err)
+	}
+	return files, nil
 }
 
 // Ping verifies MongoDB connectivity.

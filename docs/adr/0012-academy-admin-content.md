@@ -1,7 +1,7 @@
 # ADR-0012: Academy Admin Content API (Phase 4.1-4.4)
 
 - **Status**: Accepted (brief Phase 4.1-4.4, 2026-10-02)
-- **Date**: 2026-10-02
+- **Date**: 2026-10-02 (amended 2026-11-02: decision 5)
 - **Related Commit SHA**: none (decision record; implementation lands as four academy-service commits reviewed by the owner before push)
 - **Related finding**: n/a
 
@@ -16,6 +16,7 @@ The owner creates diplomas, subjects and videos through an API (SPEC Section 1 d
 3. **Audit is best-effort, like auth-service.** Every academy admin mutation writes its `admin_audit_log` entry in the same flow; a write failure is logged at error level (action + target id, no secrets) and does not fail the call — the same behaviour as auth-service account actions. Shape and response match auth-service so the console merges both logs. No IP addresses are persisted (SPEC Section 5, ADR-0008 Sections 7 and 9); `X-Admin-Client-IP` is forwarded to the verify call for auth lockout keying but never stored.
 4. **Level `published` refines the axes rule.** Seeded levels are published; admin diplomas start unpublished and students see published levels only. The SPEC amendment text ("each with all of its levels") now reads "each with all of its published levels"; empty study types still render an empty list. Store `ListLevels` still returns all levels; the student handler filters.
 5. **No subject hard delete.** Unpublish is the only way to hide a subject (students may own it). Publishing (via the publish endpoint, creation with `published: true`, or a draft-to-published patch) requires at least one non-deleted video: 409 `subject_has_no_videos`.
+   *(Amended 2026-11-02, owner decision 2026-11-02: a draft subject that no student ever touched can be hard-deleted with `DELETE /internal/admin/subjects/{id}` (console `POST /api/subjects/delete` `{id}`, a delete button on draft rows in دوراتي). A published subject is refused with 409 `subject_published` (unpublish first); a subject referenced by any entitlement, purchase request or payment record, in any state (revoked, expired, rejected included), is refused with 409 `subject_has_students`. Its videos, file rows and stored file objects go with it; audit action `subject_delete`. Unpublish stays the only way to hide a subject that students own or requested. The text above is kept as the original decision.)*
 6. **Videos are soft-deleted.** Deleted videos are hidden from listings, counts, detail and `/play`, and count as absent for the publish gate. Deleting the last video of a published subject needs `?force=true` (409 `last_video_of_published_subject`), which also unpublishes the subject. The server never calls YouTube; it stores only the validated 11-char id.
 7. **Admin-created videos are published.** The subject's own draft/published state gates student visibility; there is no per-video publish toggle in this phase.
 8. **Subject `order` sorts listings.** Both student and admin subject lists sort by `(order, created_at)`; existing rows default to 0, preserving current order.
