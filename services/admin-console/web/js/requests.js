@@ -83,9 +83,9 @@ export function mountRequests({ api, doc = document, win = window }) {
     if (subjectSelect) {
       const current = subjectSelect.value;
       clear(subjectSelect);
-      subjectSelect.append(h('option', { value: '', text: t('requests.filterAllSubjects') }));
+      subjectSelect.append(h('option', { text: t('requests.filterAllSubjects'), attrs: { value: '' } }));
       for (const s of items) {
-        subjectSelect.append(h('option', { value: s.id, text: s.title_ar }));
+        subjectSelect.append(h('option', { text: s.title_ar, attrs: { value: s.id } }));
       }
       subjectSelect.value = current;
     }

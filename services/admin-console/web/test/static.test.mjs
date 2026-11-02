@@ -296,3 +296,12 @@ test('the dark and crimson tokens match the Flutter design system', () => {
   assert.equal(c.border.toLowerCase(), '#303030');
   assert.equal(c.hairline.toLowerCase(), '#262626');
 });
+
+// h() sets attributes only through props.attrs; a top-level `value` prop is
+// silently dropped, and a real <select> then reports the option's text as
+// its value (the grant dialog matched no subject because of this).
+test('every option built with h() passes its value through attrs', () => {
+  for (const [name, src] of Object.entries(jsCode)) {
+    assert.ok(!/h\('option',\s*\{\s*value:/.test(src), `${name} passes an option value as a prop; use attrs: { value }`);
+  }
+});

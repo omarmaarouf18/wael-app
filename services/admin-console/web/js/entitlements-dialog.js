@@ -155,14 +155,14 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
     subjects = Array.isArray(subjectsRes.data?.items) ? subjectsRes.data.items : [];
 
     clear(grantLevelSelect);
-    grantLevelSelect.append(h('option', { value: '', text: t('dialog.grant.selectLevel') }));
+    grantLevelSelect.append(h('option', { text: t('dialog.grant.selectLevel'), attrs: { value: '' } }));
     for (const lvl of levels) {
       const id = lvl.key || lvl.id;
-      grantLevelSelect.append(h('option', { value: id, text: lvl.name_ar || lvl.title_ar || id }));
+      grantLevelSelect.append(h('option', { text: lvl.name_ar || lvl.title_ar || id, attrs: { value: id } }));
     }
 
     clear(grantSubjectSelect);
-    grantSubjectSelect.append(h('option', { value: '', text: t('dialog.grant.selectSubject') }));
+    grantSubjectSelect.append(h('option', { text: t('dialog.grant.selectSubject'), attrs: { value: '' } }));
 
     opening = false;
     if (!currentAccount) return;
@@ -177,19 +177,19 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
     grantConfirm.disabled = true;
 
     if (!selectedLevel) {
-      grantSubjectSelect.append(h('option', { value: '', text: t('dialog.grant.selectSubject') }));
+      grantSubjectSelect.append(h('option', { text: t('dialog.grant.selectSubject'), attrs: { value: '' } }));
       return;
     }
 
     const available = subjects.filter((s) => s.level_id === selectedLevel || s.level_key === selectedLevel);
     if (available.length === 0) {
-      grantSubjectSelect.append(h('option', { value: '', text: t('dialog.grant.noSubjects') }));
+      grantSubjectSelect.append(h('option', { text: t('dialog.grant.noSubjects'), attrs: { value: '' } }));
       return;
     }
 
-    grantSubjectSelect.append(h('option', { value: '', text: t('dialog.grant.selectSubject') }));
+    grantSubjectSelect.append(h('option', { text: t('dialog.grant.selectSubject'), attrs: { value: '' } }));
     for (const s of available) {
-      grantSubjectSelect.append(h('option', { value: s.id, text: s.title_ar }));
+      grantSubjectSelect.append(h('option', { text: s.title_ar, attrs: { value: s.id } }));
     }
   }
 

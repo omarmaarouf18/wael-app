@@ -162,10 +162,19 @@ test('grant subject flow: selects level then published subject, displays price a
   assert.ok($('grant-dialog-target').textContent.includes('علي أحمد'));
   assert.equal($('grant-dialog-confirm').disabled, true, 'confirm initially disabled');
 
+  // A real <select> reports the chosen option's value attribute, falling back
+  // to its text when the attribute is missing; the fake select does not, so
+  // check the attributes the browser will read.
+  const levelValues = $('grant-level-select').children.map((o) => o.attrs.get('value'));
+  assert.ok(levelValues.includes('lvl-1'), `level options carry the level key as value, got ${levelValues}`);
+
   // Select level
   $('grant-level-select').value = 'lvl-1';
   $('grant-level-select').fire('change');
   assert.equal($('grant-dialog-confirm').disabled, true);
+
+  const subjectValues = $('grant-subject-select').children.map((o) => o.attrs.get('value'));
+  assert.ok(subjectValues.includes('sub-4'), `subject options carry the subject id as value, got ${subjectValues}`);
 
   // Select subject
   $('grant-subject-select').value = 'sub-4';
