@@ -25,6 +25,12 @@ and `frontend/lib/core/app_config.dart`.
   version name — for the new owner-supplied app icon. No AAB was uploaded to
   Play before it (the 1.0.1+2 AAB was saved to closed testing as a draft and
   is replaced by this one before sending for review).)*
+  *(Amended 2026-11-03, owner decision: `1.0.1+4` — `versionCode 4`, same
+  version name — for the store build that makes the phone optional after
+  Apple rejected iOS 1.0.1 (9) under guideline 5.1.1(v). The iOS
+  `CFBundleVersion` still comes from the "Build iOS" run number plus
+  `IOS_BUILD_NUMBER_OFFSET` (`docs/frontend/IOS-RELEASE.md`), so the next run
+  is above 9 on its own.)*
 - Bump rule: raise the build number (`+N`, Android `versionCode`) on EVERY
   release build — Android refuses an upload whose `versionCode` is not higher
   than the last one. Raise the version name (`1.0.0`) for user-visible

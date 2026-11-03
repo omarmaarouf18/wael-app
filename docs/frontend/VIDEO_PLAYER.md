@@ -139,10 +139,15 @@ no close action, is hidden from screen readers, and is the last child of the
 player surface, so it stays above everything, including in full screen and on the
 "ended" cover. With no name or phone it falls back to the email; with nothing at
 all the player refuses to start.
+*(Amended 2026-11-03, owner: the phone is optional at signup, so the watermark is
+name + phone when the student has a phone and name + email otherwise; with no
+name either it is the email alone, and with nothing at all the player still
+refuses to start. `AuthProvider.watermarkText`, `test/auth_provider_test.dart`.)*
 
 `GET /auth/me` returns `id`, `email`, `role`, `email_verified`, `full_name`, and
 `phone` (the last two provide the watermark identity after a restart, falling
-back to the email if empty). The app reads both fields.
+back to the email if empty). The app reads both fields. *(Amended 2026-11-03:
+`phone` is `null` when the account has none; the app reads it as empty.)*
 
 ## Manual check on a phone (Android)
 
