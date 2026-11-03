@@ -55,6 +55,10 @@ only (`channelFor`, per-user `user_id` push).
 8. Registration requires full name and phone number. The OTP is sent to
    email only for now; the phone is collected but not verified until
    decided otherwise.
+   *(Amended 2026-11-03, owner decision after Apple rejected iOS 1.0.1 (9)
+   under App Store guideline 5.1.1(v): the phone is optional at signup on
+   both platforms; a given phone keeps the normalization, uniqueness and
+   blocklist rules. Detail in SPEC Section 1 item 11.)*
 9. The admin can send an app-wide notification.
 10. The admin can edit app UI text and images. Details belong to future
     ADR-0009 (media storage) and ADR-0010 (app content).

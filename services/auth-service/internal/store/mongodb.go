@@ -282,7 +282,6 @@ func (s *MongoStore) Update(ctx context.Context, u *models.User) error {
 			"role":                   u.Role,
 			"email_verified":         u.EmailVerified,
 			"full_name":              u.FullName,
-			"phone":                  u.Phone,
 			"name_changed_at":        u.NameChangedAt,
 			"phone_changed_at":       u.PhoneChangedAt,
 			"deletion_requested_at":  u.DeletionRequestedAt,
@@ -294,6 +293,13 @@ func (s *MongoStore) Update(ctx context.Context, u *models.User) error {
 			"pending_id_hash":        u.PendingIDHash,
 			"updated_at":             now,
 		},
+	}
+	// No phone is stored as an absent field, never "" (owner amendment
+	// 2026-11-03: the phone is optional).
+	if u.Phone != "" {
+		update["$set"].(bson.M)["phone"] = u.Phone
+	} else {
+		update["$unset"] = bson.M{"phone": ""}
 	}
 	res, err := s.coll.UpdateOne(ctx, bson.M{"_id": u.ID}, update)
 	if err != nil {
@@ -1039,7 +1045,6 @@ func (s *MongoStore) PurgeDeletion(ctx context.Context, userID, anonymizedEmail 
 				"status_reason": "",
 				"full_name":     "",
 				"email":         anonymizedEmail,
-				"phone":         "",
 				"password_hash": "",
 				"deleted_at":    at,
 				"updated_at":    at,
@@ -1050,6 +1055,7 @@ func (s *MongoStore) PurgeDeletion(ctx context.Context, userID, anonymizedEmail 
 				"reset_token_hash":       "",
 				"reset_token_expires_at": "",
 				"pending_id_hash":        "",
+				"phone":                  "",
 				"name_changed_at":        "",
 				"phone_changed_at":       "",
 				"deletion_requested_at":  "",
@@ -1134,7 +1140,8 @@ func (s *MongoStore) UpdatePassword(ctx context.Context, userID, hash string, at
 // change stamps and updated_at) and only while the account is active. The
 // 30-day per-field limit is part of the update filter (change stamp absent
 // or at most now-30d), so two concurrent edits cannot both pass; the loser
-// refetches as ErrChangeTooSoon. A phone claimed by another verified
+// refetches as ErrChangeTooSoon. Adding a phone to an account without one is
+// exempt from the limit. A phone claimed by another verified
 // phone-reserving account surfaces as ErrDuplicate via the partial unique
 // index. Same-value fields are dropped before the write, so a no-op never
 // restarts the 30-day clock.
@@ -1163,10 +1170,17 @@ func (s *MongoStore) UpdateProfileFields(ctx context.Context, userID string, f P
 		set["name_changed_at"] = at
 	}
 	if f.Phone != nil && *f.Phone != existing.Phone {
-		and = append(and, bson.M{"$or": []bson.M{
-			{"phone_changed_at": bson.M{"$exists": false}},
-			{"phone_changed_at": bson.M{"$lte": at.Add(-ProfileChangeCooldown)}},
-		}})
+		if existing.Phone == "" {
+			// Adding a first phone is not limited by the 30-day rule (owner
+			// amendment 2026-11-03); the filter requires the account to still
+			// have no phone, so a concurrent add makes this one a change.
+			and = append(and, bson.M{"phone": bson.M{"$in": bson.A{nil, ""}}})
+		} else {
+			and = append(and, bson.M{"$or": []bson.M{
+				{"phone_changed_at": bson.M{"$exists": false}},
+				{"phone_changed_at": bson.M{"$lte": at.Add(-ProfileChangeCooldown)}},
+			}})
+		}
 		set["phone"] = *f.Phone
 		set["phone_changed_at"] = at
 	}
@@ -1196,7 +1210,7 @@ func (s *MongoStore) UpdateProfileFields(ctx context.Context, userID string, f P
 			at.Before(fresh.NameChangedAt.Add(ProfileChangeCooldown)) {
 			return ErrChangeTooSoon
 		}
-		if f.Phone != nil && *f.Phone != fresh.Phone && !fresh.PhoneChangedAt.IsZero() &&
+		if f.Phone != nil && *f.Phone != fresh.Phone && fresh.Phone != "" && !fresh.PhoneChangedAt.IsZero() &&
 			at.Before(fresh.PhoneChangedAt.Add(ProfileChangeCooldown)) {
 			return ErrChangeTooSoon
 		}

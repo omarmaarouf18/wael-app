@@ -1856,8 +1856,9 @@ func TestMe_ProfileFields_NewAndLegacy(t *testing.T) {
 	if legacyProfile["full_name"] != "" {
 		t.Errorf("expected empty full_name for legacy user, got %v", legacyProfile["full_name"])
 	}
-	if legacyProfile["phone"] != "" {
-		t.Errorf("expected empty phone for legacy user, got %v", legacyProfile["phone"])
+	// No phone is null (owner amendment 2026-11-03: the phone is optional).
+	if v, ok := legacyProfile["phone"]; !ok || v != nil {
+		t.Errorf("expected null phone for legacy user, got %v (present %v)", v, ok)
 	}
 	if legacyProfile["id"] != "u-legacy-1" {
 		t.Errorf("id = %v, want 'u-legacy-1'", legacyProfile["id"])

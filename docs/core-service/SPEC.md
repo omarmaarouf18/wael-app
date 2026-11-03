@@ -33,6 +33,7 @@ This is the build contract for the core of the application. It is written for im
 
 **Accounts**
 11. Registration requires **full name and phone number**. The OTP goes to **email only** for now; the phone is collected but not verified.
+   *(Amended 2026-11-03, owner decision 2026-11-03 after Apple rejected iOS 1.0.1 (9) under App Store guideline 5.1.1(v): the phone is OPTIONAL at signup on both platforms; full name stays required. No phone is stored as an absent field, never `""`. A given phone keeps the signup rules: E.164 with default region `EG`, unique against verified accounts, blocklist check. `GET /auth/me` returns `phone: null` when there is none. The video watermark is name + phone, or name + email without a phone. No screen or feature needs a phone.)*
 12. The admin can **suspend, reactivate, and delete** student accounts. Suspension and deletion are for abuse, content leakage, or suspicious behavior.
 13. Suspension takes effect immediately on already-issued tokens.
 
@@ -60,7 +61,7 @@ This is the build contract for the core of the application. It is written for im
 | D4 | Locked-subject view | Student sees titles and descriptions of videos and files, but never `youtube_video_id` or download access. |
 | D5 | File kinds | `subject_files.kind` is `book` or `note`; format is PDF only. "Classes" (حصص) is not modeled: it means videos. |
 | D6 | Video duration | Not stored. |
-| D7 | Phone | Normalized to E.164, default region `EG` (config). Unique per active account. |
+| D7 | Phone | Normalized to E.164, default region `EG` (config). Unique per active account. *(Amended 2026-11-03, owner: optional; uniqueness and blocklist apply only when a phone is given, and the admin-ban blocklist entry is written only when the account has a phone.)* |
 | D8 | Account delete | Soft delete (`status = deleted`) plus a blocklist of SHA-256 hashes of normalized email and phone so an abused identity cannot re-register. *(Amended 2026-10-05, owner, F-UX2 A6: the blocklist applies to ADMIN deletion (a ban, R9). A SELF-deleted account (after the 30-day purge) does NOT blocklist its email or phone, so both can sign up again.)* |
 | D9 | Entitlement revocation | Allowed by admin, reason mandatory, audited. |
 | D10 | Learning progress | Local to the device only; no server field. |
@@ -170,7 +171,7 @@ Notes:
 
 ### auth-service additions
 
-- `users`: `full_name`, `phone` (normalized), `status` (`active`/`suspended`/`deleted`), `status_reason`, `suspended_at`, `reactivated_at`, `deleted_at`. Unique partial index on `phone` for verified accounts that are not deleted (active, suspended, and `pending_deletion`; owner decision D2: identifiers free only when deletion is final). Existing documents with no `status` are treated as `active` via a helper such as `EffectiveStatus()`.
+- `users`: `full_name`, `phone` (normalized), `status` (`active`/`suspended`/`deleted`), `status_reason`, `suspended_at`, `reactivated_at`, `deleted_at`. Unique partial index on `phone` for verified accounts that are not deleted (active, suspended, and `pending_deletion`; owner decision D2: identifiers free only when deletion is final). *(Amended 2026-11-03, owner: the phone is optional; the index covers only documents that have a phone (its existing `phone: {$type: "string", $gt: ""}` clause already excludes absent and empty phones, so the index definition is unchanged), and the self-deletion purge now removes the `phone` field instead of setting it to `""`.)* Existing documents with no `status` are treated as `active` via a helper such as `EffectiveStatus()`.
 - *Amended 2026-10-05 (owner: F-UX2 launched 2026-10-05, lifting the 2026-10-03 hold; settings and account management):* `status` gains `pending_deletion` (self-deletion grace period); `users` gains `name_changed_at`, `phone_changed_at` (30-day per-field edit limits), `deletion_requested_at`, `purge_after` (30-day grace); new append-only `account_events` collection (`_id`, `user_id`, `type`, `created_at`; no PII values; index on (`user_id`, `created_at`)); `sessions` `end_reason` gains `user` (ended from the student's own device list, same behavior as `logout`).
 - `admins`: `_id` (admin id), `name`, `token_hash` (SHA-256, never plaintext), `created_at`, `expires_at`, `revoked_at`.
 - `blocklist`: `kind` (`email`/`phone`), `hash`, `reason`, `created_at`; unique (`kind`, `hash`).
@@ -197,7 +198,7 @@ Student routes are served through the gateway as `/api/v1/auth/...` and `/api/v1
 | `GET /auth/sessions` | Own active sessions (F-UX2 A1) | Student JWT + active session (`sid`). Items: `sid` (opaque), `device_label`, `created_at`, `last_used_at`, `current`. Never refresh hash, IP or raw `device_id` |
 | `DELETE /auth/sessions/{sid}` | End one own session (F-UX2 A1) | Same as logout with `end_reason=user`. Ending the current session is logout. Another user's, unknown, or already-ended sid returns 404. 204 |
 | `POST /auth/password/change` | Change password (F-UX2 A2) | `{current_password, new_password}` (8+ chars, at most 72 bytes). Wrong current password counts toward D26 lockout keys. Ends every OTHER session; current stays |
-| `PATCH /auth/me` | Change name/phone (F-UX2 A3) | `{full_name?, phone?, current_password}`. Same validation as signup. Once per 30 days per field; too soon is 429 `change_too_soon` + `Retry-After` (seconds). Phone must not be held by another verified account nor blocklisted (generic 409); duplicate key maps to 409 |
+| `PATCH /auth/me` | Change name/phone (F-UX2 A3) | `{full_name?, phone?, current_password}`. Same validation as signup. *(Amended 2026-11-03, owner: adding a phone to an account that has none is allowed at any time, outside the 30-day rule; changing an existing phone keeps it; a successful add starts the phone's 30-day clock; uniqueness and blocklist checks unchanged.)* Once per 30 days per field; too soon is 429 `change_too_soon` + `Retry-After` (seconds). Phone must not be held by another verified account nor blocklisted (generic 409); duplicate key maps to 409 |
 | `POST /auth/email/change` | Start email change (F-UX2 A4) | `{new_email, current_password}`. Sends a 6-digit code to the NEW email only (10 min, same attempt cap and resend cooldown as signup). Taken/blocklisted emails get the same generic 200 with no code sent |
 | `POST /auth/email/confirm` | Confirm email change (F-UX2 A4) | `{code}`. Compare-and-set the email; notify the OLD email (masked new address, no code); end ALL sessions including current. Duplicate key at confirm time is a generic 409 |
 | `POST /auth/account/delete` | Request self-deletion (F-UX2 A5) | `{current_password, confirm:"حذف"}`. Status becomes `pending_deletion` with `purge_after` = now + 30 days; all sessions end; an email states the deletion date and that signing in before then cancels it |

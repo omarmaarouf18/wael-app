@@ -382,7 +382,8 @@ type updateProfileRequest struct {
 }
 
 // UpdateProfile serves PATCH /auth/me (A3): edit name and/or phone with the
-// current password, each at most once every 30 days. A change too soon
+// current password, each at most once every 30 days (adding a phone to an
+// account without one is not limited). A change too soon
 // returns 429 change_too_soon with Retry-After (seconds). The phone must not
 // be used by another verified account and must not be blocklisted (generic
 // 409). Concurrent claims on one phone serialize on the unique partial index;
@@ -436,7 +437,9 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if wantPhone && newPhone != sc.user.Phone {
+	// Adding a phone when none is set is allowed at any time (owner
+	// amendment 2026-11-03); changing an existing phone keeps the 30-day rule.
+	if wantPhone && newPhone != sc.user.Phone && sc.user.Phone != "" {
 		if !sc.user.PhoneChangedAt.IsZero() && now.Before(sc.user.PhoneChangedAt.Add(changeCooldown)) {
 			writeChangeTooSoon(w, r, sc.user.PhoneChangedAt.Add(changeCooldown).Sub(now))
 			return
@@ -502,7 +505,7 @@ func (s *Server) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		"id":        sc.user.ID,
 		"email":     sc.user.Email,
 		"full_name": appliedName,
-		"phone":     appliedPhone,
+		"phone":     optionalPhone(appliedPhone),
 	})
 }
 
@@ -530,7 +533,7 @@ func (s *Server) resolveProfileWriteError(w http.ResponseWriter, r *http.Request
 			wait = d
 		}
 	}
-	if f.Phone != nil && *f.Phone != fresh.Phone && !fresh.PhoneChangedAt.IsZero() {
+	if f.Phone != nil && *f.Phone != fresh.Phone && fresh.Phone != "" && !fresh.PhoneChangedAt.IsZero() {
 		if d := fresh.PhoneChangedAt.Add(store.ProfileChangeCooldown).Sub(now); d > wait {
 			wait = d
 		}

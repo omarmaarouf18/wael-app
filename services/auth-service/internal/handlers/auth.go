@@ -171,6 +171,15 @@ func normalizePhone(raw, defaultRegion string) (string, error) {
 	return phonenumbers.Format(num, phonenumbers.E164), nil
 }
 
+// optionalPhone renders a stored phone for a JSON response: null when the
+// account has none (the phone is optional since the 2026-11-03 amendment).
+func optionalPhone(phone string) any {
+	if phone == "" {
+		return nil
+	}
+	return phone
+}
+
 func isValidUUIDv4(id string) bool {
 	if len(id) != 36 {
 		return false
@@ -333,10 +342,16 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	phone, err := normalizePhone(req.Phone, s.defaultRegion())
-	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid phone number", err)
-		return
+	// The phone is optional (owner amendment 2026-11-03, App Store 5.1.1(v)):
+	// absent or blank means no phone; a given phone keeps the signup rules.
+	var phone string
+	if strings.TrimSpace(req.Phone) != "" {
+		var err error
+		phone, err = normalizePhone(req.Phone, s.defaultRegion())
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid phone number", err)
+			return
+		}
 	}
 
 	email := normalizeEmail(req.Email)
@@ -377,18 +392,20 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Blocklist check on normalized phone (R9, D15)
-	phoneHash := computeHMAC(bKey, phone)
-	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
-	phoneBlocked, err := s.Store.IsBlocked(dbCtx, "phone", phoneHash)
-	cancel()
-	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
-	}
-	if phoneBlocked {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
-		return
+	// 2. Blocklist check on normalized phone (R9, D15), when one is given
+	if phone != "" {
+		phoneHash := computeHMAC(bKey, phone)
+		dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+		phoneBlocked, err := s.Store.IsBlocked(dbCtx, "phone", phoneHash)
+		cancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+			return
+		}
+		if phoneBlocked {
+			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+			return
+		}
 	}
 
 	// 3. Existing account check by email (P-3, P-4; amended: only verified
@@ -418,18 +435,21 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Existing account check by phone (P-3, P-4, P-6; amended: only verified
 	// active/suspended accounts block signup; unverified phones are free).
-	dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
-	existingPhone, err := s.Store.FindByPhone(dbCtx, phone)
-	cancel()
-	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
-	}
-	if existingPhone != nil && existingPhone.EmailVerified && existingPhone.EffectiveStatus() != models.StatusDeleted {
-		// Same-record phone reuse on replacement is allowed.
-		if replaceUser == nil || existingPhone.ID != replaceUser.ID {
-			handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+	// Skipped without a phone: FindByPhone is never called with "".
+	if phone != "" {
+		dbCtx, cancel = context.WithTimeout(r.Context(), dbTimeout)
+		existingPhone, err := s.Store.FindByPhone(dbCtx, phone)
+		cancel()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 			return
+		}
+		if existingPhone != nil && existingPhone.EmailVerified && existingPhone.EffectiveStatus() != models.StatusDeleted {
+			// Same-record phone reuse on replacement is allowed.
+			if replaceUser == nil || existingPhone.ID != replaceUser.ID {
+				handlerutil.WriteSafeError(w, r, http.StatusConflict, handlerutil.ErrCodeConflict, refusalMsg, nil)
+				return
+			}
 		}
 	}
 
@@ -489,7 +509,7 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 			"email":      email,
 			"role":       string(role),
 			"full_name":  name,
-			"phone":      phone,
+			"phone":      optionalPhone(phone),
 			"pending_id": pendingID,
 		}
 		if s.devOTPField() {
@@ -547,7 +567,7 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 							"email":      email,
 							"role":       string(role),
 							"full_name":  name,
-							"phone":      phone,
+							"phone":      optionalPhone(phone),
 							"pending_id": pendingID,
 						}
 						if s.devOTPField() {
@@ -578,7 +598,7 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 		"email":      email,
 		"role":       string(role),
 		"full_name":  name,
-		"phone":      phone,
+		"phone":      optionalPhone(phone),
 		"pending_id": pendingID,
 	}
 	if s.devOTPField() {
@@ -1381,7 +1401,7 @@ func (s *Server) Me(w http.ResponseWriter, r *http.Request) {
 		"role":           string(u.Role),
 		"email_verified": u.EmailVerified,
 		"full_name":      u.FullName,
-		"phone":          u.Phone,
+		"phone":          optionalPhone(u.Phone),
 	})
 }
 

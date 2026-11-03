@@ -902,7 +902,8 @@ func (s *MemoryStore) UpdatePassword(_ context.Context, userID, hash string, at 
 // UpdateProfileFields sets only the supplied name/phone fields (plus their
 // change stamps and updated_at) and only while the account is active. The
 // 30-day per-field limit is enforced inside the same critical section, so two
-// concurrent edits cannot both pass; the loser gets ErrChangeTooSoon. A phone
+// concurrent edits cannot both pass; the loser gets ErrChangeTooSoon. Adding a
+// phone to an account without one is exempt from the limit. A phone
 // claimed by another verified phone-reserving account is ErrDuplicate. A
 // no-op (same values) changes nothing and succeeds.
 func (s *MemoryStore) UpdateProfileFields(_ context.Context, userID string, f ProfileFields, at time.Time) error {
@@ -926,7 +927,9 @@ func (s *MemoryStore) UpdateProfileFields(_ context.Context, userID string, f Pr
 		}
 	}
 	if changePhone {
-		if !existing.PhoneChangedAt.IsZero() && at.Before(existing.PhoneChangedAt.Add(ProfileChangeCooldown)) {
+		// Adding a first phone is exempt from the 30-day limit (owner
+		// amendment 2026-11-03); changing an existing one is not.
+		if existing.Phone != "" && !existing.PhoneChangedAt.IsZero() && at.Before(existing.PhoneChangedAt.Add(ProfileChangeCooldown)) {
 			return ErrChangeTooSoon
 		}
 		for id, other := range s.byID {
