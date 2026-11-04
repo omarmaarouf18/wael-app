@@ -14,3 +14,8 @@ web/
 # Node and Next.js output anywhere.
 **/node_modules/
 **/.next/
+
+# Flutter build output and tool cache (owner approval 2026-11-04, W2-W5
+# brief step 0). No image copies frontend/; this only shrinks the context.
+frontend/build/
+frontend/.dart_tool/

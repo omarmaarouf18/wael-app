@@ -175,6 +175,11 @@ foundations report of the same day. The decision text above is unchanged.
 6. **Root `.dockerignore`** (approved): excludes `web/`, `node_modules` and
    `.next` from the repository-root build context used by the prod image
    builds.
+   *(Amended 2026-11-04, owner approval in the W2-W5 brief, step 0: it also
+   excludes `frontend/build/` and `frontend/.dart_tool/`. No image copies
+   `frontend/`: the prod stages copy only `shared/infra` and
+   `services/<svc>`, and the compose dev builds use the service directory as
+   context.)*
 7. **Static pages**: options A and C of the static-pages report, built inside
    W2, not as a separate fix.
    - A: the fixed pages (home, about, catalog, terms, privacy, refund) are
