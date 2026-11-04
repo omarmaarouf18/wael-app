@@ -1,0 +1,16 @@
+# Root build context (Prod Image Build in CI, Build and Publish: context ".",
+# file services/<svc>/Dockerfile). The prod stages copy only shared/infra and
+# services/<svc>; this keeps the rest out of the context sent to the builder.
+# Owner decision 2026-11-04 (ADR-0014 amendment).
+#
+# Patterns are relative to the repo root: "web/" is the sales website only,
+# never services/admin-console/web/ (the console's own pages, which its image
+# needs). Per-service .dockerignore files apply to the compose (service
+# directory) builds and are unchanged.
+
+# The sales website (Vercel builds it, no image does).
+web/
+
+# Node and Next.js output anywhere.
+**/node_modules/
+**/.next/
