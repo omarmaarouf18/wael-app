@@ -16,7 +16,9 @@ website never plays videos or opens files.
 
 The apps never mention or link to the website (SPEC Section 2 D3 amendment
 2026-11-04). `frontend/test/store_safety_l10n_test.dart` ("Website address
-guard") fails if `frontend/` contains the website's address or a link to it.
+guard") fails if `frontend/` contains the website's address or a link to it
+(the apex `elmetracademy.app`, `www.elmetracademy.app` or a `*.vercel.app`
+deployment; owner decision 2026-11-04).
 Links from the website to the store listings are fine (W5).
 
 ## Pages
@@ -128,7 +130,10 @@ of `web/**/*.ts(x)`; fallback on the lockfile hash) for speed only, and a
 cache miss still passes. The pre-push hook and `make ci` run both every time
 `web/package.json` exists.
 Dependabot updates `web/` weekly (npm, minor and patch grouped, target
-`develop`).
+`develop`). ESLint stays on 9 (`9.39.5`, the last 9.x, deprecated by npm)
+until `eslint-plugin-react`, `eslint-plugin-import` and
+`eslint-plugin-jsx-a11y` (used by `eslint-config-next`) support ESLint 10; no
+npm `overrides` (owner decision 2026-11-04).
 
 ## Deploy on Vercel (owner steps)
 
@@ -143,6 +148,8 @@ The agent only documents these; the owner does them in Vercel.
    `NEXT_PUBLIC_API_BASE_URL`), for Production and Preview.
 4. Domain: the owner's choice (ADR-0014 open question 1), added in Vercel
    (Project → Settings → Domains) and in DNS as Vercel shows.
+   *(Amended 2026-11-04, owner decision: add `elmetracademy.app` and
+   `www.elmetracademy.app`; leave `api.` and `legal.` on the server.)*
 5. The Hobby plan is for non-commercial use. If Vercel objects to a sales
    site on Hobby, move to Pro, or to Cloudflare Pages (static export from the
    same repo; the per-request CSP nonce would then have to become a static
@@ -161,6 +168,12 @@ subdomain of it. `legal.elmetracademy.app` (legal pages) and
 already refuses the apex domain, every subdomain other than `legal` and
 `api`, and Vercel hosts; a domain outside `elmetracademy.app` must be added
 to `_extraWebsiteHosts` in the guard.
+
+*(Amended 2026-11-04, owner decision: the website is `elmetracademy.app` and
+`www.elmetracademy.app`; the API stays `api.elmetracademy.app` and the legal
+pages `legal.elmetracademy.app`. The app's guard now refuses exactly the
+website's hosts — the apex, `www.` and `*.vercel.app` — and allows `legal.`,
+`api.` and every other subdomain; `_extraWebsiteHosts` is removed.)*
 
 W3 will need CORS on the API for the chosen website origin; nothing allows
 it today.
@@ -206,6 +219,14 @@ Vercel that means a function call per page view instead of a cached static
 file — fine for a small site, and the price of a strict CSP without
 `'unsafe-inline'`. A static host (Cloudflare Pages export) cannot use a
 per-request nonce.
+
+*(Amended 2026-11-04, owner decision: W2 makes the site mostly static —
+the fixed pages (home, about, catalog, terms, privacy, refund) prerendered
+with a static CSP in `next.config`, subject pages prebuilt with
+`generateStaticParams` and `revalidate`, and the per-request nonce kept only
+on the pages with forms (log in, sign up, buy). The proxy itself does not
+make pages dynamic; `connection()` in the root layouts does. See ADR-0014
+"Amendment 2026-11-04", item 7.)*
 
 Verified locally on 2026-11-04 with `next start`: every header above is on
 the response, all 11 script tags on the home page carry the nonce, the page

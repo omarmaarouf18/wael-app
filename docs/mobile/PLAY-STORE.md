@@ -88,3 +88,6 @@ keys. Keep every new string passing it before release. *(Amended
 2026-11-04, ADR-0014: the same test also fails if any file under
 `frontend/` names the sales website or links to it — the academy apex
 domain, any subdomain other than `legal` and `api`, or a Vercel host.)*
+*(Amended 2026-11-04, owner decision (ADR-0014): narrowed to the website's
+hosts — the apex domain, `www.` and `*.vercel.app`; `legal.`, `api.` and
+other subdomains are allowed.)*

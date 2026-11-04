@@ -467,3 +467,16 @@ change exists for the website yet. Planned in later briefs, each with its own
 server work: W2 public catalog endpoint, W3 web auth (CORS, cookie refresh
 token), W4 manual payments, W5 real pages. The open owner decisions are
 listed in ADR-0014.
+
+*(Amended 2026-11-04, owner decisions, ADR-0014 "Amendment 2026-11-04": the
+open decisions are closed. The website is `elmetracademy.app` and
+`www.elmetracademy.app`; the API stays `api.elmetracademy.app`. Wallet
+numbers and the InstaPay address are edited in the console settings and served
+to the website by the API (W2/W4); the app never shows them. Proof of
+transfer is the transfer reference, sender number and amount, with no receipt
+image, so Section 1 item 1 (students upload nothing) is unchanged. The owner
+provides the terms and refund text; the placeholders stay until then. Website
+prices are the center's prices. W2 also makes the fixed pages static (static
+CSP) and the subject pages prebuilt with revalidation; only the pages with
+forms keep the per-request nonce. The app guard refuses the apex, `www.` and
+`*.vercel.app` hosts.)*

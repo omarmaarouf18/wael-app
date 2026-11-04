@@ -104,6 +104,9 @@ backend change, no real API calls. Later briefs:
 
 - **W2 Public catalog**: an unauthenticated read-only endpoint for published
   subjects with price and description; rate-limited; cached.
+  *(Amended 2026-11-04, owner decision 7: W2 also makes the website's pages
+  static, options A and C of the 2026-11-04 static-pages report — see the
+  amendment below — not as a separate fix.)*
 - **W3 Web auth**: CORS for the website origin; refresh token in an httpOnly
   Secure SameSite cookie on the website, access token in memory; same
   accounts as the app.
@@ -118,6 +121,10 @@ backend change, no real API calls. Later briefs:
   rate limit. A receipt image needs an upload path (today students upload
   nothing and the gateway caps request bodies at 1 MiB), so size/format and
   storage are decided in that brief. Activation never happens in the browser.
+  *(Amended 2026-11-04, owner decision 3: no receipt image. The student
+  submits the transfer reference, sender number and amount only; the
+  "optional receipt image" and the upload path above are removed from W4,
+  and SPEC Section 1 item 1 (students upload nothing) stays as it is.)*
 - **W5 Website pages with real data**, and store links to the apps.
 
 ## Open Questions
@@ -125,13 +132,66 @@ backend change, no real API calls. Later briefs:
 Owner decisions, not decided here:
 
 1. Website domain: `elmetracademy.app` + `www`, or a subdomain.
+   *(Decided 2026-11-04: `elmetracademy.app` + `www`; see the amendment
+   below.)*
 2. Which wallet numbers and InstaPay address the website shows, and whether
    they are edited from the console (recommended in the brief) or fixed in the
    site.
+   *(Decided 2026-11-04: edited from the console, served by the API.)*
 3. What the student must submit as proof: transfer reference, sender number,
    amount, and whether a receipt screenshot is also required.
+   *(Decided 2026-11-04: transfer reference, sender number, amount; no
+   receipt image.)*
 4. Refund policy text and terms text (the owner provides them).
+   *(Decided 2026-11-04: the owner provides them; the placeholders stay until
+   then.)*
 5. Whether prices on the site always match the center's prices.
+   *(Decided 2026-11-04: yes, the same prices.)*
+
+No open question remains (2026-11-04).
+
+## Amendment 2026-11-04: owner decisions
+
+Owner decisions of 2026-11-04, answering the open questions above and the
+foundations report of the same day. The decision text above is unchanged.
+
+1. **Domain.** The website is `elmetracademy.app` and `www.elmetracademy.app`.
+   The API stays `api.elmetracademy.app`; the legal pages stay
+   `legal.elmetracademy.app`. The app guard
+   (`frontend/test/store_safety_l10n_test.dart`) is narrowed to the website's
+   hosts: the apex, `www.` and `*.vercel.app` (Vercel deployments). `legal.`,
+   `api.` and every other subdomain are allowed; `vercel.com` is not a website
+   host and is allowed too.
+2. **Wallet numbers and InstaPay address** are edited by an admin in the
+   console (settings) and served to the website by the API (W2/W4). The app
+   never shows them.
+3. **Proof of transfer**: transfer reference, sender number and amount. No
+   receipt image, so SPEC Section 1 item 1 (students upload nothing) stays
+   as it is and W4 has no upload path.
+4. **Terms and refund text**: the owner provides it; the placeholder pages
+   stay until then.
+5. **Prices**: the website shows the same prices as the center (the
+   subject's price in the console; no separate website price).
+6. **Root `.dockerignore`** (approved): excludes `web/`, `node_modules` and
+   `.next` from the repository-root build context used by the prod image
+   builds.
+7. **Static pages**: options A and C of the static-pages report, built inside
+   W2, not as a separate fix.
+   - A: the fixed pages (home, about, catalog, terms, privacy, refund) are
+     prerendered static with a static CSP set in `next.config`; only the
+     pages with forms (log in, sign up, buy) keep the per-request nonce and
+     render per request (the proxy and `connection()` limited to them).
+   - C: subject pages get `generateStaticParams` from the W2 catalog plus
+     `revalidate`, so they are prebuilt and refreshed on a timer.
+   - The report found that the proxy does not make pages dynamic;
+     `connection()` in the root layouts does (16 of 18 routes build static
+     without it), and that a static page under today's nonce CSP is blocked
+     (no script carries the nonce). The static CSP of option A needs
+     `script-src 'unsafe-inline'` for Next.js's inline scripts; W2 records
+     that tradeoff for those pages.
+   - ESLint stays on 9 (`9.39.5`, the last 9.x) until `eslint-plugin-react`,
+     `eslint-plugin-import` and `eslint-plugin-jsx-a11y` support ESLint 10
+     (their peer ranges end at 9 on 2026-11-04). No npm `overrides`.
 
 ## To verify
 
@@ -140,6 +200,9 @@ Owner decisions, not decided here:
 - Once open question 1 is decided, the store-safety guard covers the chosen
   host (the apex, any non-app subdomain and Vercel hosts are refused today;
   a domain outside `elmetracademy.app` must be added to `_extraWebsiteHosts`).
+  *(Done 2026-11-04: the guard refuses the apex, `www.` and `*.vercel.app`;
+  `_extraWebsiteHosts` is removed.)*
 - Before W4: an optional receipt image is a student upload, and SPEC
   Section 1 item 1 (locked) says students upload nothing. The W4 brief needs
   an owner amendment of that item, or no receipt image.
+  *(Resolved 2026-11-04: no receipt image, owner decision 3.)*
