@@ -1,0 +1,117 @@
+/* Design tokens: names and values from docs/frontend/DESIGN_SYSTEM.md
+   (AppColors, AppSpacing, AppRadius, AppElevation, AppMotion), so the site
+   matches the app. Keep them in step with frontend/lib/core/theme.dart. */
+:root {
+  /* AppColors: surfaces */
+  --void-canvas: #080808;
+  --surface-layer-1: #111111;
+  --surface-elevated: #181818;
+  --surface-high: #202020;
+  /* AppColors: borders */
+  --subtle-hairline: #262626;
+  --prominent-border: #303030;
+  --active-border: #c1121f;
+  /* AppColors: accents */
+  --crimson: #c1121f;
+  --deep-crimson: #7f0d15;
+  --crimson-hover: #a30f1a;
+  --crimson-tinted: rgb(193 18 31 / 0.12);
+  --crimson-glow: rgb(193 18 31 / 0.22);
+  /* AppColors: text */
+  --text-primary: #ffffff;
+  --text-secondary: #b8b8b8;
+  --text-muted: #9a9a9a;
+  --text-tertiary: #8a8a8a;
+  /* AppColors: semantic */
+  --warning: #f59e0b;
+  --warning-bg: rgb(245 158 11 / 0.15);
+  /* AppColors: glass chrome */
+  --header-glass: rgb(9 9 9 / 0.95);
+  --glass-hairline: rgb(255 255 255 / 0.08);
+
+  /* AppSpacing */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 40px;
+  --margin-mobile: 16px;
+  --header-height: 56px;
+
+  /* AppRadius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-card: 12px;
+  --radius-pill: 9999px;
+
+  /* AppElevation */
+  --elevation-card: 0 4px 12px rgb(0 0 0 / 0.5);
+  --elevation-crimson-glow: 0 4px 20px rgb(193 18 31 / 0.25);
+
+  /* AppMotion */
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+
+  /* AppTypography: Cairo for Arabic; Syne (display) and Plus Jakarta Sans (body) for Latin */
+  --font-display: var(--font-syne), system-ui, sans-serif;
+  --font-body: var(--font-plus-jakarta-sans), system-ui, sans-serif;
+  --content-width: 1080px;
+
+  color-scheme: dark;
+}
+
+:lang(ar) {
+  --font-display: var(--font-cairo), system-ui, sans-serif;
+  --font-body: var(--font-cairo), system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--void-canvas);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+a {
+  color: inherit;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--crimson);
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  line-height: 1.2;
+  margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

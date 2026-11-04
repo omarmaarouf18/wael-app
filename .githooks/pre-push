@@ -1,6 +1,6 @@
 #!/bin/bash
 # wael-app pre-push gate: gofmt, Go version drift, build/vet/test per
-# module, gosec, govulncheck, contract tests, Flutter gates.
+# module, gosec, govulncheck, contract tests, Flutter gates, website gate.
 #
 # The gate checks the commits being pushed, never the working tree. Git
 # passes the pushed refs on stdin; every unique pushed SHA is checked once
@@ -194,6 +194,16 @@ fi
   echo "BLOCKED: services/admin-console web tests failed"
   exit 1
 }
+
+# 5b2. Website gate (web/, ADR-0014): npm ci, lint, typecheck, next build.
+# Runs on every gate run here (CI runs it only when web/ changed).
+if [ -f "web/package.json" ]; then
+  echo "-- running website gate (scripts/web_gate.sh) --"
+  bash scripts/web_gate.sh || {
+    echo "BLOCKED: web/ failed the website gate"
+    exit 1
+  }
+fi
 
 # 5c. Certificate script self-test (--sign-only must keep the CA and other certs)
 echo "-- running certificate script tests --"

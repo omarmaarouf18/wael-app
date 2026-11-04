@@ -72,6 +72,17 @@ false` in `lib/main.dart`), so nothing is requested from Google at runtime.
 | `Syne-SemiBold.ttf` (600), `Syne-Bold.ttf` (700), `Syne-ExtraBold.ttf` (800); `OFL-Syne.txt` | Google Fonts (`fonts.google.com/specimen/Syne`), static TTF instances via the `fonts.googleapis.com/css2` API | SIL Open Font License 1.1 (`OFL-Syne.txt`) |
 | `PlusJakartaSans-Regular.ttf` (400), `PlusJakartaSans-SemiBold.ttf` (600), `PlusJakartaSans-Bold.ttf` (700); `OFL-PlusJakartaSans.txt` | Google Fonts (`fonts.google.com/specimen/Plus+Jakarta+Sans`), static TTF instances via the `fonts.googleapis.com/css2` API | SIL Open Font License 1.1 (`OFL-PlusJakartaSans.txt`) |
 
+## Website copies — `web/` (2026-11-04, ADR-0014)
+
+Byte-identical copies of assets listed above, so the website matches the app
+(Vercel builds only `web/`). Same provenance and licence as the source row.
+
+| Path | Copy of | Source | License |
+|---|---|---|---|
+| `web/public/brand/logo-512.png` | `frontend/assets/branding/store_icon_512.png` | As its source row (generated from `app_icon_1024.png`) | Owner-approved 2026-10-02 |
+| `web/public/brand/banner.jpg` | `frontend/assets/images/elmetr_banner.jpg` | Owner-supplied EL METR banner | Owner-supplied 2026-10-08 |
+| `web/src/fonts/Cairo-Regular.ttf`, `Cairo-Bold.ttf`, `Cairo-ExtraBold.ttf`, `Syne-Bold.ttf`, `Syne-ExtraBold.ttf`, `PlusJakartaSans-Regular.ttf`, `PlusJakartaSans-SemiBold.ttf`, `OFL-Cairo.txt`, `OFL-Syne.txt`, `OFL-PlusJakartaSans.txt` | the same names in `frontend/assets/fonts/` | Google Fonts, as the bundled fonts above | SIL Open Font License 1.1 (OFL files copied with them) |
+
 ## Removed assets
 
 Deleted on 2026-10-02 because nothing referenced them any more (they belonged

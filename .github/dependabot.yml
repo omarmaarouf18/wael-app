@@ -137,6 +137,19 @@ updates:
           - "minor"
           - "patch"
 
+  # Website (web/, ADR-0014)
+  - package-ecosystem: "npm"
+    directory: "/web"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "develop"

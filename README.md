@@ -21,6 +21,8 @@ real gateway auth.
 - Tools: `tools/docgen` (skeleton).
 - Frontend: `frontend/` (Flutter; backend URL via
   `--dart-define=API_BASE_URL`, see `frontend/README.md`).
+- Website: `web/` (Next.js sales site, ADR-0014; foundations only, see
+  `docs/web/README.md`). Never mirrored to the mobile repo.
 - Go: pinned `1.26.0` / toolchain `go1.26.6` via `go.work` (drift-guarded in
   the hook and CI). *(Owner decision 2026-10-02: canonical Go language line is
   `go 1.26.0`; toolchain stays `go1.26.6`.)* *(Amended 2026-10-09, owner decision: toolchain raised to `go1.26.9` for the Go security release of 2026-10-08 (GO-2026-6603, -6605, -6607, -6608, -6610..-6613, -6617 in net/http, net/textproto, crypto/tls; govulncheck failed CI on go1.26.6). Language line stays `go 1.26.0`.)*

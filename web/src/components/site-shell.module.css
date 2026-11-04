@@ -1,0 +1,125 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--header-glass);
+  border-block-end: 1px solid var(--glass-hairline);
+}
+
+.headerInner,
+.footerInner,
+.main {
+  width: 100%;
+  max-width: var(--content-width);
+  margin-inline: auto;
+  padding-inline: var(--margin-mobile);
+}
+
+.headerInner {
+  min-height: var(--header-height);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-md) var(--space-xl);
+  padding-block: var(--space-sm);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  text-decoration: none;
+  margin-inline-end: auto;
+}
+
+.logo {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-lg);
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+}
+
+.brandName {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.brandEyebrow {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs) var(--space-lg);
+  font-size: 14px;
+}
+
+.navLink {
+  text-decoration: none;
+  color: var(--text-secondary);
+  transition: color var(--duration-fast);
+}
+
+.navLink:hover {
+  color: var(--text-primary);
+}
+
+.cta {
+  text-decoration: none;
+  color: var(--text-primary);
+  background: var(--crimson);
+  border-radius: var(--radius-pill);
+  padding: var(--space-xs) var(--space-lg);
+  font-weight: 600;
+  box-shadow: var(--elevation-crimson-glow);
+  transition: background var(--duration-fast);
+}
+
+.cta:hover {
+  background: var(--crimson-hover);
+}
+
+.langSwitch {
+  text-decoration: none;
+  color: var(--text-secondary);
+  border: 1px solid var(--prominent-border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-xs) var(--space-md);
+  font-size: 13px;
+}
+
+.main {
+  flex: 1;
+  padding-block: var(--space-3xl);
+}
+
+.footer {
+  border-block-start: 1px solid var(--subtle-hairline);
+  background: var(--surface-layer-1);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.footerInner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md) var(--space-xl);
+  padding-block: var(--space-xl);
+}
+
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-lg);
+  margin-inline-end: auto;
+}

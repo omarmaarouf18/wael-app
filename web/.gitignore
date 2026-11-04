@@ -1,0 +1,16 @@
+# Dependencies (installed with `npm ci` from package-lock.json)
+/node_modules
+
+# Next.js build output and generated types
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Local env files (only .env.example is committed)
+.env
+.env.*
+!.env.example
+
+# Vercel CLI state
+/.vercel

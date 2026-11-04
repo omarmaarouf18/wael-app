@@ -25,6 +25,9 @@ everything else follows it or records a point in time.
   Unknown answers are marked TODO(owner).
 - `docs/frontend/IOS-RELEASE.md` — iOS pipeline and store checklist (iOS lane).
   Follows the build-ios workflow; App Store review risk stays with the owner.
+- `docs/web/README.md` — sales website in `web/` (ADR-0014): pages, stack,
+  env, build, Vercel deploy steps, security headers. Source of truth for the
+  website.
 - `docs/admin/CONSOLE-GUIDE.ar.md` — Arabic console guide for center staff.
   Follows `services/admin-console/web`.
 - `docs/ops/INCIDENTS.md` — incident response (leaks, rotation, restore).

@@ -331,6 +331,49 @@ jobs:
         working-directory: frontend
         run: flutter test
 
+  web:
+    name: Website (lint, typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Runs when web/, its gate script or this workflow changed (ADR-0014).
+      # The job still succeeds when nothing changed, so CI OK can require it.
+      # No usable base (new branch, force push, first commit): run.
+      - name: Detect web/ changes
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base="$PUSH_BEFORE"
+          if [ "$EVENT_NAME" = "pull_request" ]; then base="$PR_BASE"; fi
+          run=true
+          if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ] \
+            && git cat-file -e "${base}^{commit}" 2>/dev/null \
+            && git diff --quiet "$base" HEAD -- web/ scripts/web_gate.sh .github/workflows/ci.yml; then
+            run=false
+          fi
+          echo "web/ gate needed: $run (base: ${base:-none})"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # npm ci, ESLint (zero warnings), tsc, next build (no warning allowed)
+      - name: Website gate
+        if: steps.changes.outputs.run == 'true'
+        run: bash scripts/web_gate.sh
+
   e2e-compose:
     name: E2E (compose)
     runs-on: ubuntu-latest
@@ -487,6 +530,7 @@ jobs:
       - security
       - gitleaks
       - flutter-test
+      - web
       - e2e-compose
       - prod-build
       - deploy-config-check
@@ -510,6 +554,7 @@ jobs:
           check_job "security" "${{ needs.security.result }}"
           check_job "gitleaks" "${{ needs.gitleaks.result }}"
           check_job "flutter-test" "${{ needs.flutter-test.result }}"
+          check_job "web" "${{ needs.web.result }}"
           check_job "e2e-compose" "${{ needs.e2e-compose.result }}"
           check_job "prod-build" "${{ needs.prod-build.result }}"
           check_job "deploy-config-check" "${{ needs.deploy-config-check.result }}"
