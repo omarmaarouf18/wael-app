@@ -24,6 +24,7 @@ const (
 	pubHiddenID   = "subj-pub-hidden-level"
 	pubOpenID     = "subj-pub-open"
 	pubHiddenLvl  = "diploma-pub-hidden"
+	pubExpiredID  = "subj-pub-expired"
 )
 
 // publicCatalogFixture: one published subject (with a published video, an
@@ -42,6 +43,7 @@ func publicCatalogFixture(t *testing.T) *Server {
 		{ID: pubOpenID, LevelKey: "bachelor-y1", Term: "first", TitleAr: "مادة منشورة", TitleEn: "Open subject", DescriptionAr: "وصف", DescriptionEn: "About", Price: 1800, Status: models.StatusPublished, Order: 1, AccessExpiresAt: exp},
 		{ID: pubDraftID, LevelKey: "bachelor-y1", Term: "first", TitleAr: "مسودة", Price: 900, Status: models.StatusDraft, Order: 2, AccessExpiresAt: exp},
 		{ID: pubHiddenID, LevelKey: pubHiddenLvl, Term: "first", TitleAr: "مخفية", Price: 700, Status: models.StatusPublished, Order: 3, AccessExpiresAt: exp},
+		{ID: pubExpiredID, LevelKey: "bachelor-y1", Term: "first", TitleAr: "منتهية", Price: 500, Status: models.StatusPublished, Order: 4, AccessExpiresAt: time.Now().Add(-time.Hour)},
 	} {
 		if err := s.Store.CreateSubject(ctx, subj); err != nil {
 			t.Fatalf("CreateSubject: %v", err)
@@ -82,7 +84,7 @@ func assertNoContentFields(t *testing.T, body string) {
 		pubVideoID, pubYouTubeID, "unpubYT0001", pubFileID, pubStorageKey,
 		"youtube", "storage_key", "download", "/play", "playable",
 		`"videos":[`, `"files":`, `"owned"`, `"request"`, "whatsapp",
-		pubDraftID, pubHiddenID, pubHiddenLvl,
+		pubDraftID, pubHiddenID, pubHiddenLvl, pubExpiredID,
 	} {
 		if strings.Contains(body, banned) {
 			t.Errorf("public body contains %q: %s", banned, body)
@@ -216,6 +218,7 @@ func TestPublicSubject_NotFound(t *testing.T) {
 		"draft_subject":           pubDraftID,
 		"unknown_id":              "no-such-subject",
 		"subject_of_hidden_level": pubHiddenID,
+		"expired_subject":         pubExpiredID,
 		"overlong_id":             strings.Repeat("a", 65),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -394,5 +397,64 @@ func TestPublicCatalog_NoLimiterFailsClosedInProduction(t *testing.T) {
 	s.Limiter = nil
 	if rec := doPublicCatalog(t, s, http.MethodGet, "/academy/public/catalog", nil); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+}
+
+// Owner decision 2026-11-04: a published subject whose access_expires_at has
+// passed is hidden from the public catalog and is 404 on the public subject
+// route, from the moment it expires; the app still lists it (unchanged).
+func TestPublicCatalog_HidesExpiredSubjects(t *testing.T) {
+	s := publicCatalogFixture(t)
+	ctx := context.Background()
+
+	subj, err := s.Store.GetSubjectByID(ctx, pubOpenID)
+	if err != nil || subj == nil {
+		t.Fatalf("GetSubjectByID: %v", err)
+	}
+	if !strings.Contains(doPublicCatalog(t, s, http.MethodGet, "/academy/public/catalog", nil).Body.String(), pubOpenID) {
+		t.Fatal("unexpired subject missing from catalog")
+	}
+	subj.AccessExpiresAt = time.Now().Add(-time.Second)
+	if err := s.Store.UpdateSubject(ctx, subj); err != nil {
+		t.Fatalf("UpdateSubject: %v", err)
+	}
+	cat := doPublicCatalog(t, s, http.MethodGet, "/academy/public/catalog", nil)
+	if cat.Code != http.StatusOK || strings.Contains(cat.Body.String(), pubOpenID) {
+		t.Fatalf("expired subject still in catalog (%d): %s", cat.Code, cat.Body.String())
+	}
+	if rec := doPublicCatalog(t, s, http.MethodGet, "/academy/public/subjects/"+pubOpenID, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("expired subject = %d, want 404", rec.Code)
+	}
+
+	// The app's list for a student still shows the expired subject.
+	app := studentGet(t, s, makeStudentToken(t, "user-pub-app"), "/academy/subjects?level=bachelor-y1")
+	if app.Code != http.StatusOK || !strings.Contains(app.Body.String(), pubOpenID) || !strings.Contains(app.Body.String(), pubExpiredID) {
+		t.Fatalf("app list changed (%d): %s", app.Code, app.Body.String())
+	}
+
+	// Renewing the window brings it back.
+	subj.AccessExpiresAt = time.Now().Add(time.Hour)
+	if err := s.Store.UpdateSubject(ctx, subj); err != nil {
+		t.Fatalf("UpdateSubject: %v", err)
+	}
+	if rec := doPublicCatalog(t, s, http.MethodGet, "/academy/public/subjects/"+pubOpenID, nil); rec.Code != http.StatusOK {
+		t.Fatalf("renewed subject = %d, want 200", rec.Code)
+	}
+}
+
+func TestPublicSubjectExpired(t *testing.T) {
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	for name, c := range map[string]struct {
+		exp  time.Time
+		want bool
+	}{
+		"zero_never_expires": {time.Time{}, false},
+		"future":             {now.Add(time.Nanosecond), false},
+		"exactly_now":        {now, true},
+		"past":               {now.Add(-time.Hour), true},
+	} {
+		if got := publicSubjectExpired(&models.Subject{AccessExpiresAt: c.exp}, now); got != c.want {
+			t.Errorf("%s: expired = %v, want %v", name, got, c.want)
+		}
 	}
 }

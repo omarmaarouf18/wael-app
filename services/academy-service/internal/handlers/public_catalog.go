@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
@@ -15,8 +16,10 @@ import (
 )
 
 // Public catalog (ADR-0014 W2a): unauthenticated, read-only sales data for
-// the website. Only published subjects under published levels, the same rule
-// non-owners get in the app (R8). No per-user data, no content ids.
+// the website. Only published, unexpired subjects under published levels: the
+// app's non-owner rule (R8) plus the expiry rule of owner decision 2026-11-04
+// (a subject whose access_expires_at has passed cannot be bought, so the site
+// does not show it; the app is unchanged). No per-user data, no content ids.
 const (
 	publicCatalogPath        = "/academy/public/catalog"
 	publicSubjectsPrefix     = "/academy/public/subjects/"
@@ -72,9 +75,10 @@ func (s *Server) GetPublicCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	now := time.Now()
 	byLevel := make(map[string][]models.PublicSubjectDTO)
 	for _, subj := range subjects {
-		if subj.Status != models.StatusPublished {
+		if subj.Status != models.StatusPublished || publicSubjectExpired(subj, now) {
 			continue
 		}
 		dto, err := s.publicSubject(r, subj)
@@ -127,8 +131,8 @@ func (s *Server) GetPublicCatalog(w http.ResponseWriter, r *http.Request) {
 	writePublicJSON(w, r, resp)
 }
 
-// GetPublicSubject serves GET /academy/public/subjects/{id}. Unknown, draft
-// and hidden-level subjects are the same 404.
+// GetPublicSubject serves GET /academy/public/subjects/{id}. Unknown, draft,
+// expired and hidden-level subjects are the same 404.
 func (s *Server) GetPublicSubject(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writePublicError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
@@ -147,7 +151,7 @@ func (s *Server) GetPublicSubject(w http.ResponseWriter, r *http.Request) {
 		writePublicError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	if subj == nil || subj.Status != models.StatusPublished {
+	if subj == nil || subj.Status != models.StatusPublished || publicSubjectExpired(subj, time.Now()) {
 		writePublicError(w, r, http.StatusNotFound, "not_found", "subject not found", nil)
 		return
 	}
@@ -177,6 +181,13 @@ func (s *Server) GetPublicSubject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writePublicJSON(w, r, models.PublicSubjectDetailDTO{PublicSubjectDTO: dto, Level: level.ToDTO()})
+}
+
+// publicSubjectExpired reports whether a subject's access window has passed,
+// with the comparison the accept path uses (an expiry at or before now is
+// expired; a zero expiry never is).
+func publicSubjectExpired(subj *models.Subject, now time.Time) bool {
+	return !subj.AccessExpiresAt.IsZero() && !subj.AccessExpiresAt.After(now)
 }
 
 func (s *Server) publicSubject(r *http.Request, subj *models.Subject) (models.PublicSubjectDTO, error) {

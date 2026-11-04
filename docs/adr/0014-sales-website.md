@@ -216,6 +216,27 @@ foundations report of the same day. The decision text above is unchanged.
      `eslint-plugin-import` and `eslint-plugin-jsx-a11y` support ESLint 10
      (their peer ranges end at 9 on 2026-11-04). No npm `overrides`.
 
+## Amendment 2026-11-04 (2): owner decisions after the W2a report
+
+Owner decisions of 2026-11-04, answering the W2a (step 1) report. The text
+above is unchanged.
+
+1. **Instructor name**: the public catalog keeps serving the platform's one
+   teacher from the server constant (`models.AcademyInstructor`), equal to
+   the app's director profile. No console setting for now.
+2. **Expired subjects**: a published subject whose `access_expires_at` has
+   passed is hidden from `GET /academy/public/catalog` and is 404 on
+   `GET /academy/public/subjects/{id}`. The app is unchanged (it still lists
+   such a subject). Built as a small backend fix before the W2b web work.
+3. **Auth bypass**: the StudentAuth bypass for exactly the two public
+   catalog paths is confirmed by the owner under SPEC Section 12 rule 6
+   (access-control change held from `main` until the owner confirms).
+4. **W2b builds every subject page from the one catalog call**: the site
+   fetches `GET /api/v1/academy/public/catalog` once per build or
+   revalidation and renders `/subjects` and every `/subjects/[id]` from it,
+   so a build never makes one API call per subject (the per-IP limits stay
+   as they are).
+
 ## To verify
 
 - Vercel accepts the site on the Hobby plan (owner, when the project is

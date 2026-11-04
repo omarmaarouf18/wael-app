@@ -229,6 +229,8 @@ Student routes are served through the gateway as `/api/v1/auth/...` and `/api/v1
 | `GET /academy/public/catalog` | Published catalog for the website | No student JWT (a JWT changes nothing); `X-Gateway-Secret` still required. `{"study_types":[{"key","title","levels":[{"key","study_type","title","position","subjects":[...]}]}]}`: the three study types in the order of `GET /academy/levels`, published levels only, `subjects` always an array. Each subject is exactly `id`, `level_key`, `term`, `title {ar,en}`, `description {ar,en}`, `price` (integer), `currency` (`EGP`), `instructor {ar,en}`, `counts {videos,books,notes}`, `access_expires_at`. Only published subjects under published levels (R8, no owner exception). Price always present (ADR-0014 owner decision 5); `EXPOSE_PRICE_TO_STUDENTS` and `show_prices` do not apply. Read tier per IP; gateway per-IP limit in its own bucket. 200 and 304 carry `Cache-Control: public, max-age=60` and a strong `ETag` over the body; a matching `If-None-Match` is 304 with no body |
 | `GET /academy/public/subjects/{id}` | One published subject | Same subject fields plus `level` (`key`, `study_type`, `title`, `position`). Unknown, draft, hidden-level or over-64-character id: 404 `not_found` with `Cache-Control: no-store`. Same tiers and cache headers as the catalog |
 
+*(Amended 2026-11-04, owner decision after the W2a report (ADR-0014 "Amendment 2026-11-04 (2)"): a published subject whose `access_expires_at` is at or before now is left out of the catalog and is 404 `not_found` on the subject route, like a draft; a zero expiry never expires. The app's student routes are unchanged. The instructor stays the server constant; no console setting.)*
+
 Neither route ever returns a video id, `youtube_video_id`, a file id, `storage_key`, a download or play path, `owned`, a request or anything per user; tests fail if one appears. The StudentAuth bypass matches these two paths exactly. `instructor` is the platform's one teacher (Section 1 decision 1) from a server constant (`models.AcademyInstructor`), equal to the app's `frontend/lib/content/director_profile.dart`; subjects have no instructor field.
 
 Subject detail, owned:
@@ -415,6 +417,7 @@ Each numbered item is **one commit** with its own gates and its own `AI_CONTEXT.
 4. Run the gates for every touched module and paste the real output. If you did not capture a line, say so.
 5. Never rewrite history, never amend a commit whose hash is cited in a document. For the push policy, see CLAUDE.md Auto-push (owner amendment 2026-09-30).
 6. Access-control changes (suspension, gating, admin auth) are held from `main` until the owner confirms (saas-core ADR-0022 "Deployment Gate").
+   *(Amended 2026-11-04, owner confirmation: the academy-service StudentAuth bypass for exactly `/academy/public/catalog` and `/academy/public/subjects/{id}` (ADR-0014 W2a, commit `acebf12`) is confirmed; it may go to `main` with the owner's normal fast-forward. The rule itself is unchanged for every other access-control change.)*
 7. Report: files changed (`git show --stat`), gates, deviations, anything unverified.
 
 ## 13. Reference implementation pointers (saas-core, read-only)

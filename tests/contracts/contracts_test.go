@@ -476,10 +476,11 @@ func TestContract_NotificationStreamRevocation(t *testing.T) {
 }
 
 // 9. Public catalog contract (ADR-0014 W2a): GET /academy/public/catalog and
-// GET /academy/public/subjects/{id} need no student JWT, return only published
-// subjects under published levels with price, instructor and counts, never
+// GET /academy/public/subjects/{id} need no student JWT, return only published,
+// unexpired subjects under published levels with price, instructor and
+// counts (expired hidden: owner decision 2026-11-04), never
 // a content field (video, YouTube or file ids, storage keys, download or play
-// paths); a draft, unknown or hidden-level subject is 404; both carry
+// paths); a draft, unknown, expired or hidden-level subject is 404; both carry
 // Cache-Control public, max-age=60 and an ETag (304 on a match); per-IP limits
 // in academy (read tier) and at the gateway (own bucket); the gateway routes
 // them through /api/v1/academy/ and passes the cache headers through.
@@ -494,6 +495,8 @@ func TestContract_PublicCatalog(t *testing.T) {
 			"TestPublicSubject_NotFound/draft_subject",
 			"TestPublicSubject_NotFound/unknown_id",
 			"TestPublicSubject_NotFound/subject_of_hidden_level",
+			"TestPublicSubject_NotFound/expired_subject",
+			"TestPublicCatalog_HidesExpiredSubjects",
 			"TestPublicCatalog_FollowsPublishState",
 			"TestPublicCatalog_ETagNotModified",
 			"TestPublicCatalog_Auth",
@@ -504,7 +507,7 @@ func TestContract_PublicCatalog(t *testing.T) {
 		{"github.com/omarmaarouf18/wael-app/api-gateway/internal/proxy", []string{"TestGateway_PublicCatalogRoute"}},
 		{"github.com/omarmaarouf18/wael-app/api-gateway/internal/middleware", []string{"TestRateLimit_PublicCatalogPerIP"}},
 	} {
-		cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestPublicCatalog_|TestPublicSubject_|TestGateway_PublicCatalogRoute$|TestRateLimit_PublicCatalogPerIP$)", c.pkg)
+		cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestPublicCatalog_|TestPublicSubject_|TestPublicSubjectExpired$|TestGateway_PublicCatalogRoute$|TestRateLimit_PublicCatalogPerIP$)", c.pkg)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("public catalog contract verification failed in %s: %v\nOutput:\n%s", c.pkg, err, string(out))
