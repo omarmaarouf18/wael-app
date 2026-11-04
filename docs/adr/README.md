@@ -59,6 +59,7 @@ say explicitly where nothing is built yet.
 *   [ADR-0011: Separate Deploy and Mobile Repositories](0011-deploy-and-mobile-repositories.md)
 *   [ADR-0012: Academy Admin Content API (Phase 4.1-4.4)](0012-academy-admin-content.md)
 *   [ADR-0013: Admin Broadcast Notifications (SPEC Phase 7)](0013-broadcast-notifications.md)
+*   [ADR-0014: Sales Website (El Metr Academy)](0014-sales-website.md)
 
 ### Numbering notes (added 2026-10-06)
 

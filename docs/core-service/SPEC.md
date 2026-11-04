@@ -28,6 +28,7 @@ This is the build contract for the core of the application. It is written for im
 6. Removed from scope: live events, progress tracking on the server, ratings, student counts, view counts, free previews.
 7. Content is bilingual (Arabic and English), Arabic preferred.
 8. Payment happens outside the app. The payment flow itself is **out of scope** and the owner will specify it later. The only boundary: an admin-accepted request creates the entitlement. A rejected request may be resubmitted as a new request.
+   *(Amended 2026-11-04, owner decision: the payment flow is specified in ADR-0014 — a manual transfer to the owner's wallets or InstaPay, a purchase request with the transfer details submitted on the sales website, and an admin who checks it and activates the subject in the console. The boundary above is unchanged: only an admin-accepted request (or a manual grant) creates the entitlement; nothing is activated in the browser. See Section 16.)*
 9. A student who opens a locked subject automatically creates an access request (no manual step). The app then shows a "contact support to activate" message with a WhatsApp link (ADR-0006).
 10. Support is WhatsApp only (ADR-0006).
 
@@ -57,7 +58,7 @@ This is the build contract for the core of the application. It is written for im
 |---|---|---|
 | D1 | Titles/descriptions | Arabic required, English optional (API falls back to Arabic). |
 | D2 | Price | Integer in whole EGP (`price`), currency fixed to `EGP`. |
-| D3 | Price visibility to students | **Hidden** by default (`EXPOSE_PRICE_TO_STUDENTS=false`), reversible by config. Reason: unresolved iOS review risk (Section 3). *(Amended 2026-10-08, owner decision: the app may show a subject's price on locked subjects when the server sends it (`price` + `currency` present). It still never shows a payment action: no pay/buy/purchase/refund wording, no payment methods, no payment links; activation stays with the center/support over WhatsApp. Reason: Google Play "consumption-only" rule — content may be bought outside the app, but the app must not lead users to an outside payment method. The price stays switchable from the server (`EXPOSE_PRICE_TO_STUDENTS`) so it can be hidden without a new APK if Play review objects. *(Amended 2026-10-08, owner amendment to F-UX6: showing a price additionally requires the public app-config flag `show_prices` (`GET /academy/app-config`, read via `AppConfigProvider`); the price renders only when the flag is true AND the subject carries a non-null price. A missing field, `false`, or a failed/offline config with no cache hides every price (fail closed). The same route may carry `center` (`{name, address, hours}` each as `{ar, en}` objects, plus `map_url`), shown in Settings > Help with an https-only map link; absent means nothing shown.)* *(Amended 2026-10-08, owner decision: the admin console controls app-facing settings that are env-only today (show_prices toggle, support WhatsApp, center name/address/hours/map URL). Stored in academy `app_settings` document (_id "app"). Env values stay as the defaults until an admin saves a value in the console. `show_prices` is independent of `EXPOSE_PRICE_TO_STUDENTS` (which only controls whether the API sends subject price fields); when `show_prices` is false or price is omitted, prices are hidden.)* |
+| D3 | Price visibility to students | **Hidden** by default (`EXPOSE_PRICE_TO_STUDENTS=false`), reversible by config. Reason: unresolved iOS review risk (Section 3). *(Amended 2026-10-08, owner decision: the app may show a subject's price on locked subjects when the server sends it (`price` + `currency` present). It still never shows a payment action: no pay/buy/purchase/refund wording, no payment methods, no payment links; activation stays with the center/support over WhatsApp. Reason: Google Play "consumption-only" rule — content may be bought outside the app, but the app must not lead users to an outside payment method. The price stays switchable from the server (`EXPOSE_PRICE_TO_STUDENTS`) so it can be hidden without a new APK if Play review objects. *(Amended 2026-10-08, owner amendment to F-UX6: showing a price additionally requires the public app-config flag `show_prices` (`GET /academy/app-config`, read via `AppConfigProvider`); the price renders only when the flag is true AND the subject carries a non-null price. A missing field, `false`, or a failed/offline config with no cache hides every price (fail closed). The same route may carry `center` (`{name, address, hours}` each as `{ar, en}` objects, plus `map_url`), shown in Settings > Help with an https-only map link; absent means nothing shown.)* *(Amended 2026-10-08, owner decision: the admin console controls app-facing settings that are env-only today (show_prices toggle, support WhatsApp, center name/address/hours/map URL). Stored in academy `app_settings` document (_id "app"). Env values stay as the defaults until an admin saves a value in the console. `show_prices` is independent of `EXPOSE_PRICE_TO_STUDENTS` (which only controls whether the API sends subject price fields); when `show_prices` is false or price is omitted, prices are hidden.)* *(Amended 2026-11-04, owner decision, ADR-0014: the apps never contain the website's address or any link or wording that leads to buying on it. Guard: `frontend/test/store_safety_l10n_test.dart` "Website address guard".)* |
 | D4 | Locked-subject view | Student sees titles and descriptions of videos and files, but never `youtube_video_id` or download access. |
 | D5 | File kinds | `subject_files.kind` is `book` or `note`; format is PDF only. "Classes" (حصص) is not modeled: it means videos. |
 | D6 | Video duration | Not stored. |
@@ -449,3 +450,20 @@ dated notes and amendments in Sections 2, 3, 6, 9 and 11 and
 3. **ADR-0003 amendment applied** (docs only): payment is manual via
    InstaPay or e-wallets, with admin activation. The payment flow itself
    stays out of scope (decision 8); the refund policy stays open.
+
+## 16. Website (added 2026-11-04)
+
+El Metr Academy's sales website is decided in ADR-0014 (owner decision
+2026-11-04): a site for selling subjects, not a web version of the app. It
+lives in `web/` (Next.js, deployed by Vercel), uses the same accounts and
+catalog as the app through the existing server, and takes manual transfer
+payments that an admin verifies and activates in the console through the
+existing purchase request / payment record / grant flow. The apps never
+mention or link to it (Section 2 D3 amendment 2026-11-04).
+
+Built: foundations only (docs, scaffold with placeholder pages, CI, security
+headers, deploy notes; `docs/web/README.md`). No academy-service or gateway
+change exists for the website yet. Planned in later briefs, each with its own
+server work: W2 public catalog endpoint, W3 web auth (CORS, cookie refresh
+token), W4 manual payments, W5 real pages. The open owner decisions are
+listed in ADR-0014.

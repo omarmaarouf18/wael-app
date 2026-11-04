@@ -85,3 +85,15 @@ Source: `docs/core-service/SPEC.md` Section 2 D3 (amendments 2026-10-08) and
    no pay/buy/purchase wording, no payment methods or links in-app. The
    store-safety test (`frontend/test/store_safety_l10n_test.dart`) pins the
    banned wording and the price-label allowlist.
+
+## Amendment (2026-11-04, owner decision)
+
+The earlier text above is unchanged. The payment flow is now specified by
+ADR-0014 (sales website): the student sends a manual transfer to the owner's
+wallets or InstaPay, submits a purchase request with the transfer details on
+the website, and an admin checks it and activates the subject in the console
+through the existing request, payment record and grant path. Center
+activation stays in parallel. The apps keep the rules of the 2026-10-08
+amendment and never mention or link to the website. Built so far: the
+website foundations only (no payment code); the refund policy text is still
+open (ADR-0014 open question 4).
