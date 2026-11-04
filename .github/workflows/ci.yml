@@ -355,7 +355,7 @@ jobs:
           run=true
           if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ] \
             && git cat-file -e "${base}^{commit}" 2>/dev/null \
-            && git diff --quiet "$base" HEAD -- web/ scripts/web_gate.sh .github/workflows/ci.yml; then
+            && git diff --quiet "$base" HEAD -- web/ scripts/web_gate.sh scripts/web_gate_test.sh .github/workflows/ci.yml; then
             run=false
           fi
           echo "web/ gate needed: $run (base: ${base:-none})"
@@ -369,7 +369,23 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      # npm ci, ESLint (zero warnings), tsc, next build (no warning allowed)
+      # The build log check allows exactly one warning (no .next/cache yet)
+      # and fails on any other. Bash only, so it runs every time.
+      - name: Website gate self-test
+        run: bash scripts/web_gate_test.sh
+
+      # Speed only: next build's own cache. A miss (first run, new lockfile)
+      # is fine; the gate allows the "No build cache found" line.
+      - name: Cache Next.js build
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: web/.next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.ts', 'web/**/*.tsx') }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('web/package-lock.json') }}-
+
+      # npm ci, ESLint (zero warnings), tsc, next build (one allowed warning)
       - name: Website gate
         if: steps.changes.outputs.run == 'true'
         run: bash scripts/web_gate.sh

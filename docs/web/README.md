@@ -115,10 +115,18 @@ bash scripts/web_gate.sh
 
 It runs `npm ci`, `npm run lint` (ESLint, `--max-warnings=0`),
 `npm run typecheck` (`next typegen` + `tsc --noEmit`) and `npm run build`, and
-fails if the build prints any warning. CI job "Website (lint, typecheck,
-build)" runs it when `web/`, `scripts/web_gate.sh` or `ci.yml` changed (the
-job passes without running otherwise, so `CI OK` can require it); the
-pre-push hook and `make ci` run it every time `web/package.json` exists.
+fails if the build prints any warning, with one exception: Next.js's
+"⚠ No build cache found…" line, which only means `web/.next/cache` is empty
+(a fresh CI runner) and says nothing about the code. That exact whole line is
+allowed; any other warning, or that text changed, still fails.
+`scripts/web_gate_test.sh` tests this check on sample logs. CI job "Website
+(lint, typecheck, build)" runs the self-test every time, and the gate when
+`web/`, `scripts/web_gate.sh`, `scripts/web_gate_test.sh` or `ci.yml` changed
+(the job passes without running otherwise, so `CI OK` can require it); it
+restores `web/.next/cache` with `actions/cache` (key: OS, lockfile hash, hash
+of `web/**/*.ts(x)`; fallback on the lockfile hash) for speed only, and a
+cache miss still passes. The pre-push hook and `make ci` run both every time
+`web/package.json` exists.
 Dependabot updates `web/` weekly (npm, minor and patch grouped, target
 `develop`).
 

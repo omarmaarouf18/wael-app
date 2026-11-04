@@ -198,6 +198,11 @@ fi
 # 5b2. Website gate (web/, ADR-0014): npm ci, lint, typecheck, next build.
 # Runs on every gate run here (CI runs it only when web/ changed).
 if [ -f "web/package.json" ]; then
+  echo "-- running website gate self-test (scripts/web_gate_test.sh) --"
+  bash scripts/web_gate_test.sh || {
+    echo "BLOCKED: scripts/web_gate_test.sh failed"
+    exit 1
+  }
   echo "-- running website gate (scripts/web_gate.sh) --"
   bash scripts/web_gate.sh || {
     echo "BLOCKED: web/ failed the website gate"

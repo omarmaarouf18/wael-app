@@ -38,7 +38,8 @@ not verified. Never invent command output or commit hashes.
 - Frontend: run `dart format --output=none --set-exit-if-changed lib/ test/`,
   `flutter analyze`, and `flutter test` when `frontend/` changes.
 - Website: run `bash scripts/web_gate.sh` (npm ci, lint, typecheck,
-  `next build` with no warning) when `web/` changes (ADR-0014).
+  `next build` with no warning except "No build cache found") and
+  `bash scripts/web_gate_test.sh` when `web/` changes (ADR-0014).
 - Run `make ci` before reporting work that touches shared code, CI files, or
   more than one module.
 - The pre-push hook gates the pushed commits, not the working tree: every
