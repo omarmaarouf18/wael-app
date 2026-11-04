@@ -153,3 +153,45 @@ func TestRateLimit_RetryAfterHeaderExactValues(t *testing.T) {
 		t.Fatalf("Retry-After after 10s = %q, want \"20\"", got)
 	}
 }
+
+// The public catalog (ADR-0014 W2a) is limited per IP in its own bucket:
+// exhausting it does not touch the auth bucket of the same IP, exhausting
+// auth does not block the catalog, and another IP is unaffected.
+func TestRateLimit_PublicCatalogPerIP(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb, err := ratelimit.NewRedisClient("redis://" + mr.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rdb.Close() }()
+
+	rl := NewRateLimiter(ratelimit.NewRateLimiter(rdb, 1, time.Minute, "test-gw-pub"), []string{"127.0.0.1"})
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := RateLimit(rl)(okHandler)
+
+	do := func(method, url, remote string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, url, nil)
+		req.RemoteAddr = remote
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	const ip = "192.0.2.10:4000"
+
+	if rec := do(http.MethodGet, "http://x/api/v1/academy/public/catalog", ip); rec.Code != http.StatusOK {
+		t.Fatalf("catalog 1 = %d, want 200", rec.Code)
+	}
+	rec := do(http.MethodGet, "http://x/api/v1/academy/public/subjects/s1", ip)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("catalog 2 = %d Retry-After %q, want 429", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	if rec := do(http.MethodPost, "http://x/api/v1/auth/login", ip); rec.Code != http.StatusOK {
+		t.Fatalf("auth after catalog exhausted = %d, want 200 (separate bucket)", rec.Code)
+	}
+	if rec := do(http.MethodGet, "http://x/api/v1/academy/subjects", ip); rec.Code != http.StatusOK {
+		t.Fatalf("authenticated academy route = %d, want 200 (no edge limit)", rec.Code)
+	}
+	if rec := do(http.MethodGet, "http://x/api/v1/academy/public/catalog", "198.51.100.20:4000"); rec.Code != http.StatusOK {
+		t.Fatalf("other IP = %d, want 200", rec.Code)
+	}
+}

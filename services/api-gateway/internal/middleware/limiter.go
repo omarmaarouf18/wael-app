@@ -13,6 +13,10 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/ratelimit"
 )
 
+// publicCatalogPrefix is the gateway path of the unauthenticated public
+// catalog (ADR-0014 W2a).
+const publicCatalogPrefix = "/api/v1/academy/public/"
+
 // RateLimiter wraps a Redis-backed limiter with trusted-proxy-aware IP resolution.
 type RateLimiter struct {
 	rl             *ratelimit.RateLimiter
@@ -37,7 +41,8 @@ func (rl *RateLimiter) getIP(r *http.Request) string {
 	return iputil.ResolveClientIP(r, rl.trustedProxies)
 }
 
-// RateLimit enforces per-IP rate limits only for unauthenticated routes (/api/v1/auth/*),
+// RateLimit enforces per-IP rate limits only for unauthenticated routes (/api/v1/auth/* and
+// the public catalog /api/v1/academy/public/*),
 // responding 429 with Retry-After on excess.
 //
 // Carrier-Grade NAT (CGNAT) rationale:
@@ -55,18 +60,32 @@ func (rl *RateLimiter) getIP(r *http.Request) string {
 // per-IP limiter and rely entirely on per-user/per-account rate limits enforced in downstream
 // services (e.g. academy-service TierLimiter keyed by student JWT user ID, notification-service
 // stream caps) where individual accounts are isolated regardless of shared public IP.
+//
+// The public catalog (/api/v1/academy/public/*, ADR-0014 W2a) is also
+// unauthenticated, so it is limited per IP too, in its own bucket ("gwpub:")
+// so that catalog reads never use up an IP's auth quota. Its readers are the
+// website's server (build and revalidation) and the occasional browser, not
+// students in the app, so the CGNAT concern above does not apply.
 func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Per-IP rate limiting applies exclusively to unauthenticated routes (/api/v1/auth/*).
+			// Per-IP rate limiting applies exclusively to unauthenticated routes
+			// (/api/v1/auth/* and the public catalog /api/v1/academy/public/*).
 			// Health checks and authenticated service routes (/api/v1/academy/*, /api/v1/notifications/*)
 			// bypass the edge per-IP limiter to avoid CGNAT collateral denial of service.
-			if !strings.HasPrefix(r.URL.Path, "/api/v1/auth/") && r.URL.Path != "/api/v1/auth" {
+			bucket := ""
+			switch {
+			case strings.HasPrefix(r.URL.Path, "/api/v1/auth/") || r.URL.Path == "/api/v1/auth":
+				bucket = "gw:"
+			case strings.HasPrefix(r.URL.Path, publicCatalogPrefix):
+				bucket = "gwpub:"
+			}
+			if bucket == "" {
 				next.ServeHTTP(w, r)
 				return
 			}
 			ip := limiter.getIP(r)
-			if limited, retryAfter := limiter.CheckAndRecord("gw:" + ip); limited {
+			if limited, retryAfter := limiter.CheckAndRecord(bucket + ip); limited {
 				secs := int(math.Ceil(retryAfter.Seconds()))
 				if secs < 1 {
 					secs = 1

@@ -474,3 +474,45 @@ func TestContract_NotificationStreamRevocation(t *testing.T) {
 		}
 	}
 }
+
+// 9. Public catalog contract (ADR-0014 W2a): GET /academy/public/catalog and
+// GET /academy/public/subjects/{id} need no student JWT, return only published
+// subjects under published levels with price, instructor and counts, never
+// a content field (video, YouTube or file ids, storage keys, download or play
+// paths); a draft, unknown or hidden-level subject is 404; both carry
+// Cache-Control public, max-age=60 and an ETag (304 on a match); per-IP limits
+// in academy (read tier) and at the gateway (own bucket); the gateway routes
+// them through /api/v1/academy/ and passes the cache headers through.
+func TestContract_PublicCatalog(t *testing.T) {
+	for _, c := range []struct {
+		pkg   string
+		names []string
+	}{
+		{"github.com/omarmaarouf18/wael-app/academy-service/internal/handlers", []string{
+			"TestPublicCatalog_Shape",
+			"TestPublicSubject_Shape",
+			"TestPublicSubject_NotFound/draft_subject",
+			"TestPublicSubject_NotFound/unknown_id",
+			"TestPublicSubject_NotFound/subject_of_hidden_level",
+			"TestPublicCatalog_FollowsPublishState",
+			"TestPublicCatalog_ETagNotModified",
+			"TestPublicCatalog_Auth",
+			"TestPublicCatalog_BypassIsExact",
+			"TestPublicCatalog_RateLimitPerIP",
+			"TestPublicCatalog_NoLimiterFailsClosedInProduction",
+		}},
+		{"github.com/omarmaarouf18/wael-app/api-gateway/internal/proxy", []string{"TestGateway_PublicCatalogRoute"}},
+		{"github.com/omarmaarouf18/wael-app/api-gateway/internal/middleware", []string{"TestRateLimit_PublicCatalogPerIP"}},
+	} {
+		cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestPublicCatalog_|TestPublicSubject_|TestGateway_PublicCatalogRoute$|TestRateLimit_PublicCatalogPerIP$)", c.pkg)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("public catalog contract verification failed in %s: %v\nOutput:\n%s", c.pkg, err, string(out))
+		}
+		for _, name := range c.names {
+			if !strings.Contains(string(out), "PASS: "+name) {
+				t.Errorf("contract verification missing %s pass in %s:\n%s", name, c.pkg, string(out))
+			}
+		}
+	}
+}

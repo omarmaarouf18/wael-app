@@ -222,6 +222,15 @@ Student routes are served through the gateway as `/api/v1/auth/...` and `/api/v1
 *Amended 2026-10-08 (owner strategy; client contract 2026-10-08, server pending: academy-service does not send it yet):* `GET /academy/app-config` may carry `features`, an object of named booleans. The first is `features.files`: the app offers notes and books downloads only when it is the JSON boolean `true`. A missing `features`, a missing or non-boolean `files`, `false`, or a config the app never fetched means off (fail closed), and the notes tab keeps its coming-soon state; the app reuses the last fetched value from its 5-minute config cache, so already-downloaded files stay reachable offline. *(Amended 2026-10-08, owner follow-up F2: the last value the server sent is persisted on disk with the config and used on any cold start where app-config is unreachable, however old; an explicit `false` from the server (or a reachable server that omits the field) replaces it and turns downloads off; never fetched with nothing persisted is off.)* Unknown keys inside `features` are ignored. The server sends `"features": {"files": true}` only once Phase 5 (upload, the download route below with R3 and R6, delete) is live, and turning it back to `false` hides downloads again without a new APK. The app is built against this section as written: subject detail `files[]` (`id`, `kind` `book` or `note`, `title {ar,en}`, `size_bytes`); `GET /academy/subjects/{id}/files/{fileId}/download` streams the PDF (`Content-Disposition: attachment`); 403 (not owned), 404 (unknown file), 413, 429 (with `Retry-After`), 503 and network failures each get a localized message with no payment wording; a body that is not a PDF (`%PDF-`) or shorter than its `Content-Length` is discarded. Downloads go to the app-private cache only and are deleted on sign-out, when another account signs in, and (best effort) when a fresh server answer shows the subject is no longer owned or the file is gone.
   - *Note 2026-10-09 (Phase 5 implementation on branch `feat/phase5-files`, not pushed, held for owner review; not an owner decision):* academy-service now always sends `"features": {"files": <bool>}`; the value comes from env `FEATURES_FILES` (`true` or `false`, default `false`; any other value fails startup and `--check-env`), so the owner turns downloads on and off with a config change and a restart, no new APK. There is no console toggle. The download route and the shape above are built exactly as the app expects; nothing in the student API changed. *(Amended 2026-10-11: the branch merged and shipped on `main` with `b0de4d4` on 2026-10-09 — "not pushed, held for owner review" no longer holds; the production flag flip is an owner step on the host.)*
 
+*Amended 2026-11-04 (ADR-0014 W2a, owner brief W2-W5 step 1): public catalog for the website.* Two unauthenticated read-only routes, served through the existing gateway route `/api/v1/academy/` (no new gateway route):
+
+| Method and path | Purpose | Notes |
+|---|---|---|
+| `GET /academy/public/catalog` | Published catalog for the website | No student JWT (a JWT changes nothing); `X-Gateway-Secret` still required. `{"study_types":[{"key","title","levels":[{"key","study_type","title","position","subjects":[...]}]}]}`: the three study types in the order of `GET /academy/levels`, published levels only, `subjects` always an array. Each subject is exactly `id`, `level_key`, `term`, `title {ar,en}`, `description {ar,en}`, `price` (integer), `currency` (`EGP`), `instructor {ar,en}`, `counts {videos,books,notes}`, `access_expires_at`. Only published subjects under published levels (R8, no owner exception). Price always present (ADR-0014 owner decision 5); `EXPOSE_PRICE_TO_STUDENTS` and `show_prices` do not apply. Read tier per IP; gateway per-IP limit in its own bucket. 200 and 304 carry `Cache-Control: public, max-age=60` and a strong `ETag` over the body; a matching `If-None-Match` is 304 with no body |
+| `GET /academy/public/subjects/{id}` | One published subject | Same subject fields plus `level` (`key`, `study_type`, `title`, `position`). Unknown, draft, hidden-level or over-64-character id: 404 `not_found` with `Cache-Control: no-store`. Same tiers and cache headers as the catalog |
+
+Neither route ever returns a video id, `youtube_video_id`, a file id, `storage_key`, a download or play path, `owned`, a request or anything per user; tests fail if one appears. The StudentAuth bypass matches these two paths exactly. `instructor` is the platform's one teacher (Section 1 decision 1) from a server constant (`models.AcademyInstructor`), equal to the app's `frontend/lib/content/director_profile.dart`; subjects have no instructor field.
+
 Subject detail, owned:
 
 ```json
@@ -480,3 +489,11 @@ prices are the center's prices. W2 also makes the fixed pages static (static
 CSP) and the subject pages prebuilt with revalidation; only the pages with
 forms keep the per-request nonce. The app guard refuses the apex, `www.` and
 `*.vercel.app` hosts.)*
+
+*(Amended 2026-11-04, W2a built on `develop`: "No academy-service or gateway
+change exists for the website yet" no longer holds. academy-service serves
+the public catalog (`GET /academy/public/catalog`,
+`GET /academy/public/subjects/{id}`, Section 6 amendment 2026-11-04) and the
+gateway limits `/api/v1/academy/public/*` per IP. The website does not call
+it yet (W2b). Production needs the owner's fast-forward of `main` and a
+deploy.)*

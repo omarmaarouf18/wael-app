@@ -3,6 +3,7 @@ package proxy
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/omarmaarouf18/wael-app/api-gateway/internal/config"
@@ -255,5 +256,65 @@ func TestGateway_AccountSettingsRoutes(t *testing.T) {
 				t.Errorf("backend received path = %q, want %q", receivedPath, tc.wantPath)
 			}
 		})
+	}
+}
+
+// TestGateway_PublicCatalogRoute: the public catalog (ADR-0014 W2a) reaches
+// academy-service through the existing /api/v1/academy/ route with the prefix
+// stripped and the gateway secret set, and the backend's Cache-Control, ETag
+// and 304 answers pass through unchanged. No Authorization is needed.
+func TestGateway_PublicCatalogRoute(t *testing.T) {
+	const etag = `"abc123"`
+	var paths []string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if got := r.Header.Get("X-Gateway-Secret"); got != "gw-secret" {
+			t.Errorf("X-Gateway-Secret = %q, want gw-secret", got)
+		}
+		if got := r.Header.Get("X-Internal-Token"); got != "" {
+			t.Errorf("backend received client X-Internal-Token %q", got)
+		}
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"study_types":[]}`))
+	}))
+	defer backend.Close()
+
+	route := config.ServiceRoute{Prefix: "/api/v1/academy/", Target: backend.URL, StripPrefix: "/api/v1"}
+	h, err := New(route, "gw-secret", nil, backend.Client().Transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range []string{"/api/v1/academy/public/catalog", "/api/v1/academy/public/subjects/s1"} {
+		req := httptest.NewRequest(http.MethodGet, "http://gateway"+p, nil)
+		req.Header.Set("X-Internal-Token", "attacker-token")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200", p, rec.Code)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "public, max-age=60" {
+			t.Errorf("%s Cache-Control = %q", p, got)
+		}
+		if got := rec.Header().Get("ETag"); got != etag {
+			t.Errorf("%s ETag = %q", p, got)
+		}
+	}
+	if strings.Join(paths, ",") != "/academy/public/catalog,/academy/public/subjects/s1" {
+		t.Fatalf("backend paths = %v", paths)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://gateway/api/v1/academy/public/catalog", nil)
+	req.Header.Set("If-None-Match", etag)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
+		t.Fatalf("conditional GET = %d body %d, want 304 empty", rec.Code, rec.Body.Len())
 	}
 }

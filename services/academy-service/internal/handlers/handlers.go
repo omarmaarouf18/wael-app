@@ -118,10 +118,11 @@ func (s *Server) GatewayAuth(next http.Handler) http.Handler {
 // StudentAuth verifies Bearer JWT using jwtutil.ValidateToken on every request.
 // This ensures suspension takes immediate effect and token revocation is checked against Redis.
 // The public app config (/academy/app-config) bypasses StudentAuth: it carries
-// no per-user data (F-UX2 A7).
+// no per-user data (F-UX2 A7). So do the public catalog routes (ADR-0014
+// W2a), matched exactly by isPublicCatalogPath.
 func (s *Server) StudentAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" || r.URL.Path == "/academy/app-config" {
+		if r.URL.Path == "/health" || r.URL.Path == "/academy/app-config" || isPublicCatalogPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1028,6 +1029,8 @@ func (s *Server) PublicHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", Health)
 	mux.HandleFunc("/academy/app-config", s.EnforceIPTier(limiter.TierRead, s.GetAppConfig))
+	mux.HandleFunc(publicCatalogPath, s.EnforceIPTier(limiter.TierRead, s.GetPublicCatalog))
+	mux.HandleFunc(publicSubjectsPrefix, s.EnforceIPTier(limiter.TierRead, s.GetPublicSubject))
 	mux.HandleFunc("/academy/levels", s.EnforceTier(limiter.TierRead, s.GetLevels))
 	mux.HandleFunc("/academy/subjects", s.EnforceTier(limiter.TierRead, s.ListSubjects))
 	mux.HandleFunc("/academy/subjects/", s.SubjectSubroute)

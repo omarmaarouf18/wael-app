@@ -4,6 +4,16 @@ El Metr Academy's sales website. Decision record: ADR-0014
 (`docs/adr/0014-sales-website.md`); SPEC Section 16. State: **foundations**
 (2026-11-04) — scaffold, placeholder pages, CI, security headers and deploy
 notes. No page calls the API yet; no payment code exists.
+*(Amended 2026-11-04: W2a, the public catalog API, is built on `develop`
+(`GET /api/v1/academy/public/catalog` and
+`GET /api/v1/academy/public/subjects/{id}`, no login, price always included,
+`Cache-Control: public, max-age=60` + ETag, per-IP limits; shape in SPEC
+Section 6, amendment 2026-11-04). No page calls it yet: the site reads it in
+W2b, on the server side. It reaches production only after the owner
+fast-forwards `main` and deploys. Per-IP limits: about 100 requests a minute
+from one IP at the gateway, so a build that fetches every subject page
+separately must stay under that, or read the subjects from the one catalog
+call.)*
 
 ## Purpose
 

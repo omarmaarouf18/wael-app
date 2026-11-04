@@ -107,6 +107,24 @@ backend change, no real API calls. Later briefs:
   *(Amended 2026-11-04, owner decision 7: W2 also makes the website's pages
   static, options A and C of the 2026-11-04 static-pages report — see the
   amendment below — not as a separate fix.)*
+  *(Amended 2026-11-04, W2a built on `develop` (W2-W5 brief, step 1): `GET /academy/public/catalog` (gateway `/api/v1/academy/public/catalog`)
+and `GET /academy/public/subjects/{id}` in academy-service, through the existing
+  `/api/v1/academy/` gateway route. No student JWT; the gateway secret is
+  still required. Published subjects under published levels only (the app's
+  non-owner rule, R8); each has id, level, term, title, description, price
+  and `EGP` (always, owner decision 5; `show_prices` and
+  `EXPOSE_PRICE_TO_STUDENTS` do not apply), instructor and counts of
+  videos, books and notes, plus `access_expires_at`. Never a video, YouTube
+  or file id, storage key, download or play path. A draft, unknown or
+  hidden-level subject is 404 (`Cache-Control: no-store`); a 200 carries
+  `Cache-Control: public, max-age=60` and a strong ETag (304 on
+  `If-None-Match`). Per-IP limits: academy read tier (120/min) and the
+  gateway edge limiter (100/min) in its own `gwpub:` bucket, separate from
+  the auth bucket. The instructor is the platform's one teacher, served
+  from a server constant equal to the app's director profile, since
+  subjects have no instructor field. The site does not call it yet (W2b).
+  The API reaches production only with the owner's fast-forward of `main`
+  and a deploy.)*
 - **W3 Web auth**: CORS for the website origin; refresh token in an httpOnly
   Secure SameSite cookie on the website, access token in memory; same
   accounts as the app.

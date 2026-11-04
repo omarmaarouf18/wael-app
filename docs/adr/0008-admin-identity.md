@@ -139,6 +139,7 @@ Per owner decisions locked in `docs/core-service/SPEC.md` (Section 1 decisions 1
    - New "الإعدادات / Settings" tab provides controls for the price toggle ("إظهار الأسعار في التطبيق" with notice "التغيير بيوصل للتطبيق خلال 5 دقايق تقريباً"), WhatsApp support number, center details (Arabic and English), and map URL.
    - Includes unsaved-changes guard, double-submit guard, `Retry-After` countdown on 429, success toast, and localized error messages.
 5. **Decoupling from Server Expose Flag**: `show_prices` in `app_settings` is independent of `EXPOSE_PRICE_TO_STUDENTS`. The backend flag `EXPOSE_PRICE_TO_STUDENTS` determines whether the API sends subject price fields; `show_prices` controls client-side display visibility via `GET /academy/app-config`.
+   *(Amended 2026-11-04, ADR-0014 owner decision 5 and W2a: this holds for the app's student routes only. The website's public catalog (`GET /academy/public/catalog`, `GET /academy/public/subjects/{id}`) always sends the price; neither flag applies to it.)*
 
 ### 14. Note (2026-10-09, Files Tab, SPEC Phase 5)
 
