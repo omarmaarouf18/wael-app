@@ -500,3 +500,11 @@ the public catalog (`GET /academy/public/catalog`,
 gateway limits `/api/v1/academy/public/*` per IP. The website does not call
 it yet (W2b). Production needs the owner's fast-forward of `main` and a
 deploy.)*
+
+*(Amended 2026-11-04, W2b built on `develop`: the website's `/subjects` and
+`/subjects/[id]` pages read the public catalog on the server (Next.js,
+`API_BASE_URL`, build time + `revalidate` 300 s; every subject page from the
+one catalog response) and never in the browser. The fixed pages are static
+with a fixed CSP (`script-src 'self' 'unsafe-inline'`); only log in and sign
+up keep the per-request nonce. ADR-0014 "Amendment 2026-11-04 (3)". No
+backend change in W2b beyond the expired-subject rule above.)*

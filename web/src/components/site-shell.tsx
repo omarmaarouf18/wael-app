@@ -42,12 +42,15 @@ export function SiteShell({ lang, path, children }: SiteShellProps) {
             <Link href={to("/about")} className={styles.navLink}>
               {t.nav.about}
             </Link>
-            <Link href={to("/login")} className={styles.navLink}>
+            {/* Plain <a> on purpose: the form pages carry their own nonce
+                CSP (src/proxy.ts), which only a full page load applies; a
+                client-side navigation would keep the static page's policy. */}
+            <a href={to("/login")} className={styles.navLink}>
               {t.nav.login}
-            </Link>
-            <Link href={to("/signup")} className={styles.cta}>
+            </a>
+            <a href={to("/signup")} className={styles.cta}>
               {t.nav.signup}
-            </Link>
+            </a>
             <Link
               href={localePath(other, path)}
               className={styles.langSwitch}

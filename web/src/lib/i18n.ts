@@ -42,7 +42,29 @@ interface Dictionary {
   footer: { terms: string; privacy: string; refund: string; rights: string; brandLine: string };
   todoBadge: string;
   pages: Record<PageKey, PageText>;
+  catalog: CatalogText;
 }
+
+interface CatalogText {
+  /** Shown when the catalog could not be read from the API. */
+  unavailable: string;
+  emptyLevel: string;
+  empty: string;
+  price: (amount: string) => string;
+  instructor: string;
+  term: { first: string; second: string };
+  counts: { videos: string; books: string; notes: string };
+  accessUntil: (date: string) => string;
+  details: string;
+  backToSubjects: string;
+  studyInApp: string;
+  buyTodo: string;
+  notFoundTitle: string;
+  notFoundLead: string;
+}
+
+/** Number formatting locale per language (Arabic digits on the Arabic site). */
+export const numberLocale: Record<Lang, string> = { ar: "ar-EG", en: "en-EG" };
 
 const ar: Dictionary = {
   brand: "أكاديمية المتر",
@@ -78,12 +100,12 @@ const ar: Dictionary = {
     subjects: {
       title: "المواد الدراسية",
       lead: "كل المواد المتاحة مع أسعارها.",
-      todo: "TODO: قائمة المواد والأسعار من الخادم (W2). لا توجد أسعار هنا قبل ذلك.",
+      todo: "",
     },
     subject: {
       title: "المادة الدراسية",
       lead: "تفاصيل المادة وطريقة الشراء.",
-      todo: "TODO: تفاصيل المادة (W2) وطلب الشراء بالتحويل (W4).",
+      todo: "",
     },
     login: {
       title: "تسجيل الدخول",
@@ -110,6 +132,22 @@ const ar: Dictionary = {
       lead: "متى وكيف يمكن استرداد المبلغ.",
       todo: "TODO: نص سياسة الاسترداد من المالك.",
     },
+  },
+  catalog: {
+    unavailable: "تعذّر عرض المواد الآن. حاول مرة أخرى بعد قليل.",
+    emptyLevel: "لا توجد مواد في هذه الفرقة بعد.",
+    empty: "لا توجد مواد متاحة بعد.",
+    price: (amount) => `${amount} جنيه`,
+    instructor: "المحاضر",
+    term: { first: "الترم الأول", second: "الترم الثاني" },
+    counts: { videos: "محاضرات الفيديو", books: "الكتب", notes: "المذكرات" },
+    accessUntil: (date) => `متاحة حتى ${date}`,
+    details: "التفاصيل",
+    backToSubjects: "كل المواد",
+    studyInApp: "بعد التفعيل تذاكر المادة على تطبيق أكاديمية المتر.",
+    buyTodo: "TODO: طلب الشراء بالتحويل (W4).",
+    notFoundTitle: "الصفحة غير موجودة",
+    notFoundLead: "المادة غير متاحة أو الرابط غير صحيح.",
   },
 };
 
@@ -147,12 +185,12 @@ const en: Dictionary = {
     subjects: {
       title: "Subjects",
       lead: "Every available subject with its price.",
-      todo: "TODO: subjects and prices from the server (W2). No prices are shown before then.",
+      todo: "",
     },
     subject: {
       title: "Subject",
       lead: "Subject details and how to buy it.",
-      todo: "TODO: subject details (W2) and the transfer purchase request (W4).",
+      todo: "",
     },
     login: {
       title: "Sign In",
@@ -179,6 +217,22 @@ const en: Dictionary = {
       lead: "When and how a payment can be refunded.",
       todo: "TODO: refund policy text from the owner.",
     },
+  },
+  catalog: {
+    unavailable: "The subjects cannot be shown right now. Please try again shortly.",
+    emptyLevel: "No subjects in this level yet.",
+    empty: "No subjects available yet.",
+    price: (amount) => `EGP ${amount}`,
+    instructor: "Instructor",
+    term: { first: "First term", second: "Second term" },
+    counts: { videos: "Video lectures", books: "Books", notes: "Notes" },
+    accessUntil: (date) => `Available until ${date}`,
+    details: "Details",
+    backToSubjects: "All subjects",
+    studyInApp: "Once activated, you study the subject in the EL METR ACADEMY app.",
+    buyTodo: "TODO: transfer purchase request (W4).",
+    notFoundTitle: "Page not found",
+    notFoundLead: "This subject is not available, or the link is wrong.",
   },
 };
 

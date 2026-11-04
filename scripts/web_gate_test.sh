@@ -55,6 +55,55 @@ check_log "the no-cache text with extra words fails" 1 "$NO_CACHE and also somet
 check_log "the no-cache text indented fails" 1 "  $NO_CACHE"
 check_log "a different no-cache link fails" 1 "⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://example.com/no-cache"
 
+# check_routes_log <description> <expected-rc> <log text>: the route check
+# (--check-routes) on a fake route table.
+check_routes_log() {
+	local desc="$1" want_rc="$2" log out rc=0
+	n=$((n + 1))
+	log="$WORK/routes_$n.log"
+	printf '%s\n' "$3" >"$log"
+	out="$(bash "$GATE" --check-routes "$log" 2>&1)" || rc=$?
+	if [ "$rc" -eq "$want_rc" ]; then
+		passed=$((passed + 1))
+		echo "ok   - $desc"
+	else
+		failed=$((failed + 1))
+		echo "FAIL - $desc (exit $rc, wanted $want_rc)"
+		printf '%s\n' "$out" | sed 's/^/       | /'
+	fi
+}
+
+ROUTES_OK='Route (app)                   Revalidate  Expire
+┌ ○ /
+├ ○ /_not-found
+├ ○ /about
+├ ○ /en
+├ ƒ /en/login
+├ ƒ /en/signup
+├ ○ /en/subjects                      5m      1y
+├   /en/subjects/[id]
+│ ├ ● /en/subjects/s-1                5m      1y
+│ └ ● /en/subjects/s-2                5m      1y
+├ ƒ /login
+├ ƒ /signup
+├ ○ /subjects                         5m      1y
+├ ● /subjects/[id]
+└ ○ /terms
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand'
+
+check_routes_log "decided route mix passes" 0 "$ROUTES_OK"
+check_routes_log "a static page turned dynamic fails" 1 "${ROUTES_OK/├ ○ \/about/├ ƒ /about}"
+check_routes_log "a subject page turned dynamic fails" 1 "${ROUTES_OK/│ ├ ● \/en\/subjects\/s-1/│ ├ ƒ /en/subjects/s-1}"
+check_routes_log "a form page turned static fails" 1 "${ROUTES_OK/├ ƒ \/login/├ ○ /login}"
+check_routes_log "a missing form page fails" 1 "$(printf '%s\n' "$ROUTES_OK" | grep -v ' /en/signup')"
+check_routes_log "an extra dynamic page fails" 1 "$ROUTES_OK
+├ ƒ /en/buy"
+check_routes_log "a log without a route table fails" 1 "$BUILD_OK"
+
 # Usage errors are not passes.
 rc=0
 bash "$GATE" --check-build-log "$WORK/missing.log" >/dev/null 2>&1 || rc=$?
@@ -64,6 +113,16 @@ if [ "$rc" -eq 2 ]; then
 else
 	failed=$((failed + 1))
 	echo "FAIL - missing log file is a usage error (exit $rc, wanted 2)"
+fi
+
+rc=0
+bash "$GATE" --check-routes "$WORK/missing.log" >/dev/null 2>&1 || rc=$?
+if [ "$rc" -eq 2 ]; then
+	passed=$((passed + 1))
+	echo "ok   - missing route log file is a usage error"
+else
+	failed=$((failed + 1))
+	echo "FAIL - missing route log file is a usage error (exit $rc, wanted 2)"
 fi
 
 echo "web gate log check: $passed passed, $failed failed"

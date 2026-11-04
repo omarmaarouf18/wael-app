@@ -1,7 +1,6 @@
 import "../../globals.css";
 
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import type { ReactNode } from "react";
 
 import { fontVariables } from "@/lib/fonts";
@@ -14,10 +13,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
-  // Render per request: Next.js applies the CSP nonce from src/proxy.ts
-  // only to dynamically rendered pages.
-  await connection();
+// No connection() here: the fixed pages prerender static with the static CSP
+// from next.config.ts; only the form pages call connection() themselves to
+// get the per-request nonce (ADR-0014 decision 7, options A + C).
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" dir="ltr" className={fontVariables}>
       <body>{children}</body>

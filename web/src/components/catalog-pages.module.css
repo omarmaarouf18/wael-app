@@ -1,0 +1,97 @@
+/* Plain functional styles for the catalog pages (W2b); design comes later. */
+
+.title {
+  font-size: 28px;
+  font-weight: 800;
+  margin-block-end: var(--space-md);
+  overflow-wrap: anywhere;
+}
+
+.lead {
+  font-size: 17px;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-xl);
+}
+
+.notice {
+  background: var(--surface-elevated);
+  border: 1px solid var(--prominent-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-lg);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.studyType {
+  margin-block-end: var(--space-2xl);
+}
+
+.studyTypeTitle {
+  font-size: 22px;
+  font-weight: 800;
+  margin-block-end: var(--space-md);
+}
+
+.level {
+  margin-block-end: var(--space-xl);
+}
+
+.levelTitle {
+  font-size: 18px;
+  font-weight: 700;
+  margin-block-end: var(--space-sm);
+}
+
+.subjectList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.subject {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs) var(--space-md);
+  padding-block: var(--space-md);
+  border-block-end: 1px solid var(--subtle-hairline);
+}
+
+.subjectLink {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.price {
+  margin-inline-start: auto;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.priceLarge {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.description {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.counts {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs) var(--space-xl);
+  margin: 0 0 var(--space-lg);
+  padding: 0;
+}
+
+.todo {
+  color: var(--text-muted);
+  border: 1px dashed var(--prominent-border);
+  border-radius: var(--radius-card);
+  padding: var(--space-md);
+}

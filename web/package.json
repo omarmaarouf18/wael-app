@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings=0 .",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/*.test.ts"
   },
   "dependencies": {
     "next": "16.4.2",

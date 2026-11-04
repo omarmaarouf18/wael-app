@@ -1,14 +1,30 @@
 import type { NextConfig } from "next";
 
-import { parseApiOrigin } from "./src/lib/config";
+import { parseApiOrigin, serverApiOrigin } from "./src/lib/config";
+import { buildStaticCsp } from "./src/lib/csp";
 
 // Fail the build (locally, in CI and on Vercel) on a bad
-// NEXT_PUBLIC_API_BASE_URL instead of serving 500s at request time.
-parseApiOrigin(process.env.NEXT_PUBLIC_API_BASE_URL);
+// NEXT_PUBLIC_API_BASE_URL or API_BASE_URL instead of serving 500s at
+// request time.
+const apiOrigin = parseApiOrigin(process.env.NEXT_PUBLIC_API_BASE_URL);
+const catalogOrigin = serverApiOrigin();
+// On Vercel the catalog pages need the API (ADR-0014 W2b); off Vercel (CI,
+// local) an unset API_BASE_URL builds them as "unavailable".
+if (process.env.VERCEL === "1" && catalogOrigin === null) {
+  throw new Error("API_BASE_URL is required on Vercel (server-side API origin for the catalog pages)");
+}
+
+// NODE_ENV is "development" only under `next dev`.
+const dev = process.env.NODE_ENV === "development";
+
+// Every page except the form pages (log in, sign up, in both languages):
+// they get the per-request nonce CSP from src/proxy.ts instead.
+const STATIC_PAGE_SOURCE = "/((?!(?:en/)?(?:login|signup)(?:/|$)).*)";
 
 // Static security headers on every response (docs/web/README.md "Security
-// headers"). The Content-Security-Policy needs a per-request nonce, so it is
-// set by src/proxy.ts instead.
+// headers"). The Content-Security-Policy is split (ADR-0014 decision 7): a
+// fixed policy for the static pages here, a per-request nonce policy on the
+// form pages from src/proxy.ts.
 const securityHeaders = [
   // Same value as the API and admin sites (owner decision 2026-10-05, S3).
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
@@ -32,7 +48,10 @@ const nextConfig: NextConfig = {
   // No remote images: logo and art are local files under public/brand/.
   images: { unoptimized: true },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      { source: STATIC_PAGE_SOURCE, headers: [{ key: "Content-Security-Policy", value: buildStaticCsp(apiOrigin, dev) }] },
+    ];
   },
 };
 

@@ -14,6 +14,10 @@ fast-forwards `main` and deploys. Per-IP limits: about 100 requests a minute
 from one IP at the gateway, so a build that fetches every subject page
 separately must stay under that, or read the subjects from the one catalog
 call.)*
+*(Amended 2026-11-04, W2b: "No page calls it yet" no longer holds. The
+`/subjects` and `/subjects/[id]` pages read the catalog on the server
+(`API_BASE_URL`; "Catalog data" below); the browser still calls no API. No
+payment code exists.)*
 
 ## Purpose
 
@@ -52,6 +56,45 @@ Every placeholder shows a visible "TODO" note. No price, subject or policy
 text is made up. All pages send `noindex, nofollow` until W5 puts real pages
 up.
 
+*(Amended 2026-11-04, W2b: `/subjects` and `/subjects/[id]` (both
+languages) are real pages now, plain and functional (design comes in a later
+brief). `/subjects` lists the published subjects grouped by study type and
+level, each with its term and price; `/subjects/[id]` shows the level,
+title, price, description, instructor, counts, "available until" date, a
+"study in the app" line and a TODO for the W4 buy form. An unknown,
+draft or expired subject is a 404 with a localized "not found" page. If the
+catalog cannot be read, the page says so ("unavailable") and shows no
+subject. Both are built from one catalog request — see "Catalog data". The
+other pages are unchanged placeholders.)*
+
+## Catalog data
+
+*(Added 2026-11-04, W2b.)* `web/src/lib/catalog.ts` reads
+`GET /api/v1/academy/public/catalog` on the server (build time, then every
+300 s via `revalidate`), never in the browser, so there is no CORS and
+Vercel Previews work. `/subjects`, `generateStaticParams` of
+`/subjects/[id]` and every subject page read the same URL with the same
+revalidate value, so they share one response (owner decision 2026-11-04,
+ADR-0014 "Amendment 2026-11-04 (2)" item 4). Measured against a local mock
+API (2026-11-04): a full `next build` with 4 subjects (8 subject pages and
+both `/subjects` pages) made 1 or 2 catalog requests (one per build stage),
+never one per subject.
+
+- `web/src/lib/catalog-data.ts` parses the response strictly and keeps only
+  the fields the pages render; a malformed subject or level is dropped on its
+  own, an id that is not `[A-Za-z0-9_-]{1,64}` is dropped (ids go into
+  URLs), and any extra field (a content id, for example) never reaches a page.
+  Unit tests: `web/test/catalog-data.test.ts` (`npm test`, `node --test`).
+- When the API is unreachable or answers an error during `next build`, the
+  pages build as "unavailable" (CI has no API; the production API has the
+  route only after the owner's deploy). At run time a failed refresh throws,
+  so Next.js keeps serving the last good page.
+- A subject published after the build has no prebuilt page: its first
+  request renders it (and caches it the same way). It appears within about
+  one to two revalidation windows (5-10 minutes): the catalog response
+  is cached for 300 s, and a 404 rendered before it appeared is cached for
+  300 s too.
+
 ## Stack
 
 - Next.js 16 (App Router), React 19, TypeScript (strict, plus
@@ -82,13 +125,16 @@ web/
   .env.example                      every variable, commented
   public/brand/                     logo-512.png, banner.jpg (repo asset copies)
   src/proxy.ts                      per-request CSP nonce (Next.js "proxy", formerly middleware)
-  src/lib/config.ts                 NEXT_PUBLIC_API_BASE_URL parsing (fail closed)
-  src/lib/csp.ts                    the Content-Security-Policy
+  src/lib/config.ts                 NEXT_PUBLIC_API_BASE_URL and API_BASE_URL parsing (fail closed)
+  src/lib/csp.ts                    the two Content-Security-Policies (static, nonce)
+  src/lib/catalog.ts                server-side catalog fetch (one request, revalidate 300 s)
+  src/lib/catalog-data.ts           catalog types and strict parser (pure, unit-tested)
   src/lib/api.ts                    typed API client stub (not called yet)
   src/lib/i18n.ts                   Arabic and English wording, localePath()
   src/lib/fonts.ts                  local fonts
   src/fonts/                        font files and OFL licences
-  src/components/                   site shell (header, nav, footer), placeholder page
+  src/components/                   site shell (header, nav, footer), placeholder page, catalog pages
+  test/                             unit tests (node --test)
   src/app/(ar)/...                  Arabic pages, root layout lang="ar" dir="rtl"
   src/app/(en)/en/...               English pages, root layout lang="en" dir="ltr"
 ```
@@ -101,6 +147,7 @@ page load; navigation inside one language is client-side.
 | Name | Default | Meaning |
 |---|---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | `https://api.elmetracademy.app` | Shared backend origin (api-gateway). Origin only, `https` (http only for `localhost`/`127.0.0.1`/`[::1]`); anything else fails `next build`. Also the only extra host in CSP `connect-src`. Public: compiled into the browser bundle. |
+| `API_BASE_URL` | none | *(Added 2026-11-04, W2b.)* Server-side API origin for the catalog pages; never in the browser bundle (not `NEXT_PUBLIC_`). Same rules as above. Required on Vercel (`next build` fails without it there); unset elsewhere (CI, local) builds the catalog pages as "unavailable" with no request. |
 
 No secrets exist for the website. Every `NEXT_PUBLIC_` value is public; never
 put a secret in one. `web/.env.example` is the list; `.env*` files other than
@@ -126,12 +173,17 @@ bash scripts/web_gate.sh
 ```
 
 It runs `npm ci`, `npm run lint` (ESLint, `--max-warnings=0`),
-`npm run typecheck` (`next typegen` + `tsc --noEmit`) and `npm run build`, and
+`npm run typecheck` (`next typegen` + `tsc --noEmit`), `npm test` (added
+2026-11-04: `node --test` unit tests) and `npm run build`, and
 fails if the build prints any warning, with one exception: Next.js's
 "⚠ No build cache found…" line, which only means `web/.next/cache` is empty
 (a fresh CI runner) and says nothing about the code. That exact whole line is
 allowed; any other warning, or that text changed, still fails.
-`scripts/web_gate_test.sh` tests this check on sample logs. CI job "Website
+*(Amended 2026-11-04, W2b: the gate then prints the route table and fails
+unless exactly `/login`, `/signup`, `/en/login` and `/en/signup` are dynamic
+(ƒ) and every other route is static (○) or prebuilt (●); see "Security
+headers".)*
+`scripts/web_gate_test.sh` tests both checks on sample logs. CI job "Website
 (lint, typecheck, build)" runs the self-test every time, and the gate when
 `web/`, `scripts/web_gate.sh`, `scripts/web_gate_test.sh` or `ci.yml` changed
 (the job passes without running otherwise, so `CI OK` can require it); it
@@ -156,6 +208,9 @@ The agent only documents these; the owner does them in Vercel.
    turns off install scripts.
 3. Environment variables from `web/.env.example` (today only
    `NEXT_PUBLIC_API_BASE_URL`), for Production and Preview.
+   *(Amended 2026-11-04, W2b: also `API_BASE_URL`
+   (`https://api.elmetracademy.app`), for Production and Preview; the build
+   fails on Vercel without it. Neither value is a secret.)*
 4. Domain: the owner's choice (ADR-0014 open question 1), added in Vercel
    (Project → Settings → Domains) and in DNS as Vercel shows.
    *(Amended 2026-11-04, owner decision: add `elmetracademy.app` and
@@ -164,6 +219,11 @@ The agent only documents these; the owner does them in Vercel.
    site on Hobby, move to Pro, or to Cloudflare Pages (static export from the
    same repo; the per-request CSP nonce would then have to become a static
    policy, see "Security headers").
+
+6. *(Added 2026-11-04.)* Deployment Protection: in Vercel → Project →
+   Settings → Deployment Protection, turn on Vercel Authentication for
+   Preview deployments, so previews of unfinished steps are not public. An
+   owner step; nothing in the repo can set it.
 
 `main` moves only by the owner's fast-forward (CLAUDE.md), so production
 deploys follow it. Vercel also builds previews of other branches; their
@@ -192,6 +252,9 @@ it today.
 
 Set on every response. `web/next.config.ts` sets the static headers;
 `web/src/proxy.ts` sets the Content-Security-Policy per request.
+*(Amended 2026-11-04, W2b: the proxy sets the CSP on the four form pages
+only; `web/next.config.ts` sets a fixed CSP on every other page. See the
+amendment after the CSP table.)*
 
 | Header | Value | Why |
 |---|---|---|
@@ -223,6 +286,32 @@ Content-Security-Policy (`web/src/lib/csp.ts`):
 | `manifest-src`, `worker-src` | `'self'` | Own origin only. |
 | `upgrade-insecure-requests` | (production only) | Any stray http subresource is fetched over https. |
 
+*(Amended 2026-11-04, W2b, ADR-0014 decision 7 options A + C: the policy
+above is now the **form pages' policy** only — `/login`, `/signup`,
+`/en/login`, `/en/signup` (and the W4 buy page when it exists), set per
+request by `web/src/proxy.ts`, whose matcher lists exactly those paths;
+those pages call `connection()` and render per request (ƒ). Every other
+page is static (○, or ● for the subject pages prebuilt from the catalog)
+and gets one fixed policy from `web/next.config.ts` (`buildStaticCsp` in
+`web/src/lib/csp.ts`), sent on every path except the four form pages:*
+
+| Directive | Static pages | Why |
+|---|---|---|
+| `script-src` | `'self' 'unsafe-inline'` (plus `'unsafe-eval'` under `next dev` only) | A prerendered page has no per-request nonce; Next.js's inline bootstrap scripts need `'unsafe-inline'`. Tradeoff recorded in ADR-0014 "Amendment 2026-11-04 (3)". |
+| `style-src` | `'self'` | No static page has an inline `<style>` or `style=` attribute (checked in the built HTML), and a browser check with client-side navigation reported no violation. |
+| everything else | as in the table above | Same `default-src`, `img-src`, `font-src`, `connect-src`, `object-src`, `base-uri`, `form-action`, `frame-ancestors`, `frame-src`, `manifest-src`, `worker-src`, `upgrade-insecure-requests`. |
+
+*Each response carries exactly one `Content-Security-Policy` header (checked
+with `next start`, 2026-11-04). Links to the form pages are plain `<a>`
+(a full page load), not `next/link`: a client-side navigation keeps the
+current document's policy, so it would run a form page under the static
+policy. The web gate checks which routes are static and which are dynamic
+(see "Local run and build"). Verified locally on 2026-11-04 with
+`next start` and a mock catalog API: all 11 script tags on `/login` carry
+the nonce, the static pages and the localized 404 render with no CSP
+violation, and `/subjects` and a subject page are readable at 375 px wide
+with no horizontal scroll.)*
+
 The nonce makes every page render per request (`connection()` in both root
 layouts); Next.js applies a nonce only to dynamically rendered pages. On
 Vercel that means a function call per page view instead of a cached static
@@ -237,6 +326,9 @@ with a static CSP in `next.config`, subject pages prebuilt with
 on the pages with forms (log in, sign up, buy). The proxy itself does not
 make pages dynamic; `connection()` in the root layouts does. See ADR-0014
 "Amendment 2026-11-04", item 7.)*
+*(Amended 2026-11-04: done in W2b. `connection()` is gone from both root
+layouts and is called only by the form pages; the per-request render and
+the function call per page view now apply only to those four pages.)*
 
 Verified locally on 2026-11-04 with `next start`: every header above is on
 the response, all 11 script tags on the home page carry the nonce, the page

@@ -237,6 +237,43 @@ above is unchanged.
    so a build never makes one API call per subject (the per-IP limits stay
    as they are).
 
+## Amendment 2026-11-04 (3): W2b built — static pages and the CSP tradeoff
+
+Records how W2b carries out decision 7 (options A + C) and item 4 of the
+amendment above. The text above is unchanged.
+
+1. **Static and dynamic routes.** `connection()` is gone from both root
+   layouts. Home, about, subjects, subject, terms, privacy and refund (both
+   languages) prerender static: `○`, and `●` for the subject pages, which
+   `generateStaticParams` prebuilds from the catalog with `revalidate = 300`.
+   Only `/login`, `/signup`, `/en/login` and `/en/signup` call
+   `connection()` and render per request (`ƒ`); the W4 buy page joins them.
+   `scripts/web_gate.sh` prints the route table and fails on any other mix.
+2. **Catalog data.** Next.js reads `GET /api/v1/academy/public/catalog` on
+   the server only (`API_BASE_URL`, not `NEXT_PUBLIC_`), once per build
+   stage or revalidation window for every catalog page (measured: 1-2
+   requests per build, not one per subject). A build with the API down or
+   unset renders "unavailable"; a failed refresh at run time keeps the last
+   good page. `API_BASE_URL` is required on Vercel.
+3. **CSP tradeoff (recorded as decision 7 asked).** The static pages carry
+   one fixed policy from `next.config.ts` with `script-src 'self'
+   'unsafe-inline'` and no nonce, because a prerendered page cannot carry a
+   per-request nonce and Next.js's bootstrap scripts are inline. Accepted
+   because those pages have no forms, no user input, no login state and no
+   token in the page, and the rest of the policy is unchanged
+   (`default-src 'self'`, no third-party script host, `object-src 'none'`,
+   `base-uri 'self'`, `frame-ancestors 'none'`). An injected inline script
+   on a static page would still run, so nothing on those pages may render
+   untrusted HTML (they render text from the catalog through React, which
+   escapes it). `style-src` stays `'self'` (no inline style exists).
+   The form pages keep the strict nonce policy
+   (`'nonce-…' 'strict-dynamic'`, no `'unsafe-inline'`), and links to them
+   are plain `<a>` so that they always load with their own policy instead
+   of inheriting the static one through a client-side navigation.
+4. **Not covered here:** design, the buy form (W4), and the W6 security
+   test pass. Vercel Deployment Protection for Previews is an owner step
+   (`docs/web/README.md` "Deploy on Vercel" item 6).
+
 ## To verify
 
 - Vercel accepts the site on the Hobby plan (owner, when the project is
