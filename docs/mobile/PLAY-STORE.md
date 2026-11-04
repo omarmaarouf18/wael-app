@@ -84,4 +84,7 @@ may be shown, payment actions never (SPEC Section 2 D3, ADR-0003 amendment
 2026-10-08). The guard is `frontend/test/store_safety_l10n_test.dart`: it
 scans `lib/` for payment-action words (Arabic substring, Latin loose +
 word-boundary lists) with an allowlist limited to the price label/helper/wire
-keys. Keep every new string passing it before release.
+keys. Keep every new string passing it before release. *(Amended
+2026-11-04, ADR-0014: the same test also fails if any file under
+`frontend/` names the sales website or links to it — the academy apex
+domain, any subdomain other than `legal` and `api`, or a Vercel host.)*
