@@ -112,6 +112,13 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: wael-app-web
 
+      - name: "Explain a missing App installation"
+        if: failure() && steps.app-token.outcome == 'failure'
+        run: |
+          echo "::error::the GitHub App could not take a token for wael-app-web"
+          echo "::error::owner action: install the App on omarmaarouf18/wael-app-web (GitHub -> Settings -> Installed GitHub Apps -> the App -> Configure -> Repository access -> add wael-app-web), or set the secrets WEB_APP_ID and WEB_APP_PRIVATE_KEY to a dedicated App that is installed there"
+          echo "::error::until then the mirror keeps the commits of the last successful sync; nothing is pushed"
+
       - name: "Guard: the mirror may only hold commits the sync produced"
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}

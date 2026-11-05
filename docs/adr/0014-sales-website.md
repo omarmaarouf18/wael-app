@@ -321,12 +321,16 @@ amendment supersedes the sentences it names.
    `wael-app` repository secrets `APP_ID` and `APP_PRIVATE_KEY` — the App
    `wael-app-sync-omarmaarouf18` (App ID 5137789) — and asks for a token
    scoped to the one repository `wael-app-web`. The App's permissions are
-   unchanged (contents write, workflows write). The App installation must
-   include `wael-app-web`: it is installed on `wael-app-deploy` and
-   `wael-app-mobile` only, so the owner adds `wael-app-web` to that
-   installation (GitHub → Settings → Installed GitHub Apps →
-   `wael-app-sync-omarmaarouf18` → Configure → Repository access). Until the
-   owner does, the sync fails at the token step and the mirror stays empty.
+   unchanged (contents write, workflows write). The App must be installed on
+   `wael-app-web`: it is installed on `wael-app-deploy` and `wael-app-mobile`
+   only, so the owner either adds `wael-app-web` to that installation (GitHub
+   → Settings → Installed GitHub Apps → `wael-app-sync-omarmaarouf18` →
+   Configure → Repository access) or creates a dedicated App for the website
+   and stores it as the secrets `WEB_APP_ID` and `WEB_APP_PRIVATE_KEY` (the
+   workflow reads those when they are set and falls back to `APP_ID` /
+   `APP_PRIVATE_KEY` otherwise; the mobile sync keeps its own secrets either
+   way). Until the owner does one of these, the sync fails loudly at the
+   token step and pushes nothing.
    *(Amended 2026-11-05, owner: a separate App for the website is allowed —
    the workflow reads the optional secrets `WEB_APP_ID` and
    `WEB_APP_PRIVATE_KEY` and uses them when they are set, and falls back to

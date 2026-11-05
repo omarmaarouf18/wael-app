@@ -252,11 +252,33 @@ the mirror directly.
   workflow also reads the optional secrets `WEB_APP_ID` and
   `WEB_APP_PRIVATE_KEY` and uses them instead; the mobile sync keeps
   `APP_ID` / `APP_PRIVATE_KEY` either way.
-- **Owner step (once).** The App installation must include the new repo: it
-  covers `wael-app-deploy` and `wael-app-mobile` only. GitHub → Settings →
-  Installed GitHub Apps → `wael-app-sync-omarmaarouf18` → Configure →
-  Repository access → add `wael-app-web`. Without it the sync fails at the
-  token step and the mirror stays empty.
+- **Owner step (once).** The App must be installed on `wael-app-web`; it is
+  not yet. Either route works:
+  1. *Add the repo to the existing App* (the App the mobile sync uses,
+     `wael-app-sync-omarmaarouf18`, App ID 5137789): GitHub → Settings →
+     Installed GitHub Apps → `wael-app-sync-omarmaarouf18` → Configure →
+     Repository access → add `wael-app-web` → save. The App's permissions
+     (Contents read/write, Workflows read/write) already cover the push.
+  2. *A dedicated App for the website* (what the owner chose on 2026-11-05):
+     GitHub → Settings → Applications → Developer settings → GitHub Apps →
+     New GitHub App; name it (e.g. `wael-app-web-sync-omarmaarouf18`); set
+     Repository permissions → Contents: Read and write (Metadata: Read-only
+     is added automatically); leave "Expire user access tokens" empty; create
+     it, then Install it on the account and select **only**
+     `omarmaarouf18/wael-app-web`; generate a private key and download the
+     `.pem`. Put both in the `wael-app` repository secrets:
+     ```bash
+     gh secret set WEB_APP_ID --repo omarmaarouf18/wael-app --body "<numeric-app-id>"
+     gh secret set WEB_APP_PRIVATE_KEY --repo omarmaarouf18/wael-app < private-key.pem
+     ```
+     The workflow uses `WEB_APP_ID` / `WEB_APP_PRIVATE_KEY` when they are set
+     and falls back to `APP_ID` / `APP_PRIVATE_KEY` otherwise, so the mobile
+     sync keeps its own secrets either way.
+
+  Without one of these the sync fails loudly at the token step and pushes
+  nothing; the mirror keeps the commits of the last successful sync.
+  Re-run it after the App is installed: the "Sync Website" workflow → Run
+  workflow (on `develop` or `main`).
 - **The mirror's README** is `web/README.md` in `wael-app`: "Mirror of
   `wael-app/web`, do not commit here."
 - **The mirror's branches.** `develop` appears at the first sync; `main`
