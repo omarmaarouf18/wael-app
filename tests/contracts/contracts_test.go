@@ -506,8 +506,9 @@ func TestContract_PublicCatalog(t *testing.T) {
 		}},
 		{"github.com/omarmaarouf18/wael-app/api-gateway/internal/proxy", []string{"TestGateway_PublicCatalogRoute"}},
 		{"github.com/omarmaarouf18/wael-app/api-gateway/internal/middleware", []string{"TestRateLimit_PublicCatalogPerIP"}},
+		{"github.com/omarmaarouf18/wael-app/api-gateway/cmd", []string{"TestGateway_FullChain_PublicCatalog"}},
 	} {
-		cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestPublicCatalog_|TestPublicSubject_|TestPublicSubjectExpired$|TestGateway_PublicCatalogRoute$|TestRateLimit_PublicCatalogPerIP$)", c.pkg)
+		cmd := exec.Command("go", "test", "-v", "-count=1", "-run", "^(TestPublicCatalog_|TestPublicSubject_|TestPublicSubjectExpired$|TestGateway_PublicCatalogRoute$|TestRateLimit_PublicCatalogPerIP$|TestGateway_FullChain_PublicCatalog$)", c.pkg)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("public catalog contract verification failed in %s: %v\nOutput:\n%s", c.pkg, err, string(out))
