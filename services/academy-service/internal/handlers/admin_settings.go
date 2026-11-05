@@ -66,15 +66,16 @@ func cleanWhatsAppNumber(raw string) (string, bool) {
 
 // AdminSettingsRequest is the request body for PUT /internal/admin/settings.
 type AdminSettingsRequest struct {
-	ShowPrices      *bool  `json:"show_prices"`
-	SupportWhatsApp string `json:"support_whatsapp"`
-	CenterNameAr    string `json:"center_name_ar"`
-	CenterNameEn    string `json:"center_name_en"`
-	CenterAddressAr string `json:"center_address_ar"`
-	CenterAddressEn string `json:"center_address_en"`
-	CenterHoursAr   string `json:"center_hours_ar"`
-	CenterHoursEn   string `json:"center_hours_en"`
-	CenterMapURL    string `json:"center_map_url"`
+	ShowPrices      *bool                   `json:"show_prices"`
+	SupportWhatsApp string                  `json:"support_whatsapp"`
+	CenterNameAr    string                  `json:"center_name_ar"`
+	CenterNameEn    string                  `json:"center_name_en"`
+	CenterAddressAr string                  `json:"center_address_ar"`
+	CenterAddressEn string                  `json:"center_address_en"`
+	CenterHoursAr   string                  `json:"center_hours_ar"`
+	CenterHoursEn   string                  `json:"center_hours_en"`
+	CenterMapURL    string                  `json:"center_map_url"`
+	PaymentMethods  *[]models.PaymentMethod `json:"payment_methods"`
 }
 
 // effectiveAppSettings returns the stored settings with the support number
@@ -268,6 +269,40 @@ func (s *Server) putAdminSettings(w http.ResponseWriter, r *http.Request) {
 		changed = append(changed, "center_map_url")
 	}
 
+	var cleanMethods []models.PaymentMethod
+	if req.PaymentMethods != nil {
+		cleanMethods = make([]models.PaymentMethod, 0, len(*req.PaymentMethods))
+		for _, m := range *req.PaymentMethods {
+			kind := strings.ToLower(strings.TrimSpace(m.Kind))
+			if kind != "wallet" && kind != "instapay" {
+				handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_payment_method", "kind must be wallet or instapay", nil)
+				return
+			}
+			label, ok := cleanSettingsText(m.Label, 100)
+			if !ok || label == "" {
+				handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_payment_label", "label must be between 1 and 100 characters", nil)
+				return
+			}
+			numAddr, ok := cleanSettingsText(m.NumberOrAddress, 100)
+			if !ok || numAddr == "" {
+				handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_payment_number_or_address", "number_or_address must be between 1 and 100 characters", nil)
+				return
+			}
+			cleanMethods = append(cleanMethods, models.PaymentMethod{
+				Kind:            kind,
+				Label:           label,
+				NumberOrAddress: numAddr,
+			})
+		}
+		if !paymentMethodsEqual(current.PaymentMethods, cleanMethods) {
+			changed = append(changed, "payment_methods")
+		}
+	} else if current.PaymentMethods != nil {
+		cleanMethods = current.PaymentMethods
+	} else {
+		cleanMethods = []models.PaymentMethod{}
+	}
+
 	now := time.Now().UTC()
 	newSettings := &models.AppSettings{
 		ID:              models.AppSettingsID,
@@ -280,6 +315,7 @@ func (s *Server) putAdminSettings(w http.ResponseWriter, r *http.Request) {
 		CenterHoursAr:   cleanHoursAr,
 		CenterHoursEn:   cleanHoursEn,
 		CenterMapURL:    cleanMap,
+		PaymentMethods:  cleanMethods,
 		UpdatedAt:       now,
 		UpdatedBy:       adm.ID,
 	}
@@ -299,4 +335,16 @@ func (s *Server) putAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	handlerutil.WriteJSON(w, http.StatusOK, newSettings)
+}
+
+func paymentMethodsEqual(a, b []models.PaymentMethod) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Kind != b[i].Kind || a[i].Label != b[i].Label || a[i].NumberOrAddress != b[i].NumberOrAddress {
+			return false
+		}
+	}
+	return true
 }

@@ -255,3 +255,62 @@ test('requests filter and reset trigger reload', async () => {
   assert.ok(resetCall.url.includes('status=pending'));
   assert.equal($('requests-status').value, 'pending');
 });
+
+test('requests tab renders web purchase request details and amount warning', async () => {
+  const webRequests = [
+    {
+      id: 'req-web-1',
+      user_id: 'u-1',
+      subject_id: 'sub-1',
+      subject_title_ar: 'لغة عربية',
+      price: 150,
+      source: 'web',
+      payment_method: 'instapay',
+      transfer_reference: 'TX12345678',
+      sender_number: '01012345678',
+      amount: 150,
+      amount_warning: false,
+      created_at: '2026-10-02T12:00:00Z',
+      status: 'pending',
+    },
+    {
+      id: 'req-web-2',
+      user_id: 'u-1',
+      subject_id: 'sub-1',
+      subject_title_ar: 'لغة عربية',
+      price: 150,
+      source: 'web',
+      payment_method: 'wallet',
+      transfer_reference: 'W88990011',
+      sender_number: '01122334455',
+      amount: 100,
+      amount_warning: true,
+      created_at: '2026-10-02T13:00:00Z',
+      status: 'pending',
+    },
+  ];
+
+  globalThis.fetch = makeFetch(routes({
+    'GET /api/requests': { body: { items: webRequests, total: 2, pending_count: 2 } },
+  }));
+  await openRequests();
+
+  const rows = tableRows();
+  assert.equal(rows.length, 2);
+
+  // Row 0: source web, InstaPay, 150 EGP, Ref, From, no warning
+  const r0 = rows[0].textContent;
+  assert.ok(r0.includes(t('requests.source.web')), 'contains web source badge');
+  assert.ok(r0.includes('InstaPay:'), 'contains instapay label');
+  assert.ok(r0.includes(formatNumber(150)), 'contains formatted amount');
+  assert.ok(r0.includes('Ref: TX12345678'), 'contains transfer ref');
+  assert.ok(r0.includes('From: 01012345678'), 'contains sender number');
+  assert.ok(!r0.includes('⚠️'), 'no amount warning when amount equals price');
+
+  // Row 1: source web, Wallet, 100 EGP, amount warning
+  const r1 = rows[1].textContent;
+  assert.ok(r1.includes('Wallet:'), 'contains wallet label');
+  assert.ok(r1.includes(formatNumber(100)), 'contains formatted amount');
+  assert.ok(r1.includes('Ref: W88990011'), 'contains transfer ref');
+  assert.ok(r1.includes('⚠️'), 'contains amount warning badge');
+});

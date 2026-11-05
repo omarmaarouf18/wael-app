@@ -8,20 +8,28 @@ import (
 // AppSettingsID is the fixed MongoDB _id for the single app_settings document.
 const AppSettingsID = "app"
 
+// PaymentMethod defines a manual payment option for web sales (ADR-0014 W4).
+type PaymentMethod struct {
+	Kind            string `bson:"kind" json:"kind"` // "wallet" | "instapay"
+	Label           string `bson:"label" json:"label"`
+	NumberOrAddress string `bson:"number_or_address" json:"number_or_address"`
+}
+
 // AppSettings stores app-facing settings configured by the admin console (A1).
 type AppSettings struct {
-	ID              string    `bson:"_id" json:"-"`
-	ShowPrices      bool      `bson:"show_prices" json:"show_prices"`
-	SupportWhatsApp string    `bson:"support_whatsapp" json:"support_whatsapp"`
-	CenterNameAr    string    `bson:"center_name_ar" json:"center_name_ar"`
-	CenterNameEn    string    `bson:"center_name_en" json:"center_name_en"`
-	CenterAddressAr string    `bson:"center_address_ar" json:"center_address_ar"`
-	CenterAddressEn string    `bson:"center_address_en" json:"center_address_en"`
-	CenterHoursAr   string    `bson:"center_hours_ar" json:"center_hours_ar"`
-	CenterHoursEn   string    `bson:"center_hours_en" json:"center_hours_en"`
-	CenterMapURL    string    `bson:"center_map_url" json:"center_map_url"`
-	UpdatedAt       time.Time `bson:"updated_at,omitempty" json:"updated_at,omitempty"`
-	UpdatedBy       string    `bson:"updated_by,omitempty" json:"updated_by,omitempty"`
+	ID              string          `bson:"_id" json:"-"`
+	ShowPrices      bool            `bson:"show_prices" json:"show_prices"`
+	SupportWhatsApp string          `bson:"support_whatsapp" json:"support_whatsapp"`
+	CenterNameAr    string          `bson:"center_name_ar" json:"center_name_ar"`
+	CenterNameEn    string          `bson:"center_name_en" json:"center_name_en"`
+	CenterAddressAr string          `bson:"center_address_ar" json:"center_address_ar"`
+	CenterAddressEn string          `bson:"center_address_en" json:"center_address_en"`
+	CenterHoursAr   string          `bson:"center_hours_ar" json:"center_hours_ar"`
+	CenterHoursEn   string          `bson:"center_hours_en" json:"center_hours_en"`
+	CenterMapURL    string          `bson:"center_map_url" json:"center_map_url"`
+	PaymentMethods  []PaymentMethod `bson:"payment_methods" json:"payment_methods"`
+	UpdatedAt       time.Time       `bson:"updated_at,omitempty" json:"updated_at,omitempty"`
+	UpdatedBy       string          `bson:"updated_by,omitempty" json:"updated_by,omitempty"`
 }
 
 // Clone creates a shallow copy of AppSettings.
@@ -30,6 +38,10 @@ func (s *AppSettings) Clone() *AppSettings {
 		return nil
 	}
 	c := *s
+	if len(s.PaymentMethods) > 0 {
+		c.PaymentMethods = make([]PaymentMethod, len(s.PaymentMethods))
+		copy(c.PaymentMethods, s.PaymentMethods)
+	}
 	return &c
 }
 

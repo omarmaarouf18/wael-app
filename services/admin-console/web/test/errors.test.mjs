@@ -58,6 +58,9 @@ const ACADEMY_CODES = [
   'invalid_center_hours',
   'invalid_map_url',
   'settings_forbidden_word',
+  'invalid_payment_method',
+  'invalid_payment_label',
+  'invalid_payment_number_or_address',
   'invalid_file_id',
   'file_not_found',
   'invalid_upload',
@@ -67,7 +70,7 @@ const ACADEMY_CODES = [
 ];
 
 test('every academy admin code has an ar and an en message', () => {
-  assert.equal(ACADEMY_CODES.length, 51);
+  assert.equal(ACADEMY_CODES.length, 54);
   for (const code of ACADEMY_CODES) {
     assert.ok(MESSAGES.ar[`err.${code}`], `ar err.${code}`);
     assert.ok(MESSAGES.en[`err.${code}`], `en err.${code}`);

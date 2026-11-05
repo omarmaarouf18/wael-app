@@ -1,4 +1,5 @@
 import { api as defaultApi } from './api.js';
+import { clear, h } from './dom.js';
 import { formatCairoDateTime, t } from './i18n.js';
 import { createCooldown, hideBanner, showError, toast } from './ui.js';
 import { trackDirty } from './unsaved.js';
@@ -16,6 +17,8 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
   const centerHoursAr = doc.getElementById('settings-center-hours-ar');
   const centerHoursEn = doc.getElementById('settings-center-hours-en');
   const centerMapUrl = doc.getElementById('settings-center-map-url');
+  const paymentMethodsContainer = doc.getElementById('settings-payment-methods');
+  const addPaymentMethodBtn = doc.getElementById('settings-add-payment-method');
   const submitBtn = doc.getElementById('settings-submit');
   const metaSpan = doc.getElementById('settings-meta');
 
@@ -31,6 +34,77 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     }
   });
 
+  function getPaymentMethodsValues() {
+    if (!paymentMethodsContainer) return [];
+    const rows = paymentMethodsContainer.children ?? [];
+    const result = [];
+    for (const r of rows) {
+      if (!r || !r.children) continue;
+      const kindSelect = r.children[0];
+      const labelInput = r.children[1];
+      const numberInput = r.children[2];
+      const kind = (kindSelect?.value ?? 'wallet').trim();
+      const label = (labelInput?.value ?? '').trim();
+      const numAddr = (numberInput?.value ?? '').trim();
+      if (label || numAddr) {
+        result.push({ kind, label, number_or_address: numAddr });
+      }
+    }
+    return result;
+  }
+
+  function createPaymentMethodRow(item = { kind: 'wallet', label: '', number_or_address: '' }) {
+    const kindSelect = h('select', { class: 'payment-kind' },
+      h('option', { text: t('settings.paymentKindWallet'), attrs: { value: 'wallet' } }),
+      h('option', { text: t('settings.paymentKindInstapay'), attrs: { value: 'instapay' } }),
+    );
+    kindSelect.value = item.kind || 'wallet';
+
+    const labelInput = h('input', {
+      class: 'payment-label',
+      attrs: { type: 'text', maxlength: 100, autocomplete: 'off', placeholder: t('settings.paymentLabel') },
+    });
+    labelInput.value = item.label || '';
+
+    const numberInput = h('input', {
+      class: 'payment-number',
+      attrs: { type: 'text', dir: 'ltr', maxlength: 100, autocomplete: 'off', placeholder: t('settings.paymentNumberOrAddress') },
+    });
+    numberInput.value = item.number_or_address || '';
+
+    const removeBtn = h('button', {
+      class: 'btn small danger-outline',
+      text: t('settings.removePaymentMethod'),
+      attrs: { type: 'button' },
+      on: {
+        click: () => {
+          row.remove();
+        },
+      },
+    });
+
+    const row = h('div', { class: 'settings-grid settings-payment-row' },
+      kindSelect,
+      labelInput,
+      numberInput,
+      removeBtn,
+    );
+    return row;
+  }
+
+  function renderPaymentMethods(methods = []) {
+    if (!paymentMethodsContainer) return;
+    clear(paymentMethodsContainer);
+    for (const m of methods) {
+      paymentMethodsContainer.append(createPaymentMethodRow(m));
+    }
+  }
+
+  addPaymentMethodBtn?.addEventListener('click', () => {
+    if (!paymentMethodsContainer) return;
+    paymentMethodsContainer.append(createPaymentMethodRow());
+  });
+
   function getFormValues() {
     return {
       show_prices: Boolean(showPrices?.checked),
@@ -42,6 +116,7 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
       center_hours_ar: (centerHoursAr?.value ?? '').trim(),
       center_hours_en: (centerHoursEn?.value ?? '').trim(),
       center_map_url: (centerMapUrl?.value ?? '').trim(),
+      payment_methods: getPaymentMethodsValues(),
     };
   }
 
@@ -56,6 +131,7 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     if (centerHoursAr) centerHoursAr.value = state.center_hours_ar ?? '';
     if (centerHoursEn) centerHoursEn.value = state.center_hours_en ?? '';
     if (centerMapUrl) centerMapUrl.value = state.center_map_url ?? '';
+    renderPaymentMethods(state.payment_methods ?? []);
 
     updateMeta(state);
   }
@@ -70,6 +146,18 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     }
   }
 
+  function paymentMethodsEqual(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i].kind !== b[i].kind || a[i].label !== b[i].label || a[i].number_or_address !== b[i].number_or_address) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   function isDirty() {
     if (!loadedState) return false;
     const current = getFormValues();
@@ -82,7 +170,8 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
       current.center_address_en !== (loadedState.center_address_en ?? '') ||
       current.center_hours_ar !== (loadedState.center_hours_ar ?? '') ||
       current.center_hours_en !== (loadedState.center_hours_en ?? '') ||
-      current.center_map_url !== (loadedState.center_map_url ?? '')
+      current.center_map_url !== (loadedState.center_map_url ?? '') ||
+      !paymentMethodsEqual(current.payment_methods, loadedState.payment_methods ?? [])
     );
   }
 
@@ -169,6 +258,7 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     if (centerHoursAr) centerHoursAr.value = '';
     if (centerHoursEn) centerHoursEn.value = '';
     if (centerMapUrl) centerMapUrl.value = '';
+    renderPaymentMethods([]);
     if (metaSpan) metaSpan.textContent = '';
     if (banner) hideBanner(banner);
   }

@@ -10,7 +10,7 @@ import { createCooldown, createPager, hideBanner, keepOpenWhile, messageRow, sho
 import { validateReason } from './account-dialog.js';
 
 export const PAGE_SIZE = 15;
-const COLUMNS = 8;
+const COLUMNS = 10;
 
 export function requestsQuery({ status, subject_id, page, limit }) {
   const q = { page, limit };
@@ -128,6 +128,31 @@ export function mountRequests({ api, doc = document, win = window }) {
     const subjectText = [req.subject_title_ar, req.level_name_ar].filter(Boolean).join(' · ');
     const subjectCell = h('td', { text: subjectText || '—' });
 
+    const isWeb = req.source === 'web';
+    const sourceCell = h('td', {},
+      h('span', { class: isWeb ? 'badge' : 'badge muted', text: isWeb ? t('requests.source.web') : t('requests.source.mobile') }),
+    );
+
+    const paymentCell = h('td', {});
+    if (isWeb) {
+      const methodLabel = req.payment_method === 'instapay' ? 'InstaPay' : 'Wallet';
+      paymentCell.append(
+        h('div', { class: 'strong', text: `${methodLabel}: ${formatNumber(req.amount || 0)} EGP` }),
+        h('div', { class: 'small ltr', text: `Ref: ${req.transfer_reference || '—'}` }),
+        h('div', { class: 'small muted ltr', text: `From: ${req.sender_number || '—'}` }),
+      );
+      if (req.amount_warning) {
+        paymentCell.append(
+          h('div', {
+            class: 'badge danger small',
+            text: t('requests.amountWarning', { amount: formatNumber(req.amount), price: formatNumber(req.price) }),
+          }),
+        );
+      }
+    } else {
+      paymentCell.append(h('span', { class: 'muted', text: '—' }));
+    }
+
     const priceCell = h('td', { text: t('catalog.price', { n: formatNumber(req.price) }) });
     const requestedCell = h('td', { text: formatCairoDateTime(req.created_at) });
     const statusCell = h('td', {}, statusBadge(req.status));
@@ -154,7 +179,7 @@ export function mountRequests({ api, doc = document, win = window }) {
       actionsCell.append(h('span', { class: 'small muted', text: formatCairoDateTime(req.decided_at) }));
     }
 
-    return h('tr', {}, studentCell, phoneCell, emailCell, subjectCell, priceCell, requestedCell, statusCell, actionsCell);
+    return h('tr', {}, studentCell, phoneCell, emailCell, subjectCell, sourceCell, paymentCell, priceCell, requestedCell, statusCell, actionsCell);
   }
 
   function render() {

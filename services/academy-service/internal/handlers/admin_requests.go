@@ -18,17 +18,23 @@ import (
 
 // RequestAdminDTO is the admin queue view of a purchase request.
 type RequestAdminDTO struct {
-	ID              string     `json:"id"`
-	UserID          string     `json:"user_id"`
-	SubjectID       string     `json:"subject_id"`
-	SubjectTitleAr  string     `json:"subject_title_ar"`
-	LevelNameAr     string     `json:"level_name_ar"`
-	Price           int        `json:"price"`
-	AccessExpiresAt time.Time  `json:"access_expires_at"`
-	Status          string     `json:"status"`
-	CreatedAt       time.Time  `json:"created_at"`
-	DecidedAt       *time.Time `json:"decided_at,omitempty"`
-	RejectReason    string     `json:"reject_reason,omitempty"`
+	ID                string     `json:"id"`
+	UserID            string     `json:"user_id"`
+	SubjectID         string     `json:"subject_id"`
+	SubjectTitleAr    string     `json:"subject_title_ar"`
+	LevelNameAr       string     `json:"level_name_ar"`
+	Price             int        `json:"price"`
+	AccessExpiresAt   time.Time  `json:"access_expires_at"`
+	Status            string     `json:"status"`
+	Source            string     `json:"source"`
+	PaymentMethod     string     `json:"payment_method,omitempty"`
+	TransferReference string     `json:"transfer_reference,omitempty"`
+	SenderNumber      string     `json:"sender_number,omitempty"`
+	Amount            int        `json:"amount,omitempty"`
+	AmountWarning     bool       `json:"amount_warning,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	DecidedAt         *time.Time `json:"decided_at,omitempty"`
+	RejectReason      string     `json:"reject_reason,omitempty"`
 }
 
 // RequestsListResponseDTO wraps the request queue page and the pending count for badge.
@@ -167,18 +173,32 @@ func (s *Server) ListAdminRequests(w http.ResponseWriter, r *http.Request) {
 				lvlName = lvl.TitleAr
 			}
 		}
+		src := req.Source
+		if src == "" {
+			src = "mobile"
+		}
+		amtWarning := false
+		if src == "web" && req.Amount != price {
+			amtWarning = true
+		}
 		items = append(items, RequestAdminDTO{
-			ID:              req.ID,
-			UserID:          req.UserID,
-			SubjectID:       req.SubjectID,
-			SubjectTitleAr:  titleAr,
-			LevelNameAr:     lvlName,
-			Price:           price,
-			AccessExpiresAt: expires,
-			Status:          req.Status,
-			CreatedAt:       req.CreatedAt,
-			DecidedAt:       req.DecidedAt,
-			RejectReason:    req.RejectReason,
+			ID:                req.ID,
+			UserID:            req.UserID,
+			SubjectID:         req.SubjectID,
+			SubjectTitleAr:    titleAr,
+			LevelNameAr:       lvlName,
+			Price:             price,
+			AccessExpiresAt:   expires,
+			Status:            req.Status,
+			Source:            src,
+			PaymentMethod:     req.PaymentMethod,
+			TransferReference: req.TransferReference,
+			SenderNumber:      req.SenderNumber,
+			Amount:            req.Amount,
+			AmountWarning:     amtWarning,
+			CreatedAt:         req.CreatedAt,
+			DecidedAt:         req.DecidedAt,
+			RejectReason:      req.RejectReason,
 		})
 	}
 

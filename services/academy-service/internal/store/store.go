@@ -96,8 +96,10 @@ type Store interface {
 	// no-op success (false, nil), a missing row is ErrNotFound.
 	RevokeEntitlement(ctx context.Context, id, revokedBy, reason string, now time.Time) (bool, error)
 
-	// Purchase Requests (Phase 3.3)
+	// Purchase Requests (Phase 3.3, web ADR-0014 W4)
 	CreateOrGetPendingRequest(ctx context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error)
+	CreatePurchaseRequest(ctx context.Context, req *models.PurchaseRequest) error
+	HasPurchaseRequestWithReference(ctx context.Context, normalizedRef string) (bool, error)
 	GetPendingRequest(ctx context.Context, userID, subjectID string) (*models.PurchaseRequest, error)
 	ListRequestsByUser(ctx context.Context, userID string) ([]*models.PurchaseRequest, error)
 	GetRequestByID(ctx context.Context, id string) (*models.PurchaseRequest, error)
@@ -790,6 +792,9 @@ func (s *MemoryStore) CreateOrGetPendingRequest(_ context.Context, req *models.P
 	if req.Status == "" {
 		req.Status = models.RequestStatusPending
 	}
+	if req.Source == "" {
+		req.Source = "mobile"
+	}
 	if req.CreatedAt.IsZero() {
 		req.CreatedAt = time.Now().UTC()
 	}
@@ -798,6 +803,54 @@ func (s *MemoryStore) CreateOrGetPendingRequest(_ context.Context, req *models.P
 	s.purchaseRequests = append(s.purchaseRequests, &cp)
 	res := *req
 	return &res, true, nil
+}
+
+// HasPurchaseRequestWithReference checks if any request exists with the normalized transfer reference.
+func (s *MemoryStore) HasPurchaseRequestWithReference(_ context.Context, normalizedRef string) (bool, error) {
+	if normalizedRef == "" {
+		return false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.NormalizedReference != "" && r.NormalizedReference == normalizedRef {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// CreatePurchaseRequest inserts a new purchase request enforcing uniqueness of pending requests per user+subject and normalized reference.
+func (s *MemoryStore) CreatePurchaseRequest(_ context.Context, req *models.PurchaseRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.UserID == req.UserID && r.SubjectID == req.SubjectID && r.Status == models.RequestStatusPending {
+			return ErrDuplicate
+		}
+		if req.NormalizedReference != "" && r.NormalizedReference == req.NormalizedReference {
+			return ErrDuplicate
+		}
+	}
+
+	if req.ID == "" {
+		req.ID = generateID()
+	}
+	if req.Status == "" {
+		req.Status = models.RequestStatusPending
+	}
+	if req.Source == "" {
+		req.Source = "web"
+	}
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = time.Now().UTC()
+	}
+
+	cp := *req
+	s.purchaseRequests = append(s.purchaseRequests, &cp)
+	return nil
 }
 
 // GetPendingRequest returns the pending request for a user and subject, or nil if none exists.

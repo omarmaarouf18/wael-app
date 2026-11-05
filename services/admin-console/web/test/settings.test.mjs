@@ -224,3 +224,32 @@ test('retry-after 429 arms cooldown and keeps save button disabled', async (ctx)
   assert.equal(elements.submitBtn.disabled, true);
   assert.equal(elements.banner.hidden, false);
 });
+
+test('payment methods: renders rows from loaded settings and submits updated list', async () => {
+  const { mod, elements, getLastSentUpdate } = setup({
+    payment_methods: [
+      { kind: 'instapay', label: 'حساب انستاباي', number_or_address: 'user@instapay' },
+      { kind: 'wallet', label: 'فودافون كاش', number_or_address: '01012345678' },
+    ],
+  });
+
+  await mod.load();
+
+  const container = doc.getElementById('settings-payment-methods');
+  assert.equal(container.children.length, 2);
+
+  // Check fields of first row
+  const row0 = container.children[0];
+  const kindSelect = row0.children.find((c) => c.tagName === 'SELECT');
+  assert.equal(kindSelect.value, 'instapay');
+
+  // Save sends payment_methods
+  await mod.save();
+  const update = getLastSentUpdate();
+  assert.ok(update);
+  assert.deepEqual(update.payment_methods, [
+    { kind: 'instapay', label: 'حساب انستاباي', number_or_address: 'user@instapay' },
+    { kind: 'wallet', label: 'فودافون كاش', number_or_address: '01012345678' },
+  ]);
+});
+

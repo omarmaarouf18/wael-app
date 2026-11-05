@@ -17,17 +17,24 @@ func (p *Proxy) SettingsGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type paymentMethodDTO struct {
+	Kind            string `json:"kind"`
+	Label           string `json:"label"`
+	NumberOrAddress string `json:"number_or_address"`
+}
+
 // settingsUpdateRequest is the body of POST /api/settings/update.
 type settingsUpdateRequest struct {
-	ShowPrices      *bool  `json:"show_prices"`
-	SupportWhatsApp string `json:"support_whatsapp"`
-	CenterNameAr    string `json:"center_name_ar"`
-	CenterNameEn    string `json:"center_name_en"`
-	CenterAddressAr string `json:"center_address_ar"`
-	CenterAddressEn string `json:"center_address_en"`
-	CenterHoursAr   string `json:"center_hours_ar"`
-	CenterHoursEn   string `json:"center_hours_en"`
-	CenterMapURL    string `json:"center_map_url"`
+	ShowPrices      *bool               `json:"show_prices"`
+	SupportWhatsApp string              `json:"support_whatsapp"`
+	CenterNameAr    string              `json:"center_name_ar"`
+	CenterNameEn    string              `json:"center_name_en"`
+	CenterAddressAr string              `json:"center_address_ar"`
+	CenterAddressEn string              `json:"center_address_en"`
+	CenterHoursAr   string              `json:"center_hours_ar"`
+	CenterHoursEn   string              `json:"center_hours_en"`
+	CenterMapURL    string              `json:"center_map_url"`
+	PaymentMethods  *[]paymentMethodDTO `json:"payment_methods"`
 }
 
 // SettingsUpdate handles POST /api/settings/update -> PUT academy /internal/admin/settings.
@@ -44,7 +51,7 @@ func (p *Proxy) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
-	body, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"show_prices":       *in.ShowPrices,
 		"support_whatsapp":  strings.TrimSpace(in.SupportWhatsApp),
 		"center_name_ar":    in.CenterNameAr,
@@ -54,7 +61,11 @@ func (p *Proxy) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		"center_hours_ar":   in.CenterHoursAr,
 		"center_hours_en":   in.CenterHoursEn,
 		"center_map_url":    strings.TrimSpace(in.CenterMapURL),
-	})
+	}
+	if in.PaymentMethods != nil {
+		payload["payment_methods"] = *in.PaymentMethods
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "unavailable")
 		return

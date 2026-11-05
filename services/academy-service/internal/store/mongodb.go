@@ -163,6 +163,20 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 		return fmt.Errorf("store: ensure purchase_requests status index: %w", err)
 	}
 
+	// Partial unique index on purchase_requests(normalized_reference) where normalized_reference > ""
+	_, err = s.db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "normalized_reference", Value: 1},
+		},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{"normalized_reference": bson.M{"$type": "string", "$gt": ""}}).
+			SetName("uniq_purchase_requests_normalized_reference"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure purchase_requests normalized_reference unique index: %w", err)
+	}
+
 	// Indexes on video_plays: (user_id, played_at) and (video_id, played_at)
 	_, err = s.db.Collection("video_plays").Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{
@@ -956,6 +970,9 @@ func (s *MongoStore) CreateOrGetPendingRequest(ctx context.Context, req *models.
 	if req.Status == "" {
 		req.Status = models.RequestStatusPending
 	}
+	if req.Source == "" {
+		req.Source = "mobile"
+	}
 	if req.CreatedAt.IsZero() {
 		req.CreatedAt = time.Now().UTC()
 	}
@@ -993,6 +1010,45 @@ func (s *MongoStore) CreateOrGetPendingRequest(ctx context.Context, req *models.
 	}
 
 	return nil, false, fmt.Errorf("store: insert purchase request: %w", err)
+}
+
+// HasPurchaseRequestWithReference checks if any request exists with the normalized transfer reference.
+func (s *MongoStore) HasPurchaseRequestWithReference(ctx context.Context, normalizedRef string) (bool, error) {
+	if normalizedRef == "" {
+		return false, nil
+	}
+	n, err := s.db.Collection("purchase_requests").CountDocuments(ctx, bson.M{
+		"normalized_reference": normalizedRef,
+	}, options.Count().SetLimit(1))
+	if err != nil {
+		return false, fmt.Errorf("store: check purchase request reference: %w", err)
+	}
+	return n > 0, nil
+}
+
+// CreatePurchaseRequest inserts a new purchase request enforcing uniqueness of pending requests per user+subject and normalized reference.
+func (s *MongoStore) CreatePurchaseRequest(ctx context.Context, req *models.PurchaseRequest) error {
+	if req.ID == "" {
+		req.ID = generateID()
+	}
+	if req.Status == "" {
+		req.Status = models.RequestStatusPending
+	}
+	if req.Source == "" {
+		req.Source = "web"
+	}
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = time.Now().UTC()
+	}
+
+	_, err := s.db.Collection("purchase_requests").InsertOne(ctx, req)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert purchase request: %w", err)
+	}
+	return nil
 }
 
 // GetPendingRequest returns the pending request for a user and subject, or nil if none exists.

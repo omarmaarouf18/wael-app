@@ -855,6 +855,12 @@ func (s *Server) SubjectSubroute(w http.ResponseWriter, r *http.Request) {
 		})(w, r)
 		return
 	}
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "purchase-request" {
+		s.EnforceTier(limiter.TierWrite, func(w http.ResponseWriter, r *http.Request) {
+			s.CreatePurchaseRequest(w, r, parts[0])
+		})(w, r)
+		return
+	}
 	if len(parts) == 4 && parts[0] != "" && parts[1] == "files" && parts[2] != "" && parts[3] == "download" {
 		s.EnforceTier(limiter.TierDownload, func(w http.ResponseWriter, r *http.Request) {
 			s.DownloadFile(w, r, parts[0], parts[2])
@@ -1039,7 +1045,10 @@ func (s *Server) PublicHandler() http.Handler {
 	mux.HandleFunc("/academy/subjects", s.EnforceTier(limiter.TierRead, s.ListSubjects))
 	mux.HandleFunc("/academy/subjects/", s.SubjectSubroute)
 	mux.HandleFunc("/academy/videos/", s.VideoSubroute)
+	mux.HandleFunc("/academy/payment-methods", s.EnforceTier(limiter.TierRead, s.GetPaymentMethods))
 	mux.HandleFunc("/academy/me/entitlements", s.EnforceTier(limiter.TierRead, s.GetMyEntitlements))
+	mux.HandleFunc("/academy/me/requests", s.EnforceTier(limiter.TierRead, s.GetMyRequests))
+	mux.HandleFunc("/academy/me/requests/", s.EnforceTier(limiter.TierRead, s.GetMyRequestByID))
 
 	var h http.Handler = mux
 	h = s.StudentAuth(h)
