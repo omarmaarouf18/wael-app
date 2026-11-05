@@ -167,10 +167,22 @@ export async function resendSignupOTP(data: {
   return apiPost<{ dev_otp?: string }>("/api/v1/auth/signup/resend", data, { skipAuth: true });
 }
 
+let inFlightRefresh: Promise<AuthTokens> | null = null;
+
 export async function refresh(): Promise<AuthTokens> {
-  const res = await apiPost<AuthTokens>("/api/v1/auth/refresh", {}, { skipAuth: true });
-  setAccessToken(res.access_token);
-  return res;
+  if (inFlightRefresh) {
+    return inFlightRefresh;
+  }
+  inFlightRefresh = (async () => {
+    try {
+      const res = await apiPost<AuthTokens>("/api/v1/auth/refresh", {}, { skipAuth: true });
+      setAccessToken(res.access_token);
+      return res;
+    } finally {
+      inFlightRefresh = null;
+    }
+  })();
+  return inFlightRefresh;
 }
 
 export async function logout(): Promise<void> {

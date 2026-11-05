@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { dictionary, localePath, type Lang } from "@/lib/i18n";
+import { HeaderAuthNav } from "./auth-provider";
 
 import styles from "./site-shell.module.css";
 
@@ -42,15 +43,7 @@ export function SiteShell({ lang, path, children }: SiteShellProps) {
             <Link href={to("/about")} className={styles.navLink}>
               {t.nav.about}
             </Link>
-            {/* Plain <a> on purpose: the form pages carry their own nonce
-                CSP (src/proxy.ts), which only a full page load applies; a
-                client-side navigation would keep the static page's policy. */}
-            <a href={to("/login")} className={styles.navLink}>
-              {t.nav.login}
-            </a>
-            <a href={to("/signup")} className={styles.cta}>
-              {t.nav.signup}
-            </a>
+            <HeaderAuthNav lang={lang} />
             <Link
               href={localePath(other, path)}
               className={styles.langSwitch}

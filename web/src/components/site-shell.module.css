@@ -98,6 +98,21 @@
   font-size: 13px;
 }
 
+.logoutBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-fast);
+}
+
+.logoutBtn:hover {
+  color: var(--text-primary);
+}
+
 .main {
   flex: 1;
   padding-block: var(--space-3xl);

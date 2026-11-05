@@ -135,7 +135,7 @@ interface Dictionary {
   brandEyebrow: string;
   switchLanguage: string;
   switchLanguageLabel: string;
-  nav: { home: string; about: string; subjects: string; login: string; signup: string; account: string };
+  nav: { home: string; about: string; subjects: string; login: string; signup: string; account: string; logout: string };
   footer: { terms: string; privacy: string; refund: string; rights: string; brandLine: string };
   todoBadge: string;
   pages: Record<PageKey, PageText>;
@@ -204,9 +204,10 @@ const ar: Dictionary = {
     home: "الرئيسية",
     about: "عن الأكاديمية",
     subjects: "المواد الدراسية",
-    login: "تسجيل الدخول",
-    signup: "إنشاء حساب جديد",
+    login: "دخول",
+    signup: "تسجيل",
     account: "حسابي",
+    logout: "خروج",
   },
   footer: {
     terms: "الشروط والأحكام",
@@ -425,9 +426,10 @@ const en: Dictionary = {
     home: "Home",
     about: "About the academy",
     subjects: "Subjects",
-    login: "Sign In",
-    signup: "Create Account",
+    login: "Log in",
+    signup: "Sign up",
     account: "My Account",
+    logout: "Log out",
   },
   footer: {
     terms: "Terms & Conditions",

@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-import { apiGet, getMe, getMyEntitlements, getMyRequests, logout, refresh, type StudentRequestItem, type UserProfile } from "@/lib/api";
+import { apiGet, getMe, getMyEntitlements, getMyRequests, type StudentRequestItem, type UserProfile } from "@/lib/api";
 import { parseCatalog, type Catalog } from "@/lib/catalog-data";
 import { dictionary, localePath, type Lang } from "@/lib/i18n";
 
+import { useAuth } from "./auth-provider";
 import styles from "./auth.module.css";
 import { SiteShell } from "./site-shell";
 
@@ -25,6 +26,7 @@ const DEFAULT_IOS_URL = "https://apps.apple.com/app/el-metr-academy/id6737155342
 export function AccountPageView({ lang }: AccountPageViewProps) {
   const t = dictionary(lang);
   const text = t.auth.account;
+  const { isLoggedIn, isLoading: authLoading, logoutUser } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -34,16 +36,15 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!isLoggedIn) {
+      window.location.href = localePath(lang, "/login");
+      return;
+    }
+
     let cancelled = false;
 
     async function loadData() {
-      try {
-        await refresh();
-      } catch {
-        // Not logged in or expired cookie
-        window.location.href = localePath(lang, "/login");
-        return;
-      }
 
       try {
         const [user, ents, reqs, catalogData, configData] = await Promise.all([
@@ -100,18 +101,18 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [lang]);
+  }, [authLoading, isLoggedIn, lang]);
 
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
-      await logout();
+      await logoutUser();
     } finally {
       window.location.href = localePath(lang, "/login");
     }
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <SiteShell lang={lang} path="/account">
         <div className={styles.accountContainer}>

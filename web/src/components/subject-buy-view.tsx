@@ -8,12 +8,12 @@ import {
   getMyEntitlements,
   getMyRequests,
   getPaymentMethods,
-  refresh,
   type PaymentMethod,
   type StudentRequestItem,
 } from "@/lib/api";
 import { dictionary, localePath, type Lang } from "@/lib/i18n";
 
+import { useAuth } from "./auth-provider";
 import styles from "./auth.module.css";
 
 interface SubjectBuySectionProps {
@@ -34,9 +34,9 @@ const DEFAULT_IOS_URL = "https://apps.apple.com/app/el-metr-academy/id6737155342
 export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionProps) {
   const t = dictionary(lang);
   const text = t.catalog;
+  const { isLoggedIn, isLoading: authLoading } = useAuth();
 
-  const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [isOwned, setIsOwned] = useState(false);
   const [pendingRequest, setPendingRequest] = useState<StudentRequestItem | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -52,21 +52,11 @@ export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionP
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading || !isLoggedIn) return;
+
     let cancelled = false;
 
     async function checkState() {
-      try {
-        await refresh();
-      } catch {
-        if (!cancelled) {
-          setIsLoggedIn(false);
-          setLoading(false);
-        }
-        return;
-      }
-
-      if (cancelled) return;
-      setIsLoggedIn(true);
 
       try {
         const [ents, reqs, methodsRes, configData] = await Promise.all([
@@ -103,7 +93,7 @@ export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionP
         // Fallback to defaults
       } finally {
         if (!cancelled) {
-          setLoading(false);
+          setDataLoaded(true);
         }
       }
     }
@@ -113,7 +103,7 @@ export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionP
     return () => {
       cancelled = true;
     };
-  }, [subjectId]);
+  }, [authLoading, isLoggedIn, subjectId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,7 +167,7 @@ export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionP
     }
   };
 
-  if (loading) {
+  if (authLoading || (isLoggedIn && !dataLoaded)) {
     return null;
   }
 
