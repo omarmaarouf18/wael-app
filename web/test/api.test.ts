@@ -8,7 +8,11 @@ import {
   ApiError,
   apiFetch,
   clearAccessToken,
+  createPurchaseRequest,
   getAccessToken,
+  getMyRequestById,
+  getMyRequests,
+  getPaymentMethods,
   setAccessToken,
 } from "../src/lib/api.ts";
 
@@ -123,3 +127,116 @@ test("apiFetch parses ApiError body and code", async () => {
     },
   );
 });
+
+test("getPaymentMethods calls GET /api/v1/academy/payment-methods", async () => {
+  let capturedUrl = "";
+  globalThis.fetch = async (url: string | URL | Request) => {
+    capturedUrl = String(url);
+    return new Response(JSON.stringify({
+      items: [{ kind: "instapay", label: "My InstaPay", number_or_address: "user@instapay" }],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const res = await getPaymentMethods();
+  assert.ok(capturedUrl.endsWith("/api/v1/academy/payment-methods"));
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0]?.kind, "instapay");
+});
+
+test("createPurchaseRequest sends POST with json payload", async () => {
+  let capturedUrl = "";
+  let capturedBody = "";
+  globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = String(url);
+    capturedBody = String(init?.body);
+    return new Response(JSON.stringify({
+      id: "req-123",
+      subject_id: "subj-abc",
+      status: "pending",
+      source: "web",
+      payment_method: "wallet",
+      transfer_reference: "REF12345",
+      sender_number: "01012345678",
+      amount: 150,
+      created_at: "2026-11-05T10:00:00Z",
+    }), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const res = await createPurchaseRequest("subj-abc", {
+    payment_method: "wallet",
+    transfer_reference: "REF12345",
+    sender_number: "01012345678",
+    amount: 150,
+  });
+
+  assert.ok(capturedUrl.endsWith("/api/v1/academy/subjects/subj-abc/purchase-request"));
+  assert.equal(res.id, "req-123");
+  assert.equal(res.status, "pending");
+  assert.deepEqual(JSON.parse(capturedBody), {
+    payment_method: "wallet",
+    transfer_reference: "REF12345",
+    sender_number: "01012345678",
+    amount: 150,
+  });
+});
+
+test("getMyRequests calls GET /api/v1/academy/me/requests", async () => {
+  let capturedUrl = "";
+  globalThis.fetch = async (url: string | URL | Request) => {
+    capturedUrl = String(url);
+    return new Response(JSON.stringify({
+      items: [
+        {
+          id: "req-1",
+          subject_id: "subj-1",
+          subject_title_ar: "مادة",
+          subject_title_en: "Subject",
+          status: "pending",
+          source: "web",
+          created_at: "2026-11-05T10:00:00Z",
+          amount: 150,
+        },
+      ],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const res = await getMyRequests();
+  assert.ok(capturedUrl.endsWith("/api/v1/academy/me/requests"));
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0]?.id, "req-1");
+});
+
+test("getMyRequestById calls GET /api/v1/academy/me/requests/{id}", async () => {
+  let capturedUrl = "";
+  globalThis.fetch = async (url: string | URL | Request) => {
+    capturedUrl = String(url);
+    return new Response(JSON.stringify({
+      id: "req-42",
+      subject_id: "subj-1",
+      subject_title_ar: "مادة",
+      subject_title_en: "Subject",
+      status: "accepted",
+      source: "web",
+      created_at: "2026-11-05T10:00:00Z",
+      amount: 150,
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  const res = await getMyRequestById("req-42");
+  assert.ok(capturedUrl.endsWith("/api/v1/academy/me/requests/req-42"));
+  assert.equal(res.id, "req-42");
+  assert.equal(res.status, "accepted");
+});
+

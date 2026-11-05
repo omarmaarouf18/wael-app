@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { apiGet, getMe, getMyEntitlements, logout, refresh, type UserProfile } from "@/lib/api";
+import { apiGet, getMe, getMyEntitlements, getMyRequests, logout, refresh, type StudentRequestItem, type UserProfile } from "@/lib/api";
 import { parseCatalog, type Catalog } from "@/lib/catalog-data";
 import { dictionary, localePath, type Lang } from "@/lib/i18n";
 
@@ -29,6 +29,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [ownedSubjects, setOwnedSubjects] = useState<Array<{ id: string; title: string }>>([]);
+  const [requests, setRequests] = useState<StudentRequestItem[]>([]);
   const [storeUrls, setStoreUrls] = useState({ android: DEFAULT_ANDROID_URL, ios: DEFAULT_IOS_URL });
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -45,9 +46,10 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
       }
 
       try {
-        const [user, ents, catalogData, configData] = await Promise.all([
+        const [user, ents, reqs, catalogData, configData] = await Promise.all([
           getMe(),
           getMyEntitlements().catch(() => ({ subject_ids: [] as string[] })),
+          getMyRequests().catch(() => ({ items: [] as StudentRequestItem[] })),
           apiGet<unknown>("/api/v1/academy/public/catalog").catch(() => null),
           apiGet<AppConfig>("/api/v1/academy/app-config").catch(() => ({} as AppConfig)),
         ]);
@@ -55,6 +57,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
         if (cancelled) return;
 
         setProfile(user);
+        setRequests(reqs.items || []);
 
         // Resolve subject titles from public catalog
         const catalog: Catalog | null = catalogData ? parseCatalog(catalogData) : null;
@@ -208,8 +211,59 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
               ))}
             </ul>
           )}
+
+          <h2 className={styles.sectionTitle}>{text.myRequestsSection}</h2>
+          {requests.length === 0 ? (
+            <p className={styles.emptyState}>{text.noRequests}</p>
+          ) : (
+            <ul className={styles.requestList}>
+              {requests.map((r) => {
+                const subjectTitle = lang === "ar" ? r.subject_title_ar || r.subject_id : r.subject_title_en || r.subject_title_ar || r.subject_id;
+                let badgeClass = styles.statusPending;
+                let badgeText = text.requestStatusPending;
+                if (r.status === "accepted") {
+                  badgeClass = styles.statusAccepted;
+                  badgeText = text.requestStatusAccepted;
+                } else if (r.status === "rejected") {
+                  badgeClass = styles.statusRejected;
+                  badgeText = text.requestStatusRejected;
+                }
+                return (
+                  <li key={r.id} className={styles.requestItem}>
+                    <div className={styles.requestHeader}>
+                      <span className={styles.subjectTitle}>{subjectTitle}</span>
+                      <span className={`${styles.statusBadge} ${badgeClass}`}>{badgeText}</span>
+                    </div>
+                    <div className={styles.requestMeta}>
+                      <span>{text.requestDate(formatRequestDate(r.created_at, lang))}</span>
+                      <span>{text.requestAmount(String(r.amount || 0))}</span>
+                    </div>
+                    {r.status === "rejected" && r.reject_reason ? (
+                      <div className={styles.rejectReasonBox}>
+                        {text.requestRejectReason(r.reject_reason)}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </div>
     </SiteShell>
   );
 }
+
+function formatRequestDate(iso: string, lang: Lang): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+

@@ -8,6 +8,7 @@ import { dictionary, localePath, numberLocale, type Lang } from "@/lib/i18n";
 
 import styles from "./catalog-pages.module.css";
 import { SiteShell } from "./site-shell";
+import { SubjectBuySection } from "./subject-buy-view";
 
 // Catalog pages (ADR-0014 W2b): plain, functional markup; design comes in a
 // later brief. Server components only: the catalog is read on the server by
@@ -133,7 +134,7 @@ export async function SubjectPage({ lang, id }: { lang: Lang; id: string }) {
       <Counts lang={lang} subject={subject} />
       {until !== null ? <p className={styles.muted}>{t.accessUntil(until)}</p> : null}
       <p>{t.studyInApp}</p>
-      <p className={styles.todo}>{t.buyTodo}</p>
+      <SubjectBuySection lang={lang} subjectId={subject.id} price={subject.price} />
       <p>
         <Link href={localePath(lang, "/subjects")}>{t.backToSubjects}</Link>
       </p>

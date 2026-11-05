@@ -203,3 +203,59 @@ export async function getMe(): Promise<UserProfile> {
 export async function getMyEntitlements(): Promise<{ subject_ids: string[] }> {
   return apiGet<{ subject_ids: string[] }>("/api/v1/academy/me/entitlements");
 }
+
+export interface PaymentMethod {
+  kind: "wallet" | "instapay";
+  label: string;
+  number_or_address: string;
+}
+
+export interface StudentRequestItem {
+  id: string;
+  subject_id: string;
+  subject_title_ar: string;
+  subject_title_en: string;
+  status: "pending" | "accepted" | "rejected";
+  source: string;
+  created_at: string;
+  decided_at?: string;
+  reject_reason?: string;
+  amount: number;
+}
+
+export interface PurchaseRequestResponse {
+  id: string;
+  subject_id: string;
+  status: string;
+  source: string;
+  payment_method: string;
+  transfer_reference: string;
+  sender_number: string;
+  amount: number;
+  created_at: string;
+}
+
+export async function getPaymentMethods(): Promise<{ items: PaymentMethod[] }> {
+  return apiGet<{ items: PaymentMethod[] }>("/api/v1/academy/payment-methods");
+}
+
+export async function createPurchaseRequest(
+  subjectId: string,
+  data: {
+    payment_method: "wallet" | "instapay";
+    transfer_reference: string;
+    sender_number: string;
+    amount: number;
+  },
+): Promise<PurchaseRequestResponse> {
+  return apiPost<PurchaseRequestResponse>(`/api/v1/academy/subjects/${encodeURIComponent(subjectId)}/purchase-request`, data);
+}
+
+export async function getMyRequests(): Promise<{ items: StudentRequestItem[] }> {
+  return apiGet<{ items: StudentRequestItem[] }>("/api/v1/academy/me/requests");
+}
+
+export async function getMyRequestById(id: string): Promise<StudentRequestItem> {
+  return apiGet<StudentRequestItem>(`/api/v1/academy/me/requests/${encodeURIComponent(id)}`);
+}
+

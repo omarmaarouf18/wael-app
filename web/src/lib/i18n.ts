@@ -109,6 +109,15 @@ export interface AuthText {
     logout: string;
     loggingOut: string;
     loading: string;
+    myRequestsSection: string;
+    noRequests: string;
+    requestDate: (date: string) => string;
+    requestAmount: (amount: string) => string;
+    requestStatusPending: string;
+    requestStatusAccepted: string;
+    requestStatusRejected: string;
+    requestRejectReason: (reason: string) => string;
+    requestRef: (ref: string) => string;
   };
   errors: {
     invalid_credentials: string;
@@ -150,6 +159,37 @@ interface CatalogText {
   buyTodo: string;
   notFoundTitle: string;
   notFoundLead: string;
+  ownedSubjectBannerTitle: string;
+  ownedSubjectBannerLead: string;
+  pendingRequestBannerTitle: string;
+  pendingRequestBannerLead: string;
+  loginToBuyPrompt: string;
+  loginButton: string;
+  signupButton: string;
+  buyFormTitle: string;
+  paymentMethodLabel: string;
+  selectPaymentMethod: string;
+  paymentMethodWallet: string;
+  paymentMethodInstapay: string;
+  noPaymentMethodsConfigured: string;
+  transferReferenceLabel: string;
+  transferReferencePlaceholder: string;
+  senderNumberLabel: string;
+  senderNumberPlaceholder: string;
+  amountLabel: string;
+  submitPurchaseRequest: string;
+  submittingPurchaseRequest: string;
+  purchaseRequestSuccess: string;
+  buyErrors: {
+    duplicate_reference: string;
+    already_owned: string;
+    pending_request_exists: string;
+    subject_expired: string;
+    invalid_amount: string;
+    invalid_reference: string;
+    invalid_sender: string;
+    generic: string;
+  };
 }
 
 /** Number formatting locale per language (Arabic digits on the Arabic site). */
@@ -248,6 +288,37 @@ const ar: Dictionary = {
     buyTodo: "TODO: طلب الشراء بالتحويل (W4).",
     notFoundTitle: "الصفحة غير موجودة",
     notFoundLead: "المادة غير متاحة أو الرابط غير صحيح.",
+    ownedSubjectBannerTitle: "أنت مشترك في هذه المادة",
+    ownedSubjectBannerLead: "يمكنك متابعة المادة ومشاهدة الفيديوهات عبر تطبيق أكاديمية المتر على هاتفك.",
+    pendingRequestBannerTitle: "طلب الاشتراك قيد المراجعة",
+    pendingRequestBannerLead: "تم استلام بيانات التحويل وسيتم مراجعتها وتفعيل المادة على حسابك قريباً.",
+    loginToBuyPrompt: "سجّل الدخول أو أنشئ حساباً لتقديم طلب اشتراك في هذه المادة.",
+    loginButton: "تسجيل الدخول",
+    signupButton: "إنشاء حساب",
+    buyFormTitle: "طلب اشتراك عبر التحويل",
+    paymentMethodLabel: "طريقة التحويل المالي",
+    selectPaymentMethod: "اختر طريقة التحويل...",
+    paymentMethodWallet: "محفظة إلكترونية (كاش)",
+    paymentMethodInstapay: "انستاباي (InstaPay)",
+    noPaymentMethodsConfigured: "بيانات التحويل غير متاحة حالياً، يرجى التواصل مع الدعم.",
+    transferReferenceLabel: "رقم العملية / مرجع التحويل",
+    transferReferencePlaceholder: "الرقم المرجعي من رسالة التحويل",
+    senderNumberLabel: "رقم الهاتف أو الحساب المحول منه",
+    senderNumberPlaceholder: "010xxxxxxxx أو username@instapay",
+    amountLabel: "المبلغ المحول (جنيه)",
+    submitPurchaseRequest: "إرسال طلب الاشتراك",
+    submittingPurchaseRequest: "جارٍ إرسال الطلب...",
+    purchaseRequestSuccess: "تم إرسال طلب الاشتراك بنجاح! سيتم مراجعته وتفعيل المادة.",
+    buyErrors: {
+      duplicate_reference: "رقم العملية مسجل من قبل في طلب آخر. يرجى التأكد من الرقم وكتابته بدقة.",
+      already_owned: "أنت مشترك في هذه المادة بالفعل.",
+      pending_request_exists: "لديك طلب اشتراك مفتوح لهذه المادة بالفعل وهو قيد المراجعة.",
+      subject_expired: "انتهت فترة التسجيل في هذه المادة.",
+      invalid_amount: "المبلغ المدخل غير صالح.",
+      invalid_reference: "رقم المرجع يجب أن يكون بين 3 و 100 حرف.",
+      invalid_sender: "رقم أو حساب المحول يجب أن يكون بين 3 و 50 حرفاً.",
+      generic: "تعذر إرسال الطلب. يرجى مراجعة البيانات والمحاولة مرة أخرى.",
+    },
   },
   auth: {
     login: {
@@ -323,6 +394,15 @@ const ar: Dictionary = {
       logout: "تسجيل الخروج",
       loggingOut: "جارٍ الخروج...",
       loading: "جارٍ تحميل البيانات...",
+      myRequestsSection: "طلبات الاشتراك",
+      noRequests: "لا توجد طلبات اشتراك سابقة.",
+      requestDate: (date: string) => `تاريخ الطلب: ${date}`,
+      requestAmount: (amount: string) => `المبلغ: ${amount} جنيه`,
+      requestStatusPending: "قيد المراجعة",
+      requestStatusAccepted: "تم القبول",
+      requestStatusRejected: "مرفوض",
+      requestRejectReason: (reason: string) => `سبب الرفض: ${reason}`,
+      requestRef: (ref: string) => `رقم العملية: ${ref}`,
     },
     errors: {
       invalid_credentials: "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
@@ -429,6 +509,37 @@ const en: Dictionary = {
     buyTodo: "TODO: transfer purchase request (W4).",
     notFoundTitle: "Page not found",
     notFoundLead: "This subject is not available, or the link is wrong.",
+    ownedSubjectBannerTitle: "You own this subject",
+    ownedSubjectBannerLead: "You can study this subject and watch videos in the EL METR ACADEMY mobile app.",
+    pendingRequestBannerTitle: "Subscription request pending review",
+    pendingRequestBannerLead: "Your transfer details have been received and are being reviewed. Access will be activated shortly.",
+    loginToBuyPrompt: "Sign in or create an account to purchase this subject.",
+    loginButton: "Sign In",
+    signupButton: "Create Account",
+    buyFormTitle: "Purchase via Transfer",
+    paymentMethodLabel: "Payment Method",
+    selectPaymentMethod: "Select payment method...",
+    paymentMethodWallet: "Mobile Wallet (Cash)",
+    paymentMethodInstapay: "InstaPay",
+    noPaymentMethodsConfigured: "Payment methods are currently unavailable. Please contact support.",
+    transferReferenceLabel: "Transfer Reference / Transaction ID",
+    transferReferencePlaceholder: "Reference from transfer receipt",
+    senderNumberLabel: "Sender Phone or Account Address",
+    senderNumberPlaceholder: "010xxxxxxxx or username@instapay",
+    amountLabel: "Transferred Amount (EGP)",
+    submitPurchaseRequest: "Submit Purchase Request",
+    submittingPurchaseRequest: "Submitting...",
+    purchaseRequestSuccess: "Purchase request submitted successfully! It will be reviewed and activated.",
+    buyErrors: {
+      duplicate_reference: "This transfer reference is already registered in another request. Please verify.",
+      already_owned: "You already own this subject.",
+      pending_request_exists: "You already have an open request pending review for this subject.",
+      subject_expired: "Registration period for this subject has expired.",
+      invalid_amount: "The entered amount is invalid.",
+      invalid_reference: "Reference must be between 3 and 100 characters.",
+      invalid_sender: "Sender account must be between 3 and 50 characters.",
+      generic: "Failed to submit request. Please verify your details and try again.",
+    },
   },
   auth: {
     login: {
@@ -504,6 +615,15 @@ const en: Dictionary = {
       logout: "Sign Out",
       loggingOut: "Signing out...",
       loading: "Loading...",
+      myRequestsSection: "Subscription Requests",
+      noRequests: "No subscription requests submitted yet.",
+      requestDate: (date: string) => `Requested: ${date}`,
+      requestAmount: (amount: string) => `Amount: EGP ${amount}`,
+      requestStatusPending: "Pending Review",
+      requestStatusAccepted: "Accepted",
+      requestStatusRejected: "Rejected",
+      requestRejectReason: (reason: string) => `Reason: ${reason}`,
+      requestRef: (ref: string) => `Ref: ${ref}`,
     },
     errors: {
       invalid_credentials: "Invalid email or password.",
