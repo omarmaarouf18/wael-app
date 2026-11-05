@@ -196,6 +196,7 @@ type Session struct {
 	UserID      string           `json:"user_id" bson:"user_id"`
 	DeviceID    string           `json:"device_id" bson:"device_id"`
 	DeviceLabel string           `json:"device_label,omitempty" bson:"device_label,omitempty"`
+	Client      string           `json:"client,omitempty" bson:"client,omitempty"`
 	RefreshHash string           `json:"-" bson:"refresh_hash"`
 	CreatedAt   time.Time        `json:"created_at" bson:"created_at"`
 	LastUsedAt  time.Time        `json:"last_used_at" bson:"last_used_at"`

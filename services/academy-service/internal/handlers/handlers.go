@@ -912,6 +912,10 @@ func (s *Server) PlayVideo(w http.ResponseWriter, r *http.Request, videoID strin
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 		return
 	}
+	if claims.Client == "web" {
+		handlerutil.WriteSafeError(w, r, http.StatusForbidden, "web_access_forbidden", "video playback is not supported on the web", nil)
+		return
+	}
 
 	writeNotFound := func() {
 		w.Header().Set("Cache-Control", "private, no-store")

@@ -192,3 +192,50 @@ func TestLoad_WeakSecretsRefusedOutsideLocal(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_AllowedOriginsValidation(t *testing.T) {
+	// 1. Wildcard rejected
+	baseEnv(t)
+	setEnv(t, "ALLOWED_ORIGIN", "*")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected wildcard origin '*' to be rejected")
+	}
+
+	setEnv(t, "ALLOWED_ORIGIN", "https://*.elmetracademy.app")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected wildcard subdomain '*.elmetracademy.app' to be rejected")
+	}
+
+	// 2. vercel.app rejected
+	setEnv(t, "ALLOWED_ORIGIN", "https://wael-app.vercel.app")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected *.vercel.app origin to be rejected")
+	}
+
+	// 3. localhost rejected in production, accepted in local
+	fullProdEnv(t)
+	setEnv(t, "ALLOWED_ORIGIN", "http://localhost:3000")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected localhost origin to be rejected in production")
+	}
+
+	baseEnv(t)
+	setEnv(t, "ALLOWED_ORIGIN", "http://localhost:3000")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("localhost origin in local failed: %v", err)
+	}
+	if len(cfg.AllowedOrigins) != 1 || cfg.AllowedOrigins[0] != "http://localhost:3000" {
+		t.Fatalf("unexpected AllowedOrigins: %v", cfg.AllowedOrigins)
+	}
+
+	// 4. Multiple exact origins
+	setEnv(t, "ALLOWED_ORIGIN", "https://elmetracademy.app, https://www.elmetracademy.app")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("multiple origins failed: %v", err)
+	}
+	if len(cfg.AllowedOrigins) != 2 || cfg.AllowedOrigins[0] != "https://elmetracademy.app" || cfg.AllowedOrigins[1] != "https://www.elmetracademy.app" {
+		t.Fatalf("unexpected AllowedOrigins: %v", cfg.AllowedOrigins)
+	}
+}

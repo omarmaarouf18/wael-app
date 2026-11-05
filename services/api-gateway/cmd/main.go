@@ -133,6 +133,7 @@ func main() {
 	// buffered here: SSE streams and PDF downloads stream through unchanged.
 	handler := handlerutil.MaxBytesMiddleware(1 << 20)(mux)
 	handler = middleware.RateLimit(rl)(handler)
+	handler = middleware.CSRF(cfg.AllowedOrigin)(handler)
 	handler = middleware.Logging(cfg.AllowedOrigin)(handler)
 
 	addr := ":" + cfg.Port

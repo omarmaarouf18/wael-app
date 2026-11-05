@@ -269,12 +269,40 @@ func issuePair(userID string, role models.Role, email string) (access, refresh s
 	return access, raw, nil
 }
 
-func (s *Server) createSessionAndTokens(ctx context.Context, u *models.User, deviceID, deviceLabel string) (access, refresh string, err error) {
+func isWebClient(r *http.Request) bool {
+	return strings.TrimSpace(r.Header.Get("X-Client")) == "web"
+}
+
+func setWebRefreshCookie(w http.ResponseWriter, refreshToken string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    refreshToken,
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   7 * 24 * 3600, // 7 days matching refresh token TTL
+	})
+}
+
+func clearWebRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   -1,
+	})
+}
+
+func (s *Server) createSessionAndTokensWithClient(ctx context.Context, u *models.User, deviceID, deviceLabel, client string) (access, refresh string, err error) {
 	sid, err := jwtutil.GenerateUUID()
 	if err != nil {
 		return "", "", err
 	}
-	access, err = jwtutil.GenerateTokenWithSession(u.ID, string(u.Role), u.Email, sid)
+	access, err = jwtutil.GenerateTokenWithSessionAndClient(u.ID, string(u.Role), u.Email, sid, client)
 	if err != nil {
 		return "", "", err
 	}
@@ -289,6 +317,7 @@ func (s *Server) createSessionAndTokens(ctx context.Context, u *models.User, dev
 		UserID:      u.ID,
 		DeviceID:    deviceID,
 		DeviceLabel: deviceLabel,
+		Client:      client,
 		RefreshHash: refreshHash,
 		CreatedAt:   now,
 		LastUsedAt:  now,
@@ -316,6 +345,10 @@ func (s *Server) createSessionAndTokens(ctx context.Context, u *models.User, dev
 		return "", "", err
 	}
 	return access, refresh, nil
+}
+
+func (s *Server) createSessionAndTokens(ctx context.Context, u *models.User, deviceID, deviceLabel string) (access, refresh string, err error) {
+	return s.createSessionAndTokensWithClient(ctx, u, deviceID, deviceLabel, "")
 }
 
 type signupRequest struct {
@@ -628,11 +661,18 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid email or code", nil)
 		return
 	}
-	if !isValidUUIDv4(req.DeviceID) {
+	web := isWebClient(r)
+	if !web && !isValidUUIDv4(req.DeviceID) {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid device_id", nil)
 		return
 	}
+	if web && (req.DeviceID == "" || !isValidUUIDv4(req.DeviceID)) {
+		req.DeviceID, _ = jwtutil.GenerateUUID()
+	}
 	deviceLabel := strings.TrimSpace(req.DeviceLabel)
+	if deviceLabel == "" && web {
+		deviceLabel = "Web Browser"
+	}
 	if utf8.RuneCountInString(deviceLabel) > 64 {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid device_label", nil)
 		return
@@ -720,12 +760,21 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	access, refresh, err := s.createSessionAndTokens(ctx, u, req.DeviceID, deviceLabel)
+	client := ""
+	if web {
+		client = "web"
+	}
+	access, refresh, err := s.createSessionAndTokensWithClient(ctx, u, req.DeviceID, deviceLabel, client)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
 	go notify.Welcome(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
+	if web {
+		setWebRefreshCookie(w, refresh)
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access})
+		return
+	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": refresh})
 }
 
@@ -821,11 +870,18 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "invalid credentials", nil)
 		return
 	}
-	if !isValidUUIDv4(req.DeviceID) {
+	web := isWebClient(r)
+	if !web && !isValidUUIDv4(req.DeviceID) {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid device_id", nil)
 		return
 	}
+	if web && (req.DeviceID == "" || !isValidUUIDv4(req.DeviceID)) {
+		req.DeviceID, _ = jwtutil.GenerateUUID()
+	}
 	deviceLabel := strings.TrimSpace(req.DeviceLabel)
+	if deviceLabel == "" && web {
+		deviceLabel = "Web Browser"
+	}
 	if utf8.RuneCountInString(deviceLabel) > 64 {
 		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid device_label", nil)
 		return
@@ -910,7 +966,11 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			ll.ResetPair(email, ip)
-			access, refresh, err := s.createSessionAndTokens(r.Context(), u, req.DeviceID, deviceLabel)
+			client := ""
+			if web {
+				client = "web"
+			}
+			access, refresh, err := s.createSessionAndTokensWithClient(r.Context(), u, req.DeviceID, deviceLabel, client)
 			if err != nil {
 				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 				return
@@ -919,6 +979,11 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 			_ = s.Sender.SendNotice(context.WithoutCancel(r.Context()), email, subj, body)
 			s.recordAccountEvent(r.Context(), u.ID, models.AccountEventDeletionCancelled, now)
 			go notify.DeletionCancelled(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
+			if web {
+				setWebRefreshCookie(w, refresh)
+				handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"access_token": access, "deletion_cancelled": true})
+				return
+			}
 			handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"access_token": access, "refresh_token": refresh, "deletion_cancelled": true})
 			return
 		}
@@ -941,9 +1006,18 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ll.ResetPair(email, ip)
-	access, refresh, err := s.createSessionAndTokens(r.Context(), u, req.DeviceID, deviceLabel)
+	client := ""
+	if web {
+		client = "web"
+	}
+	access, refresh, err := s.createSessionAndTokensWithClient(r.Context(), u, req.DeviceID, deviceLabel, client)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if web {
+		setWebRefreshCookie(w, refresh)
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access})
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": refresh})
@@ -956,8 +1030,20 @@ type refreshRequest struct {
 // Refresh rotates an opaque refresh token into a new pair.
 func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 	var req refreshRequest
-	if !decodeJSON(w, r, &req) {
-		return
+	web := isWebClient(r)
+	if web {
+		if c, err := r.Cookie("refresh_token"); err == nil && c.Value != "" {
+			req.RefreshToken = c.Value
+		}
+		if r.Body != nil && r.ContentLength > 0 {
+			dec := json.NewDecoder(r.Body)
+			dec.DisallowUnknownFields()
+			_ = dec.Decode(&req)
+		}
+	} else {
+		if !decodeJSON(w, r, &req) {
+			return
+		}
 	}
 	if req.RefreshToken == "" {
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
@@ -997,10 +1083,12 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 		sid = parts[1]
 	}
 
+	var sess *models.Session
 	// If session has sid, check if session was ended in DB.
 	if sid != "" {
 		dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
-		sess, err := s.Store.GetSession(dbCtx, sid)
+		var err error
+		sess, err = s.Store.GetSession(dbCtx, sid)
 		cancel()
 		if err != nil {
 			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
@@ -1054,8 +1142,12 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 	newRefreshHash := otp.HashToken(newRefresh)
 
 	var access string
+	client := ""
+	if web || (sess != nil && sess.Client == "web") {
+		client = "web"
+	}
 	if sid != "" {
-		access, err = jwtutil.GenerateTokenWithSession(u.ID, string(u.Role), u.Email, sid)
+		access, err = jwtutil.GenerateTokenWithSessionAndClient(u.ID, string(u.Role), u.Email, sid, client)
 	} else {
 		access, err = jwtutil.GenerateToken(u.ID, string(u.Role), u.Email)
 	}
@@ -1084,6 +1176,11 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if web {
+		setWebRefreshCookie(w, newRefresh)
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access})
+		return
+	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": newRefresh})
 }
 
@@ -1104,6 +1201,9 @@ func (s *Server) Logout(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// If the session was already revoked, logout is idempotent -> 204 No Content.
 		if errors.Is(err, jwtutil.ErrSessionRevoked) {
+			if isWebClient(r) {
+				clearWebRefreshCookie(w)
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -1142,6 +1242,9 @@ func (s *Server) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if isWebClient(r) || (claims != nil && claims.Client == "web") {
+		clearWebRefreshCookie(w)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

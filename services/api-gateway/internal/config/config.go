@@ -30,6 +30,7 @@ type Config struct {
 	Routes              []ServiceRoute
 	GatewaySecret       string
 	AllowedOrigin       string
+	AllowedOrigins      []string
 	TLSCertPath         string
 	TLSKeyPath          string
 	TLSCAPath           string
@@ -103,11 +104,53 @@ func Load() (*Config, error) {
 		}
 	}
 
+	allowedOriginRaw := os.Getenv("ALLOWED_ORIGIN")
+	if allowedOriginRaw == "" {
+		allowedOriginRaw = os.Getenv("ALLOWED_ORIGINS")
+	}
+
+	var allowedOrigins []string
+	if allowedOriginRaw != "" {
+		for _, o := range strings.Split(allowedOriginRaw, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				allowedOrigins = append(allowedOrigins, o)
+			}
+		}
+	} else {
+		if dev {
+			allowedOrigins = []string{
+				"https://elmetracademy.app",
+				"https://www.elmetracademy.app",
+				"http://localhost:3000",
+			}
+		} else {
+			allowedOrigins = []string{
+				"https://elmetracademy.app",
+				"https://www.elmetracademy.app",
+			}
+		}
+	}
+
+	// Exact allowlist validation: no wildcard, no *.vercel.app.
+	for _, o := range allowedOrigins {
+		if strings.Contains(o, "*") {
+			return nil, fmt.Errorf("config: wildcard origin not allowed: %q", o)
+		}
+		if strings.Contains(o, "vercel.app") {
+			return nil, fmt.Errorf("config: vercel.app origin not allowed: %q", o)
+		}
+		if !dev && (strings.HasPrefix(o, "http://") || strings.Contains(o, "localhost")) {
+			return nil, fmt.Errorf("config: non-https or localhost origin not allowed in production: %q", o)
+		}
+	}
+
 	cfg := &Config{
 		Port:                envOrDefault("PORT", "8080"),
 		AppEnv:              appEnv,
 		GatewaySecret:       gatewaySecret,
-		AllowedOrigin:       envOrDefault("ALLOWED_ORIGIN", "http://localhost:3000"),
+		AllowedOrigin:       strings.Join(allowedOrigins, ","),
+		AllowedOrigins:      allowedOrigins,
 		TLSCertPath:         tlsCertPath,
 		TLSKeyPath:          tlsKeyPath,
 		TLSCAPath:           tlsCAPath,

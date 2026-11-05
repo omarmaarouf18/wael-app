@@ -41,7 +41,7 @@ check_build_log() {
 
 # The dynamic (ƒ) routes, exactly. Keep in step with the matcher in
 # web/src/proxy.ts and STATIC_PAGE_SOURCE in web/next.config.ts.
-DYNAMIC_ROUTES="/en/login /en/signup /login /signup"
+DYNAMIC_ROUTES="/account /en/account /en/forgot-password /en/login /en/signup /forgot-password /login /signup"
 
 # check_routes FILE: print the route table of a `next build` log and exit 1
 # unless exactly DYNAMIC_ROUTES are ƒ and every other route is ○ or ●.

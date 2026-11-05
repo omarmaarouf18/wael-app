@@ -1033,3 +1033,33 @@ func TestAccessTTL_Bounds(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenClientClaim(t *testing.T) {
+	Init("super-secret-key-that-is-at-least-thirty-two-bytes-long")
+
+	// Token with client "web"
+	tokWeb, err := GenerateTokenWithSessionAndClient("u-web", "user", "web@example.com", "sid-1", "web")
+	if err != nil {
+		t.Fatalf("GenerateTokenWithSessionAndClient failed: %v", err)
+	}
+	claimsWeb, err := ValidateToken(tokWeb)
+	if err != nil {
+		t.Fatalf("ValidateToken failed: %v", err)
+	}
+	if claimsWeb.Client != "web" {
+		t.Fatalf("expected Client 'web', got %q", claimsWeb.Client)
+	}
+
+	// Token without client (mobile)
+	tokMobile, err := GenerateTokenWithSession("u-mob", "user", "mob@example.com", "sid-2")
+	if err != nil {
+		t.Fatalf("GenerateTokenWithSession failed: %v", err)
+	}
+	claimsMobile, err := ValidateToken(tokMobile)
+	if err != nil {
+		t.Fatalf("ValidateToken failed: %v", err)
+	}
+	if claimsMobile.Client != "" {
+		t.Fatalf("expected empty Client, got %q", claimsMobile.Client)
+	}
+}

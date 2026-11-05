@@ -53,6 +53,10 @@ func (s *Server) DownloadFile(w http.ResponseWriter, r *http.Request, subjectID,
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeUnauthorized, "unauthorized", nil)
 		return
 	}
+	if claims.Client == "web" {
+		handlerutil.WriteSafeError(w, r, http.StatusForbidden, "web_access_forbidden", "file downloads are not supported on the web", nil)
+		return
+	}
 	notFound := func() {
 		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "not_found", "not found", nil)
 	}

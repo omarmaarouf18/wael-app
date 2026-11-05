@@ -281,6 +281,19 @@ func TestDownloadFile_Refusals(t *testing.T) {
 			t.Fatalf("POST: expected 405 without touching storage, got %d", rec.Code)
 		}
 	})
+
+	t.Run("web_token_refused_403", func(t *testing.T) {
+		f := newDownloadFixture(t)
+		webToken := makeWebStudentToken(t, dlOwner)
+		req := httptest.NewRequest(http.MethodGet, downloadPath(f.subj.ID, f.file.ID), nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+webToken)
+		rec := httptest.NewRecorder()
+		f.h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", rec.Code)
+		}
+	})
 }
 
 func TestDownloadFile_RateLimit429(t *testing.T) {

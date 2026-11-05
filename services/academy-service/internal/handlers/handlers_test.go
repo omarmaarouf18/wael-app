@@ -44,6 +44,15 @@ func makeStudentToken(t *testing.T, userID string) string {
 	return tok
 }
 
+func makeWebStudentToken(t *testing.T, userID string) string {
+	t.Helper()
+	tok, err := jwtutil.GenerateTokenWithSessionAndClient(userID, "user", userID+"@example.com", "sid-web", "web")
+	if err != nil {
+		t.Fatalf("GenerateTokenWithSessionAndClient failed: %v", err)
+	}
+	return tok
+}
+
 func TestHealth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -2606,6 +2615,23 @@ func TestPlayVideoEndpoint(t *testing.T) {
 
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	// Web token refusal: web tokens return 403 forbidden for video playback
+	t.Run("web_token_refused_403", func(t *testing.T) {
+		webToken, err := jwtutil.GenerateTokenWithSessionAndClient("user-play-owner", "user", "owner@example.com", "sid-web", "web")
+		if err != nil {
+			t.Fatalf("GenerateTokenWithSessionAndClient: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/academy/videos/vid-pub-1/play", nil)
+		req.Header.Set("X-Gateway-Secret", "test-gateway-secret")
+		req.Header.Set("Authorization", "Bearer "+webToken)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
 		}
 	})
 

@@ -1070,3 +1070,93 @@ func TestMongoStore_IndexMigrationFromPreChangeOptions(t *testing.T) {
 		_ = first.coll.Database().Drop(dropCtx)
 	})
 }
+
+func TestMemoryStore_WebSessionDoesNotCountTowardDeviceLimit(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemoryStore()
+	userID := "student-device-test"
+
+	now := time.Now().UTC()
+
+	// 1. App device 1 signs in
+	sess1 := &models.Session{
+		ID:          "sid-app-1",
+		UserID:      userID,
+		DeviceID:    "app-device-1",
+		DeviceLabel: "iPhone",
+		RefreshHash: "hash-1",
+		CreatedAt:   now,
+		LastUsedAt:  now,
+	}
+	ended, err := s.CreateOrReplaceSession(ctx, sess1)
+	if err != nil || len(ended) != 0 {
+		t.Fatalf("sess1 failed: %v, ended: %v", err, ended)
+	}
+
+	// 2. App device 2 signs in
+	sess2 := &models.Session{
+		ID:          "sid-app-2",
+		UserID:      userID,
+		DeviceID:    "app-device-2",
+		DeviceLabel: "iPad",
+		RefreshHash: "hash-2",
+		CreatedAt:   now.Add(time.Second),
+		LastUsedAt:  now.Add(time.Second),
+	}
+	ended, err = s.CreateOrReplaceSession(ctx, sess2)
+	if err != nil || len(ended) != 0 {
+		t.Fatalf("sess2 failed: %v, ended: %v", err, ended)
+	}
+
+	// 3. Web session signs in (Client: "web")
+	sessWeb := &models.Session{
+		ID:          "sid-web-1",
+		UserID:      userID,
+		DeviceID:    "web-browser-1",
+		DeviceLabel: "Chrome on macOS",
+		Client:      "web",
+		RefreshHash: "hash-web-1",
+		CreatedAt:   now.Add(2 * time.Second),
+		LastUsedAt:  now.Add(2 * time.Second),
+	}
+	ended, err = s.CreateOrReplaceSession(ctx, sessWeb)
+	if err != nil {
+		t.Fatalf("sessWeb failed: %v", err)
+	}
+	if len(ended) != 0 {
+		t.Fatalf("web session should not end any session, got ended: %v", ended)
+	}
+
+	// Verify all 3 sessions are active
+	active, err := s.ListActiveSessions(ctx, userID)
+	if err != nil {
+		t.Fatalf("ListActiveSessions: %v", err)
+	}
+	if len(active) != 3 {
+		t.Fatalf("expected 3 active sessions (2 app + 1 web), got %d", len(active))
+	}
+
+	// 4. App device 3 signs in -> device 1 (oldest app session) is ended; web session stays active!
+	sess3 := &models.Session{
+		ID:          "sid-app-3",
+		UserID:      userID,
+		DeviceID:    "app-device-3",
+		DeviceLabel: "Android Phone",
+		RefreshHash: "hash-3",
+		CreatedAt:   now.Add(3 * time.Second),
+		LastUsedAt:  now.Add(3 * time.Second),
+	}
+	ended, err = s.CreateOrReplaceSession(ctx, sess3)
+	if err != nil {
+		t.Fatalf("sess3 failed: %v", err)
+	}
+	if len(ended) != 1 || ended[0].ID != "sid-app-1" {
+		t.Fatalf("expected sid-app-1 to be ended, got: %v", ended)
+	}
+
+	// Check web session is still active!
+	sWeb, err := s.GetSession(ctx, "sid-web-1")
+	if err != nil || sWeb == nil || sWeb.EndedAt != nil {
+		t.Fatalf("web session should still be active, got: %v", sWeb)
+	}
+}

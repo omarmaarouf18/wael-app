@@ -76,14 +76,18 @@ check_routes_log() {
 ROUTES_OK='Route (app)                   Revalidate  Expire
 ┌ ○ /
 ├ ○ /_not-found
+├ ƒ /account
 ├ ○ /about
 ├ ○ /en
+├ ƒ /en/account
+├ ƒ /en/forgot-password
 ├ ƒ /en/login
 ├ ƒ /en/signup
 ├ ○ /en/subjects                      5m      1y
 ├   /en/subjects/[id]
 │ ├ ● /en/subjects/s-1                5m      1y
 │ └ ● /en/subjects/s-2                5m      1y
+├ ƒ /forgot-password
 ├ ƒ /login
 ├ ƒ /signup
 ├ ○ /subjects                         5m      1y

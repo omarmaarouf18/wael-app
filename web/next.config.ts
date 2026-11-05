@@ -17,9 +17,9 @@ if (process.env.VERCEL === "1" && catalogOrigin === null) {
 // NODE_ENV is "development" only under `next dev`.
 const dev = process.env.NODE_ENV === "development";
 
-// Every page except the form pages (log in, sign up, in both languages):
+// Every page except the form and dynamic user pages (login, signup, forgot-password, account, in both languages):
 // they get the per-request nonce CSP from src/proxy.ts instead.
-const STATIC_PAGE_SOURCE = "/((?!(?:en/)?(?:login|signup)(?:/|$)).*)";
+const STATIC_PAGE_SOURCE = "/((?!(?:en/)?(?:login|signup|forgot-password|account)(?:/|$)).*)";
 
 // Static security headers on every response (docs/web/README.md "Security
 // headers"). The Content-Security-Policy is split (ADR-0014 decision 7): a

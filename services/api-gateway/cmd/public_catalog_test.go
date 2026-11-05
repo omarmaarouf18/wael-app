@@ -106,6 +106,7 @@ func TestGateway_FullChain_PublicCatalog(t *testing.T) {
 	rl := middleware.NewRateLimiter(ratelimit.NewRateLimiter(rdb, 100, time.Minute, "gateway"), cfg.TrustedProxyIPs)
 	chain := handlerutil.MaxBytesMiddleware(1 << 20)(mux)
 	chain = middleware.RateLimit(rl)(chain)
+	chain = middleware.CSRF(cfg.AllowedOrigin)(chain)
 	chain = middleware.Logging(cfg.AllowedOrigin)(chain)
 
 	doRequest := func(method, path, token string) *httptest.ResponseRecorder {

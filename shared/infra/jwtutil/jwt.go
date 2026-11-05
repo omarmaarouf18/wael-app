@@ -29,6 +29,7 @@ type Claims struct {
 	Email  string   `json:"email"`
 	AMR    []string `json:"amr,omitempty"`
 	SID    string   `json:"sid,omitempty"`
+	Client string   `json:"client,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -167,7 +168,7 @@ func GenerateUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:]), nil
 }
 
-func GenerateTokenWithSession(userID string, role string, email string, sid string, amr ...[]string) (string, error) {
+func GenerateTokenWithSessionAndClient(userID string, role string, email string, sid string, client string, amr ...[]string) (string, error) {
 	uuidStr, err := GenerateUUID()
 	if err != nil {
 		return "", fmt.Errorf("jwtutil: failed to generate token uuid: %w", err)
@@ -185,6 +186,7 @@ func GenerateTokenWithSession(userID string, role string, email string, sid stri
 		Email:  email,
 		AMR:    amrVal,
 		SID:    sid,
+		Client: client,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTTL())),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -194,6 +196,10 @@ func GenerateTokenWithSession(userID string, role string, email string, sid stri
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(getSecret())
+}
+
+func GenerateTokenWithSession(userID string, role string, email string, sid string, amr ...[]string) (string, error) {
+	return GenerateTokenWithSessionAndClient(userID, role, email, sid, "", amr...)
 }
 
 func GenerateToken(userID string, role string, email string, amr ...[]string) (string, error) {

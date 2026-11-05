@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,5 +194,99 @@ func TestRateLimit_PublicCatalogPerIP(t *testing.T) {
 	}
 	if rec := do(http.MethodGet, "http://x/api/v1/academy/public/catalog", "198.51.100.20:4000"); rec.Code != http.StatusOK {
 		t.Fatalf("other IP = %d, want 200", rec.Code)
+	}
+}
+
+func TestCORS_AllowlistAndCredentials(t *testing.T) {
+	allowed := "https://elmetracademy.app, https://www.elmetracademy.app, http://localhost:3000"
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := Logging(allowed)(okHandler)
+
+	// 1. Allowlisted origin gets CORS headers and credentials
+	for _, origin := range []string{"https://elmetracademy.app", "https://www.elmetracademy.app", "http://localhost:3000"} {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Header().Get("Access-Control-Allow-Origin") != origin {
+			t.Errorf("origin %q: expected Access-Control-Allow-Origin %q, got %q", origin, origin, rec.Header().Get("Access-Control-Allow-Origin"))
+		}
+		if rec.Header().Get("Access-Control-Allow-Credentials") != "true" {
+			t.Errorf("origin %q: expected Access-Control-Allow-Credentials true, got %q", origin, rec.Header().Get("Access-Control-Allow-Credentials"))
+		}
+	}
+
+	// 2. Disallowed origin (evil site, vercel preview) gets NO allow origin and NO credentials
+	for _, origin := range []string{"https://evil.com", "https://preview.vercel.app", "https://wael-app.vercel.app"} {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Errorf("disallowed origin %q: expected empty Access-Control-Allow-Origin, got %q", origin, rec.Header().Get("Access-Control-Allow-Origin"))
+		}
+		if rec.Header().Get("Access-Control-Allow-Credentials") != "" {
+			t.Errorf("disallowed origin %q: expected empty Access-Control-Allow-Credentials, got %q", origin, rec.Header().Get("Access-Control-Allow-Credentials"))
+		}
+	}
+
+	// 3. OPTIONS preflight
+	optReq := httptest.NewRequest(http.MethodOptions, "/api/v1/auth/refresh", nil)
+	optReq.Header.Set("Origin", "https://elmetracademy.app")
+	optRec := httptest.NewRecorder()
+	h.ServeHTTP(optRec, optReq)
+	if optRec.Code != http.StatusNoContent {
+		t.Fatalf("OPTIONS preflight expected 204, got %d", optRec.Code)
+	}
+	if !strings.Contains(optRec.Header().Get("Access-Control-Allow-Headers"), "X-Client") {
+		t.Errorf("expected Access-Control-Allow-Headers to contain X-Client, got %q", optRec.Header().Get("Access-Control-Allow-Headers"))
+	}
+}
+
+func TestCSRF_Enforcement(t *testing.T) {
+	allowed := "https://elmetracademy.app, http://localhost:3000"
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := CSRF(allowed)(okHandler)
+
+	// 1. Web client on /api/v1/auth/refresh with valid Origin and X-Client: web -> passes
+	validReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	validReq.Header.Set("Origin", "https://elmetracademy.app")
+	validReq.Header.Set("X-Client", "web")
+	validReq.AddCookie(&http.Cookie{Name: "refresh_token", Value: "token-123"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, validReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid web refresh expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 2. Cookie present with disallowed Origin -> refused (403)
+	evilReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	evilReq.Header.Set("Origin", "https://evil.com")
+	evilReq.Header.Set("X-Client", "web")
+	evilReq.AddCookie(&http.Cookie{Name: "refresh_token", Value: "token-123"})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, evilReq)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("evil origin expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 3. Cookie present without X-Client: web -> refused (403)
+	noHeaderReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	noHeaderReq.Header.Set("Origin", "https://elmetracademy.app")
+	noHeaderReq.AddCookie(&http.Cookie{Name: "refresh_token", Value: "token-123"})
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, noHeaderReq)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("missing X-Client expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// 4. Mobile client (no cookie, no X-Client: web) on /api/v1/auth/refresh -> passes
+	mobileReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, mobileReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mobile client expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

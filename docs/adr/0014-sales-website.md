@@ -352,3 +352,13 @@ amendment supersedes the sentences it names.
   Section 1 item 1 (locked) says students upload nothing. The W4 brief needs
   an owner amendment of that item, or no receipt image.
   *(Resolved 2026-11-04: no receipt image, owner decision 3.)*
+
+## Amendment 2026-11-05 (Part C / W3: Web auth and dynamic pages)
+
+1. **Web client identification**: Web requests send header `X-Client: web`.
+2. **Cookie refresh token**: For `X-Client: web`, `POST /api/v1/auth/login`, `POST /api/v1/auth/verify-otp`, and `POST /api/v1/auth/refresh` set/rotate the refresh token as an `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` cookie. The JSON response omits `refresh_token` and contains only `access_token` and `expires_in`. Mobile clients are unchanged (no cookie, refresh token in JSON response). `POST /api/v1/auth/logout` clears the cookie (`MaxAge: -1`).
+3. **In-memory access token**: The website keeps the access token strictly in JavaScript memory; tokens are never persisted in localStorage or IndexedDB.
+4. **Gateway CORS allowlist**: Exact match from env without wildcards (`https://elmetracademy.app`, `https://www.elmetracademy.app`, plus `http://localhost:3000` outside production). Credentials allowed only for allowlisted origins.
+5. **CSRF protection**: On cookie-using routes (or whenever a refresh cookie is sent), the gateway verifies that the `Origin` header matches the exact allowlist and `X-Client: web` is present, else returns 403 `csrf_refused`.
+6. **Web token restriction and device limits**: Tokens minted for web sessions carry `client: "web"`. `academy-service` refuses `POST /academy/videos/{id}/play` and `GET /academy/files/{id}/download` with 403 `web_access_forbidden`. Web sessions do not count toward the mobile 2-device cap and do not evict app sessions.
+7. **Dynamic pages**: The form and authenticated user pages (`/login`, `/signup`, `/forgot-password`, `/account`, and their `/en/...` variants) render dynamically with per-request CSP nonces. All other pages remain static. `scripts/web_gate.sh` enforces this exact route list.

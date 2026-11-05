@@ -49,10 +49,12 @@ Arabic is the default (right to left) at the root paths; English is under
 |---|---|---|---|
 | `/` | `/en` | Home | Placeholder (W5) |
 | `/about` | `/en/about` | About the academy | Placeholder (W5) |
-| `/subjects` | `/en/subjects` | Subjects catalog with prices | Placeholder, no prices (W2) |
-| `/subjects/[id]` | `/en/subjects/[id]` | Subject page, buy | Placeholder (W2, W4) |
-| `/login` | `/en/login` | Log in (same account as the app) | Placeholder (W3) |
-| `/signup` | `/en/signup` | Sign up | Placeholder (W3) |
+| `/subjects` | `/en/subjects` | Subjects catalog with prices | Real catalog page (W2) |
+| `/subjects/[id]` | `/en/subjects/[id]` | Subject page, buy | Real subject page (W2, buy in W4) |
+| `/login` | `/en/login` | Log in (same account as the app) | Real login page (W3) |
+| `/signup` | `/en/signup` | Sign up with email OTP | Real signup page (W3) |
+| `/forgot-password` | `/en/forgot-password` | Forgot password reset | Real reset flow (W3) |
+| `/account` | `/en/account` | My account (owned subjects, app links) | Real account page (W3) |
 | `/terms` | `/en/terms` | Terms | Placeholder (owner text) |
 | `/privacy` | `/en/privacy` | Privacy | Placeholder (owner text) |
 | `/refund` | `/en/refund` | Refund policy | Placeholder (owner text) |
@@ -71,6 +73,14 @@ draft or expired subject is a 404 with a localized "not found" page. If the
 catalog cannot be read, the page says so ("unavailable") and shows no
 subject. Both are built from one catalog request — see "Catalog data". The
 other pages are unchanged placeholders.)*
+
+*(Amended 2026-11-05, W3: `/login`, `/signup`, `/forgot-password`, and
+`/account` (both languages) are real functional pages now. Web auth uses
+`X-Client: web`, with refresh tokens kept in HttpOnly cookies and access tokens
+in JS memory only. Web sessions do not count toward the mobile 2-device limit.
+Web tokens are restricted from `/play` and file downloads in academy-service.
+These four pages are dynamic (ƒ) with per-request nonce CSP; all others are
+static (○/●).)*
 
 ## Catalog data
 

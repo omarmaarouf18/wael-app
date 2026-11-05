@@ -508,3 +508,5 @@ one catalog response) and never in the browser. The fixed pages are static
 with a fixed CSP (`script-src 'self' 'unsafe-inline'`); only log in and sign
 up keep the per-request nonce. ADR-0014 "Amendment 2026-11-04 (3)". No
 backend change in W2b beyond the expired-subject rule above.)*
+
+*(Amended 2026-11-05, W3 built on `develop` (login and signup on the web): web auth uses header `X-Client: web`. The refresh token is set/rotated as an `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` cookie; JSON returns access token only. The access token is stored in JS memory only. Tokens minted for web carry `client: "web"`; `academy-service` refuses play and file download (403 `web_access_forbidden`). Web sessions do not count toward mobile 2-device limit. Gateway CORS enforces exact allowlist without wildcards, and CSRF verifies Origin and `X-Client: web` for cookie-using routes. Dynamic pages with per-request nonce CSP: `/login`, `/signup`, `/forgot-password`, `/account` and `/en/...` variants.)*

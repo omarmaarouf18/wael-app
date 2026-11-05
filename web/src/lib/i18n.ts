@@ -16,6 +16,8 @@ export type PageKey =
   | "subject"
   | "login"
   | "signup"
+  | "forgotPassword"
+  | "account"
   | "terms"
   | "privacy"
   | "refund";
@@ -33,16 +35,103 @@ interface PageText {
   todo: string;
 }
 
+export interface AuthText {
+  login: {
+    title: string;
+    lead: string;
+    emailLabel: string;
+    emailPlaceholder: string;
+    passwordLabel: string;
+    passwordPlaceholder: string;
+    submit: string;
+    submitting: string;
+    forgotPasswordLink: string;
+    noAccountPrompt: string;
+    signupLink: string;
+  };
+  signup: {
+    title: string;
+    lead: string;
+    fullNameLabel: string;
+    fullNamePlaceholder: string;
+    emailLabel: string;
+    emailPlaceholder: string;
+    phoneLabel: string;
+    phonePlaceholder: string;
+    passwordLabel: string;
+    passwordPlaceholder: string;
+    submit: string;
+    submitting: string;
+    hasAccountPrompt: string;
+    loginLink: string;
+    otpTitle: string;
+    otpLead: (email: string) => string;
+    otpCodeLabel: string;
+    otpSubmit: string;
+    otpSubmitting: string;
+    resendOtp: string;
+    resendSuccess: string;
+  };
+  forgotPassword: {
+    step1Title: string;
+    step1Lead: string;
+    sendCodeSubmit: string;
+    sendingCode: string;
+    step2Title: string;
+    step2Lead: (email: string) => string;
+    verifyCodeSubmit: string;
+    step3Title: string;
+    step3Lead: string;
+    newPasswordLabel: string;
+    confirmPasswordLabel: string;
+    passwordMismatch: string;
+    resetSubmit: string;
+    resetSuccess: string;
+    backToLogin: string;
+  };
+  account: {
+    title: string;
+    lead: string;
+    profileSection: string;
+    fullName: string;
+    email: string;
+    phone: string;
+    noPhone: string;
+    role: string;
+    studentRole: string;
+    ownedSubjectsSection: string;
+    noOwnedSubjects: string;
+    browseSubjects: string;
+    studyBannerTitle: string;
+    studyBannerLead: string;
+    downloadAndroid: string;
+    downloadIos: string;
+    logout: string;
+    loggingOut: string;
+    loading: string;
+  };
+  errors: {
+    invalid_credentials: string;
+    account_locked: string;
+    conflict: string;
+    too_many_attempts: string;
+    invalid_token: string;
+    password_too_long: string;
+    generic: string;
+  };
+}
+
 interface Dictionary {
   brand: string;
   brandEyebrow: string;
   switchLanguage: string;
   switchLanguageLabel: string;
-  nav: { home: string; about: string; subjects: string; login: string; signup: string };
+  nav: { home: string; about: string; subjects: string; login: string; signup: string; account: string };
   footer: { terms: string; privacy: string; refund: string; rights: string; brandLine: string };
   todoBadge: string;
   pages: Record<PageKey, PageText>;
   catalog: CatalogText;
+  auth: AuthText;
 }
 
 interface CatalogText {
@@ -77,6 +166,7 @@ const ar: Dictionary = {
     subjects: "المواد الدراسية",
     login: "تسجيل الدخول",
     signup: "إنشاء حساب جديد",
+    account: "حسابي",
   },
   footer: {
     terms: "الشروط والأحكام",
@@ -110,12 +200,22 @@ const ar: Dictionary = {
     login: {
       title: "تسجيل الدخول",
       lead: "بنفس حساب التطبيق.",
-      todo: "TODO: تسجيل الدخول (W3).",
+      todo: "",
     },
     signup: {
       title: "إنشاء حساب جديد",
       lead: "حساب واحد للموقع والتطبيق.",
-      todo: "TODO: إنشاء الحساب (W3).",
+      todo: "",
+    },
+    forgotPassword: {
+      title: "استعادة كلمة المرور",
+      lead: "أدخل بريدك الإلكتروني لاستعادة كلمة المرور.",
+      todo: "",
+    },
+    account: {
+      title: "حسابي",
+      lead: "بيانات حسابك والمواد المشترك بها.",
+      todo: "",
     },
     terms: {
       title: "الشروط والأحكام",
@@ -149,6 +249,91 @@ const ar: Dictionary = {
     notFoundTitle: "الصفحة غير موجودة",
     notFoundLead: "المادة غير متاحة أو الرابط غير صحيح.",
   },
+  auth: {
+    login: {
+      title: "تسجيل الدخول",
+      lead: "بنفس حساب التطبيق.",
+      emailLabel: "البريد الإلكتروني",
+      emailPlaceholder: "name@example.com",
+      passwordLabel: "كلمة المرور",
+      passwordPlaceholder: "••••••••",
+      submit: "تسجيل الدخول",
+      submitting: "جارٍ تسجيل الدخول...",
+      forgotPasswordLink: "نسيت كلمة المرور؟",
+      noAccountPrompt: "ليس لديك حساب؟",
+      signupLink: "إنشاء حساب جديد",
+    },
+    signup: {
+      title: "إنشاء حساب جديد",
+      lead: "حساب واحد للموقع والتطبيق.",
+      fullNameLabel: "الاسم بالكامل",
+      fullNamePlaceholder: "الاسم كما هو مدون في البطاقة",
+      emailLabel: "البريد الإلكتروني",
+      emailPlaceholder: "name@example.com",
+      phoneLabel: "رقم الهاتف (اختياري)",
+      phonePlaceholder: "010xxxxxxxx",
+      passwordLabel: "كلمة المرور",
+      passwordPlaceholder: "٨ أحرف على الأقل",
+      submit: "متابعة وإنشاء الحساب",
+      submitting: "جارٍ إنشاء الحساب...",
+      hasAccountPrompt: "لديك حساب بالفعل؟",
+      loginLink: "تسجيل الدخول",
+      otpTitle: "تأكيد البريد الإلكتروني",
+      otpLead: (email: string) => `أدخل رمز التحقق المكون من 6 أرقام المرسل إلى ${email}`,
+      otpCodeLabel: "رمز التحقق (OTP)",
+      otpSubmit: "تأكيد الحساب ومتابعة",
+      otpSubmitting: "جارٍ التحقق...",
+      resendOtp: "إعادة إرسال الرمز",
+      resendSuccess: "تم إرسال رمز جديد إلى بريدك الإلكتروني",
+    },
+    forgotPassword: {
+      step1Title: "استعادة كلمة المرور",
+      step1Lead: "أدخل بريدك الإلكتروني المسجل لإرسال رمز التحقق.",
+      sendCodeSubmit: "إرسال رمز التحقق",
+      sendingCode: "جارٍ الإرسال...",
+      step2Title: "رمز التحقق",
+      step2Lead: (email: string) => `أدخل الرمز المكون من 6 أرقام المرسل إلى ${email}`,
+      verifyCodeSubmit: "تأكيد الرمز",
+      step3Title: "تعيين كلمة المرور الجديدة",
+      step3Lead: "أدخل كلمة المرور الجديدة لحسابك.",
+      newPasswordLabel: "كلمة المرور الجديدة",
+      confirmPasswordLabel: "تأكيد كلمة المرور",
+      passwordMismatch: "كلمتا المرور غير متطابقتين",
+      resetSubmit: "حفظ وتغيير كلمة المرور",
+      resetSuccess: "تم تغيير كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول.",
+      backToLogin: "العودة لتسجيل الدخول",
+    },
+    account: {
+      title: "حسابي",
+      lead: "بيانات الحساب والمواد المشترك بها.",
+      profileSection: "بيانات الطالب",
+      fullName: "الاسم:",
+      email: "البريد الإلكتروني:",
+      phone: "رقم الهاتف:",
+      noPhone: "غير مسجل",
+      role: "نوع الحساب:",
+      studentRole: "طالب",
+      ownedSubjectsSection: "المواد المشترك بها",
+      noOwnedSubjects: "لست مشتركاً في أي مادة حالياً.",
+      browseSubjects: "تصفح قائمة المواد والاشتراك",
+      studyBannerTitle: "ذاكر على تطبيق أكاديمية المتر",
+      studyBannerLead: "مشاهدة الفيديوهات وتحميل المذكرات والكتب متاحة حصرياً عبر تطبيق الهاتف.",
+      downloadAndroid: "تحميل لأجهزة Android (Google Play)",
+      downloadIos: "تحميل لأجهزة iPhone (App Store)",
+      logout: "تسجيل الخروج",
+      loggingOut: "جارٍ الخروج...",
+      loading: "جارٍ تحميل البيانات...",
+    },
+    errors: {
+      invalid_credentials: "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+      account_locked: "تم قفل الحساب مؤقتاً لكثرة المحاولات الخاطئة. يرجى المحاولة لاحقاً.",
+      conflict: "البريد الإلكتروني مستخدم بالفعل بحساب مسجل.",
+      too_many_attempts: "محاولات كثيرة جداً. يرجى الانتظار والمحاولة لاحقاً.",
+      invalid_token: "رمز التحقق غير صحيح أو انتهت صلاحيته.",
+      password_too_long: "كلمة المرور طويلة جداً (الحد الأقصى 72 حرفاً).",
+      generic: "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.",
+    },
+  },
 };
 
 const en: Dictionary = {
@@ -162,6 +347,7 @@ const en: Dictionary = {
     subjects: "Subjects",
     login: "Sign In",
     signup: "Create Account",
+    account: "My Account",
   },
   footer: {
     terms: "Terms & Conditions",
@@ -195,12 +381,22 @@ const en: Dictionary = {
     login: {
       title: "Sign In",
       lead: "With the same account as the app.",
-      todo: "TODO: sign in (W3).",
+      todo: "",
     },
     signup: {
       title: "Create Account",
       lead: "One account for the website and the app.",
-      todo: "TODO: account creation (W3).",
+      todo: "",
+    },
+    forgotPassword: {
+      title: "Forgot Password",
+      lead: "Enter your email to reset your password.",
+      todo: "",
+    },
+    account: {
+      title: "My Account",
+      lead: "Your account details and subscribed subjects.",
+      todo: "",
     },
     terms: {
       title: "Terms & Conditions",
@@ -233,6 +429,91 @@ const en: Dictionary = {
     buyTodo: "TODO: transfer purchase request (W4).",
     notFoundTitle: "Page not found",
     notFoundLead: "This subject is not available, or the link is wrong.",
+  },
+  auth: {
+    login: {
+      title: "Sign In",
+      lead: "With the same account as the app.",
+      emailLabel: "Email Address",
+      emailPlaceholder: "name@example.com",
+      passwordLabel: "Password",
+      passwordPlaceholder: "••••••••",
+      submit: "Sign In",
+      submitting: "Signing in...",
+      forgotPasswordLink: "Forgot password?",
+      noAccountPrompt: "Don't have an account?",
+      signupLink: "Create Account",
+    },
+    signup: {
+      title: "Create Account",
+      lead: "One account for the website and the app.",
+      fullNameLabel: "Full Name",
+      fullNamePlaceholder: "Full Name as on ID",
+      emailLabel: "Email Address",
+      emailPlaceholder: "name@example.com",
+      phoneLabel: "Phone Number (optional)",
+      phonePlaceholder: "010xxxxxxxx",
+      passwordLabel: "Password",
+      passwordPlaceholder: "At least 8 characters",
+      submit: "Continue & Create Account",
+      submitting: "Creating account...",
+      hasAccountPrompt: "Already have an account?",
+      loginLink: "Sign In",
+      otpTitle: "Verify Email",
+      otpLead: (email: string) => `Enter the 6-digit verification code sent to ${email}`,
+      otpCodeLabel: "Verification Code (OTP)",
+      otpSubmit: "Verify & Continue",
+      otpSubmitting: "Verifying...",
+      resendOtp: "Resend Code",
+      resendSuccess: "A new code has been sent to your email",
+    },
+    forgotPassword: {
+      step1Title: "Forgot Password",
+      step1Lead: "Enter your registered email to receive a verification code.",
+      sendCodeSubmit: "Send Verification Code",
+      sendingCode: "Sending...",
+      step2Title: "Verification Code",
+      step2Lead: (email: string) => `Enter the 6-digit code sent to ${email}`,
+      verifyCodeSubmit: "Verify Code",
+      step3Title: "Set New Password",
+      step3Lead: "Enter a new password for your account.",
+      newPasswordLabel: "New Password",
+      confirmPasswordLabel: "Confirm New Password",
+      passwordMismatch: "Passwords do not match",
+      resetSubmit: "Save New Password",
+      resetSuccess: "Password changed successfully. You can now sign in.",
+      backToLogin: "Back to Sign In",
+    },
+    account: {
+      title: "My Account",
+      lead: "Account details and owned subjects.",
+      profileSection: "Student Profile",
+      fullName: "Name:",
+      email: "Email:",
+      phone: "Phone:",
+      noPhone: "Not provided",
+      role: "Role:",
+      studentRole: "Student",
+      ownedSubjectsSection: "Owned Subjects",
+      noOwnedSubjects: "You do not own any subjects yet.",
+      browseSubjects: "Browse available subjects",
+      studyBannerTitle: "Study in EL METR ACADEMY app",
+      studyBannerLead: "Videos, notes, and books are available exclusively via the mobile app.",
+      downloadAndroid: "Download for Android (Google Play)",
+      downloadIos: "Download for iPhone (App Store)",
+      logout: "Sign Out",
+      loggingOut: "Signing out...",
+      loading: "Loading...",
+    },
+    errors: {
+      invalid_credentials: "Invalid email or password.",
+      account_locked: "Account is temporarily locked due to too many failed attempts.",
+      conflict: "Email address is already registered.",
+      too_many_attempts: "Too many attempts. Please try again later.",
+      invalid_token: "Invalid or expired verification code.",
+      password_too_long: "Password is too long (maximum 72 characters).",
+      generic: "An unexpected error occurred. Please try again.",
+    },
   },
 };
 

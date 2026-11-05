@@ -4,13 +4,13 @@ import { API_ORIGIN } from "./lib/config";
 import { buildCsp } from "./lib/csp";
 
 // Per-request CSP nonce (Next.js "Content Security Policy" guide) for the
-// pages with forms only (log in, sign up; buy in W4). Next.js reads the nonce
-// from the request's CSP header and puts it on its own scripts and styles;
-// those pages call connection() so they render per request. Every other page
-// is static and gets the fixed CSP from next.config.ts (ADR-0014 decision 7).
-// Keep this matcher, STATIC_PAGE_SOURCE in next.config.ts and
-// DYNAMIC_ROUTES in scripts/web_gate.sh in step; the gate checks the built
-// routes.
+// pages with forms and dynamic user state (log in, sign up, forgot password,
+// my account; buy in W4). Next.js reads the nonce from the request's CSP header
+// and puts it on its own scripts and styles; those pages call connection() so
+// they render per request. Every other page is static and gets the fixed CSP
+// from next.config.ts (ADR-0014 decision 7). Keep this matcher,
+// STATIC_PAGE_SOURCE in next.config.ts and DYNAMIC_ROUTES in
+// scripts/web_gate.sh in step; the gate checks the built routes.
 export function proxy(request: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
   // NODE_ENV is "development" only under `next dev`; `next build` and
@@ -46,6 +46,20 @@ export const config = {
       ],
     },
     {
+      source: "/forgot-password",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    {
+      source: "/account",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    {
       source: "/en/login",
       missing: [
         { type: "header", key: "next-router-prefetch" },
@@ -54,6 +68,20 @@ export const config = {
     },
     {
       source: "/en/signup",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    {
+      source: "/en/forgot-password",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+    {
+      source: "/en/account",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
