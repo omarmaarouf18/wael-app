@@ -274,9 +274,9 @@ amendment above. The text above is unchanged.
    test pass. Vercel Deployment Protection for Previews is an owner step
    (`docs/web/README.md` "Deploy on Vercel" item 6).
 
-## Amendment 2026-11-05 (4): owner decision — Vercel deploys the website from a mirror repo
+## Amendment 2026-11-04 (4): owner decision — Vercel deploys the website from a mirror repo
 
-Owner decision of 2026-11-05. The decision text above is unchanged; this
+Owner decision of 2026-11-04. The decision text above is unchanged; this
 amendment supersedes the sentences it names.
 
 1. **Vercel never gets access to `wael-app`.** The website is deployed by
@@ -327,6 +327,11 @@ amendment supersedes the sentences it names.
    installation (GitHub → Settings → Installed GitHub Apps →
    `wael-app-sync-omarmaarouf18` → Configure → Repository access). Until the
    owner does, the sync fails at the token step and the mirror stays empty.
+   *(Amended 2026-11-05, owner: a separate App for the website is allowed —
+   the workflow reads the optional secrets `WEB_APP_ID` and
+   `WEB_APP_PRIVATE_KEY` and uses them when they are set, and falls back to
+   `APP_ID` / `APP_PRIVATE_KEY` otherwise; the mobile sync keeps its own
+   secrets either way.)*
 6. **The mirror's root README** is `web/README.md` in `wael-app`: "Mirror of
    `wael-app/web`, do not commit here."
 7. **The mirror's branches.** `develop` appears at the first sync of `web/`;

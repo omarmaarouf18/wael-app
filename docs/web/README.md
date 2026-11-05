@@ -18,11 +18,11 @@ call.)*
 `/subjects` and `/subjects/[id]` pages read the catalog on the server
 (`API_BASE_URL`; "Catalog data" below); the browser still calls no API. No
 payment code exists.)*
-*(Amended 2026-11-05, owner decision: Vercel deploys the website from the
+*(Amended 2026-11-04, owner decision: Vercel deploys the website from the
 private mirror repo `omarmaarouf18/wael-app-web` — a one-way mirror of
 `web/` — so Vercel never gets access to wael-app. The "Sync Website"
 workflow keeps the mirror in step; see "Mirror repo" below and ADR-0014
-"Amendment 2026-11-05 (4)".)*
+"Amendment 2026-11-04 (4)".)*
 
 ## Purpose
 
@@ -205,7 +205,7 @@ npm `overrides` (owner decision 2026-11-04).
 
 ## Mirror repo (`wael-app-web`)
 
-*(Added 2026-11-05, owner decision; ADR-0014 "Amendment 2026-11-05 (4)".)*
+*(Added 2026-11-04, owner decision; ADR-0014 "Amendment 2026-11-04 (4)".)*
 Vercel deploys the website from the private repo `omarmaarouf18/wael-app-web`
 — a one-way mirror of `web/`, exactly like `wael-app-mobile` is of
 `frontend/` — so Vercel never gets access to `wael-app`. Nobody commits to
@@ -238,7 +238,10 @@ the mirror directly.
   repository secrets `APP_ID` and `APP_PRIVATE_KEY` (the App
   `wael-app-sync-omarmaarouf18`, App ID 5137789), with the token scoped to
   `wael-app-web` only. The App's permissions are unchanged (contents write,
-  workflows write).
+  workflows write). If the owner prefers a separate App for the website, the
+  workflow also reads the optional secrets `WEB_APP_ID` and
+  `WEB_APP_PRIVATE_KEY` and uses them instead; the mobile sync keeps
+  `APP_ID` / `APP_PRIVATE_KEY` either way.
 - **Owner step (once).** The App installation must include the new repo: it
   covers `wael-app-deploy` and `wael-app-mobile` only. GitHub → Settings →
   Installed GitHub Apps → `wael-app-sync-omarmaarouf18` → Configure →
