@@ -366,3 +366,36 @@ amendment supersedes the sentences it names.
 5. **CSRF protection**: On cookie-using routes (or whenever a refresh cookie is sent), the gateway verifies that the `Origin` header matches the exact allowlist and `X-Client: web` is present, else returns 403 `csrf_refused`.
 6. **Web token restriction and device limits**: Tokens minted for web sessions carry `client: "web"`. `academy-service` refuses `POST /academy/videos/{id}/play` and `GET /academy/files/{id}/download` with 403 `web_access_forbidden`. Web sessions do not count toward the mobile 2-device cap and do not evict app sessions.
 7. **Dynamic pages**: The form and authenticated user pages (`/login`, `/signup`, `/forgot-password`, `/account`, and their `/en/...` variants) render dynamically with per-request CSP nonces. All other pages remain static. `scripts/web_gate.sh` enforces this exact route list.
+
+## Amendment 2026-11-05 (Part D / W4: Purchase request and payment methods)
+
+1. **Console payment methods settings**: Configurable list `{kind: "wallet" | "instapay", label, number_or_address}` stored in `app_settings.payment_methods`, editable via admin console `POST /api/settings/update`, audit logged. Served via `GET /academy/payment-methods` only to authenticated web clients (`claims.Client == "web"`).
+2. **Web purchase request endpoint**: `POST /academy/subjects/{id}/purchase-request` creates a `purchase_requests` row with `source: "web"`, `payment_method`, `transfer_reference`, `normalized_reference`, `sender_number`, and `amount`. Mobile access requests remain completely unchanged.
+3. **Validation and business guards**: Enforces verified student, published unexpired subject, not already owned, one open pending request per student per subject, normalized transfer reference unique across all requests, length limits (reference 3-100, sender 3-50, amount > 0), `DisallowUnknownFields()`, per-user rate limit, and typed bilingual error codes (ar/en).
+4. **Console review**: Requests tab displays source, method, reference, sender number, amount, and highlights price discrepancies (warning badge when amount differs from subject price). Accept and reject handlers operate unchanged; reject reasons are delivered to students.
+5. **No payment reference field in payment_records**: `payment_records` schema remains strictly unchanged (`_id`, `user_id`, `subject_id`, `entitlement_id`, `request_id`, `amount`, `price_at_grant`, `source`, `recorded_by`, `recorded_at`). No payment reference field is added to `payment_records` (the transfer reference lives on the `purchase_requests` row only).
+6. **IDOR protection**: `GET /academy/me/requests/{id}` returns 404 `not_found` if the request belongs to another student.
+7. **App store safety**: `frontend/` contains no payment methods, wallet/InstaPay wording, or purchase forms (`frontend/test/store_safety_l10n_test.dart` passes).
+
+## Amendment 2026-11-05 (Part E / W5: Request status and buy form)
+
+1. **Account page requests**: `/account` (and `/en/account`) displays "My requests" (طلبات الاشتراك) showing subject title, formatted date, amount, and status badge (`pending` / `accepted` / `rejected` with rejection reason).
+2. **Subject page client buy section**: The prebuilt subject page mounts client component `SubjectBuySection` which dynamically checks auth and ownership.
+   - If owned: displays "you own this, open the app to study" with app store links.
+   - If pending: displays pending request notification.
+   - If unowned: loads payment methods and displays the transfer purchase request form.
+3. **Instant app access**: Once accepted by the admin, the subject entitlement is active immediately in the mobile app with zero extra student action.
+
+## Amendment 2026-11-05 (Part F: End-to-end stack verification)
+
+1. **Local Compose E2E Flow**: Verified against local docker compose stack with API gateway, auth-service, academy-service, and admin-console:
+   - Web student signup (`POST /api/v1/auth/signup`) with `X-Client: web` -> 201 Created.
+   - Web OTP verification (`POST /api/v1/auth/verify-otp`) -> 200 OK with HttpOnly `refresh_token` cookie and in-memory `access_token` (`refresh_token` omitted from body).
+   - Cookie refresh with CSRF check (`POST /api/v1/auth/refresh`) -> 403 when CSRF headers absent; 200 OK with rotated cookie when allowlisted Origin and `X-Client: web` present.
+   - Payment methods fetch (`GET /api/v1/academy/payment-methods`) with web token -> 200 OK.
+   - Purchase request submission (`POST /api/v1/academy/subjects/{id}/purchase-request`) -> 201 Created with `source: "web"`, `status: "pending"`.
+   - Admin console review (`GET /api/requests?status=pending`) -> displays web fields (instapay, ref, sender, amount).
+   - Admin accept (`POST /api/requests/accept`) -> 200 OK. Grants entitlement and appends `payment_records` row without reference field.
+   - Web ownership verification: `GET /api/v1/academy/me/entitlements` returns subject ID; `GET /api/v1/academy/me/requests` shows status `accepted`. Re-requesting returns 409 `already_owned`.
+   - Web token restrictions: `POST /api/v1/academy/videos/{id}/play` and `GET /api/v1/academy/subjects/{id}/files/{id}/download` return 403 `web_access_forbidden`.
+2. **Production-only items**: Production Caddy edge routing on public catalog, Vercel mirror repo sync via GitHub App access, production DNS, and real Resend email delivery.

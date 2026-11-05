@@ -82,6 +82,8 @@ Web tokens are restricted from `/play` and file downloads in academy-service.
 These four pages are dynamic (ƒ) with per-request nonce CSP; all others are
 static (○/●).)*
 
+*(Amended 2026-11-05, W4 & W5: `/account` displays "My requests" (طلبات الاشتراك) showing real request history, status badges (`pending` / `accepted` / `rejected`), rejection reason, amount, and formatted date. The subject page mounts client buy component `SubjectBuySection`: if owned, informs the student with mobile app links; if pending, informs the student; if unowned, loads payment methods from `GET /api/v1/academy/payment-methods` and presents the manual transfer buy form (`POST /api/v1/academy/subjects/{id}/purchase-request`). The subject page remains prebuilt/static (●) without making the route dynamic, maintaining the strict static CSP on `/subjects/[id]`. Only form pages remain dynamic (ƒ).)*
+
 ## Catalog data
 
 *(Added 2026-11-04, W2b.)* `web/src/lib/catalog.ts` reads
