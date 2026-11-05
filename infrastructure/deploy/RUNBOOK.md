@@ -59,7 +59,7 @@ Full procedure: `SERVER-MANUAL.md` §3 (base + users), §4 (certs), §5 (secrets
 
 | Where | What |
 |---|---|
-| GitHub App (owner account) | Permissions: Contents read/write and Workflows read/write. Installed on `wael-app-deploy` and `wael-app-mobile` only. After any permission update, the installation must accept the updated permissions. |
+| GitHub App (owner account) | Permissions: Contents read/write and Workflows read/write. Installed on `wael-app-deploy`, `wael-app-mobile` and `wael-app-web` (the website mirror, owner decision 2026-11-05) only. After any permission update, the installation must accept the updated permissions. |
 | wael-app secrets | `APP_ID`, `APP_PRIVATE_KEY` (the App's key) |
 | wael-app variables | `PUBLISH_ENABLED`, `MOBILE_SYNC_ENABLED` |
 | wael-app-deploy variables | `DEPLOY_ENABLED`, optional `WAEL_HOME` |

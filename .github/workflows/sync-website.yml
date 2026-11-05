@@ -1,0 +1,158 @@
+name: Sync Website
+
+# Mirrors web/ into the private repo wael-app-web (git subtree split), so
+# Vercel can build and deploy the website from that repo and never gets
+# access to wael-app. wael-app-web is a pure one-way mirror: every sync
+# force-pushes the split result to the matching branch and nothing else.
+# Never commit to wael-app-web directly.
+#
+# Runs on every push to develop (-> develop) and main (-> main) that changes
+# web/**. The push itself is the trigger (owner decision 2026-11-04), so the
+# website mirror does not wait for the CI Gate the way "Sync Mobile Frontend"
+# does; every sync runs its own checks instead (mirror content, secret scan)
+# and refuses to push anything they do not accept.
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "web/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-website-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Sync web/ to wael-app-web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the pushed commit (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the branch to sync
+        id: target
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$BRANCH" in
+            develop|main) ;;
+            *)
+              echo "::error::refusing to sync '$BRANCH': only develop (-> develop) and main (-> main) are mirrored"
+              exit 1
+              ;;
+          esac
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Subtree split (web/)
+        id: split
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git subtree --help >/dev/null 2>&1 || { echo "::error::git subtree is not available on this runner"; exit 1; }
+          sha="$(git subtree --quiet split --prefix=web "$SHA")"
+          [ -n "$sha" ] || { echo "::error::subtree split returned nothing"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "split_sha=$sha"
+
+      - name: Check the split holds only web/ content
+        env:
+          SHA: ${{ github.sha }}
+          SPLIT_SHA: ${{ steps.split.outputs.sha }}
+        run: |
+          set -euo pipefail
+          expected="$(git rev-parse "$SHA:web")"
+          actual="$(git rev-parse "$SPLIT_SHA^{tree}")"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::the split tree ($actual) is not the web/ tree ($expected): the mirror would hold something else"
+            exit 1
+          fi
+          if git ls-tree -r --name-only "$SPLIT_SHA" | grep -q '^web/'; then
+            echo "::error::the split still carries paths under web/: the prefix was not stripped"
+            exit 1
+          fi
+          echo "mirror content check passed: $(git ls-tree -r --name-only "$SPLIT_SHA" | wc -l) files, all from web/"
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.10"
+          cache: false
+
+      - name: Secret scan of the split (gitleaks)
+        env:
+          SPLIT_SHA: ${{ steps.split.outputs.sha }}
+        run: |
+          set -euo pipefail
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          gitleaks git --log-opts="$SPLIT_SHA" --redact --no-banner
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          git archive "$SPLIT_SHA" | tar -x -C "$tmp"
+          gitleaks dir "$tmp" --redact --no-banner
+
+      - name: GitHub App token (wael-app-web only)
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: wael-app-web
+
+      - name: "Guard: the mirror may only hold commits the sync produced"
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+          SPLIT_SHA: ${{ steps.split.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mirror="https://x-access-token:${APP_TOKEN}@github.com/${OWNER}/wael-app-web.git"
+          heads="$(git ls-remote --heads "$mirror")"
+          if [ -z "$heads" ]; then
+            echo "the mirror has no branches yet: this is the first sync"
+            exit 0
+          fi
+          git fetch --no-tags --no-write-fetch-head "$mirror" "+refs/heads/*:refs/remotes/mirror/*"
+          while read -r sha ref; do
+            [ -z "${sha:-}" ] && continue
+            name="${ref#refs/heads/}"
+            if [ "$name" = "$BRANCH" ]; then
+              base="$SPLIT_SHA"
+            else
+              src="refs/remotes/origin/$name"
+              if ! git rev-parse --verify --quiet "$src" >/dev/null; then
+                echo "::error::the mirror has a branch '$name' that this repository does not have: refusing to sync"
+                exit 1
+              fi
+              base="$(git subtree --quiet split --prefix=web "$src")"
+              [ -n "$base" ] || { echo "::error::cannot split web/ from '$src'"; exit 1; }
+            fi
+            if ! git merge-base --is-ancestor "$sha" "$base"; then
+              echo "::error::refusing to sync: wael-app-web branch '$name' holds commits this sync did not produce (head $sha is not in the split history $base). Nobody may commit to the mirror; restore it from wael-app/web."
+              exit 1
+            fi
+            echo "guard: branch '$name' (head $sha) holds only sync-produced commits"
+          done <<EOF
+          $heads
+          EOF
+
+      - name: Push the split to wael-app-web
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ steps.target.outputs.branch }}
+          SPLIT_SHA: ${{ steps.split.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git push --force "https://x-access-token:${APP_TOKEN}@github.com/${OWNER}/wael-app-web.git" "${SPLIT_SHA}:refs/heads/${BRANCH}"

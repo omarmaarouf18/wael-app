@@ -610,7 +610,8 @@ Repeat for `NOTIFICATION_MONGO_URI` / `notif_svc` and `ACADEMY_MONGO_URI` /
 ```
 
 The GitHub App: permissions **Contents read/write** and **Workflows
-read/write**; installed on `wael-app-deploy` and `wael-app-mobile` only
+read/write**; installed on `wael-app-deploy`, `wael-app-mobile` and
+`wael-app-web` (the website mirror, owner decision 2026-11-05) only
 ([GitHub UI] App settings → Install). After any permission change, accept the
 new permissions on each installation, or the mirror steps fail (past failure:
 mirror failed with "Invalid keyData" when `APP_PRIVATE_KEY` was malformed, and

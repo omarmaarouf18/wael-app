@@ -274,6 +274,66 @@ amendment above. The text above is unchanged.
    test pass. Vercel Deployment Protection for Previews is an owner step
    (`docs/web/README.md` "Deploy on Vercel" item 6).
 
+## Amendment 2026-11-05 (4): owner decision — Vercel deploys the website from a mirror repo
+
+Owner decision of 2026-11-05. The decision text above is unchanged; this
+amendment supersedes the sentences it names.
+
+1. **Vercel never gets access to `wael-app`.** The website is deployed by
+   Vercel from a new private repository, `omarmaarouf18/wael-app-web`: a
+   one-way mirror of `web/`, exactly like `wael-app-mobile` is of
+   `frontend/`. Nobody commits to it directly; every commit in it is produced
+   by the sync. Vercel imports `wael-app-web` with Root Directory `/` (the
+   mirror's root is the website's root). The sentence in "Decision" above —
+   "Vercel builds it with Root Directory `web`" — is superseded by this
+   amendment. The "Alternatives Considered" entry "a separate repository for
+   the website: rejected" still holds for the source of truth (the website is
+   written, reviewed, gated and secret-scanned in `wael-app`); what changed is
+   the deployment target.
+2. **The sync.** A new workflow "Sync Website"
+   (`.github/workflows/sync-website.yml`) runs `git subtree split --prefix=web`
+   and pushes the result to `wael-app-web` on every push to `develop`
+   (-> `develop`) and `main` (-> `main`) that changes `web/**`. It
+   force-pushes only the split result (one branch, nothing else) and fails
+   loudly on any error. Modeled on "Sync Mobile Frontend", with one
+   difference: the mobile sync waits for the CI Gate on `main`, while the
+   website sync runs on the push itself (owner decision) and runs its own
+   checks before it pushes (items 3 and 4).
+3. **The guard: the mirror may only hold commits the sync produced.** The
+   split is deterministic — `git subtree` copies the source commit's author
+   and committer identity and dates, so the same source commit always yields
+   the same split commit — so every commit a sync can ever produce is an
+   ancestor of the split it computes. The workflow fetches the mirror's
+   branches and requires each branch head to be an ancestor of the matching
+   split: for the branch being synced, the split of the pushed commit; for
+   any other branch, the split of the same-named source branch. A commit
+   written by hand into the mirror is in no split history, so the sync stops
+   with an error and pushes nothing. A branch in the mirror that has no
+   source branch is refused the same way.
+4. **The mirror holds only `web/` content and no secrets.** The workflow
+   compares the split's tree with the source's `web/` tree (the two tree
+   objects must be equal, so no path from outside `web/` can be in the
+   mirror) and refuses a split that still carries paths under `web/`. It
+   then scans the split with gitleaks (`v8.30.1`, the pinned version): over
+   the split's whole history and over its tree. Any finding fails the sync
+   before the push.
+5. **Auth: the same GitHub App as the mobile sync.** The workflow uses the
+   `wael-app` repository secrets `APP_ID` and `APP_PRIVATE_KEY` — the App
+   `wael-app-sync-omarmaarouf18` (App ID 5137789) — and asks for a token
+   scoped to the one repository `wael-app-web`. The App's permissions are
+   unchanged (contents write, workflows write). The App installation must
+   include `wael-app-web`: it is installed on `wael-app-deploy` and
+   `wael-app-mobile` only, so the owner adds `wael-app-web` to that
+   installation (GitHub → Settings → Installed GitHub Apps →
+   `wael-app-sync-omarmaarouf18` → Configure → Repository access). Until the
+   owner does, the sync fails at the token step and the mirror stays empty.
+6. **The mirror's root README** is `web/README.md` in `wael-app`: "Mirror of
+   `wael-app/web`, do not commit here."
+7. **The mirror's branches.** `develop` appears at the first sync of `web/`;
+   `main` appears when the owner fast-forwards `wael-app`'s `main` (the
+   owner-only move, CLAUDE.md). Vercel's production branch is `main` in the
+   mirror.
+
 ## To verify
 
 - Vercel accepts the site on the Hobby plan (owner, when the project is

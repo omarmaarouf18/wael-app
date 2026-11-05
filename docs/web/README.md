@@ -18,6 +18,11 @@ call.)*
 `/subjects` and `/subjects/[id]` pages read the catalog on the server
 (`API_BASE_URL`; "Catalog data" below); the browser still calls no API. No
 payment code exists.)*
+*(Amended 2026-11-05, owner decision: Vercel deploys the website from the
+private mirror repo `omarmaarouf18/wael-app-web` — a one-way mirror of
+`web/` — so Vercel never gets access to wael-app. The "Sync Website"
+workflow keeps the mirror in step; see "Mirror repo" below and ADR-0014
+"Amendment 2026-11-05 (4)".)*
 
 ## Purpose
 
@@ -119,6 +124,7 @@ never one per subject.
 web/
   package.json, package-lock.json   pinned dependencies (npm ci only)
   .npmrc                            ignore-scripts, save-exact
+  README.md                         mirror notice (the mirror repo's root README)
   vercel.json                       Vercel install (npm ci) and build commands
   next.config.ts                    static security headers; validates the API URL at build
   eslint.config.mjs, tsconfig.json
@@ -197,17 +203,72 @@ until `eslint-plugin-react`, `eslint-plugin-import` and
 `eslint-plugin-jsx-a11y` (used by `eslint-config-next`) support ESLint 10; no
 npm `overrides` (owner decision 2026-11-04).
 
+## Mirror repo (`wael-app-web`)
+
+*(Added 2026-11-05, owner decision; ADR-0014 "Amendment 2026-11-05 (4)".)*
+Vercel deploys the website from the private repo `omarmaarouf18/wael-app-web`
+— a one-way mirror of `web/`, exactly like `wael-app-mobile` is of
+`frontend/` — so Vercel never gets access to `wael-app`. Nobody commits to
+the mirror directly.
+
+- **The sync.** The workflow "Sync Website"
+  (`.github/workflows/sync-website.yml`) runs
+  `git subtree split --prefix=web` and pushes the result to the mirror on
+  every push to `develop` (-> `develop`) and `main` (-> `main`) that changes
+  `web/**`. It force-pushes only the split result (one branch, nothing else)
+  and fails loudly on any error. Manual re-sync: the "Sync Website" workflow
+  → Run workflow (on `develop` or `main`).
+- **What lands in the mirror.** Only `web/` content: the split's tree must
+  be the source's `web/` tree (the two tree objects are compared), and a
+  split that still carries paths under `web/` is refused. gitleaks
+  (`v8.30.1`, the pinned version) scans the split's whole history and its
+  tree; any finding fails the sync before the push.
+- **The guard.** The sync refuses to push if the mirror holds commits it did
+  not produce. The split is deterministic (`git subtree` keeps the source
+  commit's author and committer identity and dates, so the same source
+  commit always gives the same split commit), so every commit a sync can
+  produce is an ancestor of the split it computes. The workflow fetches the
+  mirror's branches and requires each branch head to be an ancestor of the
+  matching split: for the branch being synced, the split of the pushed
+  commit; for any other branch, the split of the same-named source branch.
+  A commit written by hand into the mirror is in no split history, so the
+  sync stops with an error and pushes nothing. A mirror branch with no
+  source branch is refused the same way.
+- **Auth.** The same GitHub App as the mobile sync: the `wael-app`
+  repository secrets `APP_ID` and `APP_PRIVATE_KEY` (the App
+  `wael-app-sync-omarmaarouf18`, App ID 5137789), with the token scoped to
+  `wael-app-web` only. The App's permissions are unchanged (contents write,
+  workflows write).
+- **Owner step (once).** The App installation must include the new repo: it
+  covers `wael-app-deploy` and `wael-app-mobile` only. GitHub → Settings →
+  Installed GitHub Apps → `wael-app-sync-omarmaarouf18` → Configure →
+  Repository access → add `wael-app-web`. Without it the sync fails at the
+  token step and the mirror stays empty.
+- **The mirror's README** is `web/README.md` in `wael-app`: "Mirror of
+  `wael-app/web`, do not commit here."
+- **The mirror's branches.** `develop` appears at the first sync; `main`
+  appears when the owner fast-forwards `wael-app`'s `main` (the owner-only
+  move, CLAUDE.md). Vercel's production branch is `main` in the mirror.
+
 ## Deploy on Vercel (owner steps)
 
 The agent only documents these; the owner does them in Vercel.
 
-1. Vercel → Add New Project → import `omarmaarouf18/wael-app`.
-2. Root Directory `web`, framework preset Next.js, production branch `main`.
+1. Vercel → Add New Project → import `omarmaarouf18/wael-app-web`.
+   *(Amended 2026-11-04, owner decision: Vercel imports the mirror repo
+   `wael-app-web`, not `wael-app`, so Vercel never gets access to wael-app —
+   see "Mirror repo".)*
+2. Root Directory `/`, framework preset Next.js, production branch `main`.
    Leave the build and install commands empty in the dashboard:
-   `web/vercel.json` sets them (`npm ci`, `npm run build`), and `web/.npmrc`
-   turns off install scripts.
-3. Environment variables from `web/.env.example` (today only
-   `NEXT_PUBLIC_API_BASE_URL`), for Production and Preview.
+   `vercel.json` (the mirror's root; `web/vercel.json` in wael-app) sets
+   them (`npm ci`, `npm run build`), and `.npmrc` turns off install scripts.
+   *(Amended 2026-11-04, owner decision: the Root Directory is `/`, not
+   `web` — the mirror's root is the website's root. The mirror's `main`
+   branch appears when the owner fast-forwards wael-app's `main`; until then
+   only `develop` exists and there is nothing for a production build.)*
+3. Environment variables from `.env.example` (the mirror's root;
+   `web/.env.example` in wael-app — today only `NEXT_PUBLIC_API_BASE_URL`),
+   for Production and Preview.
    *(Amended 2026-11-04, W2b: also `API_BASE_URL`
    (`https://api.elmetracademy.app`), for Production and Preview; the build
    fails on Vercel without it. Neither value is a secret.)*
@@ -217,18 +278,18 @@ The agent only documents these; the owner does them in Vercel.
    `www.elmetracademy.app`; leave `api.` and `legal.` on the server.)*
 5. The Hobby plan is for non-commercial use. If Vercel objects to a sales
    site on Hobby, move to Pro, or to Cloudflare Pages (static export from the
-   same repo; the per-request CSP nonce would then have to become a static
-   policy, see "Security headers").
+   same mirror repo; the per-request CSP nonce would then have to become a
+   static policy, see "Security headers").
 
 6. *(Added 2026-11-04.)* Deployment Protection: in Vercel → Project →
    Settings → Deployment Protection, turn on Vercel Authentication for
    Preview deployments, so previews of unfinished steps are not public. An
    owner step; nothing in the repo can set it.
 
-`main` moves only by the owner's fast-forward (CLAUDE.md), so production
-deploys follow it. Vercel also builds previews of other branches; their
-`*.vercel.app` addresses must never appear in the app (the guard refuses
-them).
+The mirror's `main` moves only when the owner fast-forwards `wael-app`'s
+`main` (CLAUDE.md), so production deploys follow it. Vercel also builds
+previews of the mirror's other branches (`develop`); their `*.vercel.app`
+addresses must never appear in the app (the guard refuses them).
 
 ## Domain
 
