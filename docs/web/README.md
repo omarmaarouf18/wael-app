@@ -432,3 +432,16 @@ Verified locally on 2026-11-04 with `next start`: every header above is on
 the response, all 11 script tags on the home page carry the nonce, the page
 hydrates, client navigation between Arabic pages works, and no CSP violation
 was reported.
+
+## Amendments 2026-11-05 (Orders, Pricing, Console Groups, and Web Account/Cart)
+
+- **Orders backend**: The API side of W4/W5 is available: `POST /academy/orders` for cart checkout and `GET /academy/me/orders` / `GET /academy/me/orders/{id}` for order history per `docs/contracts/orders-api.md`.
+- **Subject price visibility**: Public catalog APIs used by the website always return `price` and `currency` for published subjects. The per-subject `price_visibility` switch (`follow_global`, `show`, `hide`) applies exclusively to the mobile application student API responses (`GET /academy/subjects`, `GET /academy/subjects/{id}`) and the admin console editor.
+- **Admin console integration**: Web orders submitted through the website cart checkout flow (`POST /academy/orders`) appear in the admin console Requests tab under the corresponding student row. Web orders display the payment transfer reference, payment method (InstaPay or Wallet), sender phone number, and student-entered amount paid alongside individual course items. If the amount paid does not equal the order's subject prices total, an amount check warning badge (`⚠️`) is displayed to alert the reviewer.
+- **Cart, Account Hub & Legal Pages**:
+  - `CartProvider` (`web/src/components/cart-provider.tsx`): Wraps localized layout trees (`(ar)` and `(en)`). Provides `items`, `addItem`, `removeItem`, `clearCart`, `isInCart`, `totalPrice`, and drawer visibility toggles.
+  - `CartDrawer` (`web/src/components/cart-drawer.tsx`): Slide-over drawer presenting cart items, total calculation, and checkout form. Integrated directly into `SiteShell` so that static catalog pages remain fully static without adding dynamic routes.
+  - `AccountPageView` (`web/src/components/account-view.tsx`): Tabbed account management hub on `/account` mirroring the mobile settings experience (profile edit with 30-day rate limit, password change, device sessions, notifications inbox, orders history, account deletion).
+  - Legal pages: `/terms` and `/privacy` (and `/en/...` variants) 308 redirect to the mobile app's hosted legal pages; `/refund` remains an owner TODO placeholder.
+  - Route verification expectations: Dynamic routes (`ƒ`) remain strictly limited to form pages: `/account`, `/en/account`, `/forgot-password`, `/en/forgot-password`, `/login`, `/en/login`, `/signup`, `/en/signup`. All catalog, about, terms, privacy, and refund pages remain static (`○`) or SSG (`●`).
+

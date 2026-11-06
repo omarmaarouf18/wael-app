@@ -399,3 +399,34 @@ amendment supersedes the sentences it names.
    - Web ownership verification: `GET /api/v1/academy/me/entitlements` returns subject ID; `GET /api/v1/academy/me/requests` shows status `accepted`. Re-requesting returns 409 `already_owned`.
    - Web token restrictions: `POST /api/v1/academy/videos/{id}/play` and `GET /api/v1/academy/subjects/{id}/files/{id}/download` return 403 `web_access_forbidden`.
 2. **Production-only items**: Production Caddy edge routing on public catalog, Vercel mirror repo sync via GitHub App access, production DNS, and real Resend email delivery.
+
+## Amendment 2026-11-05 (Orders architecture: W4, W5, C2)
+
+- **W4 Cart Checkout**: Cart checkout is one `POST /academy/orders` per cart. The server creates one order and one purchase request per subject, all-or-none; proof fields live on the order; the amount-mismatch flag compares `amount_paid` with the sum of the order's subject prices.
+- **W5 My Orders**: Reads `GET /academy/me/orders` (and `/{id}`).
+- **C2 App Order Grouping**: App access requests are grouped by the server into one open `app` order per student: the app still has no cart, sends and receives nothing new, an order closes when its last pending request is decided, and a new app request starts a new order. Web and app orders never mix. Existing pending app requests are migrated into one open order per student; accepted/rejected history gets no order.
+
+## Confirmation Note 2026-11-05 (Decision 5: Public catalog pricing)
+
+Decision 5 stands: the website always displays prices for published subjects in the catalog and subject detail pages. The per-subject `price_visibility` switch added for the mobile app in Part D does not affect the website public endpoints (`GET /academy/public/catalog`, `GET /academy/public/subjects/{id}`).
+
+## Amendment 2026-11-05 (Admin Console Requests Tab & Bulk Operations)
+
+- **Requests Tab Rebuild**: The admin console Requests tab reflects the order grouping introduced in ADR-0014 amendment 2026-11-05 (Part C2 & Part F). Students with multiple requests appear as one consolidated row.
+- **Web Order Payment Validation**: For web checkout orders, `amount_paid` is validated against the sum of subject prices. If `amount_mismatch` is `true`, the console displays an amount warning badge (`⚠️`) with the recorded transfer details (method, reference, sender number).
+- **Bulk Actions**: Administrators can accept or reject multiple requests across orders simultaneously with confirmation dialogues and explicit per-item failure reporting.
+
+## Amendment 2026-11-05 (Website Cart, AuthProvider, Account Management & Legal Pages)
+
+- **Decision 4 Amendment (Multi-subject Cart & Orders)**: In addition to single-subject purchase requests, the website provides a client-side shopping cart enabling multi-subject checkout in a single payment transaction.
+  - Cart storage: Stored in browser `localStorage` under `elmetr_academy_cart_v1` with JSON validation and graceful fallback. Cleared upon successful checkout.
+  - Checkout submission: Calls `POST /api/v1/academy/orders` with `claims.client == "web"`, passing `subject_ids` (1–50 items), `payment_method` (`"wallet"` | `"instapay"`), `transfer_reference`, `sender_number`, and `amount_paid`.
+  - Error handling: Displays typed bilingual error messages returned by academy-service (`already_owned`, `pending_request_exists`, `duplicate_reference`, `subject_expired`, `invalid_amount`) naming the specific subject where applicable.
+  - Order history: Exposes `GET /api/v1/academy/me/orders` on the `/account` hub, showing order date, proof fields, total, and individual per-subject statuses (`pending`, `accepted`, `rejected` with `reject_reason`).
+- **Decision 7 Amendment (Client AuthProvider & Session Persistence)**: The website maintains session persistence across navigations and page reloads via a client-side `AuthProvider`:
+  - On initial mount, `AuthProvider` calls `POST /api/v1/auth/refresh` with `credentials: "include"` and header `X-Client: web`. Concurrent refresh requests are deduplicated into a single in-flight promise.
+  - The short-lived access token is stored strictly in JavaScript memory (`inMemoryAccessToken`) and passed via `Authorization: Bearer <token>` on authenticated API requests.
+  - A `401 Unauthorized` response on refresh silently clears state to unauthenticated without displaying error banners to visitors.
+  - Web sessions are labeled `"web"` in device session listings and are exempt from the mobile 2-device cap.
+- **Legal Pages & Store Safety**: Replaced website legal placeholder text with permanent 308 redirects for `/terms`, `/privacy`, `/en/terms`, and `/en/privacy` to `https://legal.elmetracademy.app/terms` and `https://legal.elmetracademy.app/privacy`. `/refund` and `/en/refund` remain owner TODO placeholders.
+

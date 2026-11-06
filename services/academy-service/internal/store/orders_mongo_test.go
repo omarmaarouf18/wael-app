@@ -518,3 +518,95 @@ func assertProductionMigration(t *testing.T, s *MongoStore) {
 		t.Fatalf("u-web orders = %+v, want the untouched web order", webOrders)
 	}
 }
+
+// TestMongoStore_MultiSubjectWebOrder proves that a web order with multiple
+// subjects sharing the same transfer reference can be created in Mongo without
+// duplicate key errors on purchase_requests.
+func TestMongoStore_MultiSubjectWebOrder(t *testing.T) {
+	mongoURI := requireDB(t)
+	dbName := randomDBName("test_academy_multi_order")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	s, err := NewMongoStore(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("NewMongoStore failed: %v", err)
+	}
+	t.Cleanup(func() {
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dropCancel()
+		_ = s.Database().Drop(dropCtx)
+		_ = s.Close(dropCtx)
+	})
+
+	now := time.Now().UTC()
+	order := &models.Order{
+		ID:                  "ord-multi-1",
+		UserID:              "u-cart-student",
+		Source:              models.OrderSourceWeb,
+		Status:              models.OrderStatusOpen,
+		PaymentMethod:       "wallet",
+		TransferReference:   "TXN-CART-123",
+		NormalizedReference: "TXN-CART-123",
+		SenderNumber:        "01012345678",
+		AmountPaid:          350,
+		CreatedAt:           now,
+	}
+	reqs := []*models.PurchaseRequest{
+		{
+			ID:                  "req-1",
+			UserID:              "u-cart-student",
+			SubjectID:           "s-1",
+			OrderID:             order.ID,
+			Status:              models.RequestStatusPending,
+			Source:              models.OrderSourceWeb,
+			PaymentMethod:       order.PaymentMethod,
+			TransferReference:   order.TransferReference,
+			NormalizedReference: order.NormalizedReference,
+			SenderNumber:        order.SenderNumber,
+			Amount:              100,
+			CreatedAt:           now,
+		},
+		{
+			ID:                  "req-2",
+			UserID:              "u-cart-student",
+			SubjectID:           "s-2",
+			OrderID:             order.ID,
+			Status:              models.RequestStatusPending,
+			Source:              models.OrderSourceWeb,
+			PaymentMethod:       order.PaymentMethod,
+			TransferReference:   order.TransferReference,
+			NormalizedReference: order.NormalizedReference,
+			SenderNumber:        order.SenderNumber,
+			Amount:              120,
+			CreatedAt:           now,
+		},
+		{
+			ID:                  "req-3",
+			UserID:              "u-cart-student",
+			SubjectID:           "s-3",
+			OrderID:             order.ID,
+			Status:              models.RequestStatusPending,
+			Source:              models.OrderSourceWeb,
+			PaymentMethod:       order.PaymentMethod,
+			TransferReference:   order.TransferReference,
+			NormalizedReference: order.NormalizedReference,
+			SenderNumber:        order.SenderNumber,
+			Amount:              130,
+			CreatedAt:           now,
+		},
+	}
+
+	if err := s.CreateOrderWithRequests(ctx, order, reqs); err != nil {
+		t.Fatalf("CreateOrderWithRequests multi-subject order failed: %v", err)
+	}
+
+	fetchedOrder, err := s.GetOrderByID(ctx, order.ID)
+	if err != nil || fetchedOrder == nil {
+		t.Fatalf("GetOrderByID failed: %v", err)
+	}
+	fetchedReqs, err := s.ListRequestsByOrder(ctx, order.ID)
+	if err != nil || len(fetchedReqs) != 3 {
+		t.Fatalf("ListRequestsByOrder failed: len=%d err=%v", len(fetchedReqs), err)
+	}
+}

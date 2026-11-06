@@ -183,18 +183,20 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 		return fmt.Errorf("store: ensure purchase_requests status index: %w", err)
 	}
 
-	// Partial unique index on purchase_requests(normalized_reference) where normalized_reference > ""
+	// Index on purchase_requests(normalized_reference) for reference lookups.
+	// In the orders architecture (2026-11-05), orders enforce reference uniqueness
+	// via uniq_orders_normalized_reference. Multi-subject cart orders share the
+	// reference across items, so purchase_requests index must not be unique.
+	// We drop the legacy unique index if present.
+	_ = s.db.Collection("purchase_requests").Indexes().DropOne(ctx, "uniq_purchase_requests_normalized_reference")
 	_, err = s.db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{
 			{Key: "normalized_reference", Value: 1},
 		},
-		Options: options.Index().
-			SetUnique(true).
-			SetPartialFilterExpression(bson.M{"normalized_reference": bson.M{"$type": "string", "$gt": ""}}).
-			SetName("uniq_purchase_requests_normalized_reference"),
+		Options: options.Index().SetName("idx_purchase_requests_normalized_reference"),
 	})
 	if err != nil {
-		return fmt.Errorf("store: ensure purchase_requests normalized_reference unique index: %w", err)
+		return fmt.Errorf("store: ensure purchase_requests normalized_reference index: %w", err)
 	}
 
 	// Orders (2026-11-05 orders brief, ADR-0014 W4/C2).
