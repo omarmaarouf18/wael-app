@@ -26,6 +26,46 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/tlsutil"
 )
 
+const (
+	// orphanWebOrderAge keeps a checkout that is still inserting its request
+	// rows out of reach.
+	orphanWebOrderAge = 5 * time.Minute
+	// orphanWebOrderInterval is the periodic sweep for runtime orphans.
+	orphanWebOrderInterval = 10 * time.Minute
+)
+
+// cleanupOrphanWebOrders removes web orders older than olderThan that have no
+// request rows. It logs the removal (or the failure) and returns the count.
+func cleanupOrphanWebOrders(ctx context.Context, st store.Store, olderThan time.Duration) int {
+	n, err := st.DeleteOrphanWebOrders(ctx, time.Now().UTC().Add(-olderThan))
+	if err != nil {
+		log.Printf("[WARN] orphan web order cleanup failed: %v", err)
+		return 0
+	}
+	if n > 0 {
+		log.Printf("[ACADEMY] removed %d orphan web order(s) older than %s with no requests", n, olderThan)
+	}
+	return n
+}
+
+// scheduleOrphanWebOrderCleanup runs the cleanup periodically until ctx ends.
+func scheduleOrphanWebOrderCleanup(ctx context.Context, st store.Store, olderThan, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				cleanupOrphanWebOrders(runCtx, st, olderThan)
+				cancel()
+			}
+		}
+	}()
+}
+
 func runCheckEnv(stdout, stderr io.Writer) int {
 	_, err := config.Load()
 	if err != nil {
@@ -88,6 +128,13 @@ func main() {
 		log.Fatalf("[ACADEMY] seed levels: %v", err)
 	}
 	log.Printf("[ACADEMY] levels seeded successfully")
+
+	// Mongo is standalone (SPEC R4), so checkout compensates on error instead
+	// of using a transaction. A crash between the order insert and the request
+	// insert can still leave an empty web order: remove old ones at startup and
+	// on a periodic sweep. Cleanup failure never stops the service.
+	cleanupOrphanWebOrders(ctx, st, orphanWebOrderAge)
+	scheduleOrphanWebOrderCleanup(ctx, st, orphanWebOrderAge, orphanWebOrderInterval)
 
 	srv := handlers.New(st, cfg.AppEnv, cfg.GatewaySecret, cfg.InternalServiceToken, cfg.AuthServiceURL, cfg.ExposePriceToStudents, cfg.SupportWhatsApp)
 	srv.Limiter = tierLimiter

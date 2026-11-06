@@ -140,6 +140,12 @@ type Store interface {
 	// ListRequestsForGroups returns every matching request, newest first,
 	// for the console's grouped read model (no pagination clamp).
 	ListRequestsForGroups(ctx context.Context, filter OrderRequestFilter) ([]*models.PurchaseRequest, error)
+	// DeleteOrphanWebOrders removes web orders created before before that have
+	// no purchase request attached, and returns how many it removed. Checkout
+	// compensates on error, but a crash between the order insert and the
+	// request insert can still leave an orphan (Mongo is standalone, SPEC R4).
+	// A small age threshold keeps an in-flight checkout out of reach.
+	DeleteOrphanWebOrders(ctx context.Context, before time.Time) (int, error)
 
 	// Payment records (Phase 4.5, append-only: no update and no delete).
 	// A duplicate entitlement_id is ErrDuplicate: the activation was
@@ -1294,6 +1300,32 @@ func (s *MemoryStore) ListRequestsForGroups(_ context.Context, filter OrderReque
 		return result[i].CreatedAt.After(result[j].CreatedAt)
 	})
 	return result, nil
+}
+
+// DeleteOrphanWebOrders removes old web orders that have no request rows.
+// Only source=web is considered; app orders are never touched.
+func (s *MemoryStore) DeleteOrphanWebOrders(_ context.Context, before time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	hasRequests := make(map[string]bool, len(s.purchaseRequests))
+	for _, r := range s.purchaseRequests {
+		if r.OrderID != "" {
+			hasRequests[r.OrderID] = true
+		}
+	}
+
+	kept := make([]*models.Order, 0, len(s.orders))
+	removed := 0
+	for _, o := range s.orders {
+		if o.Source == models.OrderSourceWeb && o.CreatedAt.Before(before) && !hasRequests[o.ID] {
+			removed++
+			continue
+		}
+		kept = append(kept, o)
+	}
+	s.orders = kept
+	return removed, nil
 }
 
 // CreatePaymentRecord appends a payment record. A duplicate entitlement_id returns ErrDuplicate.

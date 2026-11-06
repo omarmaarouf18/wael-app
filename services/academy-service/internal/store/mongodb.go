@@ -1589,6 +1589,51 @@ func (s *MongoStore) ListRequestsForGroups(ctx context.Context, filter OrderRequ
 	return results, nil
 }
 
+// DeleteOrphanWebOrders removes old web orders that have no request rows.
+// Only source=web is considered; app orders are never touched. The age
+// threshold keeps an in-flight checkout (order inserted, requests not yet)
+// out of reach.
+func (s *MongoStore) DeleteOrphanWebOrders(ctx context.Context, before time.Time) (int, error) {
+	ordersCol := s.db.Collection("orders")
+	requestsCol := s.db.Collection("purchase_requests")
+
+	opts := options.Find().SetProjection(bson.M{"_id": 1})
+	cursor, err := ordersCol.Find(ctx, bson.M{
+		"source":     models.OrderSourceWeb,
+		"created_at": bson.M{"$lt": before},
+	}, opts)
+	if err != nil {
+		return 0, fmt.Errorf("store: list orphan web order candidates: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	removed := 0
+	for cursor.Next(ctx) {
+		var row struct {
+			ID string `bson:"_id"`
+		}
+		if err := cursor.Decode(&row); err != nil {
+			return removed, fmt.Errorf("store: decode orphan web order candidate: %w", err)
+		}
+		n, err := requestsCol.CountDocuments(ctx, bson.M{"order_id": row.ID}, options.Count().SetLimit(1))
+		if err != nil {
+			return removed, fmt.Errorf("store: count order requests: %w", err)
+		}
+		if n > 0 {
+			continue
+		}
+		res, err := ordersCol.DeleteOne(ctx, bson.M{"_id": row.ID, "source": models.OrderSourceWeb})
+		if err != nil {
+			return removed, fmt.Errorf("store: delete orphan web order: %w", err)
+		}
+		removed += int(res.DeletedCount)
+	}
+	if err := cursor.Err(); err != nil {
+		return removed, fmt.Errorf("store: iterate orphan web orders: %w", err)
+	}
+	return removed, nil
+}
+
 // MigrateLegacyAppRequests groups existing pending app/mobile requests that
 // have no order_id into one open app order per student. Accepted/rejected
 // history keeps no order on purpose (see docs/changes/2026-11-05-orders.md).
@@ -1654,6 +1699,7 @@ func (s *MongoStore) MigrateLegacyAppRequests(ctx context.Context) error {
 			return fmt.Errorf("store: attach legacy app requests: %w", err)
 		}
 	}
+	log.Printf("[ACADEMY] orders migration: attached %d legacy pending app request(s) for %d student(s) to open app orders", len(legacy), len(byUser))
 	return nil
 }
 
