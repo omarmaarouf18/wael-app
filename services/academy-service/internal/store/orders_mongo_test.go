@@ -322,6 +322,19 @@ func TestMongoStore_MigrationProductionShapedData(t *testing.T) {
 		t.Fatalf("seed orders: %v", err)
 	}
 
+	// Production had the legacy unique index on purchase_requests.normalized_reference.
+	// Ensure it exists on the seeded collection before NewMongoStore runs.
+	_, err = db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "normalized_reference", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{"normalized_reference": bson.M{"$type": "string", "$gt": ""}}).
+			SetName("uniq_purchase_requests_normalized_reference"),
+	})
+	if err != nil {
+		t.Fatalf("seed legacy unique index: %v", err)
+	}
+
 	before := takeMigrationSnapshot(t, db)
 	if before.orders != 2 || before.requests != 42 || before.pendingAppAttached != 1 {
 		t.Fatalf("unexpected seeded snapshot: %+v", before)
@@ -609,4 +622,160 @@ func TestMongoStore_MultiSubjectWebOrder(t *testing.T) {
 	if err != nil || len(fetchedReqs) != 3 {
 		t.Fatalf("ListRequestsByOrder failed: len=%d err=%v", len(fetchedReqs), err)
 	}
+}
+
+// TestMongoStore_StartupDropsLegacyUniqueIndexWithoutConflict proves Question 2:
+//  1. A MongoDB database initialized with production data and the OLD unique index
+//     uniq_purchase_requests_normalized_reference on purchase_requests.
+//  2. NewMongoStore starts cleanly: drops the old unique index by name and creates
+//     idx_purchase_requests_normalized_reference without IndexOptionsConflict.
+//  3. A second start against the same database succeeds and changes nothing.
+func TestMongoStore_StartupDropsLegacyUniqueIndexWithoutConflict(t *testing.T) {
+	mongoURI := requireDB(t)
+	dbName := randomDBName("test_academy_drop_legacy_idx")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	client, err := mongo.Connect(options.Client().ApplyURI(mongoURI))
+	if err != nil {
+		t.Fatalf("mongo connect: %v", err)
+	}
+	db := client.Database(dbName)
+	t.Cleanup(func() {
+		dropCtx, dropCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dropCancel()
+		_ = db.Drop(dropCtx)
+		_ = client.Disconnect(dropCtx)
+	})
+
+	now := time.Now().UTC()
+	// Seed production data with normalized references in purchase_requests
+	seededDocs := []any{
+		bson.M{
+			"_id":                  "req-prod-1",
+			"user_id":              "user-prod-1",
+			"subject_id":           "subj-1",
+			"status":               models.RequestStatusPending,
+			"source":               "web",
+			"payment_method":       "instapay",
+			"transfer_reference":   "REF-PROD-001",
+			"normalized_reference": "REF-PROD-001",
+			"amount":               250,
+			"created_at":           now.Add(-2 * time.Hour),
+		},
+		bson.M{
+			"_id":                  "req-prod-2",
+			"user_id":              "user-prod-2",
+			"subject_id":           "subj-2",
+			"status":               models.RequestStatusAccepted,
+			"source":               "web",
+			"payment_method":       "wallet",
+			"transfer_reference":   "REF-PROD-002",
+			"normalized_reference": "REF-PROD-002",
+			"amount":               150,
+			"created_at":           now.Add(-4 * time.Hour),
+		},
+	}
+	if _, err := db.Collection("purchase_requests").InsertMany(ctx, seededDocs); err != nil {
+		t.Fatalf("seed purchase_requests: %v", err)
+	}
+
+	// Create the OLD production unique index on purchase_requests(normalized_reference)
+	_, err = db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "normalized_reference", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{"normalized_reference": bson.M{"$type": "string", "$gt": ""}}).
+			SetName("uniq_purchase_requests_normalized_reference"),
+	})
+	if err != nil {
+		t.Fatalf("create old production unique index: %v", err)
+	}
+
+	// Assert the old unique index exists before NewMongoStore runs
+	indexesBefore := listIndexNames(t, ctx, db.Collection("purchase_requests"))
+	if !containsString(indexesBefore, "uniq_purchase_requests_normalized_reference") {
+		t.Fatalf("expected uniq_purchase_requests_normalized_reference in %v", indexesBefore)
+	}
+	t.Logf("Before startup: purchase_requests indexes: %v", indexesBefore)
+
+	// First start: NewMongoStore must drop the old index and create the non-unique one without error
+	firstStore, err := NewMongoStore(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("first start failed: %v", err)
+	}
+
+	indexesAfterFirst := listIndexNames(t, ctx, db.Collection("purchase_requests"))
+	t.Logf("After first startup: purchase_requests indexes: %v", indexesAfterFirst)
+
+	if containsString(indexesAfterFirst, "uniq_purchase_requests_normalized_reference") {
+		t.Fatalf("old index uniq_purchase_requests_normalized_reference should have been dropped, but still exists: %v", indexesAfterFirst)
+	}
+	if !containsString(indexesAfterFirst, "idx_purchase_requests_normalized_reference") {
+		t.Fatalf("new index idx_purchase_requests_normalized_reference should exist, but missing in: %v", indexesAfterFirst)
+	}
+
+	// Verify uniq_orders_normalized_reference exists on orders collection
+	orderIndexes := listIndexNames(t, ctx, db.Collection("orders"))
+	t.Logf("After first startup: orders indexes: %v", orderIndexes)
+	if !containsString(orderIndexes, "uniq_orders_normalized_reference") {
+		t.Fatalf("uniq_orders_normalized_reference must exist on orders: %v", orderIndexes)
+	}
+
+	// Close first store
+	if err := firstStore.Close(ctx); err != nil {
+		t.Fatalf("close first store: %v", err)
+	}
+
+	// Second start: must succeed cleanly, changing nothing
+	secondStore, err := NewMongoStore(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("second start failed: %v", err)
+	}
+
+	indexesAfterSecond := listIndexNames(t, ctx, db.Collection("purchase_requests"))
+	t.Logf("After second startup: purchase_requests indexes: %v", indexesAfterSecond)
+
+	if len(indexesAfterFirst) != len(indexesAfterSecond) {
+		t.Fatalf("indexes changed on second start: %v vs %v", indexesAfterFirst, indexesAfterSecond)
+	}
+
+	// Verify documents are intact
+	count, err := db.Collection("purchase_requests").CountDocuments(ctx, bson.M{})
+	if err != nil || count != 2 {
+		t.Fatalf("data altered: count=%d err=%v", count, err)
+	}
+
+	if err := secondStore.Close(ctx); err != nil {
+		t.Fatalf("close second store: %v", err)
+	}
+}
+
+func listIndexNames(t *testing.T, ctx context.Context, col *mongo.Collection) []string {
+	t.Helper()
+	cursor, err := col.Indexes().List(ctx)
+	if err != nil {
+		t.Fatalf("list indexes: %v", err)
+	}
+	defer cursor.Close(ctx)
+	var indexes []bson.M
+	if err := cursor.All(ctx, &indexes); err != nil {
+		t.Fatalf("decode indexes: %v", err)
+	}
+	names := make([]string, 0, len(indexes))
+	for _, idx := range indexes {
+		if name, ok := idx["name"].(string); ok {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func containsString(slice []string, val string) bool {
+	for _, s := range slice {
+		if s == val {
+			return true
+		}
+	}
+	return false
 }

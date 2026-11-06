@@ -188,7 +188,9 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 	// via uniq_orders_normalized_reference. Multi-subject cart orders share the
 	// reference across items, so purchase_requests index must not be unique.
 	// We drop the legacy unique index if present.
-	_ = s.db.Collection("purchase_requests").Indexes().DropOne(ctx, "uniq_purchase_requests_normalized_reference")
+	if err := s.db.Collection("purchase_requests").Indexes().DropOne(ctx, "uniq_purchase_requests_normalized_reference"); err == nil {
+		log.Printf("[ACADEMY] dropped legacy unique index uniq_purchase_requests_normalized_reference on purchase_requests")
+	}
 	_, err = s.db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{
 			{Key: "normalized_reference", Value: 1},
