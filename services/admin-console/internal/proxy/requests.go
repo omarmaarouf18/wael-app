@@ -128,6 +128,103 @@ func (p *Proxy) RequestsReject(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RequestsGroups handles GET /api/request-groups?status&user_id ->
+// GET academy /internal/admin/request-groups.
+func (p *Proxy) RequestsGroups(w http.ResponseWriter, r *http.Request) {
+	token, ok := p.begin(w, r, http.MethodGet)
+	if !ok {
+		return
+	}
+	in := r.URL.Query()
+	q := url.Values{}
+
+	if status := strings.TrimSpace(in.Get("status")); status != "" {
+		if !requestStatusFilters[status] {
+			writeError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		q.Set("status", status)
+	}
+	if userID := strings.TrimSpace(in.Get("user_id")); userID != "" {
+		if !idPattern.MatchString(userID) {
+			writeError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		q.Set("user_id", userID)
+	}
+	p.relayAcademy(w, r, token, upstreamCall{
+		route: "requests.groups", method: http.MethodGet, path: "/internal/admin/request-groups", query: q,
+	})
+}
+
+// requestBulkRequest is the body of POST /api/requests/bulk.
+type requestBulkRequest struct {
+	Action string          `json:"action"`
+	IDs    []string        `json:"ids"`
+	Reason json.RawMessage `json:"reason,omitempty"`
+}
+
+// RequestsBulk handles POST /api/requests/bulk {action, ids, reason} ->
+// POST academy /internal/admin/requests/bulk.
+func (p *Proxy) RequestsBulk(w http.ResponseWriter, r *http.Request) {
+	token, ok := p.begin(w, r, http.MethodPost)
+	if !ok {
+		return
+	}
+	var in requestBulkRequest
+	if !decodeCatalogBody(w, r, &in) {
+		return
+	}
+	action := strings.ToLower(strings.TrimSpace(in.Action))
+	if action != "accept" && action != "reject" {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	if len(in.IDs) < 1 || len(in.IDs) > 100 {
+		writeError(w, http.StatusBadRequest, "bad_request")
+		return
+	}
+	seen := make(map[string]bool, len(in.IDs))
+	cleanedIDs := make([]string, 0, len(in.IDs))
+	for _, id := range in.IDs {
+		trimmed := strings.TrimSpace(id)
+		if !validCatalogID(trimmed) || seen[trimmed] {
+			writeError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+		seen[trimmed] = true
+		cleanedIDs = append(cleanedIDs, trimmed)
+	}
+
+	reason := ""
+	if action == "reject" {
+		var valid bool
+		reason, valid = parseReason(in.Reason)
+		if !valid {
+			writeError(w, http.StatusBadRequest, "bad_request")
+			return
+		}
+	}
+
+	body, err := json.Marshal(struct {
+		Action string   `json:"action"`
+		IDs    []string `json:"ids"`
+		Reason string   `json:"reason,omitempty"`
+	}{
+		Action: action,
+		IDs:    cleanedIDs,
+		Reason: reason,
+	})
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "unavailable")
+		return
+	}
+	p.relayAcademy(w, r, token, upstreamCall{
+		route: "requests.bulk", method: http.MethodPost,
+		path: "/internal/admin/requests/bulk", body: body, targetID: cleanedIDs[0],
+	})
+}
+
 // EntitlementsList handles GET /api/entitlements?user_id= ->
 // GET academy /internal/admin/entitlements?user_id=.
 func (p *Proxy) EntitlementsList(w http.ResponseWriter, r *http.Request) {

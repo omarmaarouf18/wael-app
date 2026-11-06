@@ -33,6 +33,29 @@ func requestsRoutes() []route {
 			upstreamStatus: 200, upstreamReply: `{"ok":true}`,
 		},
 		{
+			name: "requests.groups", handler: func(p *Proxy) http.HandlerFunc { return p.RequestsGroups },
+			method: http.MethodGet, target: "/api/request-groups?status=pending&user_id=" + testID,
+			upstreamMethod: http.MethodGet, upstreamPath: "/internal/admin/request-groups",
+			upstreamQuery:  "status=pending&user_id=" + testID,
+			upstreamStatus: 200, upstreamReply: `{"items":[],"total_students":0,"total_orders":0,"total_requests":0,"pending_count":0}`,
+		},
+		{
+			name: "requests.bulk.accept", handler: func(p *Proxy) http.HandlerFunc { return p.RequestsBulk },
+			method: http.MethodPost, target: "/api/requests/bulk",
+			body:           `{"action":"accept","ids":["req-1","req-2"]}`,
+			upstreamMethod: http.MethodPost, upstreamPath: "/internal/admin/requests/bulk",
+			upstreamBody:   `{"action":"accept","ids":["req-1","req-2"]}`,
+			upstreamStatus: 200, upstreamReply: `{"results":[{"id":"req-1","status":"accepted"},{"id":"req-2","status":"accepted"}]}`,
+		},
+		{
+			name: "requests.bulk.reject", handler: func(p *Proxy) http.HandlerFunc { return p.RequestsBulk },
+			method: http.MethodPost, target: "/api/requests/bulk",
+			body:           `{"action":"reject","ids":["req-1"],"reason":"invalid transfer"}`,
+			upstreamMethod: http.MethodPost, upstreamPath: "/internal/admin/requests/bulk",
+			upstreamBody:   `{"action":"reject","ids":["req-1"],"reason":"invalid transfer"}`,
+			upstreamStatus: 200, upstreamReply: `{"results":[{"id":"req-1","status":"rejected"}]}`,
+		},
+		{
 			name: "entitlements.list", handler: func(p *Proxy) http.HandlerFunc { return p.EntitlementsList },
 			method: http.MethodGet, target: "/api/entitlements?user_id=" + testID,
 			upstreamMethod: http.MethodGet, upstreamPath: "/internal/admin/entitlements",
@@ -71,6 +94,14 @@ func TestRequests_Validation(t *testing.T) {
 	w = do(p.RequestsList, http.MethodGet, "/api/requests?subject_id=bad$id", "", withToken())
 	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
 
+	// RequestsGroups invalid status
+	w = do(p.RequestsGroups, http.MethodGet, "/api/request-groups?status=bogus", "", withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsGroups invalid user_id
+	w = do(p.RequestsGroups, http.MethodGet, "/api/request-groups?user_id=bad$user", "", withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
 	// RequestsAccept invalid id
 	w = do(p.RequestsAccept, http.MethodPost, "/api/requests/accept", `{"id":"bad$id"}`, withToken())
 	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
@@ -86,6 +117,43 @@ func TestRequests_Validation(t *testing.T) {
 	// RequestsReject too long reason (> 1000 runes)
 	longReason := strings.Repeat("x", 1001)
 	w = do(p.RequestsReject, http.MethodPost, "/api/requests/reject", `{"id":"req-1","reason":"`+longReason+`"}`, withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsBulk invalid action
+	w = do(p.RequestsBulk, http.MethodPost, "/api/requests/bulk", `{"action":"invalid","ids":["req-1"]}`, withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsBulk empty ids
+	w = do(p.RequestsBulk, http.MethodPost, "/api/requests/bulk", `{"action":"accept","ids":[]}`, withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsBulk over 100 ids
+	tooManyIDs := make([]string, 101)
+	for i := range tooManyIDs {
+		tooManyIDs[i] = fmt.Sprintf("req-%d", i)
+	}
+	tooManyJSON := `{"action":"accept","ids":["` + strings.Join(tooManyIDs, `","`) + `"]}`
+	w = do(p.RequestsBulk, http.MethodPost, "/api/requests/bulk", tooManyJSON, withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsBulk invalid id
+	w = do(p.RequestsBulk, http.MethodPost, "/api/requests/bulk", `{"action":"accept","ids":["bad$id"]}`, withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsBulk duplicate id
+	w = do(p.RequestsBulk, http.MethodPost, "/api/requests/bulk", `{"action":"accept","ids":["req-1","req-1"]}`, withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsBulk reject missing reason
+	w = do(p.RequestsBulk, http.MethodPost, "/api/requests/bulk", `{"action":"reject","ids":["req-1"]}`, withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsBulk reject empty reason
+	w = do(p.RequestsBulk, http.MethodPost, "/api/requests/bulk", `{"action":"reject","ids":["req-1","reason":""}`, withToken())
+	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
+
+	// RequestsBulk reject too long reason
+	w = do(p.RequestsBulk, http.MethodPost, "/api/requests/bulk", `{"action":"reject","ids":["req-1"],"reason":"`+longReason+`"}`, withToken())
 	assertSafeError(t, w, http.StatusBadRequest, "bad_request")
 }
 

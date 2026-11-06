@@ -136,14 +136,14 @@ test('only api.js talks to the network, and only to the console itself', () => {
     if (name === 'api.js') continue;
     assert.ok(!/\bfetch\b/.test(src), `${name} uses fetch`);
   }
-  const apiPaths = [...new Set([...Object.values(jsCode).join('\n').matchAll(/['"`](\/api\/[\w/]*)['"`]/g)].map((m) => m[1]))].sort();
+  const apiPaths = [...new Set([...Object.values(jsCode).join('\n').matchAll(/['"`](\/api\/[\w/-]*)['"`]/g)].map((m) => m[1]))].sort();
   assert.deepEqual(apiPaths, [
     '/api/accounts', '/api/accounts/delete', '/api/accounts/reactivate', '/api/accounts/suspend', '/api/audit',
     '/api/broadcasts', '/api/broadcasts/create', '/api/broadcasts/preview', '/api/broadcasts/retry',
     '/api/entitlements', '/api/entitlements/grant', '/api/entitlements/revoke',
     '/api/files', '/api/files/delete', '/api/files/upload',
     '/api/levels', '/api/levels/create', '/api/levels/delete', '/api/levels/update',
-    '/api/requests', '/api/requests/accept', '/api/requests/reject',
+    '/api/request-groups', '/api/requests', '/api/requests/accept', '/api/requests/bulk', '/api/requests/reject',
     '/api/settings', '/api/settings/update',
     '/api/subjects', '/api/subjects/create', '/api/subjects/delete', '/api/subjects/publish', '/api/subjects/unpublish', '/api/subjects/update',
     '/api/videos', '/api/videos/create', '/api/videos/delete', '/api/videos/reorder', '/api/videos/update',

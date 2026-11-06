@@ -49,6 +49,8 @@ route under `/internal/`.
 | `GET /api/requests?status&subject_id&page&limit` | `GET /internal/admin/requests` |
 | `POST /api/requests/accept` `{id}` | `POST /internal/admin/requests/{id}/accept` |
 | `POST /api/requests/reject` `{id, reason}` | `POST /internal/admin/requests/{id}/reject` |
+| `GET /api/request-groups?status&user_id` | `GET /internal/admin/request-groups` |
+| `POST /api/requests/bulk` `{action, ids, reason?}` | `POST /internal/admin/requests/bulk` |
 | `GET /api/entitlements?user_id` | `GET /internal/admin/entitlements` |
 | `POST /api/entitlements/grant` `{user_id, subject_id}` | `POST /internal/admin/entitlements` |
 | `POST /api/entitlements/revoke` `{id, reason}` | `DELETE /internal/admin/entitlements/{id}` |

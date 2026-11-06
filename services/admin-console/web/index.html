@@ -149,6 +149,13 @@
       <h2 data-i18n="requests.title"></h2>
       <form id="requests-filter" class="toolbar">
         <div class="field">
+          <label for="requests-view-mode" data-i18n="requests.viewMode"></label>
+          <select id="requests-view-mode">
+            <option value="grouped" data-i18n="requests.view.grouped" selected></option>
+            <option value="flat" data-i18n="requests.view.flat"></option>
+          </select>
+        </div>
+        <div class="field">
           <label for="requests-status" data-i18n="requests.filterStatus"></label>
           <select id="requests-status">
             <option value="pending" data-i18n="requests.status.pending" selected></option>
@@ -157,15 +164,35 @@
             <option value="" data-i18n="requests.statusAll"></option>
           </select>
         </div>
-        <div class="field grow">
+        <div class="field">
+          <label for="requests-source" data-i18n="requests.filterSource"></label>
+          <select id="requests-source">
+            <option value="" data-i18n="requests.sourceAll" selected></option>
+            <option value="web" data-i18n="requests.source.web"></option>
+            <option value="mobile" data-i18n="requests.source.mobile"></option>
+          </select>
+        </div>
+        <div class="field">
           <label for="requests-subject" data-i18n="requests.filterSubject"></label>
           <select id="requests-subject">
             <option value="" data-i18n="requests.filterAllSubjects"></option>
           </select>
         </div>
+        <div class="field grow">
+          <label for="requests-search" data-i18n="accounts.search"></label>
+          <input id="requests-search" type="search" data-i18n-placeholder="requests.searchPlaceholder">
+        </div>
         <button class="btn primary" type="submit" data-i18n="accounts.filter"></button>
         <button id="requests-reset" class="btn secondary" type="button" data-i18n="accounts.reset"></button>
       </form>
+      <div id="requests-bulk-bar" class="toolbar bulk-bar" hidden>
+        <span id="requests-bulk-info" class="strong"></span>
+        <div class="bulk-actions">
+          <button id="requests-bulk-accept-btn" class="btn small primary" type="button" data-i18n="requests.bulk.accept"></button>
+          <button id="requests-bulk-reject-btn" class="btn small danger-outline" type="button" data-i18n="requests.bulk.reject"></button>
+          <button id="requests-bulk-clear-btn" class="btn small secondary" type="button" data-i18n="requests.bulk.clear"></button>
+        </div>
+      </div>
       <div id="requests-banner" class="banner" role="alert" hidden></div>
       <div class="table-wrap">
         <table id="requests-table">
@@ -480,6 +507,40 @@
       <div class="dialog-actions">
         <button id="reject-dialog-cancel" class="btn secondary" type="button" data-i18n="common.cancel"></button>
         <button id="reject-dialog-confirm" class="btn danger" type="submit" data-i18n="dialog.reject.confirm"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="request-bulk-accept-dialog" class="dialog" aria-labelledby="bulk-accept-dialog-title">
+    <form id="request-bulk-accept-form" novalidate>
+      <h2 id="bulk-accept-dialog-title" data-i18n="requests.bulk.acceptTitle"></h2>
+      <p id="bulk-accept-dialog-target" class="muted"></p>
+      <p id="bulk-accept-dialog-note" class="callout"></p>
+      <div id="bulk-accept-dialog-banner" class="banner" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button id="bulk-accept-dialog-cancel" class="btn secondary" type="button" data-i18n="common.cancel"></button>
+        <button id="bulk-accept-dialog-confirm" class="btn primary" type="submit"></button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="request-bulk-reject-dialog" class="dialog" aria-labelledby="bulk-reject-dialog-title">
+    <form id="request-bulk-reject-form" novalidate>
+      <h2 id="bulk-reject-dialog-title" data-i18n="requests.bulk.rejectTitle"></h2>
+      <p id="bulk-reject-dialog-target" class="muted"></p>
+      <p id="bulk-reject-dialog-note" class="callout"></p>
+      <div class="field">
+        <label for="bulk-reject-dialog-reason" data-i18n="dialog.reason"></label>
+        <textarea id="bulk-reject-dialog-reason" rows="4" maxlength="1000" required></textarea>
+        <div class="field-foot">
+          <span id="bulk-reject-dialog-hint" class="muted small"></span>
+          <span id="bulk-reject-dialog-count" class="muted small"></span>
+        </div>
+      </div>
+      <div id="bulk-reject-dialog-banner" class="banner" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button id="bulk-reject-dialog-cancel" class="btn secondary" type="button" data-i18n="common.cancel"></button>
+        <button id="bulk-reject-dialog-confirm" class="btn danger" type="submit"></button>
       </div>
     </form>
   </dialog>
