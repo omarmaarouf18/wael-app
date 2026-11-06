@@ -212,6 +212,42 @@ export async function getMe(): Promise<UserProfile> {
   return apiGet<UserProfile>("/api/v1/auth/me");
 }
 
+export interface AuthInitResult {
+  isLoggedIn: boolean;
+  token: string | null;
+  user: UserProfile | null;
+}
+
+/**
+ * Initializes client auth state on initial mount or full page reload.
+ * Attempts to silently exchange the HttpOnly cookie for an in-memory access token.
+ * If successful, also fetches the user profile. If the refresh token is missing,
+ * expired, or invalid, fails silently without throwing, reporting logged out.
+ */
+export async function initAuthSession(): Promise<AuthInitResult> {
+  try {
+    const res = await refresh();
+    let me: UserProfile | null = null;
+    try {
+      me = await getMe();
+    } catch {
+      // Non-fatal if profile fetch fails
+    }
+    return {
+      isLoggedIn: true,
+      token: res.access_token,
+      user: me,
+    };
+  } catch {
+    clearAccessToken();
+    return {
+      isLoggedIn: false,
+      token: null,
+      user: null,
+    };
+  }
+}
+
 export async function getMyEntitlements(): Promise<{ subject_ids: string[] }> {
   return apiGet<{ subject_ids: string[] }>("/api/v1/academy/me/entitlements");
 }

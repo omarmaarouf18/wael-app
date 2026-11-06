@@ -13,6 +13,8 @@ import {
   ApiError,
   clearAccessToken,
   getAccessToken,
+  getMe,
+  initAuthSession,
   login,
   logout,
   refresh,
@@ -73,6 +75,7 @@ test("concurrent refresh calls are deduplicated to a single in-flight fetch", as
 
 test("login -> reload -> still logged in", async () => {
   let refreshCalled = false;
+  let meCalled = false;
 
   globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
     const urlStr = String(url);
@@ -104,6 +107,26 @@ test("login -> reload -> still logged in", async () => {
         },
       );
     }
+    if (urlStr.endsWith("/api/v1/auth/me")) {
+      meCalled = true;
+      const headers = init?.headers as Record<string, string>;
+      assert.equal(headers["Authorization"], "Bearer restored-reloaded-token");
+      assert.equal(headers["X-Client"], "web");
+      return new Response(
+        JSON.stringify({
+          id: "student-123",
+          email: "student@example.com",
+          role: "student",
+          full_name: "Student Name",
+          phone: "+201000000000",
+          email_verified: true,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
     return new Response(JSON.stringify({}), { status: 404 });
   };
 
@@ -116,11 +139,18 @@ test("login -> reload -> still logged in", async () => {
   clearAccessToken();
   assert.equal(getAccessToken(), null, "in-memory access token wiped on reload");
 
-  // 3. New page loads -> AuthProvider calls refresh() with credentials: "include"
-  const refreshRes = await refresh();
+  // 3. New page loads -> AuthProvider on mount calls initAuthSession()
+  const initResult = await initAuthSession();
   assert.equal(refreshCalled, true);
-  assert.equal(refreshRes.access_token, "restored-reloaded-token");
+  assert.equal(meCalled, true);
+  assert.equal(initResult.isLoggedIn, true);
+  assert.equal(initResult.token, "restored-reloaded-token");
+  assert.equal(initResult.user?.email, "student@example.com");
   assert.equal(getAccessToken(), "restored-reloaded-token", "user is still logged in after reload");
+
+  // 4. Authenticated client requests continue to use the restored session
+  const me = await getMe();
+  assert.equal(me.email, "student@example.com");
 });
 
 test("logout -> reload -> logged out", async () => {
@@ -160,7 +190,15 @@ test("logout -> reload -> logged out", async () => {
   assert.equal(logoutCalled, true);
   assert.equal(getAccessToken(), null, "token cleared on logout");
 
-  // 3. User reloads -> page on mount calls refresh()
+  // 3. User reloads -> AuthProvider on mount calls initAuthSession()
+  const initResult = await initAuthSession();
+  assert.equal(refreshCalled, true);
+  assert.equal(initResult.isLoggedIn, false);
+  assert.equal(initResult.token, null);
+  assert.equal(initResult.user, null);
+  assert.equal(getAccessToken(), null, "user remains logged out after reload");
+
+  // Direct refresh() rejects with 401
   await assert.rejects(
     async () => {
       await refresh();
@@ -172,15 +210,15 @@ test("logout -> reload -> logged out", async () => {
       return true;
     },
   );
-
-  assert.equal(refreshCalled, true);
-  assert.equal(getAccessToken(), null, "user remains logged out after reload");
 });
 
 test("expired cookie -> logged out without an error screen", async () => {
+  let refreshCalled = false;
+
   globalThis.fetch = async (url: string | URL | Request) => {
     const urlStr = String(url);
     if (urlStr.endsWith("/api/v1/auth/refresh")) {
+      refreshCalled = true;
       return new Response(
         JSON.stringify({
           code: "session_expired",
@@ -195,27 +233,13 @@ test("expired cookie -> logged out without an error screen", async () => {
     return new Response(JSON.stringify({}), { status: 404 });
   };
 
-  // Simulating AuthProvider on-mount refresh handler:
-  // Must catch 401 silently, clear any stale state, and report logged out without throwing.
-  let isLoggedIn = true;
-  let hasErrorScreen = false;
+  // AuthProvider on mount calls initAuthSession():
+  // Must catch 401 silently, clear any stale state, and return logged out without throwing an error.
+  const initResult = await initAuthSession();
 
-  try {
-    const res = await refresh();
-    setAccessToken(res.access_token);
-    isLoggedIn = true;
-  } catch (err: unknown) {
-    if (err instanceof ApiError && err.status === 401) {
-      // 401 means logged out, silently
-      clearAccessToken();
-      isLoggedIn = false;
-      hasErrorScreen = false;
-    } else {
-      hasErrorScreen = true;
-    }
-  }
-
-  assert.equal(isLoggedIn, false, "user should be treated as logged out");
-  assert.equal(hasErrorScreen, false, "no error screen should be shown for expired cookie");
+  assert.equal(refreshCalled, true);
+  assert.equal(initResult.isLoggedIn, false, "user should be treated as logged out");
+  assert.equal(initResult.token, null);
+  assert.equal(initResult.user, null);
   assert.equal(getAccessToken(), null);
 });

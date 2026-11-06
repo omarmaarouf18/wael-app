@@ -13,9 +13,8 @@ import {
 import {
   clearAccessToken,
   getAccessToken,
-  getMe,
+  initAuthSession,
   logout,
-  refresh,
   setAccessToken,
   type UserProfile,
 } from "@/lib/api";
@@ -60,25 +59,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshAuth = useCallback(async (): Promise<boolean> => {
     try {
-      const res = await refresh();
-      setTokenState(res.access_token);
-      setIsLoggedIn(true);
-
-      // Fetch profile in background if available
-      try {
-        const me = await getMe();
-        setUser(me);
-      } catch {
-        // Non-fatal if profile fetch fails
-      }
-      return true;
-    } catch {
-      // 401 or any error from refresh means logged out, silently.
-      clearAccessToken();
-      setTokenState(null);
-      setIsLoggedIn(false);
-      setUser(null);
-      return false;
+      const result = await initAuthSession();
+      setTokenState(result.token);
+      setIsLoggedIn(result.isLoggedIn);
+      setUser(result.user);
+      return result.isLoggedIn;
     } finally {
       setIsLoading(false);
     }
@@ -100,32 +85,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    async function initAuth() {
-      try {
-        const res = await refresh();
-        if (cancelled) return;
-        setTokenState(res.access_token);
-        setIsLoggedIn(true);
-        try {
-          const me = await getMe();
-          if (!cancelled) setUser(me);
-        } catch {
-          // Non-fatal
-        }
-      } catch {
-        if (cancelled) return;
-        clearAccessToken();
-        setTokenState(null);
-        setIsLoggedIn(false);
-        setUser(null);
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void initAuth();
+    void initAuthSession().then((result) => {
+      if (cancelled) return;
+      setTokenState(result.token);
+      setIsLoggedIn(result.isLoggedIn);
+      setUser(result.user);
+      setIsLoading(false);
+    });
 
     return () => {
       cancelled = true;
