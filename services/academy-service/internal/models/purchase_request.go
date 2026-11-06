@@ -15,9 +15,12 @@ const (
 
 // PurchaseRequest represents a student's access request for a subject.
 type PurchaseRequest struct {
-	ID                  string     `bson:"_id" json:"id"`
-	UserID              string     `bson:"user_id" json:"user_id"`
-	SubjectID           string     `bson:"subject_id" json:"subject_id"`
+	ID        string `bson:"_id" json:"id"`
+	UserID    string `bson:"user_id" json:"user_id"`
+	SubjectID string `bson:"subject_id" json:"subject_id"`
+	// OrderID is the order this request belongs to (2026-11-05 orders brief).
+	// Server-side only; legacy rows may have no order.
+	OrderID             string     `bson:"order_id,omitempty" json:"order_id,omitempty"`
 	Status              string     `bson:"status" json:"status"`                     // "pending", "accepted", "rejected"
 	Source              string     `bson:"source,omitempty" json:"source,omitempty"` // "mobile" | "web"
 	PaymentMethod       string     `bson:"payment_method,omitempty" json:"payment_method,omitempty"`

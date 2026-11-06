@@ -29,6 +29,8 @@ type PurchaseRequestErrorResponse struct {
 	Code      string `json:"code"`
 	MessageAr string `json:"message_ar"`
 	MessageEn string `json:"message_en"`
+	// SubjectID names the subject that failed, when the error is per-subject.
+	SubjectID string `json:"subject_id,omitempty"`
 }
 
 func writePurchaseRequestError(w http.ResponseWriter, status int, code, msgAr, msgEn string) {
@@ -142,16 +144,26 @@ func (s *Server) CreatePurchaseRequest(w http.ResponseWriter, r *http.Request, i
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
 	}
-	if hasRef {
+	hasOrderRef, err := s.Store.HasOrderWithNormalizedReference(ctx, normRef)
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+	if hasRef || hasOrderRef {
 		writePurchaseRequestError(w, http.StatusConflict, "duplicate_reference", "تم استخدام رقم الحوالة هذا في طلب سابق", "This transfer reference has already been used")
 		return
 	}
 
+	// The single-subject endpoint is kept for compatibility as an order of one
+	// (2026-11-05 orders brief): one web order holds the proof, one request
+	// keeps the same fields so the existing console list is unchanged.
+	orderID, _ := jwtutil.GenerateUUID()
 	prID, _ := jwtutil.GenerateUUID()
 	newReq := &models.PurchaseRequest{
 		ID:                  prID,
 		UserID:              claims.UserID,
 		SubjectID:           id,
+		OrderID:             orderID,
 		Status:              models.RequestStatusPending,
 		Source:              "web",
 		PaymentMethod:       pm,
@@ -161,8 +173,20 @@ func (s *Server) CreatePurchaseRequest(w http.ResponseWriter, r *http.Request, i
 		Amount:              req.Amount,
 		CreatedAt:           now,
 	}
+	order := &models.Order{
+		ID:                  orderID,
+		UserID:              claims.UserID,
+		Source:              models.OrderSourceWeb,
+		Status:              models.OrderStatusOpen,
+		PaymentMethod:       pm,
+		TransferReference:   ref,
+		NormalizedReference: normRef,
+		SenderNumber:        sender,
+		AmountPaid:          req.Amount,
+		CreatedAt:           now,
+	}
 
-	if err := s.Store.CreatePurchaseRequest(ctx, newReq); err != nil {
+	if err := s.Store.CreateOrderWithRequests(ctx, order, []*models.PurchaseRequest{newReq}); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
 			writePurchaseRequestError(w, http.StatusConflict, "duplicate_reference", "تم استخدام رقم الحوالة هذا في طلب سابق", "This transfer reference has already been used")
 			return

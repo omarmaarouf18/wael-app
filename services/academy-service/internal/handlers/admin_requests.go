@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -211,6 +212,40 @@ func (s *Server) ListAdminRequests(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// decisionResult is the outcome of one accept/reject core call. The single
+// endpoints map it to their existing responses; the bulk endpoint maps it to
+// one per-id result. A failed result always carries bilingual messages.
+type decisionResult struct {
+	OK      bool
+	Status  string // accepted | rejected
+	Code    string
+	HTTP    int
+	MsgAr   string
+	MsgEn   string
+	Request *models.PurchaseRequest
+	Subject *models.Subject
+	DTO     *RequestAdminDTO
+}
+
+func decisionFailure(status int, code, msgAr, msgEn string) decisionResult {
+	return decisionResult{HTTP: status, Code: code, MsgAr: msgAr, MsgEn: msgEn}
+}
+
+// writeDecisionFailure writes a failed accept/reject core result. The explicit
+// request_not_found / request_not_pending cases keep those codes as literals
+// in this file: the console error-catalog test scans admin handlers for the
+// codes they can relay to the UI.
+func writeDecisionFailure(w http.ResponseWriter, r *http.Request, res decisionResult) {
+	switch res.Code {
+	case "request_not_found":
+		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "request_not_found", res.MsgEn, nil)
+	case "request_not_pending":
+		handlerutil.WriteSafeError(w, r, http.StatusConflict, "request_not_pending", res.MsgEn, nil)
+	default:
+		handlerutil.WriteSafeError(w, r, res.HTTP, res.Code, res.MsgEn, nil)
+	}
+}
+
 // AcceptRequest handles POST /internal/admin/requests/{id}/accept following R4.
 func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request, reqID string) {
 	adm, ok := AdminFromRequest(r)
@@ -219,54 +254,57 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request, reqID str
 		return
 	}
 
-	if !validResourceID(reqID) {
-		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_request_id", "invalid request id", nil)
-		return
-	}
-
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	defer cancel()
 
-	// 1. Load the request and the subject.
-	pr, err := s.Store.GetRequestByID(dbCtx, reqID)
-	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+	res := s.acceptRequestCore(dbCtx, adm, reqID)
+	if !res.OK {
+		writeDecisionFailure(w, r, res)
 		return
 	}
-	if pr == nil {
-		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "request_not_found", "request not found", nil)
-		return
-	}
-	if pr.Status != models.RequestStatusPending {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, "request_not_pending", "request is not pending", nil)
-		return
+	handlerutil.WriteJSON(w, http.StatusOK, *res.DTO)
+}
+
+// acceptRequestCore applies today's single-accept rules to one request. It is
+// shared by the single endpoint and the bulk endpoint so both behave the same.
+func (s *Server) acceptRequestCore(ctx context.Context, adm *AdminIdentity, reqID string) decisionResult {
+	if !validResourceID(reqID) {
+		return decisionFailure(http.StatusBadRequest, "invalid_request_id", "معرّف الطلب غير صالح", "Invalid request id")
 	}
 
-	subj, err := s.Store.GetSubjectByID(dbCtx, pr.SubjectID)
+	// 1. Load the request and the subject.
+	pr, err := s.Store.GetRequestByID(ctx, reqID)
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
+	}
+	if pr == nil {
+		return decisionFailure(http.StatusNotFound, "request_not_found", "الطلب غير موجود", "Request not found")
+	}
+	if pr.Status != models.RequestStatusPending {
+		return decisionFailure(http.StatusConflict, "request_not_pending", "الطلب لم يعد معلقًا", "Request is not pending")
+	}
+
+	subj, err := s.Store.GetSubjectByID(ctx, pr.SubjectID)
+	if err != nil {
+		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 	}
 	if subj == nil {
-		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "subject_not_found", "subject not found", nil)
-		return
+		return decisionFailure(http.StatusNotFound, "subject_not_found", "المادة غير موجودة", "Subject not found")
 	}
 
 	now := time.Now().UTC()
 	// Subject access_expires_at in the past: 409 subject_expired (D20); create nothing.
 	if !subj.AccessExpiresAt.IsZero() && subj.AccessExpiresAt.Before(now) {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, "subject_expired", "subject access has expired", nil)
-		return
+		return decisionFailure(http.StatusConflict, "subject_expired", "انتهت فترة التسجيل في هذه المادة", "Subject access has expired")
 	}
 
 	// 2. Upsert the entitlement (idempotent): source=request, request_id,
 	// expires_at = subject.AccessExpiresAt (D21), granted_by = admin.ID.
 	// If student already holds an active entitlement for that subject (for example
 	// a manual grant), reuse it: no second entitlement and no second payment record.
-	activeEnt, err := s.Store.GetActiveEntitlement(dbCtx, pr.UserID, pr.SubjectID)
+	activeEnt, err := s.Store.GetActiveEntitlement(ctx, pr.UserID, pr.SubjectID)
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 	}
 
 	var entID string
@@ -289,20 +327,17 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request, reqID str
 			RequestID: pr.ID,
 			Active:    true,
 		}
-		if err := s.Store.Grant(dbCtx, ent); err != nil {
+		if err := s.Store.Grant(ctx, ent); err != nil {
 			if errors.Is(err, store.ErrDuplicate) {
-				reloaded, rErr := s.Store.GetActiveEntitlement(dbCtx, pr.UserID, pr.SubjectID)
+				reloaded, rErr := s.Store.GetActiveEntitlement(ctx, pr.UserID, pr.SubjectID)
 				if rErr != nil || reloaded == nil {
-					handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-					return
+					return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 				}
 				entID = reloaded.ID
 			} else if errors.Is(err, store.ErrSubjectExpired) {
-				handlerutil.WriteSafeError(w, r, http.StatusConflict, "subject_expired", "subject access has expired", nil)
-				return
+				return decisionFailure(http.StatusConflict, "subject_expired", "انتهت فترة التسجيل في هذه المادة", "Subject access has expired")
 			} else {
-				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-				return
+				return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 			}
 		} else {
 			entID = newEntID
@@ -325,35 +360,40 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request, reqID str
 			RecordedBy:    adm.ID,
 			RecordedAt:    now,
 		}
-		if err := s.Store.CreatePaymentRecord(dbCtx, payRec); err != nil && !errors.Is(err, store.ErrDuplicate) {
-			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-			return
+		if err := s.Store.CreatePaymentRecord(ctx, payRec); err != nil && !errors.Is(err, store.ErrDuplicate) {
+			return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 		}
 	}
 
 	// 4. Compare-and-set the request from pending to accepted (decided_at, decided_by).
-	ok, err = s.Store.DecideRequest(dbCtx, pr.ID, models.RequestStatusPending, models.RequestStatusAccepted, adm.ID, now, "")
+	ok, err := s.Store.DecideRequest(ctx, pr.ID, models.RequestStatusPending, models.RequestStatusAccepted, adm.ID, now, "")
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 	}
 	if !ok {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, "request_not_pending", "request is not pending", nil)
-		return
+		return decisionFailure(http.StatusConflict, "request_not_pending", "الطلب لم يعد معلقًا", "Request is not pending")
 	}
 
-	// 5. Write the audit entry.
+	// 5. Close the order once its last pending request is decided. Closing is
+	// idempotent bookkeeping; a failure is logged and never undoes the accept.
+	if pr.OrderID != "" {
+		if _, err := s.Store.CloseOrderIfNoPending(ctx, pr.OrderID, now); err != nil {
+			s.logOrderCloseFailure(adm, pr.OrderID, err)
+		}
+	}
+
+	// 6. Write the audit entry.
 	detail := fmt.Sprintf("subject_id=%s user_id=%s amount=%d", pr.SubjectID, pr.UserID, subj.Price)
-	if err := s.writeAdminAudit(r.Context(), adm, "request_accept", "request", pr.ID, detail); err != nil {
+	if err := s.writeAdminAudit(ctx, adm, "request_accept", "request", pr.ID, detail); err != nil {
 		logAuditFailure(adm, "request_accept", pr.ID, err)
 	}
 
-	// 6. Notify the student, best-effort.
-	s.notifyStudent(r.Context(), pr.UserID, "request_accept", func(ctx context.Context) error {
-		return notify.SubjectActivated(ctx, s.NotifyURL, s.NotifyToken, pr.UserID, pr.SubjectID, subj.TitleAr, subj.TitleEn)
+	// 7. Notify the student, best-effort.
+	s.notifyStudent(ctx, pr.UserID, "request_accept", func(pushCtx context.Context) error {
+		return notify.SubjectActivated(pushCtx, s.NotifyURL, s.NotifyToken, pr.UserID, pr.SubjectID, subj.TitleAr, subj.TitleEn)
 	})
 
-	lvl, _ := s.Store.GetLevelByKey(dbCtx, subj.LevelKey)
+	lvl, _ := s.Store.GetLevelByKey(ctx, subj.LevelKey)
 	lvlName := ""
 	if lvl != nil {
 		lvlName = lvl.TitleAr
@@ -370,7 +410,7 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request, reqID str
 		CreatedAt:       pr.CreatedAt,
 		DecidedAt:       &now,
 	}
-	handlerutil.WriteJSON(w, http.StatusOK, dto)
+	return decisionResult{OK: true, Status: models.RequestStatusAccepted, Request: pr, Subject: subj, DTO: &dto}
 }
 
 // RejectRequest handles POST /internal/admin/requests/{id}/reject {reason 1-1000}.
@@ -402,46 +442,72 @@ func (s *Server) RejectRequest(w http.ResponseWriter, r *http.Request, reqID str
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	defer cancel()
 
-	pr, err := s.Store.GetRequestByID(dbCtx, reqID)
-	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+	res := s.rejectRequestCore(dbCtx, adm, reqID, reason)
+	if !res.OK {
+		writeDecisionFailure(w, r, res)
 		return
+	}
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// rejectRequestCore applies today's single-reject rules to one request. It is
+// shared by the single endpoint and the bulk endpoint.
+func (s *Server) rejectRequestCore(ctx context.Context, adm *AdminIdentity, reqID, reason string) decisionResult {
+	if !validResourceID(reqID) {
+		return decisionFailure(http.StatusBadRequest, "invalid_request_id", "معرّف الطلب غير صالح", "Invalid request id")
+	}
+
+	pr, err := s.Store.GetRequestByID(ctx, reqID)
+	if err != nil {
+		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 	}
 	if pr == nil {
-		handlerutil.WriteSafeError(w, r, http.StatusNotFound, "request_not_found", "request not found", nil)
-		return
+		return decisionFailure(http.StatusNotFound, "request_not_found", "الطلب غير موجود", "Request not found")
 	}
 	if pr.Status != models.RequestStatusPending {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, "request_not_pending", "request is not pending", nil)
-		return
+		return decisionFailure(http.StatusConflict, "request_not_pending", "الطلب لم يعد معلقًا", "Request is not pending")
 	}
 
 	now := time.Now().UTC()
-	ok, err = s.Store.DecideRequest(dbCtx, pr.ID, models.RequestStatusPending, models.RequestStatusRejected, adm.ID, now, reason)
+	ok, err := s.Store.DecideRequest(ctx, pr.ID, models.RequestStatusPending, models.RequestStatusRejected, adm.ID, now, reason)
 	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
+		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 	}
 	if !ok {
-		handlerutil.WriteSafeError(w, r, http.StatusConflict, "request_not_pending", "request is not pending", nil)
-		return
+		return decisionFailure(http.StatusConflict, "request_not_pending", "الطلب لم يعد معلقًا", "Request is not pending")
+	}
+
+	// Close the order once its last pending request is decided. Closing is
+	// idempotent bookkeeping; a failure is logged and never undoes the reject.
+	if pr.OrderID != "" {
+		if _, err := s.Store.CloseOrderIfNoPending(ctx, pr.OrderID, now); err != nil {
+			s.logOrderCloseFailure(adm, pr.OrderID, err)
+		}
 	}
 
 	detail := fmt.Sprintf("subject_id=%s user_id=%s reason=%s", pr.SubjectID, pr.UserID, reason)
-	if err := s.writeAdminAudit(r.Context(), adm, "request_reject", "request", pr.ID, detail); err != nil {
+	if err := s.writeAdminAudit(ctx, adm, "request_reject", "request", pr.ID, detail); err != nil {
 		logAuditFailure(adm, "request_reject", pr.ID, err)
 	}
 
-	subj, _ := s.Store.GetSubjectByID(dbCtx, pr.SubjectID)
+	subj, _ := s.Store.GetSubjectByID(ctx, pr.SubjectID)
 	titleAr := ""
 	titleEn := ""
 	if subj != nil {
 		titleAr = subj.TitleAr
 		titleEn = subj.TitleEn
 	}
-	s.notifyStudent(r.Context(), pr.UserID, "request_reject", func(ctx context.Context) error {
-		return notify.SubjectRejected(ctx, s.NotifyURL, s.NotifyToken, pr.UserID, pr.SubjectID, titleAr, titleEn, reason)
+	s.notifyStudent(ctx, pr.UserID, "request_reject", func(pushCtx context.Context) error {
+		return notify.SubjectRejected(pushCtx, s.NotifyURL, s.NotifyToken, pr.UserID, pr.SubjectID, titleAr, titleEn, reason)
 	})
 
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+	return decisionResult{OK: true, Status: models.RequestStatusRejected, Request: pr, Subject: subj}
+}
+
+// logOrderCloseFailure records a best-effort order close failure. The decision
+// itself already committed, so this never changes the response.
+func (s *Server) logOrderCloseFailure(adm *AdminIdentity, orderID string, err error) {
+	cleanID := strings.ReplaceAll(strings.ReplaceAll(orderID, "\r", ""), "\n", "")
+	// #nosec G706 -- cleanID sanitized of CR/LF
+	log.Printf("[ERROR] order close after decision failed actor_id=%s order_id=%s: %v", adm.ID, cleanID, err)
 }

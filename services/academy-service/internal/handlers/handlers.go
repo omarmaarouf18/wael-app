@@ -713,11 +713,14 @@ func (s *Server) CreateAccessRequest(w http.ResponseWriter, r *http.Request, id 
 		UserID:    claims.UserID,
 		SubjectID: id,
 		Status:    models.RequestStatusPending,
+		Source:    "mobile",
 		CreatedAt: now,
 	}
 
+	// The server groups consecutive app requests into one open app order
+	// (2026-11-05 orders brief); the app's request/response contract is unchanged.
 	prCtx, prCancel := context.WithTimeout(r.Context(), dbTimeout)
-	pr, _, err := s.Store.CreateOrGetPendingRequest(prCtx, newReq)
+	pr, _, err := s.Store.CreateOrGetPendingAppRequest(prCtx, newReq)
 	prCancel()
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
@@ -1067,6 +1070,9 @@ func (s *Server) PublicHandler() http.Handler {
 	mux.HandleFunc("/academy/me/entitlements", s.EnforceTier(limiter.TierRead, s.GetMyEntitlements))
 	mux.HandleFunc("/academy/me/requests", s.EnforceTier(limiter.TierRead, s.GetMyRequests))
 	mux.HandleFunc("/academy/me/requests/", s.EnforceTier(limiter.TierRead, s.GetMyRequestByID))
+	mux.HandleFunc("/academy/orders", s.EnforceTier(limiter.TierWrite, s.CreateOrder))
+	mux.HandleFunc("/academy/me/orders", s.EnforceTier(limiter.TierRead, s.GetMyOrders))
+	mux.HandleFunc("/academy/me/orders/", s.EnforceTier(limiter.TierRead, s.GetMyOrderByID))
 
 	var h http.Handler = mux
 	h = s.StudentAuth(h)

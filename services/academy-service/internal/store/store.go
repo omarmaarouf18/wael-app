@@ -45,6 +45,14 @@ type RequestFilter struct {
 	Limit     int
 }
 
+// OrderRequestFilter specifies criteria for the console's grouped pending read
+// model. It is deliberately unpaginated: grouping happens after the store
+// returns every matching request.
+type OrderRequestFilter struct {
+	Status string
+	UserID string
+}
+
 // Store is the academy persistence contract.
 type Store interface {
 	Ping(ctx context.Context) error
@@ -113,6 +121,26 @@ type Store interface {
 	// no-op (false, nil), a missing row is ErrNotFound.
 	DecideRequest(ctx context.Context, id, fromStatus, toStatus, decidedBy string, decidedAt time.Time, reason string) (bool, error)
 
+	// Orders (2026-11-05 orders brief, ADR-0014 W4/C2).
+	// CreateOrderWithRequests creates one order and its requests all-or-none.
+	// A normalized-reference collision (in orders or legacy single requests)
+	// or a duplicate pending request is ErrDuplicate.
+	CreateOrderWithRequests(ctx context.Context, order *models.Order, reqs []*models.PurchaseRequest) error
+	HasOrderWithNormalizedReference(ctx context.Context, normalizedRef string) (bool, error)
+	GetOrderByID(ctx context.Context, id string) (*models.Order, error)
+	ListOrdersByUser(ctx context.Context, userID string) ([]*models.Order, error)
+	ListRequestsByOrder(ctx context.Context, orderID string) ([]*models.PurchaseRequest, error)
+	// CreateOrGetPendingAppRequest attaches an app request to the student's
+	// open app order, creating that order when none exists. Concurrent calls
+	// for the same student end in one open app order.
+	CreateOrGetPendingAppRequest(ctx context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error)
+	// CloseOrderIfNoPending closes the order when it has no pending request.
+	// It is idempotent and reports whether it changed the order.
+	CloseOrderIfNoPending(ctx context.Context, orderID string, closedAt time.Time) (bool, error)
+	// ListRequestsForGroups returns every matching request, newest first,
+	// for the console's grouped read model (no pagination clamp).
+	ListRequestsForGroups(ctx context.Context, filter OrderRequestFilter) ([]*models.PurchaseRequest, error)
+
 	// Payment records (Phase 4.5, append-only: no update and no delete).
 	// A duplicate entitlement_id is ErrDuplicate: the activation was
 	// already recorded, which the caller treats as success.
@@ -143,6 +171,7 @@ type MemoryStore struct {
 	files            map[string]*models.SubjectFile
 	entitlements     []*models.Entitlement
 	purchaseRequests []*models.PurchaseRequest
+	orders           []*models.Order
 	paymentRecords   []*models.PaymentRecord
 	videoPlays       []*models.VideoPlay
 	auditLogs        []*models.AuditLog
@@ -161,6 +190,7 @@ func NewMemoryStore() *MemoryStore {
 		files:            make(map[string]*models.SubjectFile),
 		entitlements:     make([]*models.Entitlement, 0),
 		purchaseRequests: make([]*models.PurchaseRequest, 0),
+		orders:           make([]*models.Order, 0),
 		paymentRecords:   make([]*models.PaymentRecord, 0),
 		videoPlays:       make([]*models.VideoPlay, 0),
 		auditLogs:        make([]*models.AuditLog, 0),
@@ -1012,6 +1042,258 @@ func (s *MemoryStore) DecideRequest(_ context.Context, id, fromStatus, toStatus,
 		}
 	}
 	return false, ErrNotFound
+}
+
+// CreateOrderWithRequests creates one order and its requests all-or-none.
+// All checks run before anything is appended.
+func (s *MemoryStore) CreateOrderWithRequests(_ context.Context, order *models.Order, reqs []*models.PurchaseRequest) error {
+	if order == nil {
+		return errors.New("store: nil order")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if order.ID == "" {
+		order.ID = generateID()
+	}
+	if order.Status == "" {
+		order.Status = models.OrderStatusOpen
+	}
+	if order.Source == "" {
+		order.Source = models.OrderSourceWeb
+	}
+	if order.CreatedAt.IsZero() {
+		order.CreatedAt = time.Now().UTC()
+	}
+
+	if order.NormalizedReference != "" {
+		for _, o := range s.orders {
+			if o.NormalizedReference != "" && o.NormalizedReference == order.NormalizedReference {
+				return ErrDuplicate
+			}
+		}
+		for _, r := range s.purchaseRequests {
+			if r.NormalizedReference != "" && r.NormalizedReference == order.NormalizedReference {
+				return ErrDuplicate
+			}
+		}
+	}
+
+	seen := make(map[string]bool, len(reqs))
+	for _, req := range reqs {
+		if req == nil {
+			return errors.New("store: nil request")
+		}
+		if seen[req.SubjectID] {
+			return ErrDuplicate
+		}
+		seen[req.SubjectID] = true
+		for _, existing := range s.purchaseRequests {
+			if existing.UserID == req.UserID && existing.SubjectID == req.SubjectID && existing.Status == models.RequestStatusPending {
+				return ErrDuplicate
+			}
+		}
+	}
+
+	orderCopy := *order
+	s.orders = append(s.orders, &orderCopy)
+
+	for _, req := range reqs {
+		req.OrderID = order.ID
+		if req.ID == "" {
+			req.ID = generateID()
+		}
+		if req.Status == "" {
+			req.Status = models.RequestStatusPending
+		}
+		if req.Source == "" {
+			req.Source = order.Source
+		}
+		if req.CreatedAt.IsZero() {
+			req.CreatedAt = order.CreatedAt
+		}
+		cp := *req
+		s.purchaseRequests = append(s.purchaseRequests, &cp)
+	}
+	return nil
+}
+
+// HasOrderWithNormalizedReference checks if any order uses the normalized transfer reference.
+func (s *MemoryStore) HasOrderWithNormalizedReference(_ context.Context, normalizedRef string) (bool, error) {
+	if normalizedRef == "" {
+		return false, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, o := range s.orders {
+		if o.NormalizedReference != "" && o.NormalizedReference == normalizedRef {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// GetOrderByID returns an order by id, or nil when it does not exist.
+func (s *MemoryStore) GetOrderByID(_ context.Context, id string) (*models.Order, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, o := range s.orders {
+		if o.ID == id {
+			cp := *o
+			return &cp, nil
+		}
+	}
+	return nil, nil
+}
+
+// ListOrdersByUser returns a user's orders, newest first.
+func (s *MemoryStore) ListOrdersByUser(_ context.Context, userID string) ([]*models.Order, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.Order
+	for _, o := range s.orders {
+		if o.UserID == userID {
+			cp := *o
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	return result, nil
+}
+
+// ListRequestsByOrder returns an order's requests in creation order.
+func (s *MemoryStore) ListRequestsByOrder(_ context.Context, orderID string) ([]*models.PurchaseRequest, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.PurchaseRequest
+	for _, r := range s.purchaseRequests {
+		if r.OrderID == orderID {
+			cp := *r
+			result = append(result, &cp)
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.Before(result[j].CreatedAt)
+	})
+	return result, nil
+}
+
+// CreateOrGetPendingAppRequest attaches an app request to the student's open
+// app order, creating the order when none exists (R5 idempotency preserved).
+func (s *MemoryStore) CreateOrGetPendingAppRequest(_ context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error) {
+	if req == nil {
+		return nil, false, errors.New("store: nil request")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.UserID == req.UserID && r.SubjectID == req.SubjectID && r.Status == models.RequestStatusPending {
+			cp := *r
+			return &cp, false, nil
+		}
+	}
+
+	if req.ID == "" {
+		req.ID = generateID()
+	}
+	if req.Status == "" {
+		req.Status = models.RequestStatusPending
+	}
+	if req.Source == "" {
+		req.Source = "mobile"
+	}
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = time.Now().UTC()
+	}
+
+	var open *models.Order
+	for _, o := range s.orders {
+		if o.UserID == req.UserID && o.Source == models.OrderSourceApp && o.Status == models.OrderStatusOpen {
+			open = o
+			break
+		}
+	}
+	if open == nil {
+		open = &models.Order{
+			ID:        generateID(),
+			UserID:    req.UserID,
+			Source:    models.OrderSourceApp,
+			Status:    models.OrderStatusOpen,
+			CreatedAt: req.CreatedAt,
+		}
+		cp := *open
+		s.orders = append(s.orders, &cp)
+	}
+
+	req.OrderID = open.ID
+	cp := *req
+	s.purchaseRequests = append(s.purchaseRequests, &cp)
+	res := *req
+	return &res, true, nil
+}
+
+// CloseOrderIfNoPending closes the order when it has no pending request.
+func (s *MemoryStore) CloseOrderIfNoPending(_ context.Context, orderID string, closedAt time.Time) (bool, error) {
+	if orderID == "" {
+		return false, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.OrderID == orderID && r.Status == models.RequestStatusPending {
+			return false, nil
+		}
+	}
+	for _, o := range s.orders {
+		if o.ID == orderID {
+			if o.Status == models.OrderStatusClosed {
+				return false, nil
+			}
+			o.Status = models.OrderStatusClosed
+			t := closedAt
+			o.ClosedAt = &t
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ListRequestsForGroups returns every matching request for the console read model, newest first.
+func (s *MemoryStore) ListRequestsForGroups(_ context.Context, filter OrderRequestFilter) ([]*models.PurchaseRequest, error) {
+	status := filter.Status
+	if status == "" {
+		status = models.RequestStatusPending
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.PurchaseRequest
+	for _, r := range s.purchaseRequests {
+		if r.Status != status {
+			continue
+		}
+		if filter.UserID != "" && r.UserID != filter.UserID {
+			continue
+		}
+		cp := *r
+		result = append(result, &cp)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	return result, nil
 }
 
 // CreatePaymentRecord appends a payment record. A duplicate entitlement_id returns ErrDuplicate.

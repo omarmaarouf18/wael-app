@@ -60,6 +60,14 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		return nil, fmt.Errorf("store: migrate subject price visibility: %w", err)
 	}
 
+	// Group existing pending app/mobile requests into one open app order per
+	// student (2026-11-05 orders brief). Idempotent: requests that already
+	// have an order_id are skipped on every later start.
+	if err := ms.MigrateLegacyAppRequests(ctx); err != nil {
+		_ = client.Disconnect(ctx)
+		return nil, fmt.Errorf("store: migrate legacy app requests: %w", err)
+	}
+
 	return ms, nil
 }
 
@@ -180,6 +188,54 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("store: ensure purchase_requests normalized_reference unique index: %w", err)
+	}
+
+	// Orders (2026-11-05 orders brief, ADR-0014 W4/C2).
+	// One open app order per student: unique partial on user_id where source=app
+	// and status=open. This is what makes parallel app requests converge on one
+	// open order (the loser re-reads the winner's order).
+	_, err = s.db.Collection("orders").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "user_id", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{"source": models.OrderSourceApp, "status": models.OrderStatusOpen}).
+			SetName("uniq_open_app_order_user"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure orders open app unique index: %w", err)
+	}
+
+	// Unique partial index on orders(normalized_reference) where non-empty.
+	_, err = s.db.Collection("orders").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "normalized_reference", Value: 1}},
+		Options: options.Index().
+			SetUnique(true).
+			SetPartialFilterExpression(bson.M{"normalized_reference": bson.M{"$type": "string", "$gt": ""}}).
+			SetName("uniq_orders_normalized_reference"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure orders normalized_reference unique index: %w", err)
+	}
+
+	// Index on orders(user_id, created_at) for the student order list.
+	_, err = s.db.Collection("orders").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "created_at", Value: -1},
+		},
+		Options: options.Index().SetName("idx_orders_user_created"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure orders user_created index: %w", err)
+	}
+
+	// Index on purchase_requests(order_id) for order item reads.
+	_, err = s.db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "order_id", Value: 1}},
+		Options: options.Index().SetName("idx_purchase_requests_order_id"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure purchase_requests order_id index: %w", err)
 	}
 
 	// Indexes on video_plays: (user_id, played_at) and (video_id, played_at)
@@ -1229,6 +1285,376 @@ func (s *MongoStore) DecideRequest(ctx context.Context, id, fromStatus, toStatus
 		return false, ErrNotFound
 	}
 	return false, nil
+}
+
+// CreateOrderWithRequests creates one order and its requests all-or-none.
+// MongoDB is standalone here (SPEC R4), so there is no transaction: the order
+// is inserted first, and any failure removes the partial requests and the
+// order (compensating delete).
+func (s *MongoStore) CreateOrderWithRequests(ctx context.Context, order *models.Order, reqs []*models.PurchaseRequest) error {
+	if order == nil {
+		return errors.New("store: nil order")
+	}
+	if order.ID == "" {
+		order.ID = generateID()
+	}
+	if order.Status == "" {
+		order.Status = models.OrderStatusOpen
+	}
+	if order.Source == "" {
+		order.Source = models.OrderSourceWeb
+	}
+	if order.CreatedAt.IsZero() {
+		order.CreatedAt = time.Now().UTC()
+	}
+
+	if order.NormalizedReference != "" {
+		has, err := s.HasOrderWithNormalizedReference(ctx, order.NormalizedReference)
+		if err != nil {
+			return err
+		}
+		if has {
+			return ErrDuplicate
+		}
+		hasReq, err := s.HasPurchaseRequestWithReference(ctx, order.NormalizedReference)
+		if err != nil {
+			return err
+		}
+		if hasReq {
+			return ErrDuplicate
+		}
+	}
+
+	if _, err := s.db.Collection("orders").InsertOne(ctx, order); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert order: %w", err)
+	}
+
+	if len(reqs) == 0 {
+		return nil
+	}
+
+	docs := make([]any, 0, len(reqs))
+	for _, req := range reqs {
+		if req == nil {
+			s.deleteOrderWithRequests(ctx, order.ID)
+			return errors.New("store: nil request")
+		}
+		if req.ID == "" {
+			req.ID = generateID()
+		}
+		if req.Status == "" {
+			req.Status = models.RequestStatusPending
+		}
+		if req.Source == "" {
+			req.Source = order.Source
+		}
+		if req.CreatedAt.IsZero() {
+			req.CreatedAt = order.CreatedAt
+		}
+		req.OrderID = order.ID
+		docs = append(docs, req)
+	}
+
+	if _, err := s.db.Collection("purchase_requests").InsertMany(ctx, docs, options.InsertMany().SetOrdered(true)); err != nil {
+		s.deleteOrderWithRequests(ctx, order.ID)
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert order requests: %w", err)
+	}
+	return nil
+}
+
+// deleteOrderWithRequests removes an order and any request rows already
+// written for it (compensating delete after a partial create).
+func (s *MongoStore) deleteOrderWithRequests(ctx context.Context, orderID string) {
+	_, _ = s.db.Collection("purchase_requests").DeleteMany(ctx, bson.M{"order_id": orderID})
+	_, _ = s.db.Collection("orders").DeleteOne(ctx, bson.M{"_id": orderID})
+}
+
+// HasOrderWithNormalizedReference checks if any order uses the normalized transfer reference.
+func (s *MongoStore) HasOrderWithNormalizedReference(ctx context.Context, normalizedRef string) (bool, error) {
+	if normalizedRef == "" {
+		return false, nil
+	}
+	n, err := s.db.Collection("orders").CountDocuments(ctx, bson.M{
+		"normalized_reference": normalizedRef,
+	}, options.Count().SetLimit(1))
+	if err != nil {
+		return false, fmt.Errorf("store: check order reference: %w", err)
+	}
+	return n > 0, nil
+}
+
+// GetOrderByID returns an order by id, or nil when it does not exist.
+func (s *MongoStore) GetOrderByID(ctx context.Context, id string) (*models.Order, error) {
+	var order models.Order
+	err := s.db.Collection("orders").FindOne(ctx, bson.M{"_id": id}).Decode(&order)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: get order: %w", err)
+	}
+	return &order, nil
+}
+
+// ListOrdersByUser returns a user's orders, newest first.
+func (s *MongoStore) ListOrdersByUser(ctx context.Context, userID string) ([]*models.Order, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
+	cursor, err := s.db.Collection("orders").Find(ctx, bson.M{"user_id": userID}, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: list orders: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []*models.Order
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("store: decode orders: %w", err)
+	}
+	if results == nil {
+		results = []*models.Order{}
+	}
+	return results, nil
+}
+
+// ListRequestsByOrder returns an order's requests in creation order.
+func (s *MongoStore) ListRequestsByOrder(ctx context.Context, orderID string) ([]*models.PurchaseRequest, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}})
+	cursor, err := s.db.Collection("purchase_requests").Find(ctx, bson.M{"order_id": orderID}, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: list order requests: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []*models.PurchaseRequest
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("store: decode order requests: %w", err)
+	}
+	if results == nil {
+		results = []*models.PurchaseRequest{}
+	}
+	return results, nil
+}
+
+// CreateOrGetPendingAppRequest attaches an app request to the student's open
+// app order, creating the order when none exists. The partial unique index on
+// orders(user_id) where source=app and status=open makes concurrent first
+// requests converge on one order; the loser re-reads the winner's order.
+func (s *MongoStore) CreateOrGetPendingAppRequest(ctx context.Context, req *models.PurchaseRequest) (*models.PurchaseRequest, bool, error) {
+	if req == nil {
+		return nil, false, errors.New("store: nil request")
+	}
+	if req.ID == "" {
+		req.ID = generateID()
+	}
+	if req.Status == "" {
+		req.Status = models.RequestStatusPending
+	}
+	if req.Source == "" {
+		req.Source = "mobile"
+	}
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = time.Now().UTC()
+	}
+
+	col := s.db.Collection("purchase_requests")
+	filter := bson.M{
+		"user_id":    req.UserID,
+		"subject_id": req.SubjectID,
+		"status":     models.RequestStatusPending,
+	}
+
+	var existing models.PurchaseRequest
+	err := col.FindOne(ctx, filter).Decode(&existing)
+	if err == nil {
+		return &existing, false, nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, false, fmt.Errorf("store: find pending app request: %w", err)
+	}
+
+	orderID, err := s.ensureOpenAppOrder(ctx, req.UserID, req.CreatedAt)
+	if err != nil {
+		return nil, false, err
+	}
+	req.OrderID = orderID
+
+	if _, err := col.InsertOne(ctx, req); err == nil {
+		return req, true, nil
+	} else if mongo.IsDuplicateKeyError(err) {
+		// Another concurrent call for the same subject won: return its row.
+		var existing models.PurchaseRequest
+		if err := col.FindOne(ctx, filter).Decode(&existing); err == nil {
+			return &existing, false, nil
+		}
+		return nil, false, fmt.Errorf("store: find pending app request after duplicate: %w", err)
+	} else {
+		return nil, false, fmt.Errorf("store: insert app request: %w", err)
+	}
+}
+
+// ensureOpenAppOrder returns the student's open app order id, creating the
+// order when it does not exist. A duplicate-key race re-reads the winner.
+func (s *MongoStore) ensureOpenAppOrder(ctx context.Context, userID string, createdAt time.Time) (string, error) {
+	col := s.db.Collection("orders")
+	filter := bson.M{
+		"user_id": userID,
+		"source":  models.OrderSourceApp,
+		"status":  models.OrderStatusOpen,
+	}
+
+	var existing models.Order
+	err := col.FindOne(ctx, filter).Decode(&existing)
+	if err == nil {
+		return existing.ID, nil
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return "", fmt.Errorf("store: find open app order: %w", err)
+	}
+
+	order := &models.Order{
+		ID:        generateID(),
+		UserID:    userID,
+		Source:    models.OrderSourceApp,
+		Status:    models.OrderStatusOpen,
+		CreatedAt: createdAt,
+	}
+	if _, err := col.InsertOne(ctx, order); err == nil {
+		return order.ID, nil
+	} else if mongo.IsDuplicateKeyError(err) {
+		var existing models.Order
+		if err := col.FindOne(ctx, filter).Decode(&existing); err == nil {
+			return existing.ID, nil
+		}
+		return "", fmt.Errorf("store: find open app order after duplicate: %w", err)
+	} else {
+		return "", fmt.Errorf("store: insert open app order: %w", err)
+	}
+}
+
+// CloseOrderIfNoPending closes the order when it has no pending request.
+func (s *MongoStore) CloseOrderIfNoPending(ctx context.Context, orderID string, closedAt time.Time) (bool, error) {
+	if orderID == "" {
+		return false, nil
+	}
+	n, err := s.db.Collection("purchase_requests").CountDocuments(ctx, bson.M{
+		"order_id": orderID,
+		"status":   models.RequestStatusPending,
+	})
+	if err != nil {
+		return false, fmt.Errorf("store: count pending order requests: %w", err)
+	}
+	if n > 0 {
+		return false, nil
+	}
+	res, err := s.db.Collection("orders").UpdateOne(ctx,
+		bson.M{"_id": orderID, "status": models.OrderStatusOpen},
+		bson.M{"$set": bson.M{"status": models.OrderStatusClosed, "closed_at": closedAt}},
+	)
+	if err != nil {
+		return false, fmt.Errorf("store: close order: %w", err)
+	}
+	return res.ModifiedCount > 0, nil
+}
+
+// ListRequestsForGroups returns every matching request for the console read model, newest first.
+func (s *MongoStore) ListRequestsForGroups(ctx context.Context, filter OrderRequestFilter) ([]*models.PurchaseRequest, error) {
+	status := filter.Status
+	if status == "" {
+		status = models.RequestStatusPending
+	}
+	q := bson.M{"status": status}
+	if filter.UserID != "" {
+		q["user_id"] = filter.UserID
+	}
+
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
+	cursor, err := s.db.Collection("purchase_requests").Find(ctx, q, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: list request groups: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []*models.PurchaseRequest
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, fmt.Errorf("store: decode request groups: %w", err)
+	}
+	if results == nil {
+		results = []*models.PurchaseRequest{}
+	}
+	return results, nil
+}
+
+// MigrateLegacyAppRequests groups existing pending app/mobile requests that
+// have no order_id into one open app order per student. Accepted/rejected
+// history keeps no order on purpose (see docs/changes/2026-11-05-orders.md).
+// It is idempotent: rows that already carry an order_id are skipped.
+func (s *MongoStore) MigrateLegacyAppRequests(ctx context.Context) error {
+	filter := bson.M{
+		"status": models.RequestStatusPending,
+		"$and": bson.A{
+			bson.M{"$or": bson.A{
+				bson.M{"order_id": bson.M{"$exists": false}},
+				bson.M{"order_id": ""},
+			}},
+			bson.M{"$or": bson.A{
+				bson.M{"source": bson.M{"$exists": false}},
+				bson.M{"source": ""},
+				bson.M{"source": "mobile"},
+			}},
+		},
+	}
+
+	cursor, err := s.db.Collection("purchase_requests").Find(ctx, filter)
+	if err != nil {
+		return fmt.Errorf("store: find legacy app requests: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var legacy []*models.PurchaseRequest
+	if err := cursor.All(ctx, &legacy); err != nil {
+		return fmt.Errorf("store: decode legacy app requests: %w", err)
+	}
+	if len(legacy) == 0 {
+		return nil
+	}
+
+	byUser := make(map[string][]*models.PurchaseRequest)
+	earliest := make(map[string]time.Time)
+	for _, req := range legacy {
+		if req.UserID == "" {
+			continue
+		}
+		byUser[req.UserID] = append(byUser[req.UserID], req)
+		if t, ok := earliest[req.UserID]; !ok || req.CreatedAt.Before(t) {
+			earliest[req.UserID] = req.CreatedAt
+		}
+	}
+
+	for userID, reqs := range byUser {
+		orderID, err := s.ensureOpenAppOrder(ctx, userID, earliest[userID])
+		if err != nil {
+			return err
+		}
+		ids := make([]string, 0, len(reqs))
+		for _, req := range reqs {
+			ids = append(ids, req.ID)
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		if _, err := s.db.Collection("purchase_requests").UpdateMany(ctx,
+			bson.M{"_id": bson.M{"$in": ids}},
+			bson.M{"$set": bson.M{"order_id": orderID}},
+		); err != nil {
+			return fmt.Errorf("store: attach legacy app requests: %w", err)
+		}
+	}
+	return nil
 }
 
 // CreatePaymentRecord inserts an append-only financial row. A duplicate entitlement_id is ErrDuplicate.
