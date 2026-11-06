@@ -58,7 +58,7 @@ func scheduleOrphanWebOrderCleanup(ctx context.Context, st store.Store, olderTha
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 				cleanupOrphanWebOrders(runCtx, st, olderThan)
 				cancel()
 			}
