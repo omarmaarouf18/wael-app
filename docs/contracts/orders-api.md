@@ -420,9 +420,19 @@ On startup, MongoStore runs an idempotent migration after index creation:
 - Every student's **pending** app/mobile requests (no `order_id`, source empty
   or `mobile`) are grouped into **one open app order per student**. The order's
   `created_at` is the earliest request's `created_at`.
+- Every **pending** web request (no `order_id`, source `web`) is wrapped into
+  its **own web order of one**, copying its proof fields: `payment_method`,
+  `transfer_reference`, `normalized_reference`, `sender_number` and `amount`
+  (as the order's `amount_paid`). The order's `created_at` is the request's
+  `created_at`. Each legacy web row therefore keeps its own reference and stays
+  visible in the grouped console view instead of falling into the empty-order
+  fallback of section 4.1.
 - Accepted/rejected history gets **no order** (`order_id` stays empty). It is
   not needed for the pending console view or for the student order list,
   which only expose orders created from the migration onward.
+- A legacy web row whose normalized transfer reference is already used by an
+  order is left without an order and logged as a warning; the unique index on
+  `orders(normalized_reference)` must never turn a startup into a failure.
 
 The migration is safe to run on every start: requests that already have an
 `order_id` are skipped.
@@ -456,3 +466,8 @@ The migration is safe to run on every start: requests that already have an
 ## Change log
 
 - 2026-11-05: first version.
+- 2026-11-06: additive amendment (owner request): the startup migration also
+  wraps every pending legacy web request without an `order_id` into its own web
+  order of one, copying its proof fields, so the grouped console view keeps
+  those rows. Section 5 describes the new rule; section 4.1's empty-order
+  fallback stays as the safety net for rows that could not be wrapped.

@@ -68,6 +68,13 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		return nil, fmt.Errorf("store: migrate legacy app requests: %w", err)
 	}
 
+	// Wrap legacy pending web requests into a web order of one each, so the
+	// grouped console view never loses them. Idempotent, history untouched.
+	if err := ms.MigrateLegacyWebRequests(ctx); err != nil {
+		_ = client.Disconnect(ctx)
+		return nil, fmt.Errorf("store: migrate legacy web requests: %w", err)
+	}
+
 	return ms, nil
 }
 
@@ -1632,6 +1639,100 @@ func (s *MongoStore) DeleteOrphanWebOrders(ctx context.Context, before time.Time
 		return removed, fmt.Errorf("store: iterate orphan web orders: %w", err)
 	}
 	return removed, nil
+}
+
+// MigrateLegacyWebRequests wraps every pending web request that has no order
+// into its own web order of one, copying its proof fields (payment method,
+// transfer reference, sender number, amount). Accepted/rejected history is
+// never touched. It is idempotent: a request that already carries an order_id
+// is skipped, so a second start creates nothing.
+//
+// A legacy row whose transfer reference is already used by an order is left
+// without an order and logged: the unique index on orders(normalized_reference)
+// must not turn a startup into a failure.
+func (s *MongoStore) MigrateLegacyWebRequests(ctx context.Context) error {
+	filter := bson.M{
+		"status": models.RequestStatusPending,
+		"source": models.OrderSourceWeb,
+		"$or": bson.A{
+			bson.M{"order_id": bson.M{"$exists": false}},
+			bson.M{"order_id": ""},
+		},
+	}
+
+	cursor, err := s.db.Collection("purchase_requests").Find(ctx, filter)
+	if err != nil {
+		return fmt.Errorf("store: find legacy web requests: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var legacy []*models.PurchaseRequest
+	if err := cursor.All(ctx, &legacy); err != nil {
+		return fmt.Errorf("store: decode legacy web requests: %w", err)
+	}
+
+	ordersCol := s.db.Collection("orders")
+	requestsCol := s.db.Collection("purchase_requests")
+	migrated := 0
+	for _, req := range legacy {
+		if req.NormalizedReference != "" {
+			has, err := s.HasOrderWithNormalizedReference(ctx, req.NormalizedReference)
+			if err != nil {
+				return err
+			}
+			if has {
+				log.Printf("[WARN] orders migration: skipped legacy web request %s: transfer reference %q is already used by an order", req.ID, req.NormalizedReference)
+				continue
+			}
+		}
+
+		order := &models.Order{
+			ID:                  generateID(),
+			UserID:              req.UserID,
+			Source:              models.OrderSourceWeb,
+			Status:              models.OrderStatusOpen,
+			PaymentMethod:       req.PaymentMethod,
+			TransferReference:   req.TransferReference,
+			NormalizedReference: req.NormalizedReference,
+			SenderNumber:        req.SenderNumber,
+			AmountPaid:          req.Amount,
+			CreatedAt:           req.CreatedAt,
+		}
+		if _, err := ordersCol.InsertOne(ctx, order); err != nil {
+			if mongo.IsDuplicateKeyError(err) {
+				log.Printf("[WARN] orders migration: skipped legacy web request %s: its transfer reference conflicts with an existing order", req.ID)
+				continue
+			}
+			return fmt.Errorf("store: insert legacy web order: %w", err)
+		}
+
+		res, err := requestsCol.UpdateOne(ctx,
+			bson.M{
+				"_id":    req.ID,
+				"status": models.RequestStatusPending,
+				"$or": bson.A{
+					bson.M{"order_id": bson.M{"$exists": false}},
+					bson.M{"order_id": ""},
+				},
+			},
+			bson.M{"$set": bson.M{"order_id": order.ID}},
+		)
+		if err != nil {
+			// Compensate: never leave an order without its request.
+			_, _ = ordersCol.DeleteOne(ctx, bson.M{"_id": order.ID})
+			return fmt.Errorf("store: attach legacy web request: %w", err)
+		}
+		if res.MatchedCount == 0 {
+			// Another writer attached it first: drop the order we created.
+			_, _ = ordersCol.DeleteOne(ctx, bson.M{"_id": order.ID})
+			continue
+		}
+		migrated++
+	}
+	if migrated > 0 {
+		log.Printf("[ACADEMY] orders migration: wrapped %d legacy pending web request(s) into web orders of one", migrated)
+	}
+	return nil
 }
 
 // MigrateLegacyAppRequests groups existing pending app/mobile requests that

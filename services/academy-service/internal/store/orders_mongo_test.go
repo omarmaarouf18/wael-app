@@ -140,9 +140,12 @@ func TestMongoStore_AppOrdersParallelAndMigration(t *testing.T) {
 type migrationSnapshot struct {
 	orders               int
 	openAppOrders        int
+	webOrders            int
 	requests             int
 	pendingAppAttached   int
 	pendingAppUnattached int
+	pendingWebAttached   int
+	pendingWebUnattached int
 	historyWithOrder     int
 }
 
@@ -169,6 +172,7 @@ func takeMigrationSnapshot(t *testing.T, db *mongo.Database) migrationSnapshot {
 	return migrationSnapshot{
 		orders:        count("orders", bson.M{}),
 		openAppOrders: count("orders", bson.M{"source": models.OrderSourceApp, "status": models.OrderStatusOpen}),
+		webOrders:     count("orders", bson.M{"source": models.OrderSourceWeb}),
 		requests:      count("purchase_requests", bson.M{}),
 		pendingAppAttached: count("purchase_requests", bson.M{
 			"$and": bson.A{
@@ -185,6 +189,19 @@ func takeMigrationSnapshot(t *testing.T, db *mongo.Database) migrationSnapshot {
 					bson.M{"order_id": bson.M{"$exists": false}},
 					bson.M{"order_id": ""},
 				}},
+			},
+		}),
+		pendingWebAttached: count("purchase_requests", bson.M{
+			"status":   models.RequestStatusPending,
+			"source":   models.OrderSourceWeb,
+			"order_id": bson.M{"$exists": true, "$ne": ""},
+		}),
+		pendingWebUnattached: count("purchase_requests", bson.M{
+			"status": models.RequestStatusPending,
+			"source": models.OrderSourceWeb,
+			"$or": bson.A{
+				bson.M{"order_id": bson.M{"$exists": false}},
+				bson.M{"order_id": ""},
 			},
 		}),
 		historyWithOrder: count("purchase_requests", bson.M{
@@ -256,7 +273,7 @@ func TestMongoStore_MigrationProductionShapedData(t *testing.T) {
 		"created_at": now.Add(-30 * time.Minute),
 	})
 	// One student with both a pending app request and a pending web row: the
-	// migration must attach only the app row.
+	// app row joins the app order, the web row gets its own web order of one.
 	reqs = append(reqs,
 		bson.M{
 			"_id": "mixed-app-1", "user_id": "u-mixed", "subject_id": "s-mixed-app",
@@ -264,8 +281,27 @@ func TestMongoStore_MigrationProductionShapedData(t *testing.T) {
 		},
 		bson.M{
 			"_id": "mixed-web-1", "user_id": "u-mixed", "subject_id": "s-mixed-web",
-			"status": models.RequestStatusPending, "source": "web", "created_at": now.Add(-20 * time.Minute),
+			"status": models.RequestStatusPending, "source": "web",
+			"payment_method": "wallet", "transfer_reference": "mixed-web-ref",
+			"normalized_reference": "MIXED-WEB-REF", "sender_number": "01055555555",
+			"amount": 300, "created_at": now.Add(-20 * time.Minute),
 		})
+	// A second legacy pending web request with its own proof fields.
+	reqs = append(reqs, bson.M{
+		"_id": "legacy-web-2", "user_id": "u-web2", "subject_id": "s-web-2",
+		"status": models.RequestStatusPending, "source": "web",
+		"payment_method": "instapay", "transfer_reference": "legacy-web-ref-2",
+		"normalized_reference": "LEGACY-WEB-REF-2", "sender_number": "01099999999",
+		"amount": 250, "created_at": now.Add(-25 * time.Minute),
+	})
+	// Rejected web history: must keep no order.
+	reqs = append(reqs, bson.M{
+		"_id": "history-web-1", "user_id": "u-web-history", "subject_id": "s-web-history-1",
+		"status": models.RequestStatusRejected, "source": "web",
+		"payment_method": "wallet", "transfer_reference": "history-web-ref",
+		"normalized_reference": "HISTORY-WEB-REF", "sender_number": "01022222222",
+		"amount": 90, "created_at": now.Add(-time.Hour),
+	})
 	// An app request that already has an order: migration must not move it.
 	reqs = append(reqs, bson.M{
 		"_id": "existing-app-1", "user_id": "u-existing", "subject_id": "s-existing-1",
@@ -287,8 +323,11 @@ func TestMongoStore_MigrationProductionShapedData(t *testing.T) {
 	}
 
 	before := takeMigrationSnapshot(t, db)
-	if before.orders != 2 || before.requests != 40 || before.pendingAppAttached != 1 {
+	if before.orders != 2 || before.requests != 42 || before.pendingAppAttached != 1 {
 		t.Fatalf("unexpected seeded snapshot: %+v", before)
+	}
+	if before.pendingWebAttached != 1 || before.pendingWebUnattached != 2 {
+		t.Fatalf("unexpected seeded web snapshot: %+v", before)
 	}
 
 	// First service start: NewMongoStore runs EnsureIndexes + migration.
@@ -298,6 +337,27 @@ func TestMongoStore_MigrationProductionShapedData(t *testing.T) {
 	}
 	afterFirst := takeMigrationSnapshot(t, first.Database())
 	assertProductionMigration(t, first)
+
+	// The console's grouped read model must not lose the legacy web rows:
+	// every pending row it returns carries an order id.
+	grouped, err := first.ListRequestsForGroups(ctx, OrderRequestFilter{Status: models.RequestStatusPending})
+	if err != nil {
+		t.Fatalf("ListRequestsForGroups: %v", err)
+	}
+	for _, req := range grouped {
+		if req.OrderID == "" {
+			t.Fatalf("grouped read model returned %s without an order id", req.ID)
+		}
+	}
+	groupedIDs := make(map[string]bool, len(grouped))
+	for _, req := range grouped {
+		groupedIDs[req.ID] = true
+	}
+	for _, id := range []string{"mixed-web-1", "legacy-web-2", "many-00", "few-0"} {
+		if !groupedIDs[id] {
+			t.Fatalf("grouped read model is missing %s", id)
+		}
+	}
 
 	// Second service start: must change nothing.
 	if err := first.Close(ctx); err != nil {
@@ -316,32 +376,101 @@ func TestMongoStore_MigrationProductionShapedData(t *testing.T) {
 	if afterFirst != afterSecond {
 		t.Fatalf("second start changed data:\nfirst  = %+v\nsecond = %+v", afterFirst, afterSecond)
 	}
-	if afterFirst.orders != 5 || afterFirst.openAppOrders != 4 {
-		t.Fatalf("orders after migration = %+v, want 5 total / 4 open app", afterFirst)
+	if afterFirst.orders != 7 || afterFirst.openAppOrders != 4 || afterFirst.webOrders != 3 {
+		t.Fatalf("orders after migration = %+v, want 7 total / 4 open app / 3 web", afterFirst)
 	}
-	if afterFirst.requests != 40 {
-		t.Fatalf("requests after migration = %d, want 40 untouched rows", afterFirst.requests)
+	if afterFirst.requests != 42 {
+		t.Fatalf("requests after migration = %d, want 42 untouched rows", afterFirst.requests)
 	}
 	if afterFirst.pendingAppAttached != 35 || afterFirst.pendingAppUnattached != 0 {
 		t.Fatalf("pending app attachment = %d attached / %d unattached, want 35/0", afterFirst.pendingAppAttached, afterFirst.pendingAppUnattached)
+	}
+	if afterFirst.pendingWebAttached != 3 || afterFirst.pendingWebUnattached != 0 {
+		t.Fatalf("pending web attachment = %d attached / %d unattached, want 3/0", afterFirst.pendingWebAttached, afterFirst.pendingWebUnattached)
 	}
 	if afterFirst.historyWithOrder != 0 {
 		t.Fatalf("accepted/rejected history got an order: %d rows", afterFirst.historyWithOrder)
 	}
 
-	// Web rows are untouched, including the same student who got an app order.
-	var webRow, mixedWebRow models.PurchaseRequest
+	// The legacy pending web row that already had an order keeps it.
+	var webRow models.PurchaseRequest
 	if err := db.Collection("purchase_requests").FindOne(ctx, bson.M{"_id": "web-1"}).Decode(&webRow); err != nil {
 		t.Fatalf("read web-1: %v", err)
 	}
 	if webRow.OrderID != "web-order-1" {
 		t.Fatalf("web-1 order_id = %q, want web-order-1", webRow.OrderID)
 	}
-	if err := db.Collection("purchase_requests").FindOne(ctx, bson.M{"_id": "mixed-web-1"}).Decode(&mixedWebRow); err != nil {
-		t.Fatalf("read mixed-web-1: %v", err)
+	uWebOrders, err := db.Collection("orders").CountDocuments(ctx, bson.M{"user_id": "u-web"})
+	if err != nil {
+		t.Fatalf("count u-web orders: %v", err)
 	}
-	if mixedWebRow.OrderID != "" {
-		t.Fatalf("mixed web row was attached by migration: order_id=%q", mixedWebRow.OrderID)
+	if uWebOrders != 1 {
+		t.Fatalf("u-web orders = %d, want 1 (no second order for the attached row)", uWebOrders)
+	}
+
+	// Each legacy pending web row without an order got its own web order of
+	// one, with the proof fields copied.
+	for _, tc := range []struct {
+		requestID     string
+		userID        string
+		paymentMethod string
+		transferRef   string
+		normalizedRef string
+		senderNumber  string
+		amountPaid    int
+	}{
+		{"mixed-web-1", "u-mixed", "wallet", "mixed-web-ref", "MIXED-WEB-REF", "01055555555", 300},
+		{"legacy-web-2", "u-web2", "instapay", "legacy-web-ref-2", "LEGACY-WEB-REF-2", "01099999999", 250},
+	} {
+		var row models.PurchaseRequest
+		if err := db.Collection("purchase_requests").FindOne(ctx, bson.M{"_id": tc.requestID}).Decode(&row); err != nil {
+			t.Fatalf("read %s: %v", tc.requestID, err)
+		}
+		if row.OrderID == "" {
+			t.Fatalf("%s was left out of the grouped view: no order", tc.requestID)
+		}
+		var order models.Order
+		if err := db.Collection("orders").FindOne(ctx, bson.M{"_id": row.OrderID}).Decode(&order); err != nil {
+			t.Fatalf("read order of %s: %v", tc.requestID, err)
+		}
+		if order.Source != models.OrderSourceWeb || order.Status != models.OrderStatusOpen {
+			t.Fatalf("%s order = %+v, want web/open", tc.requestID, order)
+		}
+		if order.UserID != tc.userID {
+			t.Fatalf("%s order user = %q, want %q", tc.requestID, order.UserID, tc.userID)
+		}
+		if order.PaymentMethod != tc.paymentMethod || order.TransferReference != tc.transferRef ||
+			order.NormalizedReference != tc.normalizedRef || order.SenderNumber != tc.senderNumber ||
+			order.AmountPaid != tc.amountPaid {
+			t.Fatalf("%s proof fields not copied: %+v", tc.requestID, order)
+		}
+		cursor, err := db.Collection("purchase_requests").Find(ctx, bson.M{"order_id": order.ID})
+		if err != nil {
+			t.Fatalf("list requests of %s: %v", tc.requestID, err)
+		}
+		var rows []models.PurchaseRequest
+		if err := cursor.All(ctx, &rows); err != nil {
+			t.Fatalf("decode requests of %s: %v", tc.requestID, err)
+		}
+		if len(rows) != 1 || rows[0].ID != tc.requestID {
+			t.Fatalf("%s order holds %d request(s), want only itself", tc.requestID, len(rows))
+		}
+	}
+
+	// Rejected web history keeps no order.
+	var historyWeb models.PurchaseRequest
+	if err := db.Collection("purchase_requests").FindOne(ctx, bson.M{"_id": "history-web-1"}).Decode(&historyWeb); err != nil {
+		t.Fatalf("read history-web-1: %v", err)
+	}
+	if historyWeb.OrderID != "" {
+		t.Fatalf("rejected web history got an order: %q", historyWeb.OrderID)
+	}
+	historyWebOrders, err := db.Collection("orders").CountDocuments(ctx, bson.M{"user_id": "u-web-history"})
+	if err != nil {
+		t.Fatalf("count u-web-history orders: %v", err)
+	}
+	if historyWebOrders != 0 {
+		t.Fatalf("u-web-history got %d order(s), want 0", historyWebOrders)
 	}
 }
 

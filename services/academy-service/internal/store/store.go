@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -146,6 +147,11 @@ type Store interface {
 	// request insert can still leave an orphan (Mongo is standalone, SPEC R4).
 	// A small age threshold keeps an in-flight checkout out of reach.
 	DeleteOrphanWebOrders(ctx context.Context, before time.Time) (int, error)
+	// MigrateLegacyWebRequests wraps every pending web request that has no
+	// order into its own web order of one, copying its proof fields (payment
+	// method, transfer reference, sender number, amount). It is idempotent and
+	// never touches accepted/rejected history.
+	MigrateLegacyWebRequests(ctx context.Context) error
 
 	// Payment records (Phase 4.5, append-only: no update and no delete).
 	// A duplicate entitlement_id is ErrDuplicate: the activation was
@@ -1326,6 +1332,56 @@ func (s *MemoryStore) DeleteOrphanWebOrders(_ context.Context, before time.Time)
 	}
 	s.orders = kept
 	return removed, nil
+}
+
+// MigrateLegacyWebRequests wraps every pending web request without an order
+// into its own web order of one, copying its proof fields. Accepted/rejected
+// history is never touched. It is idempotent: a request that already carries
+// an order_id is skipped.
+func (s *MemoryStore) MigrateLegacyWebRequests(_ context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	usedRefs := make(map[string]bool, len(s.orders))
+	for _, o := range s.orders {
+		if o.NormalizedReference != "" {
+			usedRefs[o.NormalizedReference] = true
+		}
+	}
+
+	migrated := 0
+	for _, r := range s.purchaseRequests {
+		if r.Status != models.RequestStatusPending || r.Source != models.OrderSourceWeb || r.OrderID != "" {
+			continue
+		}
+		if r.NormalizedReference != "" && usedRefs[r.NormalizedReference] {
+			log.Printf("[WARN] orders migration: skipped legacy web request %s: transfer reference %q is already used by an order", r.ID, r.NormalizedReference)
+			continue
+		}
+		order := &models.Order{
+			ID:                  generateID(),
+			UserID:              r.UserID,
+			Source:              models.OrderSourceWeb,
+			Status:              models.OrderStatusOpen,
+			PaymentMethod:       r.PaymentMethod,
+			TransferReference:   r.TransferReference,
+			NormalizedReference: r.NormalizedReference,
+			SenderNumber:        r.SenderNumber,
+			AmountPaid:          r.Amount,
+			CreatedAt:           r.CreatedAt,
+		}
+		cp := *order
+		s.orders = append(s.orders, &cp)
+		if order.NormalizedReference != "" {
+			usedRefs[order.NormalizedReference] = true
+		}
+		r.OrderID = order.ID
+		migrated++
+	}
+	if migrated > 0 {
+		log.Printf("[ACADEMY] orders migration: wrapped %d legacy pending web request(s) into web orders of one", migrated)
+	}
+	return nil
 }
 
 // CreatePaymentRecord appends a payment record. A duplicate entitlement_id returns ErrDuplicate.
