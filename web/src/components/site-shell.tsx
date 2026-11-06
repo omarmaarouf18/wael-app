@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 
 import { dictionary, localePath, type Lang } from "@/lib/i18n";
 import { HeaderAuthNav } from "./auth-provider";
+import { CartDrawer } from "./cart-drawer";
+import { HeaderCartButton } from "./cart-provider";
 
 import styles from "./site-shell.module.css";
 
@@ -18,6 +20,11 @@ export function SiteShell({ lang, path, children }: SiteShellProps) {
   const t = dictionary(lang);
   const other: Lang = lang === "ar" ? "en" : "ar";
   const to = (p: string) => localePath(lang, p);
+
+  const legalTermsUrl =
+    lang === "en" ? "https://legal.elmetracademy.app/terms#en" : "https://legal.elmetracademy.app/terms";
+  const legalPrivacyUrl =
+    lang === "en" ? "https://legal.elmetracademy.app/privacy#en" : "https://legal.elmetracademy.app/privacy";
 
   return (
     <>
@@ -43,6 +50,7 @@ export function SiteShell({ lang, path, children }: SiteShellProps) {
             <Link href={to("/about")} className={styles.navLink}>
               {t.nav.about}
             </Link>
+            <HeaderCartButton lang={lang} />
             <HeaderAuthNav lang={lang} />
             <Link
               href={localePath(other, path)}
@@ -57,11 +65,16 @@ export function SiteShell({ lang, path, children }: SiteShellProps) {
         </div>
       </header>
       <main className={styles.main}>{children}</main>
+      <CartDrawer lang={lang} />
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
           <nav className={styles.footerLinks} aria-label={t.footer.terms}>
-            <Link href={to("/terms")}>{t.footer.terms}</Link>
-            <Link href={to("/privacy")}>{t.footer.privacy}</Link>
+            <a href={legalTermsUrl} target="_blank" rel="noopener noreferrer">
+              {t.footer.terms}
+            </a>
+            <a href={legalPrivacyUrl} target="_blank" rel="noopener noreferrer">
+              {t.footer.privacy}
+            </a>
             <Link href={to("/refund")}>{t.footer.refund}</Link>
           </nav>
           <span>{t.footer.brandLine}</span>

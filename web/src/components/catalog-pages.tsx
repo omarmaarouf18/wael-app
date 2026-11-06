@@ -134,7 +134,13 @@ export async function SubjectPage({ lang, id }: { lang: Lang; id: string }) {
       <Counts lang={lang} subject={subject} />
       {until !== null ? <p className={styles.muted}>{t.accessUntil(until)}</p> : null}
       <p>{t.studyInApp}</p>
-      <SubjectBuySection lang={lang} subjectId={subject.id} price={subject.price} />
+      <SubjectBuySection
+        lang={lang}
+        subjectId={subject.id}
+        price={subject.price}
+        titleAr={subject.title.ar}
+        titleEn={subject.title.en}
+      />
       <p>
         <Link href={localePath(lang, "/subjects")}>{t.backToSubjects}</Link>
       </p>

@@ -53,6 +53,30 @@ const nextConfig: NextConfig = {
       { source: STATIC_PAGE_SOURCE, headers: [{ key: "Content-Security-Policy", value: buildStaticCsp(apiOrigin, dev) }] },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/terms",
+        destination: "https://legal.elmetracademy.app/terms",
+        permanent: true,
+      },
+      {
+        source: "/en/terms",
+        destination: "https://legal.elmetracademy.app/terms#en",
+        permanent: true,
+      },
+      {
+        source: "/privacy",
+        destination: "https://legal.elmetracademy.app/privacy",
+        permanent: true,
+      },
+      {
+        source: "/en/privacy",
+        destination: "https://legal.elmetracademy.app/privacy#en",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

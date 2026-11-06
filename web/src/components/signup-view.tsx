@@ -209,6 +209,28 @@ export function SignupPageView({ lang }: SignupPageViewProps) {
                   />
                 </div>
 
+                <p className={styles.legalNotice} style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
+                  {text.legalNoticePrefix}
+                  <a
+                    href={lang === "en" ? "https://legal.elmetracademy.app/terms#en" : "https://legal.elmetracademy.app/terms"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.link}
+                  >
+                    {text.termsLink}
+                  </a>
+                  {text.legalNoticeAnd}
+                  <a
+                    href={lang === "en" ? "https://legal.elmetracademy.app/privacy#en" : "https://legal.elmetracademy.app/privacy"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.link}
+                  >
+                    {text.privacyLink}
+                  </a>
+                  .
+                </p>
+
                 <button type="submit" disabled={loading} className={styles.submit}>
                   {loading ? text.submitting : text.submit}
                 </button>

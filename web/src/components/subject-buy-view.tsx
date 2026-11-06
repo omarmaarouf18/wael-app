@@ -15,11 +15,14 @@ import { dictionary, localePath, type Lang } from "@/lib/i18n";
 
 import { useAuth } from "./auth-provider";
 import styles from "./auth.module.css";
+import { useCart } from "./cart-provider";
 
 interface SubjectBuySectionProps {
   lang: Lang;
   subjectId: string;
   price: number;
+  titleAr?: string;
+  titleEn?: string;
 }
 
 interface AppConfig {
@@ -31,10 +34,18 @@ interface AppConfig {
 const DEFAULT_ANDROID_URL = "https://play.google.com/store/apps/details?id=app.elmetracademy.elmetr";
 const DEFAULT_IOS_URL = "https://apps.apple.com/app/el-metr-academy/id6737155342";
 
-export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionProps) {
+export function SubjectBuySection({
+  lang,
+  subjectId,
+  price,
+  titleAr,
+  titleEn,
+}: SubjectBuySectionProps) {
   const t = dictionary(lang);
   const text = t.catalog;
   const { isLoggedIn, isLoading: authLoading } = useAuth();
+  const { addItem, isInCart, openCart } = useCart();
+  const inCart = isInCart(subjectId);
 
   const [dataLoaded, setDataLoaded] = useState(false);
   const [isOwned, setIsOwned] = useState(false);
@@ -184,6 +195,31 @@ export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionP
             <a href={localePath(lang, "/signup")} className={styles.secondaryButton}>
               {text.signupButton}
             </a>
+            {inCart ? (
+              <button
+                type="button"
+                onClick={openCart}
+                className={styles.secondaryButton}
+              >
+                {text.inCart} →
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  addItem({
+                    id: subjectId,
+                    titleAr: titleAr || subjectId,
+                    titleEn: titleEn || titleAr || subjectId,
+                    price,
+                  });
+                  openCart();
+                }}
+                className={styles.secondaryButton}
+              >
+                🛒 {text.addToCart}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -236,6 +272,34 @@ export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionP
       <div className={styles.card}>
         <h3 className={styles.title}>{text.buyFormTitle}</h3>
         <p className={styles.lead}>{text.price(String(price))}</p>
+
+        <div style={{ marginBottom: "1.25rem", display: "flex", gap: "0.5rem" }}>
+          {inCart ? (
+            <button
+              type="button"
+              onClick={openCart}
+              className={styles.secondaryButton}
+            >
+              {text.inCart} →
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                addItem({
+                  id: subjectId,
+                  titleAr: titleAr || subjectId,
+                  titleEn: titleEn || titleAr || subjectId,
+                  price,
+                });
+                openCart();
+              }}
+              className={styles.secondaryButton}
+            >
+              🛒 {text.addToCart}
+            </button>
+          )}
+        </div>
 
         {paymentMethods.length === 0 ? (
           <p className={styles.emptyState}>{text.noPaymentMethodsConfigured}</p>
@@ -327,6 +391,43 @@ export function SubjectBuySection({ lang, subjectId, price }: SubjectBuySectionP
                 dir="ltr"
               />
             </div>
+
+            <p
+              style={{
+                fontSize: "0.85rem",
+                color: "var(--text-muted, #999)",
+                textAlign: "center",
+                margin: "12px 0",
+              }}
+            >
+              {t.auth.signup.legalNoticePrefix}
+              <a
+                href={
+                  lang === "en"
+                    ? "https://legal.elmetracademy.app/terms#en"
+                    : "https://legal.elmetracademy.app/terms"
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ textDecoration: "underline", color: "inherit" }}
+              >
+                {t.auth.signup.termsLink}
+              </a>
+              {t.auth.signup.legalNoticeAnd}
+              <a
+                href={
+                  lang === "en"
+                    ? "https://legal.elmetracademy.app/privacy#en"
+                    : "https://legal.elmetracademy.app/privacy"
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ textDecoration: "underline", color: "inherit" }}
+              >
+                {t.auth.signup.privacyLink}
+              </a>
+              .
+            </p>
 
             <button type="submit" disabled={submitting} className={styles.submit}>
               {submitting ? text.submittingPurchaseRequest : text.submitPurchaseRequest}

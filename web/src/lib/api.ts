@@ -40,12 +40,25 @@ export interface SignupResponse {
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly messageAr?: string;
+  readonly messageEn?: string;
+  readonly subjectId?: string;
+  readonly retryAfter?: number;
 
-  constructor(status: number, code: string, message?: string) {
+  constructor(
+    status: number,
+    code: string,
+    message?: string,
+    opts?: { messageAr?: string; messageEn?: string; subjectId?: string; retryAfter?: number },
+  ) {
     super(message || `API ${status}: ${code}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.messageAr = opts?.messageAr;
+    this.messageEn = opts?.messageEn;
+    this.subjectId = opts?.subjectId;
+    this.retryAfter = opts?.retryAfter;
   }
 }
 
@@ -99,20 +112,42 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   if (!res.ok) {
     let code = "http_error";
     let message = "";
+    let messageAr: string | undefined;
+    let messageEn: string | undefined;
+    let subjectId: string | undefined;
+    const retryAfterHeader = res.headers.get("Retry-After");
+    const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : undefined;
     try {
       const body: unknown = await res.json();
       if (body && typeof body === "object") {
-        if ("error" in body && typeof body.error === "string") {
-          code = body.error;
+        const b = body as Record<string, unknown>;
+        if (typeof b.error === "string") {
+          code = b.error;
+        } else if (typeof b.code === "string") {
+          code = b.code;
         }
-        if ("message" in body && typeof body.message === "string") {
-          message = body.message;
+        if (typeof b.message === "string") {
+          message = b.message;
+        }
+        if (typeof b.message_ar === "string") {
+          messageAr = b.message_ar;
+        }
+        if (typeof b.message_en === "string") {
+          messageEn = b.message_en;
+        }
+        if (typeof b.subject_id === "string") {
+          subjectId = b.subject_id;
         }
       }
     } catch {
       // Non-JSON error body: keep the generic code.
     }
-    throw new ApiError(res.status, code, message);
+    throw new ApiError(res.status, code, message, {
+      messageAr,
+      messageEn,
+      subjectId,
+      retryAfter: Number.isNaN(retryAfter) ? undefined : retryAfter,
+    });
   }
 
   if (res.status === 204) {
@@ -131,6 +166,21 @@ export async function apiPost<T>(
   init?: { signal?: AbortSignal; skipAuth?: boolean },
 ): Promise<T> {
   return apiFetch<T>(path, { method: "POST", body, signal: init?.signal, skipAuth: init?.skipAuth });
+}
+
+export async function apiPatch<T>(
+  path: string,
+  body?: unknown,
+  init?: { signal?: AbortSignal; skipAuth?: boolean },
+): Promise<T> {
+  return apiFetch<T>(path, { method: "PATCH", body, signal: init?.signal, skipAuth: init?.skipAuth });
+}
+
+export async function apiDelete<T>(
+  path: string,
+  init?: { signal?: AbortSignal; skipAuth?: boolean },
+): Promise<T> {
+  return apiFetch<T>(path, { method: "DELETE", signal: init?.signal, skipAuth: init?.skipAuth });
 }
 
 // Auth API client calls
@@ -306,4 +356,128 @@ export async function getMyRequests(): Promise<{ items: StudentRequestItem[] }> 
 export async function getMyRequestById(id: string): Promise<StudentRequestItem> {
   return apiGet<StudentRequestItem>(`/api/v1/academy/me/requests/${encodeURIComponent(id)}`);
 }
+
+// Account Management (Part B)
+
+export interface ProfileUpdateResponse {
+  full_name: string;
+  phone: string;
+}
+
+export async function updateProfile(data: {
+  full_name?: string;
+  phone?: string;
+  current_password: string;
+}): Promise<ProfileUpdateResponse> {
+  return apiPatch<ProfileUpdateResponse>("/api/v1/auth/me", data);
+}
+
+export async function changePassword(data: {
+  current_password: string;
+  new_password: string;
+}): Promise<void> {
+  await apiPost("/api/v1/auth/password/change", data);
+}
+
+export interface DeviceSession {
+  sid: string;
+  device_label: string;
+  created_at: string;
+  last_used_at: string;
+  current: boolean;
+}
+
+export async function getSessions(): Promise<{ sessions: DeviceSession[] }> {
+  return apiGet<{ sessions: DeviceSession[] }>("/api/v1/auth/sessions");
+}
+
+export async function deleteSession(sid: string): Promise<void> {
+  await apiDelete(`/api/v1/auth/sessions/${encodeURIComponent(sid)}`);
+}
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  title_ar: string;
+  body: string;
+  body_ar: string;
+  created_at: string;
+  read: boolean;
+  type?: string;
+  target_route?: string;
+  subject_id?: string;
+}
+
+export async function getNotifications(params?: {
+  page?: number;
+  limit?: number;
+}): Promise<{ notifications: NotificationItem[] }> {
+  const page = params?.page ?? 1;
+  const limit = params?.limit ?? 20;
+  return apiGet<{ notifications: NotificationItem[] }>(`/api/v1/notifications/list?page=${page}&limit=${limit}`);
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await apiPost("/api/v1/notifications/read", { id });
+}
+
+export async function requestAccountDeletion(data: {
+  current_password: string;
+  confirm?: string;
+}): Promise<{ deletion_date: string }> {
+  return apiPost<{ deletion_date: string }>("/api/v1/auth/account/delete", {
+    current_password: data.current_password,
+    confirm: data.confirm ?? "حذف",
+  });
+}
+
+// Orders API (Part C - Agent 1 Contract docs/contracts/orders-api.md)
+
+export interface CreateOrderPayload {
+  subject_ids: string[];
+  payment_method: "wallet" | "instapay";
+  transfer_reference: string;
+  sender_number: string;
+  amount_paid: number;
+}
+
+export interface OrderItem {
+  request_id: string;
+  subject_id: string;
+  title_ar: string;
+  title_en?: string;
+  level_name_ar?: string;
+  price: number;
+  status: "pending" | "accepted" | "rejected";
+  decided_at?: string;
+  reject_reason?: string;
+}
+
+export interface OrderResponse {
+  id: string;
+  source: "web" | "app";
+  status: "open" | "closed";
+  created_at: string;
+  decided_at?: string;
+  payment_method?: "wallet" | "instapay";
+  transfer_reference?: string;
+  sender_number?: string;
+  amount_paid?: number;
+  total: number;
+  amount_mismatch: boolean;
+  items: OrderItem[];
+}
+
+export async function createOrder(data: CreateOrderPayload): Promise<OrderResponse> {
+  return apiPost<OrderResponse>("/api/v1/academy/orders", data);
+}
+
+export async function getMyOrders(): Promise<{ items: OrderResponse[] }> {
+  return apiGet<{ items: OrderResponse[] }>("/api/v1/academy/me/orders");
+}
+
+export async function getMyOrderById(id: string): Promise<OrderResponse> {
+  return apiGet<OrderResponse>(`/api/v1/academy/me/orders/${encodeURIComponent(id)}`);
+}
+
 

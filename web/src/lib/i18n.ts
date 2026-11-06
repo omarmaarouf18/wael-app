@@ -64,6 +64,10 @@ export interface AuthText {
     submitting: string;
     hasAccountPrompt: string;
     loginLink: string;
+    legalNoticePrefix: string;
+    termsLink: string;
+    legalNoticeAnd: string;
+    privacyLink: string;
     otpTitle: string;
     otpLead: (email: string) => string;
     otpCodeLabel: string;
@@ -130,17 +134,174 @@ export interface AuthText {
   };
 }
 
+export interface CartText {
+  navCart: (count: number) => string;
+  title: string;
+  empty: string;
+  browseCatalog: string;
+  itemPrice: (price: number) => string;
+  total: (amount: number) => string;
+  remove: string;
+  clearCart: string;
+  proceedToCheckout: string;
+  addToCart: string;
+  inCart: string;
+  alreadyOwned: string;
+  pendingRequest: string;
+  closeCart: string;
+}
+
+export interface CheckoutText {
+  title: string;
+  loginRequiredPrompt: string;
+  loginButton: string;
+  signupButton: string;
+  paymentMethodLabel: string;
+  selectMethod: string;
+  transferReferenceLabel: string;
+  transferReferencePlaceholder: string;
+  senderNumberLabel: string;
+  senderNumberPlaceholder: string;
+  amountPaidLabel: string;
+  amountMismatchWarning: string;
+  legalNoticePrefix: string;
+  termsLink: string;
+  legalNoticeAnd: string;
+  privacyLink: string;
+  submitOrder: string;
+  submitting: string;
+  successTitle: string;
+  successLead: string;
+  viewMyOrders: string;
+  errors: {
+    duplicate_reference: string;
+    already_owned: (subj?: string) => string;
+    pending_request_exists: (subj?: string) => string;
+    subject_expired: (subj?: string) => string;
+    subject_not_found: (subj?: string) => string;
+    invalid_amount: string;
+    invalid_reference: string;
+    invalid_sender: string;
+    invalid_subjects: string;
+    duplicate_subject: string;
+    too_many_requests: string;
+    generic: string;
+  };
+}
+
+export interface AccountHubText {
+  tabs: {
+    overview: string;
+    profile: string;
+    orders: string;
+    devices: string;
+    notifications: string;
+    password: string;
+    danger: string;
+  };
+  profile: {
+    editBtn: string;
+    editTitle: string;
+    nameLabel: string;
+    phoneLabel: string;
+    phonePlaceholder: string;
+    phoneHelper: string;
+    currentPasswordLabel: string;
+    save: string;
+    saving: string;
+    cancel: string;
+    success: string;
+    errorTooSoon: (days: number) => string;
+    errorConflict: string;
+    errorWrongPassword: string;
+  };
+  password: {
+    title: string;
+    lead: string;
+    currentPassword: string;
+    newPassword: string;
+    confirmNewPassword: string;
+    submit: string;
+    submitting: string;
+    success: string;
+    mismatch: string;
+    forgotLink: string;
+  };
+  devices: {
+    title: string;
+    lead: string;
+    noSessions: string;
+    currentBadge: string;
+    webBadge: string;
+    lastUsed: (date: string) => string;
+    created: (date: string) => string;
+    signOut: string;
+    signingOut: string;
+    signOutCurrentWarning: string;
+  };
+  notifications: {
+    title: string;
+    lead: string;
+    noNotifications: string;
+    unreadBadge: string;
+    markRead: string;
+    markingRead: string;
+    allCaughtUp: string;
+  };
+  orders: {
+    title: string;
+    lead: string;
+    noOrders: string;
+    orderNumber: (id: string) => string;
+    orderDate: (date: string) => string;
+    amountPaid: (amount: number) => string;
+    total: (amount: number) => string;
+    transferRef: (ref: string) => string;
+    senderNumber: (sender: string) => string;
+    paymentMethod: (method: string) => string;
+    itemsCount: (count: number) => string;
+    statusPending: string;
+    statusAccepted: string;
+    statusRejected: string;
+    rejectReason: (reason: string) => string;
+    methodWallet: string;
+    methodInstapay: string;
+  };
+  deleteAccount: {
+    title: string;
+    warning: string;
+    confirmPrompt: string;
+    confirmPlaceholder: string;
+    currentPasswordLabel: string;
+    submit: string;
+    submitting: string;
+    scheduledNotice: (date: string) => string;
+  };
+}
+
 interface Dictionary {
   brand: string;
   brandEyebrow: string;
   switchLanguage: string;
   switchLanguageLabel: string;
-  nav: { home: string; about: string; subjects: string; login: string; signup: string; account: string; logout: string };
+  nav: {
+    home: string;
+    about: string;
+    subjects: string;
+    login: string;
+    signup: string;
+    account: string;
+    logout: string;
+    cart: (count: number) => string;
+  };
   footer: { terms: string; privacy: string; refund: string; rights: string; brandLine: string };
   todoBadge: string;
   pages: Record<PageKey, PageText>;
   catalog: CatalogText;
   auth: AuthText;
+  cart: CartText;
+  checkout: CheckoutText;
+  accountHub: AccountHubText;
 }
 
 interface CatalogText {
@@ -180,6 +341,10 @@ interface CatalogText {
   submitPurchaseRequest: string;
   submittingPurchaseRequest: string;
   purchaseRequestSuccess: string;
+  addToCart: string;
+  inCart: string;
+  alreadyOwned: string;
+  pendingRequest: string;
   buyErrors: {
     duplicate_reference: string;
     already_owned: string;
@@ -208,6 +373,7 @@ const ar: Dictionary = {
     signup: "تسجيل",
     account: "حسابي",
     logout: "خروج",
+    cart: (count: number) => `السلة (${count})`,
   },
   footer: {
     terms: "الشروط والأحكام",
@@ -310,6 +476,10 @@ const ar: Dictionary = {
     submitPurchaseRequest: "إرسال طلب الاشتراك",
     submittingPurchaseRequest: "جارٍ إرسال الطلب...",
     purchaseRequestSuccess: "تم إرسال طلب الاشتراك بنجاح! سيتم مراجعته وتفعيل المادة.",
+    addToCart: "أضف إلى السلة",
+    inCart: "في السلة",
+    alreadyOwned: "مشترك بالفعل",
+    pendingRequest: "قيد المراجعة",
     buyErrors: {
       duplicate_reference: "رقم العملية مسجل من قبل في طلب آخر. يرجى التأكد من الرقم وكتابته بدقة.",
       already_owned: "أنت مشترك في هذه المادة بالفعل.",
@@ -350,6 +520,10 @@ const ar: Dictionary = {
       submitting: "جارٍ إنشاء الحساب...",
       hasAccountPrompt: "لديك حساب بالفعل؟",
       loginLink: "تسجيل الدخول",
+      legalNoticePrefix: "بالمتابعة فإنك توافق على ",
+      termsLink: "الشروط والأحكام",
+      legalNoticeAnd: " و ",
+      privacyLink: "سياسة الخصوصية",
       otpTitle: "تأكيد البريد الإلكتروني",
       otpLead: (email: string) => `أدخل رمز التحقق المكون من 6 أرقام المرسل إلى ${email}`,
       otpCodeLabel: "رمز التحقق (OTP)",
@@ -415,6 +589,153 @@ const ar: Dictionary = {
       generic: "حدث خطأ غير متوقع. يرجى المحاولة لاحقاً.",
     },
   },
+  cart: {
+    navCart: (count: number) => `السلة (${count})`,
+    title: "سلة المشتريات",
+    empty: "السلة فارغة حالياً.",
+    browseCatalog: "تصفح المواد الدراسية",
+    itemPrice: (price: number) => `${price} جنيه`,
+    total: (amount: number) => `الإجمالي: ${amount} جنيه`,
+    remove: "إزالة",
+    clearCart: "إفراغ السلة",
+    proceedToCheckout: "متابعة لإتمام الشراء",
+    addToCart: "أضف إلى السلة",
+    inCart: "في السلة",
+    alreadyOwned: "مشترك بالفعل",
+    pendingRequest: "قيد المراجعة",
+    closeCart: "إغلاق",
+  },
+  checkout: {
+    title: "إتمام الشراء والتحويل",
+    loginRequiredPrompt: "يرجى تسجيل الدخول أو إنشاء حساب جديد لإتمام الشراء.",
+    loginButton: "تسجيل الدخول",
+    signupButton: "إنشاء حساب",
+    paymentMethodLabel: "طريقة التحويل المالي",
+    selectMethod: "اختر وسيلة التحويل...",
+    transferReferenceLabel: "رقم العملية / مرجع التحويل",
+    transferReferencePlaceholder: "الرقم المرجعي من رسالة أو إيصال التحويل",
+    senderNumberLabel: "رقم الهاتف أو الحساب المحول منه",
+    senderNumberPlaceholder: "010xxxxxxxx أو username@instapay",
+    amountPaidLabel: "المبلغ المحول بالجنيه",
+    amountMismatchWarning: "تنبيه: المبلغ المدخل يختلف عن إجمالي سعر المواد بالسلة.",
+    legalNoticePrefix: "بالمتابعة فإنك توافق على ",
+    termsLink: "الشروط والأحكام",
+    legalNoticeAnd: " و ",
+    privacyLink: "سياسة الخصوصية",
+    submitOrder: "تأكيد وإرسال طلب الشراء",
+    submitting: "جارٍ إرسال الطلب...",
+    successTitle: "تم استلام طلب الشراء بنجاح!",
+    successLead: "تم حفظ بيانات التحويل وسيتم مراجعتها وتفعيل المواد على حسابك قريباً.",
+    viewMyOrders: "عرض ومتابعة طلباتي",
+    errors: {
+      duplicate_reference: "رقم العملية أو المرجع مستخدم بالفعل في طلب سابق.",
+      already_owned: (subj?: string) =>
+        subj ? `أنت مشترك بالفعل في مادة «${subj}».` : "أنت مشترك بالفعل في إحدى المواد المحددة.",
+      pending_request_exists: (subj?: string) =>
+        subj ? `لديك طلب معلق لمادة «${subj}» قيد المراجعة.` : "لديك طلب معلق لإحدى المواد المحددة.",
+      subject_expired: (subj?: string) =>
+        subj ? `انتهت فترة التسجيل لمادة «${subj}».` : "انتهت فترة التسجيل لإحدى المواد المحددة.",
+      subject_not_found: (subj?: string) =>
+        subj ? `المادة «${subj}» غير متاحة أو تم إلغاؤها.` : "إحدى المواد غير متاحة.",
+      invalid_amount: "المبلغ المدخل غير صالح (يجب أن يكون أكبر من صفر).",
+      invalid_reference: "رقم المرجع يجب أن يكون بين 3 و 100 حرف.",
+      invalid_sender: "رقم الهاتف أو الحساب المحول منه يجب أن يكون بين 3 و 50 حرفاً.",
+      invalid_subjects: "يرجى اختيار مادة واحدة على الأقل للشراء (الحد الأقصى 50).",
+      duplicate_subject: "لا يمكن تكرار نفس المادة في نفس الطلب.",
+      too_many_requests: "تم تجاوز حد المحاولات المسموح به. يرجى الانتظار والمحاولة لاحقاً.",
+      generic: "حدث خطأ أثناء إرسال الطلب. يرجى مراجعة البيانات والمحاولة مرة أخرى.",
+    },
+  },
+  accountHub: {
+    tabs: {
+      overview: "نظرة عامة",
+      profile: "البيانات الشخصية",
+      orders: "طلباتي",
+      devices: "الأجهزة المسجلة",
+      notifications: "الإشعارات",
+      password: "كلمة المرور",
+      danger: "حذف الحساب",
+    },
+    profile: {
+      editBtn: "تعديل البيانات",
+      editTitle: "تعديل بيانات الحساب",
+      nameLabel: "الاسم بالكامل",
+      phoneLabel: "رقم الهاتف",
+      phonePlaceholder: "010xxxxxxxx",
+      phoneHelper: "إضافة أول رقم هاتف متاحة في أي وقت، والتعديل اللاحق متاح مرة كل 30 يوماً.",
+      currentPasswordLabel: "كلمة المرور الحالية (مطلوبة لتأكيد التعديل)",
+      save: "حفظ التعديلات",
+      saving: "جارٍ الحفظ...",
+      cancel: "إلغاء",
+      success: "تم تحديث البيانات بنجاح.",
+      errorTooSoon: (days: number) => `لا يمكن تغيير رقم الهاتف إلا بعد مرور 30 يوماً (المتبقي: ${days} يوم).`,
+      errorConflict: "رقم الهاتف مسجل بالفعل بحساب آخر.",
+      errorWrongPassword: "كلمة المرور الحالية غير صحيحة.",
+    },
+    password: {
+      title: "تغيير كلمة المرور",
+      lead: "قم بتحديث كلمة المرور الخاصة بحسابك (بين 8 و 72 حرفاً).",
+      currentPassword: "كلمة المرور الحالية",
+      newPassword: "كلمة المرور الجديدة",
+      confirmNewPassword: "تأكيد كلمة المرور الجديدة",
+      submit: "تحديث كلمة المرور",
+      submitting: "جارٍ التحديث...",
+      success: "تم تحديث كلمة المرور بنجاح.",
+      mismatch: "كلمتا المرور غير متطابقتين.",
+      forgotLink: "نسيت كلمة المرور؟",
+    },
+    devices: {
+      title: "الأجهزة والجلسات المسجلة",
+      lead: "الأجهزة المسجلة بحسابك. جلسات الويب تظهر بعلامة «ويب» ولا تُحتسب ضمن الحد الأقصى للأجهزة (جهازين).",
+      noSessions: "لا توجد جلسات أخرى مسجلة.",
+      currentBadge: "الجلسة الحالية",
+      webBadge: "ويب",
+      lastUsed: (date: string) => `آخر نشاط: ${date}`,
+      created: (date: string) => `تاريخ الدخول: ${date}`,
+      signOut: "تسجيل الخروج من هذا الجهاز",
+      signingOut: "جارٍ الخروج...",
+      signOutCurrentWarning: "تسجيل الخروج من الجلسة الحالية سينهي تسجيل دخولك في هذا المتصفح.",
+    },
+    notifications: {
+      title: "صندوق الإشعارات",
+      lead: "التنبيهات والرسائل الإدارية والإشعارات الخاصة بحسابك.",
+      noNotifications: "لا توجد إشعارات لديك حالياً.",
+      unreadBadge: "جديد",
+      markRead: "تحديد كمقروء",
+      markingRead: "جارٍ التحديث...",
+      allCaughtUp: "لقد اطلعت على كافة الإشعارات.",
+    },
+    orders: {
+      title: "سجل طلباتي",
+      lead: "متابعة حالة طلبات الاشتراك والتحويلات المالية لكل مادة.",
+      noOrders: "لا توجد طلبات شراء سابقة حتى الآن.",
+      orderNumber: (id: string) => `طلب رقم #${id.slice(-8)}`,
+      orderDate: (date: string) => `تاريخ الطلب: ${date}`,
+      amountPaid: (amount: number) => `المبلغ المحول: ${amount} جنيه`,
+      total: (amount: number) => `الإجمالي: ${amount} جنيه`,
+      transferRef: (ref: string) => `رقم المرجع: ${ref}`,
+      senderNumber: (sender: string) => `المحول منه: ${sender}`,
+      paymentMethod: (method: string) => `طريقة الدفع: ${method}`,
+      itemsCount: (count: number) => `عدد المواد: ${count}`,
+      statusPending: "قيد المراجعة",
+      statusAccepted: "تم القبول والتفعيل",
+      statusRejected: "مرفوض",
+      rejectReason: (reason: string) => `سبب الرفض: ${reason}`,
+      methodWallet: "محفظة إلكترونية",
+      methodInstapay: "انستاباي (InstaPay)",
+    },
+    deleteAccount: {
+      title: "حذف الحساب نهائياً",
+      warning:
+        "تحذير هام: سيتم وضع حسابك في فترة سماح لمدة ٣٠ يوماً، وسيتم تسجيل الخروج من كافة الأجهزة فوراً. في حال رغبتك بإلغاء الحذف يمكنك تسجيل الدخول قبل انقضاء الـ ٣٠ يوماً.",
+      confirmPrompt: 'لتأكيد الحذف، يرجى كتابة كلمة "حذف" في الحقل أدناه وإدخال كلمة المرور الحالية:',
+      confirmPlaceholder: "حذف",
+      currentPasswordLabel: "كلمة المرور الحالية",
+      submit: "تأكيد طلب حذف الحساب",
+      submitting: "جارٍ تقديم طلب الحذف...",
+      scheduledNotice: (date: string) => `تم تحديد موعد حذف الحساب نهائياً في ${date}. تم تسجيل خروجك بنجاح.`,
+    },
+  },
 };
 
 const en: Dictionary = {
@@ -430,6 +751,7 @@ const en: Dictionary = {
     signup: "Sign up",
     account: "My Account",
     logout: "Log out",
+    cart: (count: number) => `Cart (${count})`,
   },
   footer: {
     terms: "Terms & Conditions",
@@ -532,6 +854,10 @@ const en: Dictionary = {
     submitPurchaseRequest: "Submit Purchase Request",
     submittingPurchaseRequest: "Submitting...",
     purchaseRequestSuccess: "Purchase request submitted successfully! It will be reviewed and activated.",
+    addToCart: "Add to Cart",
+    inCart: "In Cart",
+    alreadyOwned: "Already Owned",
+    pendingRequest: "Pending Review",
     buyErrors: {
       duplicate_reference: "This transfer reference is already registered in another request. Please verify.",
       already_owned: "You already own this subject.",
@@ -572,6 +898,10 @@ const en: Dictionary = {
       submitting: "Creating account...",
       hasAccountPrompt: "Already have an account?",
       loginLink: "Sign In",
+      legalNoticePrefix: "By continuing you agree to the ",
+      termsLink: "Terms & Conditions",
+      legalNoticeAnd: " and ",
+      privacyLink: "Privacy Policy",
       otpTitle: "Verify Email",
       otpLead: (email: string) => `Enter the 6-digit verification code sent to ${email}`,
       otpCodeLabel: "Verification Code (OTP)",
@@ -635,6 +965,153 @@ const en: Dictionary = {
       invalid_token: "Invalid or expired verification code.",
       password_too_long: "Password is too long (maximum 72 characters).",
       generic: "An unexpected error occurred. Please try again.",
+    },
+  },
+  cart: {
+    navCart: (count: number) => `Cart (${count})`,
+    title: "Shopping Cart",
+    empty: "Your cart is currently empty.",
+    browseCatalog: "Browse Subjects",
+    itemPrice: (price: number) => `EGP ${price}`,
+    total: (amount: number) => `Total: EGP ${amount}`,
+    remove: "Remove",
+    clearCart: "Clear Cart",
+    proceedToCheckout: "Proceed to Checkout",
+    addToCart: "Add to Cart",
+    inCart: "In Cart",
+    alreadyOwned: "Already Owned",
+    pendingRequest: "Pending Review",
+    closeCart: "Close",
+  },
+  checkout: {
+    title: "Checkout & Transfer Payment",
+    loginRequiredPrompt: "Please sign in or create an account to proceed with your order.",
+    loginButton: "Sign In",
+    signupButton: "Create Account",
+    paymentMethodLabel: "Payment Method",
+    selectMethod: "Select transfer method...",
+    transferReferenceLabel: "Transfer Reference / Transaction ID",
+    transferReferencePlaceholder: "Reference from transfer receipt message",
+    senderNumberLabel: "Sender Phone or Account Address",
+    senderNumberPlaceholder: "010xxxxxxxx or username@instapay",
+    amountPaidLabel: "Amount Paid (EGP)",
+    amountMismatchWarning: "Note: The amount entered differs from the cart total.",
+    legalNoticePrefix: "By continuing you agree to the ",
+    termsLink: "Terms & Conditions",
+    legalNoticeAnd: " and ",
+    privacyLink: "Privacy Policy",
+    submitOrder: "Confirm and Submit Order",
+    submitting: "Submitting order...",
+    successTitle: "Order Submitted Successfully!",
+    successLead: "Your transfer details have been received and are pending admin review. Subjects will be activated shortly.",
+    viewMyOrders: "View My Orders",
+    errors: {
+      duplicate_reference: "This transfer reference is already registered in another request. Please verify.",
+      already_owned: (subj?: string) =>
+        subj ? `You already own "${subj}".` : "You already own one of the selected subjects.",
+      pending_request_exists: (subj?: string) =>
+        subj ? `You already have an open request pending review for "${subj}".` : "You already have an open request for one of the subjects.",
+      subject_expired: (subj?: string) =>
+        subj ? `Registration period for "${subj}" has expired.` : "Registration period for one of the subjects has expired.",
+      subject_not_found: (subj?: string) =>
+        subj ? `Subject "${subj}" is unavailable.` : "One of the selected subjects is not available.",
+      invalid_amount: "The entered amount is invalid (must be greater than 0).",
+      invalid_reference: "Reference must be between 3 and 100 characters.",
+      invalid_sender: "Sender account must be between 3 and 50 characters.",
+      invalid_subjects: "Please select at least one subject (maximum 50).",
+      duplicate_subject: "A subject cannot be added twice to the same order.",
+      too_many_requests: "Too many attempts. Please try again later.",
+      generic: "Failed to submit order. Please verify your details and try again.",
+    },
+  },
+  accountHub: {
+    tabs: {
+      overview: "Overview",
+      profile: "Profile",
+      orders: "My Orders",
+      devices: "Devices",
+      notifications: "Notifications",
+      password: "Password",
+      danger: "Delete Account",
+    },
+    profile: {
+      editBtn: "Edit Profile",
+      editTitle: "Edit Account Profile",
+      nameLabel: "Full Name",
+      phoneLabel: "Phone Number",
+      phonePlaceholder: "010xxxxxxxx",
+      phoneHelper: "Adding a first phone is allowed anytime; subsequent changes follow the 30-day rule.",
+      currentPasswordLabel: "Current Password (required to save changes)",
+      save: "Save Changes",
+      saving: "Saving...",
+      cancel: "Cancel",
+      success: "Profile updated successfully.",
+      errorTooSoon: (days: number) => `Phone number cannot be changed within 30 days of last change (${days} days remaining).`,
+      errorConflict: "This phone number is already registered to another account.",
+      errorWrongPassword: "The current password entered is incorrect.",
+    },
+    password: {
+      title: "Change Password",
+      lead: "Update your account password (between 8 and 72 characters).",
+      currentPassword: "Current Password",
+      newPassword: "New Password",
+      confirmNewPassword: "Confirm New Password",
+      submit: "Update Password",
+      submitting: "Updating...",
+      success: "Password updated successfully.",
+      mismatch: "Passwords do not match.",
+      forgotLink: "Forgot password?",
+    },
+    devices: {
+      title: "Signed-in Devices & Sessions",
+      lead: "Active sessions for this account. Web sessions are labeled as web and do not count toward the 2-device mobile limit.",
+      noSessions: "No other active sessions found.",
+      currentBadge: "Current Session",
+      webBadge: "Web",
+      lastUsed: (date: string) => `Last active: ${date}`,
+      created: (date: string) => `Signed in: ${date}`,
+      signOut: "Sign Out",
+      signingOut: "Signing out...",
+      signOutCurrentWarning: "Signing out of the current session will log you out of this browser.",
+    },
+    notifications: {
+      title: "Notifications Inbox",
+      lead: "System alerts, course updates, and account notifications.",
+      noNotifications: "You have no notifications.",
+      unreadBadge: "New",
+      markRead: "Mark as read",
+      markingRead: "Updating...",
+      allCaughtUp: "You're all caught up!",
+    },
+    orders: {
+      title: "My Orders",
+      lead: "History of course orders, transfer verification details, and subject statuses.",
+      noOrders: "No previous orders found.",
+      orderNumber: (id: string) => `Order #${id.slice(-8)}`,
+      orderDate: (date: string) => `Date: ${date}`,
+      amountPaid: (amount: number) => `Paid: EGP ${amount}`,
+      total: (amount: number) => `Total: EGP ${amount}`,
+      transferRef: (ref: string) => `Ref: ${ref}`,
+      senderNumber: (sender: string) => `From: ${sender}`,
+      paymentMethod: (method: string) => `Method: ${method}`,
+      itemsCount: (count: number) => `Subjects: ${count}`,
+      statusPending: "Pending Review",
+      statusAccepted: "Accepted & Active",
+      statusRejected: "Rejected",
+      rejectReason: (reason: string) => `Reason: ${reason}`,
+      methodWallet: "Mobile Wallet",
+      methodInstapay: "InstaPay",
+    },
+    deleteAccount: {
+      title: "Delete Account",
+      warning:
+        "Important Warning: Your account will enter a 30-day grace period before permanent deletion, and you will be signed out from all devices immediately. You may cancel deletion by signing back in before the 30 days end.",
+      confirmPrompt: 'To confirm deletion, type "حذف" in the field below and enter your current password:',
+      confirmPlaceholder: "حذف",
+      currentPasswordLabel: "Current Password",
+      submit: "Confirm Account Deletion",
+      submitting: "Processing deletion...",
+      scheduledNotice: (date: string) => `Account deletion scheduled for ${date}. You have been signed out.`,
     },
   },
 };
