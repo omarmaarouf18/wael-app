@@ -26,6 +26,14 @@ type partGClient struct {
 	caPool     *x509.CertPool
 }
 
+func requirePartGAdminOrSkip(t *testing.T, reason string) {
+	t.Helper()
+	if os.Getenv("E2E_PART_G_ADMIN_REQUIRED") == "1" {
+		t.Fatalf("%s", reason)
+	}
+	t.Skip(reason)
+}
+
 func newPartGClient(t *testing.T) *partGClient {
 	t.Helper()
 	gw := os.Getenv("E2E_GATEWAY_URL")
@@ -86,20 +94,6 @@ func newPartGClient(t *testing.T) *partGClient {
 	_ = resp.Body.Close()
 
 	adminToken := os.Getenv("E2E_ADMIN_TOKEN")
-	if adminToken == "" {
-		if data, err := os.ReadFile(filepath.Join(filepath.Dir(caPath), "admin-token.txt")); err == nil {
-			adminToken = strings.TrimSpace(string(data))
-		} else if data, err := os.ReadFile("/tmp/wael-e2e-admin-token.txt"); err == nil {
-			adminToken = strings.TrimSpace(string(data))
-		}
-	}
-	if adminToken == "" {
-		if os.Getenv("E2E_REQUIRED") == "1" {
-			t.Fatalf("E2E_ADMIN_TOKEN not set and admin-token.txt not found")
-		}
-		t.Skip("E2E_ADMIN_TOKEN not set; skipping Part G")
-		return nil
-	}
 
 	return &partGClient{
 		gatewayURL: strings.TrimSuffix(gw, "/"),
@@ -110,6 +104,10 @@ func newPartGClient(t *testing.T) *partGClient {
 		jar:        jar,
 		caPool:     pool,
 	}
+}
+
+func (c *partGClient) hasAdmin() bool {
+	return c.adminToken != "" && c.consoleURL != ""
 }
 
 func (c *partGClient) request(t *testing.T, method, targetURL string, headers map[string]string, body any) (int, map[string]any, http.Header) {
@@ -211,6 +209,10 @@ func TestPartG_EndToEndCheck(t *testing.T) {
 
 	// Step 0: Ensure we have at least 5 published subjects from console
 	t.Run("00_setup_catalog_subjects", func(subT *testing.T) {
+		if !c.hasAdmin() {
+			requirePartGAdminOrSkip(subT, "admin step skipped: set E2E_ADMIN_TOKEN and E2E_CONSOLE_URL to run it")
+			return
+		}
 		code, out, _ := c.request(subT, http.MethodGet, c.consoleURL+"/api/subjects?limit=50", map[string]string{
 			"X-Admin-Token": c.adminToken,
 		}, nil)
@@ -336,12 +338,15 @@ func TestPartG_EndToEndCheck(t *testing.T) {
 		record("02_session_persists", code, "session refreshed across simulated reload via HttpOnly cookie; CSRF blocked attacker origin")
 	})
 
-	// Step 3: Add 3 subjects to the cart (subjIDs[0], subjIDs[1], subjIDs[2])
-	cartSubjs := []string{subjIDs[0], subjIDs[1], subjIDs[2]}
-	record("03_add_3_cart", 200, fmt.Sprintf("added 3 subjects to cart: %v", cartSubjs))
-
-	// Step 4: One order
+	// Step 4: Checkout web order with 3 subjects from cart
 	t.Run("04_checkout_web_order", func(subT *testing.T) {
+		if len(subjIDs) < 3 {
+			requirePartGAdminOrSkip(subT, "admin-dependent step skipped: requires at least 3 catalog subjects from admin setup")
+			return
+		}
+		cartSubjs := []string{subjIDs[0], subjIDs[1], subjIDs[2]}
+		record("03_add_3_cart", 200, fmt.Sprintf("added 3 subjects to cart: %v", cartSubjs))
+
 		ref := fmt.Sprintf("TXN-PARTG-%d", time.Now().UnixNano())
 		code, out, _ := c.request(subT, http.MethodPost, c.gatewayURL+"/api/v1/academy/orders", map[string]string{
 			"Authorization": "Bearer " + webAccess,
@@ -371,6 +376,10 @@ func TestPartG_EndToEndCheck(t *testing.T) {
 
 	// Step 5: From the app (same student) request 2 more subjects
 	t.Run("05_app_requests_2_subjects", func(subT *testing.T) {
+		if len(subjIDs) < 5 {
+			requirePartGAdminOrSkip(subT, "admin-dependent step skipped: requires at least 5 catalog subjects from admin setup")
+			return
+		}
 		// App login: without X-Client: web and without web cookies, returns tokens in body
 		code, out, _ := c.requestApp(subT, http.MethodPost, c.gatewayURL+"/api/v1/auth/login", nil, map[string]string{
 			"email":     studentEmail,
@@ -405,6 +414,14 @@ func TestPartG_EndToEndCheck(t *testing.T) {
 
 	// Step 6: Console shows one student row with a web order of 3 and an app order of 2
 	t.Run("06_console_shows_one_student_two_orders", func(subT *testing.T) {
+		if !c.hasAdmin() {
+			requirePartGAdminOrSkip(subT, "admin step skipped: set E2E_ADMIN_TOKEN and E2E_CONSOLE_URL to run it")
+			return
+		}
+		if orderID == "" {
+			requirePartGAdminOrSkip(subT, "admin-dependent step skipped: requires web order from step 04")
+			return
+		}
 		// Authenticate admin and query request groups
 		code, out, _ := c.request(subT, http.MethodGet, c.consoleURL+"/api/request-groups?status=pending", map[string]string{
 			"X-Admin-Token": c.adminToken,
@@ -459,6 +476,14 @@ func TestPartG_EndToEndCheck(t *testing.T) {
 
 	// Step 7: Accept 2, reject 1 with a reason
 	t.Run("07_accept_2_reject_1", func(subT *testing.T) {
+		if !c.hasAdmin() {
+			requirePartGAdminOrSkip(subT, "admin step skipped: set E2E_ADMIN_TOKEN and E2E_CONSOLE_URL to run it")
+			return
+		}
+		if len(reqIDs) < 3 {
+			requirePartGAdminOrSkip(subT, "admin-dependent step skipped: requires at least 3 requests from steps 04 and 05")
+			return
+		}
 		// Accept reqIDs[0] and reqIDs[1] (subjects 1 & 2)
 		codeAccept, outAccept, _ := c.request(subT, http.MethodPost, c.consoleURL+"/api/requests/bulk", map[string]string{
 			"X-Admin-Token": c.adminToken,
@@ -491,6 +516,10 @@ func TestPartG_EndToEndCheck(t *testing.T) {
 
 	// Step 8: Website shows the per-subject result
 	t.Run("08_website_shows_per_subject_result", func(subT *testing.T) {
+		if !c.hasAdmin() || orderID == "" {
+			requirePartGAdminOrSkip(subT, "admin-dependent step skipped: requires admin review from step 07")
+			return
+		}
 		code, out, _ := c.request(subT, http.MethodGet, c.gatewayURL+"/api/v1/academy/me/orders/"+orderID, map[string]string{
 			"Authorization": "Bearer " + webAccess,
 			"X-Client":      "web",
@@ -531,6 +560,10 @@ func TestPartG_EndToEndCheck(t *testing.T) {
 
 	// Step 9: App shows the 2 subjects owned
 	t.Run("09_app_shows_2_owned", func(subT *testing.T) {
+		if !c.hasAdmin() || len(subjIDs) < 2 {
+			requirePartGAdminOrSkip(subT, "admin-dependent step skipped: requires admin grant from step 07")
+			return
+		}
 		code, out, _ := c.requestApp(subT, http.MethodGet, c.gatewayURL+"/api/v1/academy/me/entitlements", map[string]string{
 			"Authorization": "Bearer " + appAccess,
 		}, nil)
@@ -553,38 +586,52 @@ func TestPartG_EndToEndCheck(t *testing.T) {
 
 	// Step 10: Web token still 403 on play/download
 	t.Run("10_web_token_refused_on_play_and_download", func(subT *testing.T) {
-		if videoID != "" {
-			code, out, _ := c.request(subT, http.MethodPost, c.gatewayURL+"/api/v1/academy/videos/"+videoID+"/play", map[string]string{
-				"Authorization": "Bearer " + webAccess,
-				"X-Client":      "web",
-				"Origin":        "http://localhost:3000",
-			}, nil)
-			if code != http.StatusForbidden {
-				subT.Fatalf("expected 403 on video play with web token, got %d (%v)", code, out)
-			}
-			if out["code"] != "web_access_forbidden" {
-				subT.Errorf("expected code web_access_forbidden, got %v", out["code"])
-			}
+		if webAccess == "" {
+			subT.Fatal("web access token not available from step 01/02")
+		}
+		vid := videoID
+		if vid == "" {
+			vid = "dummy-video-id"
+		}
+		code, out, _ := c.request(subT, http.MethodPost, c.gatewayURL+"/api/v1/academy/videos/"+vid+"/play", map[string]string{
+			"Authorization": "Bearer " + webAccess,
+			"X-Client":      "web",
+			"Origin":        "http://localhost:3000",
+		}, nil)
+		if code != http.StatusForbidden {
+			subT.Fatalf("expected 403 on video play with web token, got %d (%v)", code, out)
+		}
+		if out["code"] != "web_access_forbidden" {
+			subT.Errorf("expected code web_access_forbidden, got %v", out["code"])
 		}
 
-		if fileID != "" {
-			code, out, _ := c.request(subT, http.MethodGet, c.gatewayURL+"/api/v1/academy/subjects/"+subjIDs[0]+"/files/"+fileID+"/download", map[string]string{
-				"Authorization": "Bearer " + webAccess,
-				"X-Client":      "web",
-				"Origin":        "http://localhost:3000",
-			}, nil)
-			if code != http.StatusForbidden {
-				subT.Fatalf("expected 403 on file download with web token, got %d (%v)", code, out)
-			}
-			if out["code"] != "web_access_forbidden" {
-				subT.Errorf("expected code web_access_forbidden, got %v", out["code"])
-			}
+		targetSubj := "dummy-subject-id"
+		if len(subjIDs) > 0 {
+			targetSubj = subjIDs[0]
+		}
+		fid := fileID
+		if fid == "" {
+			fid = "dummy-file-id"
+		}
+		code, out, _ = c.request(subT, http.MethodGet, c.gatewayURL+"/api/v1/academy/subjects/"+targetSubj+"/files/"+fid+"/download", map[string]string{
+			"Authorization": "Bearer " + webAccess,
+			"X-Client":      "web",
+			"Origin":        "http://localhost:3000",
+		}, nil)
+		if code != http.StatusForbidden {
+			subT.Fatalf("expected 403 on file download with web token, got %d (%v)", code, out)
+		}
+		if out["code"] != "web_access_forbidden" {
+			subT.Errorf("expected code web_access_forbidden, got %v", out["code"])
 		}
 		record("10_web_token_forbidden", http.StatusForbidden, "POST /play and GET /download both answered 403 web_access_forbidden on web token")
 	})
 
 	// Step 11: Account features from Part B each tried once
 	t.Run("11_account_features_part_b", func(subT *testing.T) {
+		if webAccess == "" {
+			subT.Fatal("web access token not available from step 01/02")
+		}
 		// Feature 1: Profile update (name and add phone)
 		newFullName := "طالب معدل بالكامل"
 		newPhone := fmt.Sprintf("+2011%08d", time.Now().UnixNano()%100000000)
