@@ -187,6 +187,33 @@ test('subject create sends the date as 23:59:59 Cairo in UTC', async () => {
   // June in Cairo is UTC+3 (DST), independently of the implementation.
   assert.equal(body.access_expires_at, new Date('2027-06-01T23:59:59+03:00').toISOString());
   assert.equal(body.title_ar, 'مادة جديدة');
+  assert.equal(body.price_visibility, 'follow_global');
+});
+
+test('subject create and edit handles price_visibility (follow_global / show / hide)', async () => {
+  globalThis.fetch.calls.length = 0;
+  clickText($('catalog-toolbar'), t('catalog.addSubject'));
+  const dialog = openDialog();
+  const titleInput = dialog.findAll((c) => c.tagName === 'INPUT' && c.attrs.get('type') === 'text')[0];
+  titleInput.value = 'مادة باشتراك وظهور';
+  const dateInput = dialog.findAll((c) => c.tagName === 'INPUT' && c.attrs.get('type') === 'date')[0];
+  dateInput.value = '2027-06-01';
+
+  // Find price visibility select (has 3 options: follow_global, show, hide)
+  const pvSelect = dialog.findAll((c) => c.tagName === 'SELECT')
+    .find((el) => el.findAll((o) => o.attrs.get('value') === 'show').length > 0);
+  assert.ok(pvSelect, 'price visibility select exists in dialog');
+  assert.equal(pvSelect.value, 'follow_global');
+
+  // Change to show
+  pvSelect.value = 'show';
+  dialog.findAll((c) => c.tagName === 'FORM')[0].fire('submit');
+  await flush();
+
+  const posts = postsTo('/api/subjects/create');
+  assert.equal(posts.length, 1);
+  const body = JSON.parse(posts[0].init.body);
+  assert.equal(body.price_visibility, 'show');
 });
 
 test('publish is disabled at zero videos with a hint, enabled otherwise', async () => {

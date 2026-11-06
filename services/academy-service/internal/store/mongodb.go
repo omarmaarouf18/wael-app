@@ -55,6 +55,11 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		return nil, fmt.Errorf("store: ensure indexes: %w", err)
 	}
 
+	if err := ms.MigrateSubjectPriceVisibility(ctx); err != nil {
+		_ = client.Disconnect(ctx)
+		return nil, fmt.Errorf("store: migrate subject price visibility: %w", err)
+	}
+
 	return ms, nil
 }
 
@@ -388,12 +393,37 @@ func (s *MongoStore) CountSubjectsByLevel(ctx context.Context, levelKey, status 
 
 // CreateSubject inserts a new subject into the subjects collection.
 func (s *MongoStore) CreateSubject(ctx context.Context, subj *models.Subject) error {
+	if subj.PriceVisibility == "" {
+		subj.PriceVisibility = models.PriceVisibilityFollowGlobal
+	}
 	_, err := s.db.Collection("subjects").InsertOne(ctx, subj)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return ErrDuplicate
 		}
 		return fmt.Errorf("store: insert subject: %w", err)
+	}
+	return nil
+}
+
+// MigrateSubjectPriceVisibility updates all existing subjects that lack a price_visibility
+// field (or have it set to empty/null) to have price_visibility = "follow_global".
+func (s *MongoStore) MigrateSubjectPriceVisibility(ctx context.Context) error {
+	filter := bson.M{
+		"$or": []bson.M{
+			{"price_visibility": bson.M{"$exists": false}},
+			{"price_visibility": ""},
+			{"price_visibility": nil},
+		},
+	}
+	update := bson.M{
+		"$set": bson.M{
+			"price_visibility": models.PriceVisibilityFollowGlobal,
+		},
+	}
+	_, err := s.db.Collection("subjects").UpdateMany(ctx, filter, update)
+	if err != nil {
+		return fmt.Errorf("store: migrate subject price visibility: %w", err)
 	}
 	return nil
 }

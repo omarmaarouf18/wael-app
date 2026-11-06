@@ -295,6 +295,7 @@ type subjectWriteRequest struct {
 	DescriptionEn   *string `json:"description_en"`
 	Term            *string `json:"term"`
 	Price           *int    `json:"price"`
+	PriceVisibility *string `json:"price_visibility"`
 	AccessExpiresAt *string `json:"access_expires_at"`
 	Order           *int    `json:"order"`
 	Published       *bool   `json:"published"`
@@ -414,6 +415,15 @@ func buildSubjectBody(in subjectWriteRequest, create bool) ([]byte, bool) {
 			return nil, false
 		}
 		out["price"] = *in.Price
+	}
+	if in.PriceVisibility != nil {
+		pv := strings.TrimSpace(*in.PriceVisibility)
+		switch pv {
+		case "follow_global", "show", "hide":
+			out["price_visibility"] = pv
+		default:
+			return nil, false
+		}
 	}
 	if in.AccessExpiresAt != nil {
 		expires := strings.TrimSpace(*in.AccessExpiresAt)

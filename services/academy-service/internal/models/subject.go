@@ -8,6 +8,13 @@ const (
 	StatusPublished = "published"
 )
 
+// Subject price visibility constants.
+const (
+	PriceVisibilityFollowGlobal = "follow_global"
+	PriceVisibilityShow         = "show"
+	PriceVisibilityHide         = "hide"
+)
+
 // Subject represents a course/subject inside an academic level.
 type Subject struct {
 	ID              string    `bson:"_id" json:"id"`
@@ -18,7 +25,8 @@ type Subject struct {
 	DescriptionAr   string    `bson:"description_ar" json:"description_ar"`
 	DescriptionEn   string    `bson:"description_en" json:"description_en"`
 	Price           int       `bson:"price" json:"price"`
-	Status          string    `bson:"status" json:"status"` // "draft", "published"
+	PriceVisibility string    `bson:"price_visibility" json:"price_visibility"` // "follow_global", "show", "hide"
+	Status          string    `bson:"status" json:"status"`                     // "draft", "published"
 	Order           int       `bson:"order" json:"order"`
 	AccessExpiresAt time.Time `bson:"access_expires_at" json:"access_expires_at"`
 	CreatedAt       time.Time `bson:"created_at" json:"created_at"`
@@ -130,4 +138,23 @@ func (s *Subject) ToDetailDTO(counts SubjectCountsDTO, videos []VideoMetadataDTO
 		dto.Currency = "EGP"
 	}
 	return dto
+}
+
+// EffectivePriceVisible reports whether the subject's price should be exposed
+// to app clients, given its per-subject price_visibility setting and the global
+// show_prices setting.
+// - "show": always true
+// - "hide": always false
+// - "follow_global" or empty: follows globalShowPrices
+func (s *Subject) EffectivePriceVisible(globalShowPrices bool) bool {
+	switch s.PriceVisibility {
+	case PriceVisibilityShow:
+		return true
+	case PriceVisibilityHide:
+		return false
+	case PriceVisibilityFollowGlobal, "":
+		return globalShowPrices
+	default:
+		return globalShowPrices
+	}
 }

@@ -35,6 +35,7 @@ var academyErrorCodes = []string{
 	"invalid_description",
 	"invalid_term",
 	"invalid_price",
+	"invalid_price_visibility",
 	"invalid_expires_at",
 	"invalid_published",
 	"subject_has_no_videos",

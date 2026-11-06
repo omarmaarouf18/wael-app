@@ -97,6 +97,7 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
   const termRow = h('div', { class: 'field' });
   const term = h('select', {});
   const price = h('input', { class: 'ltr', attrs: { type: 'number', min: '0', step: '1', inputmode: 'numeric' } });
+  const priceVisibility = h('select', {});
   const expires = h('input', { class: 'ltr', attrs: { type: 'date' } });
   const cancel = h('button', { class: 'btn secondary', text: t('common.cancel'), attrs: { type: 'button' } });
   const save = h('button', { class: 'btn primary', attrs: { type: 'submit' } });
@@ -111,6 +112,7 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
     h('div', { class: 'field' }, h('label', { text: t('catalog.field.descEn') }), descEn),
     termRow,
     h('div', { class: 'field' }, h('label', { text: t('catalog.field.price') }), price),
+    h('div', { class: 'field' }, h('label', { text: t('catalog.field.priceVisibility') }), priceVisibility),
     h('div', { class: 'field' }, h('label', { text: t('catalog.field.expires') }), expires),
     banner,
     h('div', { class: 'dialog-actions' }, cancel, save),
@@ -132,7 +134,7 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
     doc,
     dialog,
     cancel,
-    snapshot: () => JSON.stringify([level.value, titleAr.value, titleEn.value, descAr.value, descEn.value, term.value, price.value, expires.value]),
+    snapshot: () => JSON.stringify([level.value, titleAr.value, titleEn.value, descAr.value, descEn.value, term.value, price.value, priceVisibility.value, expires.value]),
     isBusy: () => busy,
   });
 
@@ -157,14 +159,32 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
     termRow.hidden = vocational;
   }
 
+  function fillPriceVisibility() {
+    const keep = priceVisibility.value;
+    clear(priceVisibility);
+    for (const [val, key] of [
+      ['follow_global', 'catalog.priceVisibility.followGlobal'],
+      ['show', 'catalog.priceVisibility.show'],
+      ['hide', 'catalog.priceVisibility.hide'],
+    ]) {
+      priceVisibility.append(h('option', { text: t(key), attrs: { value: val } }));
+    }
+    if (keep === 'show' || keep === 'hide' || keep === 'follow_global') {
+      priceVisibility.value = keep;
+    } else {
+      priceVisibility.value = 'follow_global';
+    }
+  }
+
   function render() {
     fillTermRow();
     syncTermRow();
+    fillPriceVisibility();
     title.textContent = t(current?.mode === 'edit' ? 'catalog.subjectEditTitle' : 'catalog.subjectCreateTitle');
     save.textContent = busy ? t('dialog.working') : t(current?.mode === 'edit' ? 'catalog.save' : 'catalog.create');
     save.disabled = busy || cooldown.active;
     cancel.disabled = busy;
-    for (const input of [level, titleAr, titleEn, descAr, descEn, term, price, expires]) input.disabled = busy;
+    for (const input of [level, titleAr, titleEn, descAr, descEn, term, price, priceVisibility, expires]) input.disabled = busy;
   }
 
   function readBody() {
@@ -192,6 +212,9 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
     else if (current?.mode === 'create') body.term = '';
     if (priceCheck.value !== undefined) body.price = priceCheck.value;
     else if (current?.mode === 'create') body.price = 0;
+    body.price_visibility = priceVisibility.value === 'show' || priceVisibility.value === 'hide'
+      ? priceVisibility.value
+      : 'follow_global';
     return { body };
   }
 
@@ -259,8 +282,11 @@ export function createSubjectDialog({ api, doc = document, onDone }) {
       expires.value = subject?.access_expires_at ? cairoDateInputValue(subject.access_expires_at) : '';
       hideBanner(banner);
       render();
-      // render() rebuilds the term options, so apply the value afterwards.
+      // render() rebuilds the term and priceVisibility options, so apply values afterwards.
       term.value = subject?.term === 'second' ? 'second' : 'first';
+      priceVisibility.value = subject?.price_visibility === 'show' || subject?.price_visibility === 'hide'
+        ? subject.price_visibility
+        : 'follow_global';
       syncTermRow();
       guard.arm();
       dialog.showModal();

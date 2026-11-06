@@ -809,6 +809,7 @@ func TestSubjectsAndVideosReadEndpoints(t *testing.T) {
 
 		// When EXPOSE_PRICE_TO_STUDENTS = true
 		sExposed := newTestServer(true)
+		_ = sExposed.Store.SaveAppSettings(context.Background(), &models.AppSettings{ShowPrices: true})
 		setupData(sExposed)
 		hExposed := sExposed.PublicHandler()
 

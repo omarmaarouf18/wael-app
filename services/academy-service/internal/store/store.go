@@ -82,6 +82,9 @@ type Store interface {
 	// entitlement, purchase request or payment record (any state)
 	// ErrSubjectHasStudents.
 	DeleteDraftSubject(ctx context.Context, id string) ([]*models.SubjectFile, error)
+	// MigrateSubjectPriceVisibility sets price_visibility="follow_global" on
+	// existing subjects that have no price_visibility set.
+	MigrateSubjectPriceVisibility(ctx context.Context) error
 
 	// Entitlements (Phase 3.1)
 	Grant(ctx context.Context, e *models.Entitlement) error
@@ -316,7 +319,23 @@ func (s *MemoryStore) CreateSubject(_ context.Context, subj *models.Subject) err
 		return ErrDuplicate
 	}
 	cp := *subj
+	if cp.PriceVisibility == "" {
+		cp.PriceVisibility = models.PriceVisibilityFollowGlobal
+	}
 	s.subjects[subj.ID] = &cp
+	return nil
+}
+
+// MigrateSubjectPriceVisibility updates existing subjects with empty price_visibility to "follow_global".
+func (s *MemoryStore) MigrateSubjectPriceVisibility(_ context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, subj := range s.subjects {
+		if subj.PriceVisibility == "" {
+			subj.PriceVisibility = models.PriceVisibilityFollowGlobal
+		}
+	}
 	return nil
 }
 

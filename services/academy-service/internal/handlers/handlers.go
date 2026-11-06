@@ -298,6 +298,14 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	settingsCtx, settingsCancel := context.WithTimeout(r.Context(), dbTimeout)
+	settings, err := s.effectiveAppSettings(settingsCtx)
+	settingsCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
 	levelsCtx, levelsCancel := context.WithTimeout(r.Context(), dbTimeout)
 	allLevels, err := s.Store.ListLevels(levelsCtx, false)
 	levelsCancel()
@@ -345,7 +353,7 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if allPublished && len(ownedExtras) == 0 {
-		s.listPublishedSubjects(w, r, levelKey, term, page, limit, activeEnts, levelsByKey)
+		s.listPublishedSubjects(w, r, levelKey, term, page, limit, activeEnts, levelsByKey, settings.ShowPrices)
 		return
 	}
 
@@ -415,7 +423,7 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]models.SubjectListItemDTO, 0, len(paged))
 	for _, subj := range paged {
-		dto, err := s.subjectListItem(r, subj, activeEnts)
+		dto, err := s.subjectListItem(r, subj, activeEnts, settings.ShowPrices)
 		if err != nil {
 			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 			return
@@ -433,7 +441,7 @@ func (s *Server) ListSubjects(w http.ResponseWriter, r *http.Request) {
 
 // listPublishedSubjects serves the common catalog path: paginated published
 // subjects, hiding subjects under unpublished levels from non-owners.
-func (s *Server) listPublishedSubjects(w http.ResponseWriter, r *http.Request, levelKey, term string, page, limit int, activeEnts map[string]*models.Entitlement, levelsByKey map[string]*models.Level) {
+func (s *Server) listPublishedSubjects(w http.ResponseWriter, r *http.Request, levelKey, term string, page, limit int, activeEnts map[string]*models.Entitlement, levelsByKey map[string]*models.Level, globalShowPrices bool) {
 	filter := store.SubjectFilter{
 		LevelKey: levelKey,
 		Term:     term,
@@ -461,7 +469,7 @@ func (s *Server) listPublishedSubjects(w http.ResponseWriter, r *http.Request, l
 			hidden++
 			continue
 		}
-		dto, err := s.subjectListItem(r, subj, activeEnts)
+		dto, err := s.subjectListItem(r, subj, activeEnts, globalShowPrices)
 		if err != nil {
 			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 			return
@@ -479,7 +487,7 @@ func (s *Server) listPublishedSubjects(w http.ResponseWriter, r *http.Request, l
 
 // subjectListItem builds the student list DTO for one subject with its
 // counts, ownership flag, and entitlement expiry override.
-func (s *Server) subjectListItem(r *http.Request, subj *models.Subject, activeEnts map[string]*models.Entitlement) (models.SubjectListItemDTO, error) {
+func (s *Server) subjectListItem(r *http.Request, subj *models.Subject, activeEnts map[string]*models.Entitlement, globalShowPrices bool) (models.SubjectListItemDTO, error) {
 	countCtx, countCancel := context.WithTimeout(r.Context(), dbTimeout)
 	counts, err := s.Store.GetSubjectCounts(countCtx, subj.ID)
 	countCancel()
@@ -493,7 +501,8 @@ func (s *Server) subjectListItem(r *http.Request, subj *models.Subject, activeEn
 		ent = activeEnts[subj.ID]
 		owned = ent != nil
 	}
-	dto := subj.ToListItemDTO(counts, owned, s.ExposePrice)
+	exposePrice := s.ExposePrice && subj.EffectivePriceVisible(globalShowPrices)
+	dto := subj.ToListItemDTO(counts, owned, exposePrice)
 	if owned && ent != nil {
 		dto.AccessExpiresAt = ent.ExpiresAt
 	}
@@ -611,7 +620,16 @@ func (s *Server) GetSubjectDetail(w http.ResponseWriter, r *http.Request, id str
 		fileDTOs[i] = f.ToDTO()
 	}
 
-	dto := subj.ToDetailDTO(counts, videoDTOs, fileDTOs, owned, s.ExposePrice)
+	settingsCtx, settingsCancel := context.WithTimeout(r.Context(), dbTimeout)
+	settings, err := s.effectiveAppSettings(settingsCtx)
+	settingsCancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
+	exposePrice := s.ExposePrice && subj.EffectivePriceVisible(settings.ShowPrices)
+	dto := subj.ToDetailDTO(counts, videoDTOs, fileDTOs, owned, exposePrice)
 	if owned && activeEnt != nil {
 		dto.AccessExpiresAt = activeEnt.ExpiresAt
 	}

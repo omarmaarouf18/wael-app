@@ -329,34 +329,36 @@ func TestSubjects_BadInputIs400(t *testing.T) {
 		})
 	}
 	for name, body := range map[string]string{
-		"missing level":    `{"title_ar":"Math","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"bad level":        `{"level_id":"a/b","title_ar":"Math","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"missing title":    `{"level_id":"` + testLevelID + `","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"blank title":      `{"level_id":"` + testLevelID + `","title_ar":" ","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"title too long":   `{"level_id":"` + testLevelID + `","title_ar":"` + long + `","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"desc too long":    `{"level_id":"` + testLevelID + `","title_ar":"x","description_ar":"` + longDesc + `","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"bad term":         `{"level_id":"` + testLevelID + `","title_ar":"x","term":"third","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"negative price":   `{"level_id":"` + testLevelID + `","title_ar":"x","price":-5,"access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"float price":      `{"level_id":"` + testLevelID + `","title_ar":"x","price":1.5,"access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"string price":     `{"level_id":"` + testLevelID + `","title_ar":"x","price":"100","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"missing expires":  `{"level_id":"` + testLevelID + `","title_ar":"x"}`,
-		"bad expires":      `{"level_id":"` + testLevelID + `","title_ar":"x","access_expires_at":"tomorrow"}`,
-		"date not rfc3339": `{"level_id":"` + testLevelID + `","title_ar":"x","access_expires_at":"2027-01-01"}`,
-		"id present":       `{"id":"` + testID + `","level_id":"` + testLevelID + `","title_ar":"x","access_expires_at":"2027-01-01T00:00:00Z"}`,
-		"unknown field":    `{"level_id":"` + testLevelID + `","title_ar":"x","access_expires_at":"2027-01-01T00:00:00Z","color":"red"}`,
+		"missing level":        `{"title_ar":"Math","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"bad level":            `{"level_id":"a/b","title_ar":"Math","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"missing title":        `{"level_id":"` + testLevelID + `","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"blank title":          `{"level_id":"` + testLevelID + `","title_ar":" ","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"title too long":       `{"level_id":"` + testLevelID + `","title_ar":"` + long + `","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"desc too long":        `{"level_id":"` + testLevelID + `","title_ar":"x","description_ar":"` + longDesc + `","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"bad term":             `{"level_id":"` + testLevelID + `","title_ar":"x","term":"third","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"negative price":       `{"level_id":"` + testLevelID + `","title_ar":"x","price":-5,"access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"float price":          `{"level_id":"` + testLevelID + `","title_ar":"x","price":1.5,"access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"string price":         `{"level_id":"` + testLevelID + `","title_ar":"x","price":"100","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"missing expires":      `{"level_id":"` + testLevelID + `","title_ar":"x"}`,
+		"bad expires":          `{"level_id":"` + testLevelID + `","title_ar":"x","access_expires_at":"tomorrow"}`,
+		"date not rfc3339":     `{"level_id":"` + testLevelID + `","title_ar":"x","access_expires_at":"2027-01-01"}`,
+		"id present":           `{"id":"` + testID + `","level_id":"` + testLevelID + `","title_ar":"x","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"bad price visibility": `{"level_id":"` + testLevelID + `","title_ar":"x","price_visibility":"always","access_expires_at":"2027-01-01T00:00:00Z"}`,
+		"unknown field":        `{"level_id":"` + testLevelID + `","title_ar":"x","access_expires_at":"2027-01-01T00:00:00Z","color":"red"}`,
 	} {
 		t.Run("create/"+name, func(t *testing.T) {
 			catalogBad(t, func(p *Proxy) http.HandlerFunc { return p.SubjectsCreate }, http.MethodPost, "/api/subjects/create", body)
 		})
 	}
 	for name, body := range map[string]string{
-		"missing id":     `{"title_ar":"x"}`,
-		"slash id":       `{"id":"a/b","title_ar":"x"}`,
-		"bad level move": `{"id":"` + testID + `","level_id":""}`,
-		"bad term":       `{"id":"` + testID + `","term":"3"}`,
-		"negative price": `{"id":"` + testID + `","price":-1}`,
-		"bad expires":    `{"id":"` + testID + `","access_expires_at":"2027-13-99T99:99:99Z"}`,
-		"unknown field":  `{"id":"` + testID + `","videos":3}`,
+		"missing id":           `{"title_ar":"x"}`,
+		"slash id":             `{"id":"a/b","title_ar":"x"}`,
+		"bad level move":       `{"id":"` + testID + `","level_id":""}`,
+		"bad term":             `{"id":"` + testID + `","term":"3"}`,
+		"negative price":       `{"id":"` + testID + `","price":-1}`,
+		"bad price visibility": `{"id":"` + testID + `","price_visibility":"invalid"}`,
+		"bad expires":          `{"id":"` + testID + `","access_expires_at":"2027-13-99T99:99:99Z"}`,
+		"unknown field":        `{"id":"` + testID + `","videos":3}`,
 	} {
 		t.Run("update/"+name, func(t *testing.T) {
 			catalogBad(t, func(p *Proxy) http.HandlerFunc { return p.SubjectsUpdate }, http.MethodPost, "/api/subjects/update", body)
@@ -483,7 +485,7 @@ func TestSubjectsCreate_OptionalFieldsForwardedOnlyWhenPresent(t *testing.T) {
 	authUp := newUpstream(t, 200, `{}`)
 	academyUp := newUpstream(t, 201, `{"id":"s1"}`)
 	p := newSplitProxy(t, authUp, academyUp)
-	body := `{"level_id":"` + testLevelID + `","title_ar":"Math","title_en":"","description_ar":"وصف","term":"","price":0,"access_expires_at":"2027-06-01T21:59:59Z","order":3,"published":false}`
+	body := `{"level_id":"` + testLevelID + `","title_ar":"Math","title_en":"","description_ar":"وصف","term":"","price":0,"price_visibility":"show","access_expires_at":"2027-06-01T21:59:59Z","order":3,"published":false}`
 	w := do(p.SubjectsCreate, http.MethodPost, "/api/subjects/create", body, withToken())
 	if w.Code != 201 {
 		t.Fatalf("status = %d body=%q", w.Code, w.Body.String())
@@ -494,7 +496,7 @@ func TestSubjectsCreate_OptionalFieldsForwardedOnlyWhenPresent(t *testing.T) {
 	}
 	want := map[string]any{
 		"level_id": "dip-a", "title_ar": "Math", "description_ar": "وصف",
-		"term": "", "price": float64(0), "access_expires_at": "2027-06-01T21:59:59Z",
+		"term": "", "price": float64(0), "price_visibility": "show", "access_expires_at": "2027-06-01T21:59:59Z",
 		"order": float64(3), "published": false,
 	}
 	if len(sent) != len(want) {

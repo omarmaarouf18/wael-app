@@ -25,6 +25,7 @@ type SubjectAdminDTO struct {
 	DescriptionEn   string    `json:"description_en"`
 	Price           int       `json:"price"`
 	Currency        string    `json:"currency"`
+	PriceVisibility string    `json:"price_visibility"`
 	AccessExpiresAt time.Time `json:"access_expires_at"`
 	Order           int       `json:"order"`
 	Published       bool      `json:"published"`
@@ -34,6 +35,10 @@ type SubjectAdminDTO struct {
 }
 
 func toSubjectAdminDTO(subj *models.Subject, videoCount int) SubjectAdminDTO {
+	pv := subj.PriceVisibility
+	if pv == "" {
+		pv = models.PriceVisibilityFollowGlobal
+	}
 	return SubjectAdminDTO{
 		ID:              subj.ID,
 		LevelID:         subj.LevelKey,
@@ -44,6 +49,7 @@ func toSubjectAdminDTO(subj *models.Subject, videoCount int) SubjectAdminDTO {
 		DescriptionEn:   subj.DescriptionEn,
 		Price:           subj.Price,
 		Currency:        "EGP",
+		PriceVisibility: pv,
 		AccessExpiresAt: subj.AccessExpiresAt,
 		Order:           subj.Order,
 		Published:       subj.Status == models.StatusPublished,
@@ -191,6 +197,7 @@ type subjectWriteRequest struct {
 	DescriptionEn   *string `json:"description_en"`
 	Term            *string `json:"term"`
 	Price           *int    `json:"price"`
+	PriceVisibility *string `json:"price_visibility"`
 	AccessExpiresAt *string `json:"access_expires_at"`
 	Order           *int    `json:"order"`
 	Published       *bool   `json:"published"`
@@ -328,6 +335,17 @@ func (s *Server) buildSubject(req subjectWriteRequest, subj *models.Subject, req
 			return nil, "invalid_price", "price must be >= 0"
 		}
 		subj.Price = *req.Price
+	}
+	if req.PriceVisibility != nil {
+		pv := strings.TrimSpace(*req.PriceVisibility)
+		switch pv {
+		case models.PriceVisibilityFollowGlobal, models.PriceVisibilityShow, models.PriceVisibilityHide:
+			subj.PriceVisibility = pv
+		default:
+			return nil, "invalid_price_visibility", "price_visibility must be follow_global, show, or hide"
+		}
+	} else if subj.PriceVisibility == "" {
+		subj.PriceVisibility = models.PriceVisibilityFollowGlobal
 	}
 	if req.AccessExpiresAt == nil {
 		if requireExpires {
