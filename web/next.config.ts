@@ -47,6 +47,12 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // No remote images: logo and art are local files under public/brand/.
   images: { unoptimized: true },
+  // One 404 page for URLs that match no route (src/app/global-not-found.tsx).
+  // The site has two root layouts ((ar) and (en)), so there is no single
+  // layout for Next.js to put its built-in 404 in; that built-in page also
+  // used inline styles the static CSP blocks. Documented for exactly this
+  // case (multiple root layouts); experimental in Next.js 16.4.
+  experimental: { globalNotFound: true },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

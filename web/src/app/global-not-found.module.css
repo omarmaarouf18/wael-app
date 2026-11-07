@@ -1,0 +1,91 @@
+/* Global 404 (global-not-found.tsx). Tokens only (web/DESIGN.md). */
+.page {
+  flex: 1;
+  width: 100%;
+  max-width: var(--width-form);
+  margin-inline: auto;
+  padding: var(--space-5xl) var(--margin-mobile);
+}
+
+.logo {
+  display: block;
+  border-radius: var(--radius-lg);
+  margin-block-end: var(--space-xl);
+}
+
+.code {
+  margin: 0;
+  color: var(--crimson);
+  font-family: var(--font-display);
+  font-size: var(--fs-6xl);
+  font-weight: var(--fw-extrabold);
+  line-height: 1;
+}
+
+.title {
+  margin-block: var(--space-md);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-extrabold);
+}
+
+.lead {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-block-start: var(--space-xl);
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding-inline: var(--space-xl);
+  border-radius: var(--radius-xl);
+  font-weight: var(--fw-bold);
+  text-decoration: none;
+}
+
+.primary {
+  background: var(--crimson);
+  color: var(--text-on-accent);
+}
+
+.primary:hover {
+  background: var(--crimson-hover);
+}
+
+.secondary {
+  border: 1px solid var(--input-border);
+  color: var(--text-primary);
+}
+
+.secondary:hover {
+  background: var(--surface-high);
+}
+
+.primary:focus-visible,
+.secondary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--text-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.en {
+  margin-block-start: var(--space-4xl);
+  padding-block-start: var(--space-2xl);
+  border-block-start: 1px solid var(--subtle-hairline);
+}
+
+.enTitle {
+  margin: 0 0 var(--space-sm);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
+}
