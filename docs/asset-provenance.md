@@ -81,7 +81,7 @@ Byte-identical copies of assets listed above, so the website matches the app
 |---|---|---|---|
 | `web/public/brand/logo-512.png` | `frontend/assets/branding/store_icon_512.png` | As its source row (generated from `app_icon_1024.png`) | Owner-approved 2026-10-02 |
 | `web/public/brand/banner.jpg` | `frontend/assets/images/elmetr_banner.jpg` | Owner-supplied EL METR banner | Owner-supplied 2026-10-08 |
-| `web/src/fonts/Cairo-Regular.ttf`, `Cairo-Bold.ttf`, `Cairo-ExtraBold.ttf`, `Syne-Bold.ttf`, `Syne-ExtraBold.ttf`, `PlusJakartaSans-Regular.ttf`, `PlusJakartaSans-SemiBold.ttf`, `OFL-Cairo.txt`, `OFL-Syne.txt`, `OFL-PlusJakartaSans.txt` | the same names in `frontend/assets/fonts/` | Google Fonts, as the bundled fonts above | SIL Open Font License 1.1 (OFL files copied with them) |
+| `web/src/fonts/Cairo-Regular.ttf`, `Cairo-Bold.ttf`, `Cairo-ExtraBold.ttf`, `Syne-Bold.ttf`, `Syne-ExtraBold.ttf`, `PlusJakartaSans-Regular.ttf`, `PlusJakartaSans-SemiBold.ttf`, `OFL-Cairo.txt`, `OFL-Syne.txt`, `OFL-PlusJakartaSans.txt` | the same names in `frontend/assets/fonts/` | Google Fonts, as the bundled fonts above | SIL Open Font License 1.1 (OFL files copied with them) | *(Amended 2026-11-07, UI/UX brief step 2: the seven `.ttf` copies are replaced by `.woff2` files of the same names — subset with HarfBuzz (`subset-font` 2.9.0) to Basic Latin, Latin-1, general punctuation and, for Cairo, the Arabic blocks, and converted to WOFF2; 124 KB instead of 506 KB. Same fonts, same OFL licence (the OFL allows modified versions under the same licence; none of the three declares a Reserved Font Name in its copyright line, so the subsets keep their names).)*
 
 ## Removed assets
 

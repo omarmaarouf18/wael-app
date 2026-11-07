@@ -125,6 +125,8 @@ never one per subject.
   families (`docs/frontend/DESIGN_SYSTEM.md` "AppTypography"), copied from
   `frontend/assets/fonts/` with their OFL licences and served by the site
   (`next/font/local`). Nothing is loaded from Google.
+  *(Amended 2026-11-07: shipped as subset WOFF2 files (124 KB for the seven
+  faces, was 506 KB of TTF); see `docs/asset-provenance.md`.)*
 - Colors, spacing, radius, elevation and motion are CSS variables named after
   the app's tokens (`web/src/app/globals.css`).
   *(Amended 2026-11-07, UI/UX brief step 1: the tokens moved to
