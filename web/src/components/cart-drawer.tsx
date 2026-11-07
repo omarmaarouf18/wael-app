@@ -34,6 +34,9 @@ export function CartDrawer({ lang }: CartDrawerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Payment methods could not be loaded (network or server error): show a retry.
+  const [methodsError, setMethodsError] = useState(false);
+  const [methodsReload, setMethodsReload] = useState(0);
 
   const amountPaid = customAmount !== null ? customAmount : totalPrice;
 
@@ -53,6 +56,7 @@ export function CartDrawer({ lang }: CartDrawerProps) {
     getPaymentMethods()
       .then((res) => {
         if (cancelled) return;
+        setMethodsError(false);
         setPaymentMethods(res.items || []);
         if (res.items && res.items.length > 0 && !selectedMethod) {
           const first = res.items[0];
@@ -62,13 +66,23 @@ export function CartDrawer({ lang }: CartDrawerProps) {
         }
       })
       .catch(() => {
-        // Fallback
+        if (!cancelled) setMethodsError(true);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [isCartOpen, selectedMethod]);
+  }, [isCartOpen, selectedMethod, methodsReload]);
+
+  // Escape closes the drawer.
+  useEffect(() => {
+    if (!isCartOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   if (!isCartOpen) return null;
 
@@ -148,10 +162,10 @@ export function CartDrawer({ lang }: CartDrawerProps) {
     lang === "en" ? "https://legal.elmetracademy.app/privacy#en" : "https://legal.elmetracademy.app/privacy";
 
   return (
-    <div className={styles.backdrop} onClick={handleClose} role="dialog" aria-modal="true">
+    <div className={styles.backdrop} onClick={handleClose} role="dialog" aria-modal="true" aria-labelledby="cart-title">
       <div className={styles.drawer} onClick={(e) => e.stopPropagation()}>
         <div className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>
+          <h2 id="cart-title" className={styles.drawerTitle}>
             {cartText.title} {itemCount > 0 ? `(${itemCount})` : ""}
           </h2>
           <button
@@ -166,7 +180,9 @@ export function CartDrawer({ lang }: CartDrawerProps) {
 
         {success ? (
           <div className={styles.successCard}>
-            <div className={styles.successIcon}>✓</div>
+            <div className={styles.successIcon} aria-hidden="true">
+              ✓
+            </div>
             <h3 className={styles.successTitle}>{checkoutText.successTitle}</h3>
             <p className={styles.successLead}>{checkoutText.successLead}</p>
             <a
@@ -174,11 +190,16 @@ export function CartDrawer({ lang }: CartDrawerProps) {
               onClick={handleClose}
               className={styles.primaryButton}
             >
-              {checkoutText.viewMyOrders} →
+              {checkoutText.viewMyOrders}
             </a>
           </div>
         ) : itemCount === 0 ? (
           <div className={styles.emptyCart}>
+            <svg className={styles.emptyIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.8L20 8H6.2" />
+              <circle cx="9.5" cy="19.5" r="1.3" />
+              <circle cx="17" cy="19.5" r="1.3" />
+            </svg>
             <p>{cartText.empty}</p>
             <a
               href={localePath(lang, "/subjects")}
@@ -252,10 +273,27 @@ export function CartDrawer({ lang }: CartDrawerProps) {
                   </div>
                 ) : (
                   <form onSubmit={handleCheckoutSubmit} className={styles.checkoutForm}>
-                    {error ? <div className={styles.errorBanner}>{error}</div> : null}
+                    {error ? (
+                      <div className={styles.errorBanner} role="alert">
+                        {error}
+                      </div>
+                    ) : null}
+
+                    {methodsError ? (
+                      <div className={styles.errorState} role="alert">
+                        <span>{t.common.paymentMethodsError}</span>
+                        <button
+                          type="button"
+                          onClick={() => setMethodsReload((n) => n + 1)}
+                          className={styles.secondaryButton}
+                        >
+                          {t.common.retry}
+                        </button>
+                      </div>
+                    ) : null}
 
                     {amountPaid !== totalPrice && amountPaid > 0 ? (
-                      <div className={styles.warningBanner}>
+                      <div className={styles.warningBanner} role="status">
                         {checkoutText.amountMismatchWarning}
                       </div>
                     ) : null}
@@ -276,7 +314,7 @@ export function CartDrawer({ lang }: CartDrawerProps) {
                         <option value="">{checkoutText.selectMethod}</option>
                         {paymentMethods.map((pm, idx) => (
                           <option key={idx} value={pm.kind}>
-                            {pm.label} ({pm.kind === "wallet" ? "محفظة كاش" : "انستاباي"}:{" "}
+                            {pm.label} ({pm.kind === "wallet" ? t.catalog.paymentMethodWallet : t.catalog.paymentMethodInstapay}:{" "}
                             {pm.number_or_address})
                           </option>
                         ))}
@@ -357,7 +395,7 @@ export function CartDrawer({ lang }: CartDrawerProps) {
                       onClick={() => setInCheckout(false)}
                       className={styles.secondaryButton}
                     >
-                      {lang === "ar" ? "← العودة للسلة" : "← Back to Cart"}
+                      {lang === "ar" ? "العودة للسلة" : "Back to cart"}
                     </button>
                   </form>
                 )}

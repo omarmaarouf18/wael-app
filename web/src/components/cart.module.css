@@ -1,11 +1,15 @@
+/* Cart drawer, checkout form and the header cart button (web/DESIGN.md
+   "Components"). Restyled 2026-11-07 (UI/UX brief step 3). */
+
+/* ── Drawer ──────────────────────────────────────────────────── */
 .backdrop {
   position: fixed;
   inset: 0;
-  background: var(--scrim);
-  backdrop-filter: blur(var(--scrim-blur));
   z-index: var(--z-overlay);
   display: flex;
   justify-content: flex-end;
+  background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur));
   animation: fadeIn var(--duration-normal) var(--ease-out);
 }
 
@@ -19,17 +23,24 @@
 }
 
 .drawer {
-  background: var(--surface-layer-1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: var(--width-drawer);
   height: 100%;
   overflow-y: auto;
-  padding: var(--space-xl);
-  display: flex;
-  flex-direction: column;
+  padding: var(--space-lg) var(--space-lg) var(--space-2xl);
+  background: var(--surface-layer-1);
+  border-inline-start: 1px solid var(--prominent-border);
   box-shadow: var(--elevation-modal);
-  position: relative;
   animation: slideIn var(--duration-normal) var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .drawer {
+    padding: var(--space-xl) var(--space-xl) var(--space-2xl);
+  }
 }
 
 @keyframes slideIn {
@@ -58,58 +69,82 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-md);
   margin-block-end: var(--space-lg);
   padding-block-end: var(--space-md);
   border-block-end: 1px solid var(--subtle-hairline);
 }
 
 .drawerTitle {
-  font-size: var(--fs-3xl);
-  font-weight: var(--fw-bold);
-  color: var(--text-primary);
   margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
 }
 
 .closeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--tap-target);
+  block-size: var(--tap-target);
   background: transparent;
-  border: none;
-  font-size: var(--fs-3xl);
-  color: var(--text-muted);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-xl);
+  color: var(--text-primary);
+  font-size: var(--fs-lg);
   cursor: pointer;
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius-sm);
-  transition: color var(--duration-fast);
 }
 
 .closeButton:hover {
-  color: var(--text-primary);
+  background: var(--surface-high);
 }
 
+/* ── Empty, items, total ─────────────────────────────────────── */
 .emptyCart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  padding: var(--space-2xl) var(--space-lg);
+  background: var(--surface-elevated);
+  border: 1px dashed var(--prominent-border);
+  border-radius: var(--radius-card);
+  color: var(--text-secondary);
   text-align: center;
-  padding: var(--space-2xl) 0;
-  color: var(--text-muted);
 }
 
 .emptyCart p {
-  margin-block-end: var(--space-lg);
-  font-size: var(--fs-lg);
+  margin: 0;
+  font-size: var(--fs-base);
+  line-height: var(--lh-body);
+}
+
+.emptyIcon {
+  inline-size: var(--space-4xl);
+  block-size: var(--space-4xl);
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .itemList {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 var(--space-xl);
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-lg);
+  padding: 0;
+  list-style: none;
 }
 
 .item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-md);
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
   background: var(--surface-elevated);
   border: 1px solid var(--subtle-hairline);
   border-radius: var(--radius-md);
@@ -118,123 +153,139 @@
 .itemInfo {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: var(--space-2xs);
 }
 
 .itemTitle {
-  font-weight: var(--fw-semibold);
   color: var(--text-primary);
+  font-weight: var(--fw-semibold);
 }
 
 .itemPrice {
-  color: var(--crimson);
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-base);
+  color: var(--text-secondary);
+  font-size: var(--fs-md);
 }
 
 .removeButton {
+  min-height: var(--tap-target);
+  padding-inline: var(--space-md);
   background: transparent;
-  border: 1px solid var(--prominent-border);
-  color: var(--text-muted);
-  padding: var(--space-xs) var(--space-md);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-family: inherit;
   font-size: var(--fs-md);
   cursor: pointer;
-  transition: all var(--duration-fast);
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
 }
 
 .removeButton:hover {
-  border-color: var(--danger);
+  border-color: var(--danger-border);
   color: var(--danger);
 }
 
 .cartSummary {
+  padding: var(--space-lg);
+  margin-block-end: var(--space-lg);
   background: var(--surface-elevated);
   border: 1px solid var(--subtle-hairline);
   border-radius: var(--radius-md);
-  padding: var(--space-lg);
-  margin-block-end: var(--space-xl);
 }
 
 .totalRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
   color: var(--text-primary);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
 }
 
 .totalAmount {
-  color: var(--crimson);
+  color: var(--text-primary);
+  font-size: var(--fs-xl);
 }
 
 .cartActions {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-sm);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--space-xl);
+  border-radius: var(--radius-xl);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 .primaryButton {
+  min-height: var(--control-height);
   background: var(--crimson);
-  color: var(--text-on-accent);
   border: none;
-  border-radius: var(--radius-pill);
-  padding: var(--space-md) var(--space-xl);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-  font-family: inherit;
-  cursor: pointer;
-  text-align: center;
-  text-decoration: none;
-  transition: background var(--duration-fast), opacity var(--duration-fast);
+  color: var(--text-on-accent);
+  font-weight: var(--fw-bold);
+  box-shadow: var(--elevation-crimson-glow);
 }
 
 .primaryButton:hover:not(:disabled) {
-  opacity: 0.9;
+  background: var(--crimson-hover);
 }
 
 .primaryButton:disabled {
   opacity: 0.6;
+  box-shadow: none;
   cursor: not-allowed;
 }
 
 .secondaryButton {
+  min-height: var(--tap-target);
   background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--prominent-border);
-  border-radius: var(--radius-pill);
-  padding: var(--space-md) var(--space-xl);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-regular);
-  font-family: inherit;
-  cursor: pointer;
-  text-align: center;
-  transition: all var(--duration-fast);
+  border: 1px solid var(--input-border);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
 }
 
 .secondaryButton:hover:not(:disabled) {
-  border-color: var(--text-secondary);
-  color: var(--text-primary);
+  background: var(--surface-high);
 }
 
+.buttonRowCentered {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  justify-content: center;
+}
+
+/* ── Checkout form ───────────────────────────────────────────── */
 .checkoutSection {
-  margin-block-start: var(--space-lg);
+  margin-block-start: var(--space-sm);
   padding-block-start: var(--space-lg);
   border-block-start: 1px solid var(--subtle-hairline);
 }
 
 .checkoutTitle {
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
-  color: var(--text-primary);
   margin-block-end: var(--space-md);
+  color: var(--text-primary);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
 }
 
 .checkoutForm {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-lg);
 }
 
 .field {
@@ -244,114 +295,177 @@
 }
 
 .label {
+  color: var(--text-primary);
   font-size: var(--fs-md);
   font-weight: var(--fw-semibold);
-  color: var(--text-secondary);
 }
 
 .input,
 .select {
-  background: var(--surface-elevated);
-  border: 1px solid var(--prominent-border);
-  border-radius: var(--radius-md);
+  min-height: var(--control-height);
+  padding-inline: var(--space-lg);
+  background: var(--surface-container-low);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-xl);
   color: var(--text-primary);
-  padding: var(--space-md) var(--space-md);
-  font-size: var(--fs-base);
   font-family: inherit;
-  transition: border-color var(--duration-fast);
+  font-size: var(--fs-base);
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
-.input:focus,
-.select:focus {
-  outline: none;
+.input::placeholder {
+  color: var(--text-placeholder);
+}
+
+.input:focus-visible,
+.select:focus-visible {
   border-color: var(--crimson);
 }
 
 .legalNotice {
-  font-size: var(--fs-md);
+  margin: 0;
   color: var(--text-muted);
-  line-height: var(--lh-snug);
-  margin-block-start: var(--space-xs);
+  font-size: var(--fs-md);
+  line-height: var(--lh-relaxed);
 }
 
 .legalNotice a {
-  color: var(--crimson);
+  color: var(--text-secondary);
   text-decoration: underline;
 }
 
-.errorBanner {
-  background: var(--danger-bg);
-  border: 1px solid var(--danger-border);
-  color: var(--danger);
+/* ── Banners ─────────────────────────────────────────────────── */
+.errorBanner,
+.warningBanner,
+.errorState {
   padding: var(--space-md) var(--space-lg);
+  border: 1px solid;
   border-radius: var(--radius-md);
   font-size: var(--fs-md);
+  line-height: var(--lh-relaxed);
+}
+
+.errorBanner,
+.errorState {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
 .warningBanner {
   background: var(--warning-bg);
-  border: 1px solid var(--warning-border);
+  border-color: var(--warning-border);
   color: var(--warning);
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  font-size: var(--fs-md);
 }
 
+.errorState {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm) var(--space-md);
+}
+
+/* ── Success ─────────────────────────────────────────────────── */
 .successCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding-block: var(--space-xl);
   text-align: center;
-  padding: var(--space-xl) 0;
 }
 
 .successIcon {
-  font-size: var(--fs-6xl);
-  margin-block-end: var(--space-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--space-5xl);
+  block-size: var(--space-5xl);
+  border-radius: var(--radius-pill);
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--success);
+  font-size: var(--fs-4xl);
 }
 
 .successTitle {
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
   color: var(--text-primary);
-  margin-block-end: var(--space-sm);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
 }
 
 .successLead {
-  color: var(--text-muted);
-  font-size: var(--fs-base);
-  line-height: var(--lh-normal);
-  margin-block-end: var(--space-xl);
+  margin: 0 0 var(--space-lg);
+  color: var(--text-secondary);
+  line-height: var(--lh-body);
 }
 
+/* ── Header cart button (cart-provider.tsx) ──────────────────── */
 .cartButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: var(--tap-target);
+  padding-inline: var(--space-md);
   background: transparent;
-  border: 1px solid var(--prominent-border);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-xl);
   color: var(--text-primary);
-  padding: var(--space-sm) var(--space-lg);
-  border-radius: var(--radius-pill);
+  font-family: inherit;
   font-size: var(--fs-md);
   font-weight: var(--fw-semibold);
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
-  transition: all var(--duration-fast);
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 
 .cartButton:hover {
-  border-color: var(--crimson);
-  color: var(--crimson);
+  background: var(--surface-high);
+}
+
+.cartIcon {
+  inline-size: var(--space-xl);
+  block-size: var(--space-xl);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .cartBadge {
+  min-inline-size: var(--space-xl);
+  padding-inline: var(--space-xs);
+  border-radius: var(--radius-pill);
   background: var(--crimson);
   color: var(--text-on-accent);
-  border-radius: var(--radius-pill);
-  padding: var(--space-2xs) var(--space-sm);
   font-size: var(--fs-xs);
   font-weight: var(--fw-bold);
+  line-height: var(--lh-normal);
+  text-align: center;
 }
 
-.buttonRowCentered {
-  display: flex;
-  gap: var(--space-md);
-  justify-content: center;
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible,
+.closeButton:focus-visible,
+.removeButton:focus-visible,
+.cartButton:focus-visible,
+.legalNotice a:focus-visible,
+.input:focus-visible,
+.select:focus-visible {
+  outline: var(--focus-ring-width) solid var(--text-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Under 480 px the button shows its icon only; the word stays for screen
+   readers (the header row must fit 375 px in English, where Syne is wide). */
+@media (max-width: 479px) {
+  .cartLabel {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }

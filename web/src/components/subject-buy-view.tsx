@@ -11,7 +11,7 @@ import {
   type PaymentMethod,
   type StudentRequestItem,
 } from "@/lib/api";
-import { dictionary, localePath, type Lang } from "@/lib/i18n";
+import { dictionary, localePath, type Lang, numberLocale } from "@/lib/i18n";
 
 import { useAuth } from "./auth-provider";
 import styles from "./auth.module.css";
@@ -179,14 +179,28 @@ export function SubjectBuySection({
   };
 
   if (authLoading || (isLoggedIn && !dataLoaded)) {
-    return null;
+    // Same footprint as the loaded section, so the page does not jump.
+    return (
+      <div className={styles.buySection} aria-busy="true">
+        <div className={styles.studyBanner}>
+          <p className={styles.visuallyHidden} role="status">
+            {t.common.loading}
+          </p>
+          <div className={styles.skeleton} aria-hidden="true">
+            <span className={`${styles.skeletonLine} ${styles.skeletonLineWide}`} />
+            <span className={styles.skeletonLine} />
+            <span className={`${styles.skeletonLine} ${styles.skeletonLineShort}`} />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!isLoggedIn) {
     return (
       <div className={styles.buySection}>
         <div className={styles.studyBanner}>
-          <h3 className={styles.studyBannerTitle}>{text.buyFormTitle}</h3>
+          <h2 className={styles.studyBannerTitle}>{text.buyFormTitle}</h2>
           <p className={styles.studyBannerLead}>{text.loginToBuyPrompt}</p>
           <div className={styles.storeButtons}>
             <a href={localePath(lang, "/login")} className={styles.submit}>
@@ -201,7 +215,7 @@ export function SubjectBuySection({
                 onClick={openCart}
                 className={styles.secondaryButton}
               >
-                {text.inCart} →
+                {text.inCart}
               </button>
             ) : (
               <button
@@ -230,7 +244,7 @@ export function SubjectBuySection({
     return (
       <div className={styles.buySection}>
         <div className={styles.studyBanner}>
-          <h3 className={styles.studyBannerTitle}>{text.ownedSubjectBannerTitle}</h3>
+          <h2 className={styles.studyBannerTitle}>{text.ownedSubjectBannerTitle}</h2>
           <p className={styles.studyBannerLead}>{text.ownedSubjectBannerLead}</p>
           <div className={styles.storeButtons}>
             <a
@@ -259,9 +273,9 @@ export function SubjectBuySection({
     return (
       <div className={styles.buySection}>
         <div className={styles.studyBanner}>
-          <h3 className={styles.studyBannerTitle}>{text.pendingRequestBannerTitle}</h3>
+          <h2 className={styles.studyBannerTitle}>{text.pendingRequestBannerTitle}</h2>
           <p className={styles.studyBannerLead}>{text.pendingRequestBannerLead}</p>
-          {successMsg ? <div className={styles.successBanner}>{successMsg}</div> : null}
+          {successMsg ? <div className={styles.successBanner} role="status">{successMsg}</div> : null}
         </div>
       </div>
     );
@@ -270,8 +284,8 @@ export function SubjectBuySection({
   return (
     <div className={styles.buySection}>
       <div className={styles.card}>
-        <h3 className={styles.title}>{text.buyFormTitle}</h3>
-        <p className={styles.lead}>{text.price(String(price))}</p>
+        <h2 className={`${styles.title} ${styles.titleSmall}`}>{text.buyFormTitle}</h2>
+        <p className={styles.lead}>{text.price(new Intl.NumberFormat(numberLocale[lang]).format(price))}</p>
 
         <div className={styles.buyActions}>
           {inCart ? (
@@ -280,7 +294,7 @@ export function SubjectBuySection({
               onClick={openCart}
               className={styles.secondaryButton}
             >
-              {text.inCart} →
+              {text.inCart}
             </button>
           ) : (
             <button
@@ -305,7 +319,7 @@ export function SubjectBuySection({
           <p className={styles.emptyState}>{text.noPaymentMethodsConfigured}</p>
         ) : (
           <form className={styles.form} onSubmit={handleSubmit}>
-            {errorMsg ? <div className={styles.errorBanner}>{errorMsg}</div> : null}
+            {errorMsg ? <div className={styles.errorBanner} role="alert">{errorMsg}</div> : null}
 
             <div className={styles.field}>
               <span className={styles.label}>{text.paymentMethodLabel}</span>

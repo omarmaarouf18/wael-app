@@ -51,8 +51,10 @@ export async function SubjectsPage({ lang }: { lang: Lang }) {
 
   return (
     <SiteShell lang={lang} path="/subjects">
-      <h1 className={styles.title}>{d.pages.subjects.title}</h1>
-      <p className={styles.lead}>{d.pages.subjects.lead}</p>
+      <header className={styles.pageHead}>
+        <h1 className={styles.title}>{d.pages.subjects.title}</h1>
+        <p className={styles.lead}>{d.pages.subjects.lead}</p>
+      </header>
       {!result.ok ? (
         <p className={styles.notice} role="status">
           {t.unavailable}
@@ -74,14 +76,17 @@ export async function SubjectsPage({ lang }: { lang: Lang }) {
                   {level.subjects.length === 0 ? (
                     <p className={styles.muted}>{t.emptyLevel}</p>
                   ) : (
-                    <ul className={styles.subjectList}>
+                    <ul className={styles.subjectGrid}>
                       {level.subjects.map((s) => (
-                        <li key={s.id} className={styles.subject}>
-                          <Link href={to(`/subjects/${s.id}`)} className={styles.subjectLink}>
-                            {pick(s.title, lang)}
+                        <li key={s.id}>
+                          <Link href={to(`/subjects/${s.id}`)} className={styles.subjectCard}>
+                            {s.term !== "" ? <span className={styles.termBadge}>{t.term[s.term]}</span> : null}
+                            <span className={styles.subjectTitle}>{pick(s.title, lang)}</span>
+                            <span className={styles.cardFoot}>
+                              <span className={styles.price}>{formatPrice(lang, s.price)}</span>
+                              <span className={styles.cardCta}>{t.details}</span>
+                            </span>
                           </Link>
-                          {s.term !== "" ? <span className={styles.muted}>{t.term[s.term]}</span> : null}
-                          <span className={styles.price}>{formatPrice(lang, s.price)}</span>
                         </li>
                       ))}
                     </ul>
@@ -110,6 +115,11 @@ export async function SubjectPage({ lang, id }: { lang: Lang; id: string }) {
         <p className={styles.notice} role="status">
           {t.unavailable}
         </p>
+        <p>
+          <Link href={localePath(lang, "/subjects")} className={styles.textLink}>
+            {t.backToSubjects}
+          </Link>
+        </p>
       </SiteShell>
     );
   }
@@ -121,19 +131,29 @@ export async function SubjectPage({ lang, id }: { lang: Lang; id: string }) {
 
   return (
     <SiteShell lang={lang} path={path}>
-      <p className={styles.muted}>
-        {pick(studyType.title, lang)} · {pick(level.title, lang)}
-        {subject.term !== "" ? ` · ${t.term[subject.term]}` : ""}
-      </p>
-      <h1 className={styles.title}>{pick(subject.title, lang)}</h1>
-      <p className={styles.priceLarge}>{formatPrice(lang, subject.price)}</p>
-      {description !== "" ? <p className={styles.description}>{description}</p> : null}
-      <p>
-        {t.instructor}: {pick(subject.instructor, lang)}
-      </p>
-      <Counts lang={lang} subject={subject} />
-      {until !== null ? <p className={styles.muted}>{t.accessUntil(until)}</p> : null}
-      <p>{t.studyInApp}</p>
+      <nav className={styles.breadcrumb} aria-label={d.pages.subjects.title}>
+        <Link href={localePath(lang, "/subjects")}>{d.pages.subjects.title}</Link>
+        <span aria-hidden="true">/</span>
+        <span>{pick(studyType.title, lang)}</span>
+        <span aria-hidden="true">/</span>
+        <Link href={localePath(lang, `/subjects#lv-${level.key}`)}>{pick(level.title, lang)}</Link>
+      </nav>
+      <div className={styles.subjectLayout}>
+        <div>
+          {subject.term !== "" ? <span className={styles.termBadge}>{t.term[subject.term]}</span> : null}
+          <h1 className={styles.title}>{pick(subject.title, lang)}</h1>
+          <p className={styles.instructor}>
+            {t.instructor}: <strong>{pick(subject.instructor, lang)}</strong>
+          </p>
+          {description !== "" ? <p className={styles.description}>{description}</p> : null}
+          <Counts lang={lang} subject={subject} />
+        </div>
+        <aside className={styles.pricePanel} aria-label={formatPrice(lang, subject.price)}>
+          <p className={styles.priceLarge}>{formatPrice(lang, subject.price)}</p>
+          {until !== null ? <p className={styles.muted}>{t.accessUntil(until)}</p> : null}
+          <p className={styles.studyNote}>{t.studyInApp}</p>
+        </aside>
+      </div>
       <SubjectBuySection
         lang={lang}
         subjectId={subject.id}
@@ -142,7 +162,9 @@ export async function SubjectPage({ lang, id }: { lang: Lang; id: string }) {
         titleEn={subject.title.en}
       />
       <p>
-        <Link href={localePath(lang, "/subjects")}>{t.backToSubjects}</Link>
+        <Link href={localePath(lang, "/subjects")} className={styles.textLink}>
+          {t.backToSubjects}
+        </Link>
       </p>
     </SiteShell>
   );
@@ -167,14 +189,25 @@ export async function subjectMetadata(lang: Lang, id: string): Promise<Metadata>
 
 /** Localized 404 for the catalog pages (notFound() above). */
 export function CatalogNotFound({ lang }: { lang: Lang }) {
-  const t = dictionary(lang).catalog;
+  const d = dictionary(lang);
+  const t = d.catalog;
   return (
     <SiteShell lang={lang} path="/subjects">
-      <h1 className={styles.title}>{t.notFoundTitle}</h1>
-      <p className={styles.lead}>{t.notFoundLead}</p>
-      <p>
-        <Link href={localePath(lang, "/subjects")}>{t.backToSubjects}</Link>
-      </p>
+      <div className={styles.notFound}>
+        <p className={styles.notFoundCode} aria-hidden="true">
+          {d.common.notFoundCode}
+        </p>
+        <h1 className={styles.title}>{t.notFoundTitle}</h1>
+        <p className={styles.lead}>{t.notFoundLead}</p>
+        <div className={styles.actions}>
+          <Link href={localePath(lang, "/subjects")} className={styles.primaryButton}>
+            {t.backToSubjects}
+          </Link>
+          <Link href={localePath(lang, "/")} className={styles.secondaryButton}>
+            {d.common.goHome}
+          </Link>
+        </div>
+      </div>
     </SiteShell>
   );
 }

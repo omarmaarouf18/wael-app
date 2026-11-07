@@ -114,6 +114,10 @@ elevated, so it may outline decoration but never a control. The focus ring
 - Inputs use `--prominent-border` (1.35:1); step 3 switches controls to
   `--input-border`.
 
+*(Amended 2026-11-07, step 3: both fixed. Links, prices and the active tab
+are `--text-primary` (crimson stays only as the tab underline and fills);
+every input, select and outlined button uses `--input-border`.)*
+
 ## Typography
 
 The app's three families, self-hosted from `web/src/fonts/` (SIL OFL 1.1,
@@ -198,7 +202,11 @@ and hairlines first, shadows second.
 ## Components
 
 Each is a CSS class set in a module today; step 3 gathers them into shared
-components. Every interactive target is at least 44 × 44 px
+components. *(Amended 2026-11-07, step 3: kept as module classes instead —
+`auth.module.css` (forms, account, buy section), `cart.module.css` (drawer,
+checkout), `site-shell.module.css` (header, footer), `catalog-pages.module.css`
+and `home-page.module.css` — restyled to the specs below with the views'
+class names unchanged, so no view changed behaviour.)* Every interactive target is at least 44 × 44 px
 (`--tap-target`).
 
 - **Primary button.** `--crimson` fill, `--text-on-accent`, 600 weight,
@@ -233,9 +241,15 @@ components. Every interactive target is at least 44 × 44 px
   "EL METR ACADEMY" eyebrow. End edge: Subjects, About, cart (count badge),
   account state (Log in / Sign up, or My account / Log out), language
   switch (a pill naming the other language, `hreflang`). Under 768 px the
-  links fold into a menu button (step 3).
+  links fold into a menu button (step 3). *(Amended 2026-11-07, step 3:
+  under 1024 px, not 768 — at 768 the English links wrapped. The menu is a
+  `<details>` disclosure (`header-menu.tsx`) that closes on navigation and
+  Escape; under 480 px the cart and menu buttons show their icon only, the
+  word kept for screen readers.)*
 - **Footer.** `--surface-layer-1`, top hairline. Brand line, store badges,
   legal links (terms, privacy, refund), language switch, rights line.
+  *(Amended 2026-11-07: store links are text buttons until the owner sends
+  the official badges.)*
 - **Banner / alert.** Tint background, 35% border, semantic foreground,
   radius 6; errors are `role="alert"`, success `role="status"`; never
   auto-dismiss.
@@ -251,6 +265,10 @@ Every interactive element shows `:focus-visible`: 2 px
 every surface) with the crimson border kept as a second cue on inputs.
 A skip link ("تخطَّ إلى المحتوى" / "Skip to content") is the first focusable
 element on every page (step 3).
+*(Amended 2026-11-07: done — `--focus-ring-color` is `--text-primary`; the
+skip link shipped in step 2. Network failures show an error with "Try again"
+(account hub, checkout payment methods); loading shows static skeletons
+(account hub, buy section).)*
 
 ## Motion
 

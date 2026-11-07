@@ -54,7 +54,7 @@ export function LoginPageView({ lang }: LoginPageViewProps) {
           <h1 className={styles.title}>{text.title}</h1>
           <p className={styles.lead}>{text.lead}</p>
 
-          {error ? <div className={styles.errorBanner}>{error}</div> : null}
+          {error ? <div className={styles.errorBanner} role="alert">{error}</div> : null}
 
           <form onSubmit={handleSubmit} className={styles.form}>
             <div className={styles.field}>

@@ -52,6 +52,12 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
 
   const [activeTab, setActiveTab] = useState<AccountTab>("overview");
   const [loading, setLoading] = useState(true);
+  // Network or server failures (added 2026-11-07): the profile could not be
+  // read at all (loadError), or some lists could not (partialError). Before,
+  // both looked like empty lists.
+  const [loadError, setLoadError] = useState(false);
+  const [partialError, setPartialError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
 
   // User and core data
@@ -104,21 +110,28 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
     let cancelled = false;
 
     async function loadData() {
+      let someFailed = false;
+      const fallback = <T,>(value: T) => () => {
+        someFailed = true;
+        return value;
+      };
       try {
         const [user, ents, ordersRes, reqs, sessRes, notifsRes, catalogData, configData] =
           await Promise.all([
             getMe(),
-            getMyEntitlements().catch(() => ({ subject_ids: [] as string[] })),
-            getMyOrders().catch(() => ({ items: [] as OrderResponse[] })),
-            getMyRequests().catch(() => ({ items: [] as StudentRequestItem[] })),
-            getSessions().catch(() => ({ sessions: [] as DeviceSession[] })),
-            getNotifications().catch(() => ({ notifications: [] as NotificationItem[] })),
+            getMyEntitlements().catch(fallback({ subject_ids: [] as string[] })),
+            getMyOrders().catch(fallback({ items: [] as OrderResponse[] })),
+            getMyRequests().catch(fallback({ items: [] as StudentRequestItem[] })),
+            getSessions().catch(fallback({ sessions: [] as DeviceSession[] })),
+            getNotifications().catch(fallback({ notifications: [] as NotificationItem[] })),
             apiGet<unknown>("/api/v1/academy/public/catalog").catch(() => null),
             apiGet<AppConfig>("/api/v1/academy/app-config").catch(() => ({} as AppConfig)),
           ]);
 
         if (cancelled) return;
 
+        setLoadError(false);
+        setPartialError(someFailed);
         setProfile(user);
         setEditName(user.full_name || "");
         setEditPhone(user.phone || "");
@@ -155,7 +168,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
           });
         }
       } catch {
-        // Fallback
+        if (!cancelled) setLoadError(true);
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -168,7 +181,12 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, isLoggedIn, lang]);
+  }, [authLoading, isLoggedIn, lang, reloadKey]);
+
+  const retryLoad = () => {
+    setLoading(true);
+    setReloadKey((n) => n + 1);
+  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -376,8 +394,36 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
     return (
       <SiteShell lang={lang} path="/account">
         <div className={styles.accountContainer}>
+          <div className={styles.card} aria-busy="true">
+            <h1 className={styles.visuallyHidden}>{text.title}</h1>
+            <p className={styles.visuallyHidden} role="status">
+              {text.loading}
+            </p>
+            <div className={styles.skeleton} aria-hidden="true">
+              <span className={`${styles.skeletonLine} ${styles.skeletonLineWide}`} />
+              <span className={`${styles.skeletonLine} ${styles.skeletonLineShort}`} />
+              <span className={styles.skeletonLine} />
+              <span className={styles.skeletonBlock} />
+              <span className={styles.skeletonBlock} />
+            </div>
+          </div>
+        </div>
+      </SiteShell>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <SiteShell lang={lang} path="/account">
+        <div className={styles.accountContainer}>
           <div className={styles.card}>
-            <p className={styles.lead}>{text.loading}</p>
+            <h1 className={styles.title}>{text.title}</h1>
+            <div className={styles.errorState} role="alert">
+              <p>{t.common.networkError}</p>
+              <button type="button" onClick={retryLoad} className={styles.secondaryButton}>
+                {t.common.retry}
+              </button>
+            </div>
           </div>
         </div>
       </SiteShell>
@@ -405,11 +451,21 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
             </button>
           </div>
 
+          {partialError ? (
+            <div className={`${styles.errorState} ${styles.bannerSpaced}`} role="alert">
+              <p>{t.common.partialLoad}</p>
+              <button type="button" onClick={retryLoad} className={styles.secondaryButton}>
+                {t.common.retry}
+              </button>
+            </div>
+          ) : null}
+
           {/* Navigation Tabs */}
           <nav className={styles.tabNav} aria-label="Account Tabs">
             <button
               type="button"
               onClick={() => setActiveTab("overview")}
+              aria-pressed={activeTab === "overview"}
               className={`${styles.tabButton} ${activeTab === "overview" ? styles.tabButtonActive : ""}`}
             >
               {hubText.tabs.overview}
@@ -417,6 +473,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
             <button
               type="button"
               onClick={() => setActiveTab("orders")}
+              aria-pressed={activeTab === "orders"}
               className={`${styles.tabButton} ${activeTab === "orders" ? styles.tabButtonActive : ""}`}
             >
               {hubText.tabs.orders} {orders.length > 0 ? `(${orders.length})` : ""}
@@ -424,6 +481,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
             <button
               type="button"
               onClick={() => setActiveTab("devices")}
+              aria-pressed={activeTab === "devices"}
               className={`${styles.tabButton} ${activeTab === "devices" ? styles.tabButtonActive : ""}`}
             >
               {hubText.tabs.devices} {sessions.length > 0 ? `(${sessions.length})` : ""}
@@ -431,6 +489,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
             <button
               type="button"
               onClick={() => setActiveTab("notifications")}
+              aria-pressed={activeTab === "notifications"}
               className={`${styles.tabButton} ${activeTab === "notifications" ? styles.tabButtonActive : ""}`}
             >
               {hubText.tabs.notifications}{" "}
@@ -439,6 +498,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
             <button
               type="button"
               onClick={() => setActiveTab("password")}
+              aria-pressed={activeTab === "password"}
               className={`${styles.tabButton} ${activeTab === "password" ? styles.tabButtonActive : ""}`}
             >
               {hubText.tabs.password}
@@ -446,6 +506,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
             <button
               type="button"
               onClick={() => setActiveTab("danger")}
+              aria-pressed={activeTab === "danger"}
               className={`${styles.tabButton} ${activeTab === "danger" ? styles.tabButtonActive : ""}`}
             >
               {hubText.tabs.danger}
@@ -520,7 +581,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                   <p>{text.noOwnedSubjects}</p>
                   <div className={styles.browseLinkWrapper}>
                     <a href={localePath(lang, "/subjects")} className={styles.link}>
-                      {text.browseSubjects} →
+                      {text.browseSubjects}
                     </a>
                   </div>
                 </div>
@@ -690,7 +751,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
               <h2 className={styles.sectionTitle}>{hubText.devices.title}</h2>
               <p className={styles.lead}>{hubText.devices.lead}</p>
 
-              {sessionError && <div className={styles.errorBanner}>{sessionError}</div>}
+              {sessionError && <div className={styles.errorBanner} role="alert">{sessionError}</div>}
 
               {sessions.length === 0 ? (
                 <p className={styles.emptyState}>{hubText.devices.noSessions}</p>
@@ -812,8 +873,8 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
               <p className={styles.lead}>{hubText.password.lead}</p>
 
               <form onSubmit={handlePasswordChange} className={`${styles.form} ${styles.formNarrow}`}>
-                {passwordError && <div className={styles.errorBanner}>{passwordError}</div>}
-                {passwordSuccess && <div className={styles.successBanner}>{passwordSuccess}</div>}
+                {passwordError && <div className={styles.errorBanner} role="alert">{passwordError}</div>}
+                {passwordSuccess && <div className={styles.successBanner} role="status">{passwordSuccess}</div>}
 
                 <div className={styles.field}>
                   <label htmlFor="current-pw" className={styles.label}>
@@ -893,12 +954,12 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
               </div>
 
               {scheduledPurgeDate ? (
-                <div className={styles.successBanner}>
+                <div className={styles.successBanner} role="status">
                   {hubText.deleteAccount.scheduledNotice(formatDate(scheduledPurgeDate, lang))}
                 </div>
               ) : (
                 <form onSubmit={handleDeleteAccount} className={`${styles.form} ${styles.formNarrow}`}>
-                  {deleteError && <div className={styles.errorBanner}>{deleteError}</div>}
+                  {deleteError && <div className={styles.errorBanner} role="alert">{deleteError}</div>}
 
                   <p className={styles.bodyText}>
                     {hubText.deleteAccount.confirmPrompt}
@@ -958,8 +1019,8 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
               {hubText.profile.editTitle}
             </h3>
 
-            {editError && <div className={`${styles.errorBanner} ${styles.bannerSpaced}`}>{editError}</div>}
-            {editSuccess && <div className={`${styles.successBanner} ${styles.bannerSpaced}`}>{editSuccess}</div>}
+            {editError && <div className={`${styles.errorBanner} ${styles.bannerSpaced}`} role="alert">{editError}</div>}
+            {editSuccess && <div className={`${styles.successBanner} ${styles.bannerSpaced}`} role="status">{editSuccess}</div>}
 
             <form onSubmit={handleProfileSubmit} className={styles.form}>
               <div className={styles.field}>

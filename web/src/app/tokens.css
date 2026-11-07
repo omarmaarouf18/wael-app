@@ -67,7 +67,7 @@
   --scrim-blur: 4px;
 
   /* ── Focus ────────────────────────────────────────────────────── */
-  --focus-ring-color: var(--crimson);
+  --focus-ring-color: var(--text-primary); /* 16:1+ on every surface (was crimson until step 3) */
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
 

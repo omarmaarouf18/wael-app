@@ -61,6 +61,8 @@ Arabic is the default (right to left) at the root paths; English is under
 
 *(Amended 2026-11-07, UI/UX brief step 2: `/` and `/en` are the real landing page (`web/src/components/home-page.tsx`, copy in `web/src/lib/home-copy.ts`, plan in `docs/web/landing-plan.md`): static, refreshed with the catalog every 300 s, no client JavaScript of its own. Facts and photos the owner has not given are TODO blocks shown only outside Vercel production (`web/src/lib/site-env.ts`: hidden when `VERCEL_ENV=production`); sections with no owner facts (center, testimonials, unanswered FAQ) are left out of the production build. Every page now starts with a skip link.)*
 
+*(Amended 2026-11-07, UI/UX brief step 3: every page uses `web/DESIGN.md` — header with a menu under 1024 px (`header-menu.tsx`), footer with legal links, store links and the language switch, catalog and subject cards, cart drawer and checkout, account hub, login, signup with OTP, forgot password and 404. Behaviour, routes and API calls are unchanged; new visual states only: a network error with "Try again" on the account hub (whole page or some lists) and on the checkout payment methods, static skeletons while the account hub and the buy section load, an empty-cart illustration. URLs that match no route render `src/app/global-not-found.tsx` (Next.js `experimental.globalNotFound`, the documented fix for apps with several root layouts); it replaced Next's built-in 404, whose inline styles the static CSP blocked.)*
+
 Every placeholder shows a visible "TODO" note. No price, subject or policy
 text is made up. All pages send `noindex, nofollow` until W5 puts real pages
 up.

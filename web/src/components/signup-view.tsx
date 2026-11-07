@@ -139,7 +139,7 @@ export function SignupPageView({ lang }: SignupPageViewProps) {
               <h1 className={styles.title}>{text.title}</h1>
               <p className={styles.lead}>{text.lead}</p>
 
-              {error ? <div className={styles.errorBanner}>{error}</div> : null}
+              {error ? <div className={styles.errorBanner} role="alert">{error}</div> : null}
 
               <form onSubmit={handleStep1Submit} className={styles.form}>
                 <div className={styles.field}>
@@ -248,8 +248,8 @@ export function SignupPageView({ lang }: SignupPageViewProps) {
               <h1 className={styles.title}>{text.otpTitle}</h1>
               <p className={styles.lead}>{text.otpLead(email)}</p>
 
-              {error ? <div className={styles.errorBanner}>{error}</div> : null}
-              {info ? <div className={styles.successBanner}>{info}</div> : null}
+              {error ? <div className={styles.errorBanner} role="alert">{error}</div> : null}
+              {info ? <div className={styles.successBanner} role="status">{info}</div> : null}
 
               <form onSubmit={handleStep2Submit} className={styles.form}>
                 <div className={styles.field}>

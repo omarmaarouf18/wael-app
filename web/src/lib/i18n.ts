@@ -295,8 +295,29 @@ interface Dictionary {
     logout: string;
     cart: (count: number) => string;
   };
-  footer: { terms: string; privacy: string; refund: string; rights: string; brandLine: string };
+  footer: {
+    terms: string;
+    privacy: string;
+    refund: string;
+    rights: string;
+    brandLine: string;
+    explore: string;
+    legal: string;
+    app: string;
+    language: string;
+  };
   todoBadge: string;
+  /** Shared UI wording (added 2026-11-07, UI/UX brief step 3). */
+  common: {
+    menu: string;
+    retry: string;
+    loading: string;
+    networkError: string;
+    partialLoad: string;
+    paymentMethodsError: string;
+    goHome: string;
+    notFoundCode: string;
+  };
   pages: Record<PageKey, PageText>;
   catalog: CatalogText;
   auth: AuthText;
@@ -383,8 +404,22 @@ const ar: Dictionary = {
     refund: "سياسة الاسترداد",
     rights: "© ٢٠٢٦ أكاديمية المتر",
     brandLine: "EL METR علامة مملوكة للأستاذ وائل السعيد.",
+    explore: "تصفّح",
+    legal: "قانوني",
+    app: "التطبيق",
+    language: "اللغة",
   },
   todoBadge: "قيد الإعداد",
+  common: {
+    menu: "القائمة",
+    retry: "إعادة المحاولة",
+    loading: "جارٍ التحميل…",
+    networkError: "تعذّر الاتصال بالخادم. تأكد من الإنترنت وحاول مرة أخرى.",
+    partialLoad: "تعذّر تحميل بعض بياناتك، فقد تظهر بعض القوائم فارغة.",
+    paymentMethodsError: "تعذّر تحميل طرق الدفع.",
+    goHome: "الصفحة الرئيسية",
+    notFoundCode: "٤٠٤",
+  },
   pages: {
     home: {
       title: "أكاديمية المتر",
@@ -596,7 +631,7 @@ const ar: Dictionary = {
     title: "سلة المشتريات",
     empty: "السلة فارغة حالياً.",
     browseCatalog: "تصفح المواد الدراسية",
-    itemPrice: (price: number) => `${price} جنيه`,
+    itemPrice: (price: number) => `${new Intl.NumberFormat("ar-EG").format(price)} جنيه`,
     total: (amount: number) => `الإجمالي: ${amount} جنيه`,
     remove: "إزالة",
     clearCart: "إفراغ السلة",
@@ -762,8 +797,22 @@ const en: Dictionary = {
     refund: "Refund Policy",
     rights: "© 2026 EL METR ACADEMY",
     brandLine: "EL METR is a brand of Ustaz Wael Al-Saeed.",
+    explore: "Explore",
+    legal: "Legal",
+    app: "The app",
+    language: "Language",
   },
   todoBadge: "In preparation",
+  common: {
+    menu: "Menu",
+    retry: "Try again",
+    loading: "Loading…",
+    networkError: "We could not reach the server. Check your connection and try again.",
+    partialLoad: "Some of your data could not be loaded, so some lists may look empty.",
+    paymentMethodsError: "The payment methods could not be loaded.",
+    goHome: "Home",
+    notFoundCode: "404",
+  },
   pages: {
     home: {
       title: "EL METR ACADEMY",
@@ -975,7 +1024,7 @@ const en: Dictionary = {
     title: "Shopping Cart",
     empty: "Your cart is currently empty.",
     browseCatalog: "Browse Subjects",
-    itemPrice: (price: number) => `EGP ${price}`,
+    itemPrice: (price: number) => `EGP ${new Intl.NumberFormat("en-EG").format(price)}`,
     total: (amount: number) => `Total: EGP ${amount}`,
     remove: "Remove",
     clearCart: "Clear Cart",

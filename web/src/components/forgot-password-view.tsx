@@ -108,7 +108,7 @@ export function ForgotPasswordPageView({ lang }: ForgotPasswordPageViewProps) {
             <>
               <h1 className={styles.title}>{text.step1Title}</h1>
               <p className={styles.lead}>{text.step1Lead}</p>
-              {error ? <div className={styles.errorBanner}>{error}</div> : null}
+              {error ? <div className={styles.errorBanner} role="alert">{error}</div> : null}
               <form onSubmit={handleStep1} className={styles.form}>
                 <div className={styles.field}>
                   <label htmlFor="reset-email" className={styles.label}>
@@ -140,7 +140,7 @@ export function ForgotPasswordPageView({ lang }: ForgotPasswordPageViewProps) {
             <>
               <h1 className={styles.title}>{text.step2Title}</h1>
               <p className={styles.lead}>{text.step2Lead(email)}</p>
-              {error ? <div className={styles.errorBanner}>{error}</div> : null}
+              {error ? <div className={styles.errorBanner} role="alert">{error}</div> : null}
               <form onSubmit={handleStep2} className={styles.form}>
                 <div className={styles.field}>
                   <label htmlFor="reset-code" className={styles.label}>
@@ -169,7 +169,7 @@ export function ForgotPasswordPageView({ lang }: ForgotPasswordPageViewProps) {
             <>
               <h1 className={styles.title}>{text.step3Title}</h1>
               <p className={styles.lead}>{text.step3Lead}</p>
-              {error ? <div className={styles.errorBanner}>{error}</div> : null}
+              {error ? <div className={styles.errorBanner} role="alert">{error}</div> : null}
               <form onSubmit={handleStep3} className={styles.form}>
                 <div className={styles.field}>
                   <label htmlFor="new-password" className={styles.label}>
@@ -213,7 +213,7 @@ export function ForgotPasswordPageView({ lang }: ForgotPasswordPageViewProps) {
           ) : (
             <>
               <h1 className={styles.title}>{text.step1Title}</h1>
-              <div className={styles.successBanner}>{text.resetSuccess}</div>
+              <div className={styles.successBanner} role="status">{text.resetSuccess}</div>
               <div className={styles.links}>
                 <a href={localePath(lang, "/login")} className={styles.link}>
                   {text.backToLogin}
