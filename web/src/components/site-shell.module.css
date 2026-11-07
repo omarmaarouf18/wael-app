@@ -138,3 +138,36 @@
   gap: var(--space-sm) var(--space-lg);
   margin-inline-end: auto;
 }
+
+/* Skip link: first focusable element, visible only when focused. */
+.skipLink {
+  position: absolute;
+  inset-inline-start: var(--space-lg);
+  inset-block-start: calc(-1 * var(--space-6xl));
+  z-index: var(--z-overlay);
+  min-height: var(--tap-target);
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--space-lg);
+  background: var(--text-primary);
+  color: var(--void-canvas);
+  border-radius: var(--radius-lg);
+  font-weight: var(--fw-bold);
+  text-decoration: none;
+}
+
+.skipLink:focus-visible {
+  inset-block-start: var(--space-sm);
+  outline: var(--focus-ring-width) solid var(--crimson);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.mainBleed {
+  flex: 1;
+  width: 100%;
+}
+
+.main:focus,
+.mainBleed:focus {
+  outline: none;
+}

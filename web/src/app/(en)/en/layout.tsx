@@ -9,7 +9,16 @@ import { fontVariables } from "@/lib/fonts";
 
 export const metadata: Metadata = {
   title: { default: "EL METR ACADEMY", template: "%s | EL METR ACADEMY" },
-  icons: { icon: "/brand/logo-512.png" },
+  // Absolute URLs for Open Graph images and canonical links.
+  metadataBase: new URL("https://elmetracademy.app"),
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/brand/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/brand/apple-touch-icon.png", sizes: "180x180" }],
+  },
   // Placeholder site (foundations): kept out of search engines until W5
   // puts real pages up.
   robots: { index: false, follow: false },

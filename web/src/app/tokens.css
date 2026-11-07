@@ -143,7 +143,7 @@
   --fs-6xl: 3rem; /* 48 */
 
   /* Fluid roles (375 → 1440 px), Latin; Arabic overrides below. */
-  --fs-display: clamp(2.25rem, 1.85rem + 1.7vw, 3.5rem); /* 36 → 56 */
+  --fs-display: clamp(2rem, 0.9rem + 2.8vw, 3.25rem); /* 32 → 52 (Syne is wide) */
   --fs-h1: clamp(1.75rem, 1.55rem + 0.85vw, 2.375rem); /* 28 → 38 */
   --fs-h2: clamp(1.5rem, 1.35rem + 0.6vw, 2rem); /* 24 → 32 */
   --fs-h3: clamp(1.125rem, 1.08rem + 0.2vw, 1.25rem); /* 18 → 20 */

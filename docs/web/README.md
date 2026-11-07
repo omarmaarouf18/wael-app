@@ -59,6 +59,8 @@ Arabic is the default (right to left) at the root paths; English is under
 | `/privacy` | `/en/privacy` | Privacy | Placeholder (owner text) |
 | `/refund` | `/en/refund` | Refund policy | Placeholder (owner text) |
 
+*(Amended 2026-11-07, UI/UX brief step 2: `/` and `/en` are the real landing page (`web/src/components/home-page.tsx`, copy in `web/src/lib/home-copy.ts`, plan in `docs/web/landing-plan.md`): static, refreshed with the catalog every 300 s, no client JavaScript of its own. Facts and photos the owner has not given are TODO blocks shown only outside Vercel production (`web/src/lib/site-env.ts`: hidden when `VERCEL_ENV=production`); sections with no owner facts (center, testimonials, unanswered FAQ) are left out of the production build. Every page now starts with a skip link.)*
+
 Every placeholder shows a visible "TODO" note. No price, subject or policy
 text is made up. All pages send `noindex, nofollow` until W5 puts real pages
 up.

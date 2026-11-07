@@ -133,7 +133,7 @@ loads Cairo only where it is needed, for the LCP budget.
 
 | Role | Token | Latin | Arabic | Weight | Line height en / ar |
 |---|---|---|---|---|---|
-| Display (hero h1) | `--fs-display` | 36 → 56 | 34 → 52 | 800 | 1.15 / 1.3 (`--lh-display`) |
+| Display (hero h1) | `--fs-display` | 32 → 52 | 34 → 52 | 800 | 1.15 / 1.3 (`--lh-display`) |
 | Page title (h1) | `--fs-h1` | 28 → 38 | 28 → 36 | 800 | 1.2 / 1.35 (`--lh-heading`) |
 | Section (h2) | `--fs-h2` | 24 → 32 | 24 → 32 | 800 | 1.2 / 1.35 |
 | Card title (h3) | `--fs-h3` | 18 → 20 | 18 → 20 | 700 | 1.2 / 1.35 |

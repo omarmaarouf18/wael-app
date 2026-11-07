@@ -1,7 +1,11 @@
-import { PlaceholderPage, placeholderMetadata } from "@/components/placeholder-page";
+import { HomePage, homeMetadata } from "@/components/home-page";
 
-export const metadata = placeholderMetadata("en", "home");
+export const metadata = homeMetadata("en");
+
+// Static, refreshed with the public catalog every 300 s
+// (CATALOG_REVALIDATE_SECONDS in src/lib/catalog.ts).
+export const revalidate = 300;
 
 export default function Page() {
-  return <PlaceholderPage lang="en" page="home" path="/" />;
+  return <HomePage lang="en" />;
 }

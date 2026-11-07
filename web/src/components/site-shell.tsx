@@ -13,10 +13,12 @@ interface SiteShellProps {
   /** Path of the current page without the language prefix ("/about"). */
   path: string;
   children: ReactNode;
+  /** Full-width main with no padding (the landing page's banded sections). */
+  fullBleed?: boolean;
 }
 
 /** Header, main and footer shared by every page. */
-export function SiteShell({ lang, path, children }: SiteShellProps) {
+export function SiteShell({ lang, path, children, fullBleed = false }: SiteShellProps) {
   const t = dictionary(lang);
   const other: Lang = lang === "ar" ? "en" : "ar";
   const to = (p: string) => localePath(lang, p);
@@ -28,6 +30,9 @@ export function SiteShell({ lang, path, children }: SiteShellProps) {
 
   return (
     <>
+      <a href="#main" className={styles.skipLink}>
+        {t.skipToContent}
+      </a>
       <header className={styles.header}>
         <div className={styles.headerInner}>
           <Link href={to("/")} className={styles.brand}>
@@ -35,7 +40,7 @@ export function SiteShell({ lang, path, children }: SiteShellProps) {
                 which the strict CSP (style-src without 'unsafe-inline')
                 blocks. The logo is a local, already-sized file. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/logo-512.png" alt="" width={36} height={36} className={styles.logo} />
+            <img src="/brand/logo-72.png" alt="" width={36} height={36} className={styles.logo} />
             <span className={styles.brandText}>
               <span className={styles.brandName}>{t.brand}</span>
               <span className={styles.brandEyebrow} lang={other}>
@@ -64,7 +69,9 @@ export function SiteShell({ lang, path, children }: SiteShellProps) {
           </nav>
         </div>
       </header>
-      <main className={styles.main}>{children}</main>
+      <main id="main" tabIndex={-1} className={fullBleed ? styles.mainBleed : styles.main}>
+        {children}
+      </main>
       <CartDrawer lang={lang} />
       <footer className={styles.footer}>
         <div className={styles.footerInner}>

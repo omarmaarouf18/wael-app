@@ -284,6 +284,7 @@ interface Dictionary {
   brandEyebrow: string;
   switchLanguage: string;
   switchLanguageLabel: string;
+  skipToContent: string;
   nav: {
     home: string;
     about: string;
@@ -365,6 +366,7 @@ const ar: Dictionary = {
   brandEyebrow: "EL METR ACADEMY",
   switchLanguage: "English",
   switchLanguageLabel: "Switch to English",
+  skipToContent: "تخطَّ إلى المحتوى",
   nav: {
     home: "الرئيسية",
     about: "عن الأكاديمية",
@@ -743,6 +745,7 @@ const en: Dictionary = {
   brandEyebrow: "أكاديمية المتر",
   switchLanguage: "العربية",
   switchLanguageLabel: "التبديل إلى العربية",
+  skipToContent: "Skip to content",
   nav: {
     home: "Home",
     about: "About the academy",

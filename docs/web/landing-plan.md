@@ -1,6 +1,15 @@
 # Landing page plan (`/` and `/en`)
 
 UI/UX brief 2026-11-07, step 1. For owner review before step 2 builds it.
+*(Amended 2026-11-07: the owner approved the plan ("Go to step 2") without
+sending facts or assets yet; step 2 built the page from it. Hero: the brand
+art, pending item 1. Teacher tile: the logo until item 3. Store links: text
+buttons to the two URLs until items 7 and 8. Shown on the live site today:
+hero, teacher (name and the one-teacher fact only), subjects by year, the
+three steps, the app section without screenshots, the two answered FAQ
+items (payment, devices — both from the built system and SPEC decision 22),
+closing call to action. Left out of production until the owner answers:
+center, testimonials and the three unanswered FAQ items.)*
 Design rules: `web/DESIGN.md`. Copy below is a **draft** (Arabic first,
 English second); nothing in it is a fact the owner has not given. Every
 `[OWNER: …]` is a gap that ships as a visible TODO block in non-production
