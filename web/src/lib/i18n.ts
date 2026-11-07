@@ -109,7 +109,6 @@ export interface AuthText {
     studyBannerTitle: string;
     studyBannerLead: string;
     downloadAndroid: string;
-    downloadIos: string;
     logout: string;
     loggingOut: string;
     loading: string;
@@ -602,7 +601,6 @@ const ar: Dictionary = {
       studyBannerTitle: "ذاكر على تطبيق أكاديمية المتر",
       studyBannerLead: "مشاهدة الفيديوهات وتحميل المذكرات والكتب متاحة حصرياً عبر تطبيق الهاتف.",
       downloadAndroid: "تحميل لأجهزة Android (Google Play)",
-      downloadIos: "تحميل لأجهزة iPhone (App Store)",
       logout: "تسجيل الخروج",
       loggingOut: "جارٍ الخروج...",
       loading: "جارٍ تحميل البيانات...",
@@ -995,7 +993,6 @@ const en: Dictionary = {
       studyBannerTitle: "Study in EL METR ACADEMY app",
       studyBannerLead: "Videos, notes, and books are available exclusively via the mobile app.",
       downloadAndroid: "Download for Android (Google Play)",
-      downloadIos: "Download for iPhone (App Store)",
       logout: "Sign Out",
       loggingOut: "Signing out...",
       loading: "Loading...",

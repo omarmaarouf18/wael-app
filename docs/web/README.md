@@ -389,6 +389,9 @@ it today.
   square hero files for phones (`hero-sq-*`).
 - **Not tried (owner decision):** dropping Cairo ExtraBold (headings at
   700), or the Latin brand fonts, or framework-level JS changes.
+  *(Amended 2026-11-07, owner decision: LCP accepted as measured; fonts
+  and framework unchanged; real-user numbers checked on Vercel after
+  launch. ADR-0014 "Amendment 2026-11-07".)*
 - SEO is low only because every page is `noindex` until the owner says so
   (`is-crawlable`) and some subjects have no description; Best practices
   96 is the localhost CORS error on `/auth/refresh` (the production API

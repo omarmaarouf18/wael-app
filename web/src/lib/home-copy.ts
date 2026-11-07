@@ -27,8 +27,7 @@ export interface HomeCopy {
     eyebrow: string;
     title: string;
     lead: string;
-    logoAlt: string;
-    todoPortrait: string;
+    portraitAlt: string;
     todoBio: string;
   };
   subjects: {
@@ -50,8 +49,6 @@ export interface HomeCopy {
     title: string;
     lead: string;
     android: string;
-    ios: string;
-    todoScreens: string;
     todoBadges: string;
   };
   center: { title: string; todo: string };
@@ -89,9 +86,7 @@ const ar: HomeCopy = {
     eyebrow: "المحاضر",
     title: "عن الأستاذ وائل السعيد",
     lead: "كل مواد الأكاديمية يشرحها الأستاذ وائل السعيد.",
-    logoAlt: "شعار أكاديمية المتر",
-    todoPortrait:
-      "صورة الأستاذ: موافقة على استخدام صورة التطبيق في الموقع (الأستاذ والمصوّر) — بند ٣ في خطة الصفحة.",
+    portraitAlt: "الأستاذ وائل السعيد",
     todoBio: "نبذة قصيرة (٢–٤ جمل) والألقاب التي تظهر — بند ٤ في خطة الصفحة.",
   },
   subjects: {
@@ -120,9 +115,7 @@ const ar: HomeCopy = {
     title: "كل محاضراتك في مكان واحد",
     lead: "فيديوهات ومذكرات مرتبة لكل مادة، وحسابك وأجهزتك تحت إيدك.",
     android: "Google Play",
-    ios: "App Store",
-    todoScreens: "صور التطبيق: موافقة على استخدام صور المتجر في الموقع — بند ٦.",
-    todoBadges: "شارات المتجرين الرسمية وتأكيد أن الرابطين يعملان — بندا ٧ و٨.",
+    todoBadges: "شارة Google Play الرسمية — بند ٨. (رابط تطبيق iPhone مخفي حتى يصبح متاحًا.)",
   },
   center: {
     title: "السنتر",
@@ -166,9 +159,7 @@ const en: HomeCopy = {
     eyebrow: "The teacher",
     title: "About Ustaz Wael El Saeed",
     lead: "Every subject at the academy is taught by Ustaz Wael El Saeed.",
-    logoAlt: "EL METR Academy logo",
-    todoPortrait:
-      "Teacher photo: consent to use the app portrait on the website (teacher and photographer) — plan item 3.",
+    portraitAlt: "Ustaz Wael El Saeed",
     todoBio: "A short bio (2–4 sentences) and the titles to show — plan item 4.",
   },
   subjects: {
@@ -194,9 +185,7 @@ const en: HomeCopy = {
     title: "All your lectures in one place",
     lead: "Videos and notes organised by subject, and your account in your hands.",
     android: "Google Play",
-    ios: "App Store",
-    todoScreens: "App screenshots: consent to use the store screenshots on the website — item 6.",
-    todoBadges: "The official store badges and confirmation that both links are live — items 7 and 8.",
+    todoBadges: "The official Google Play badge — item 8. (The iPhone app link stays hidden until it is live.)",
   },
   center: {
     title: "The center",

@@ -26,6 +26,8 @@ import { parseCatalog, type Catalog } from "@/lib/catalog-data";
 import { dictionary, localePath, type Lang } from "@/lib/i18n";
 
 import { useAuth } from "./auth-provider";
+import { STORE_URLS } from "@/lib/store-links";
+
 import styles from "./auth.module.css";
 import { SiteShell } from "./site-shell";
 
@@ -35,12 +37,9 @@ interface AccountPageViewProps {
 
 interface AppConfig {
   update_url_android?: string;
-  update_url_ios?: string;
   update_url?: string;
 }
 
-const DEFAULT_ANDROID_URL = "https://play.google.com/store/apps/details?id=app.elmetracademy.elmetr";
-const DEFAULT_IOS_URL = "https://apps.apple.com/app/el-metr-academy/id6737155342";
 
 type AccountTab = "overview" | "orders" | "devices" | "notifications" | "password" | "danger";
 
@@ -67,7 +66,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
   const [requests, setRequests] = useState<StudentRequestItem[]>([]);
   const [sessions, setSessions] = useState<DeviceSession[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [storeUrls, setStoreUrls] = useState({ android: DEFAULT_ANDROID_URL, ios: DEFAULT_IOS_URL });
+  const [storeUrls, setStoreUrls] = useState<{ android: string }>({ android: STORE_URLS.android });
 
   // Profile Edit Modal State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -163,8 +162,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
 
         if (configData) {
           setStoreUrls({
-            android: configData.update_url_android || configData.update_url || DEFAULT_ANDROID_URL,
-            ios: configData.update_url_ios || DEFAULT_IOS_URL,
+            android: configData.update_url_android || configData.update_url || STORE_URLS.android,
           });
         }
       } catch {
@@ -563,14 +561,6 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                     className={styles.storeButton}
                   >
                     {text.downloadAndroid}
-                  </a>
-                  <a
-                    href={storeUrls.ios}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.storeButton}
-                  >
-                    {text.downloadIos}
                   </a>
                 </div>
               </div>

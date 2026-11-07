@@ -132,9 +132,6 @@ export function SiteShell({ lang, path, children, fullBleed = false }: SiteShell
               <a href={STORE_URLS.android} target="_blank" rel="noopener noreferrer" className={styles.storeLink} lang="en">
                 Google Play
               </a>
-              <a href={STORE_URLS.ios} target="_blank" rel="noopener noreferrer" className={styles.storeLink} lang="en">
-                App Store
-              </a>
             </div>
             <h2 className={styles.footerTitle}>{t.footer.language}</h2>
             {langSwitch}

@@ -26,6 +26,19 @@ const HERO_SQ_WIDTHS = [480, 840, 1024] as const;
 const HERO_SIZES = "(min-width: 1024px) 460px, 38vw";
 const MOBILE = "(max-width: 767px)";
 const heroSet = (ext: string) => HERO_WIDTHS.map((w) => `/brand/hero/hero-${w}.${ext} ${w}w`).join(", ");
+// Google Play listing screenshots (owner decision 2026-11-07), per language.
+const SCREEN_SIZES = "(min-width: 768px) 240px, 42vw";
+const screenSet = (name: string, ext: string) => `/app/${name}-360.${ext} 360w, /app/${name}-540.${ext} 540w`;
+const APP_SCREENS: Record<Lang, { name: string; height540: number; alt: string }[]> = {
+  ar: [
+    { name: "play-ar-1", height540: 1080, alt: "الشاشة الرئيسية في تطبيق أكاديمية المتر" },
+    { name: "play-ar-2", height540: 960, alt: "شاشة الدورات في التطبيق: المواد حسب الفرقة" },
+  ],
+  en: [
+    { name: "play-en-1", height540: 960, alt: "The EL METR Academy app home screen" },
+    { name: "play-en-2", height540: 960, alt: "The app's courses screen: subjects by year" },
+  ],
+};
 const heroSqSet = (ext: string) => HERO_SQ_WIDTHS.map((w) => `/brand/hero/hero-sq-${w}.${ext} ${w}w`).join(", ");
 
 /** A visible note for copy or a photo the owner has not given (non-production builds only). */
@@ -154,26 +167,28 @@ export async function HomePage({ lang }: { lang: Lang }) {
       {/* 2. About the teacher */}
       <section id="teacher" className={styles.section} aria-labelledby="teacher-title">
         <div className={`${styles.container} ${styles.teacher}`}>
-          <div className={styles.portrait}>
-            {/* Brand logo until the owner confirms website use of the portrait. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+          {/* The app's director portrait (v3, owner decision 2026-11-07). */}
+          <picture className={styles.portrait}>
+            <source type="image/avif" srcSet="/brand/teacher/wael-192.avif 192w, /brand/teacher/wael-384.avif 384w" sizes="(min-width: 768px) 12rem, 9rem" />
+            <source type="image/webp" srcSet="/brand/teacher/wael-192.webp 192w, /brand/teacher/wael-384.webp 384w" sizes="(min-width: 768px) 12rem, 9rem" />
             <img
-              src="/brand/icon-192.png"
-              alt={c.teacher.logoAlt}
-              width={192}
-              height={192}
+              src="/brand/teacher/wael-384.jpg"
+              srcSet="/brand/teacher/wael-192.jpg 192w, /brand/teacher/wael-384.jpg 384w"
+              sizes="(min-width: 768px) 12rem, 9rem"
+              alt={c.teacher.portraitAlt}
+              width={384}
+              height={384}
               loading="lazy"
               decoding="async"
               className={styles.portraitImg}
             />
-          </div>
+          </picture>
           <div>
             <Eyebrow>{c.teacher.eyebrow}</Eyebrow>
             <h2 id="teacher-title" className={styles.sectionTitle}>
               {c.teacher.title}
             </h2>
             <p className={styles.sectionLead}>{c.teacher.lead}</p>
-            <Todo lang={lang}>{c.teacher.todoPortrait}</Todo>
             <Todo lang={lang}>{c.teacher.todoBio}</Todo>
           </div>
         </div>
@@ -234,15 +249,32 @@ export async function HomePage({ lang }: { lang: Lang }) {
             {c.app.title}
           </h2>
           <p className={styles.sectionLead}>{c.app.lead}</p>
+          <ul className={styles.screens}>
+            {APP_SCREENS[lang].map((shot) => (
+              <li key={shot.name}>
+                <picture>
+                  <source type="image/avif" srcSet={screenSet(shot.name, "avif")} sizes={SCREEN_SIZES} />
+                  <source type="image/webp" srcSet={screenSet(shot.name, "webp")} sizes={SCREEN_SIZES} />
+                  <img
+                    src={`/app/${shot.name}-540.jpg`}
+                    srcSet={screenSet(shot.name, "jpg")}
+                    sizes={SCREEN_SIZES}
+                    alt={shot.alt}
+                    width={540}
+                    height={shot.height540}
+                    loading="lazy"
+                    decoding="async"
+                    className={styles.screenImg}
+                  />
+                </picture>
+              </li>
+            ))}
+          </ul>
           <div className={styles.storeLinks}>
             <a href={STORE_URLS.android} className={styles.storeLink} rel="noopener noreferrer" target="_blank" lang="en">
               {c.app.android}
             </a>
-            <a href={STORE_URLS.ios} className={styles.storeLink} rel="noopener noreferrer" target="_blank" lang="en">
-              {c.app.ios}
-            </a>
           </div>
-          <Todo lang={lang}>{c.app.todoScreens}</Todo>
           <Todo lang={lang}>{c.app.todoBadges}</Todo>
         </div>
       </section>

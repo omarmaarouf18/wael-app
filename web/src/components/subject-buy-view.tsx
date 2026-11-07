@@ -14,6 +14,8 @@ import {
 import { dictionary, localePath, type Lang, numberLocale } from "@/lib/i18n";
 
 import { useAuth } from "./auth-provider";
+import { STORE_URLS } from "@/lib/store-links";
+
 import styles from "./auth.module.css";
 import { useCart } from "./cart-provider";
 
@@ -27,12 +29,9 @@ interface SubjectBuySectionProps {
 
 interface AppConfig {
   update_url_android?: string;
-  update_url_ios?: string;
   update_url?: string;
 }
 
-const DEFAULT_ANDROID_URL = "https://play.google.com/store/apps/details?id=app.elmetracademy.elmetr";
-const DEFAULT_IOS_URL = "https://apps.apple.com/app/el-metr-academy/id6737155342";
 
 export function SubjectBuySection({
   lang,
@@ -51,7 +50,7 @@ export function SubjectBuySection({
   const [isOwned, setIsOwned] = useState(false);
   const [pendingRequest, setPendingRequest] = useState<StudentRequestItem | null>(null);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [storeUrls, setStoreUrls] = useState({ android: DEFAULT_ANDROID_URL, ios: DEFAULT_IOS_URL });
+  const [storeUrls, setStoreUrls] = useState<{ android: string }>({ android: STORE_URLS.android });
 
   // Form state
   const [selectedMethodIdx, setSelectedMethodIdx] = useState(0);
@@ -96,8 +95,7 @@ export function SubjectBuySection({
 
         if (configData) {
           setStoreUrls({
-            android: configData.update_url_android || configData.update_url || DEFAULT_ANDROID_URL,
-            ios: configData.update_url_ios || DEFAULT_IOS_URL,
+            android: configData.update_url_android || configData.update_url || STORE_URLS.android,
           });
         }
       } catch {
@@ -254,14 +252,6 @@ export function SubjectBuySection({
               className={styles.storeButton}
             >
               {t.auth.account.downloadAndroid}
-            </a>
-            <a
-              href={storeUrls.ios}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.storeButton}
-            >
-              {t.auth.account.downloadIos}
             </a>
           </div>
         </div>

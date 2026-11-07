@@ -10,6 +10,12 @@ three steps, the app section without screenshots, the two answered FAQ
 items (payment, devices — both from the built system and SPEC decision 22),
 closing call to action. Left out of production until the owner answers:
 center, testimonials and the three unanswered FAQ items.)*
+*(Amended 2026-11-07, owner answers part 1 (ADR-0014 "Amendment
+2026-11-07"): item 3 — use the portrait already in the repo (done); item 6 —
+use the existing Google Play screenshots (done); item 7 — Google Play is
+`com.wael.app`; the iOS app is not live, so the site shows Google Play only,
+no App Store link or "coming soon" (done); item 14 — `noindex` stays until the
+owner says "launch". Still open: items 1, 2, 4, 5, 8-13.)*
 Design rules: `web/DESIGN.md`. Copy below is a **draft** (Arabic first,
 English second); nothing in it is a fact the owner has not given. Every
 `[OWNER: …]` is a gap that ships as a visible TODO block in non-production

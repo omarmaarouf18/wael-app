@@ -434,6 +434,29 @@
   border-color: var(--text-primary);
 }
 
+.screens {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-lg);
+  margin: var(--space-2xl) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.screens li {
+  inline-size: 42vw;
+  max-inline-size: 240px;
+}
+
+.screenImg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--prominent-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--elevation-card);
+}
+
 /* ── 8. FAQ ──────────────────────────────────────────────────── */
 .faqList {
   display: grid;

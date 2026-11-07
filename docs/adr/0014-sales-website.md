@@ -430,3 +430,25 @@ Decision 5 stands: the website always displays prices for published subjects in 
   - Web sessions are labeled `"web"` in device session listings and are exempt from the mobile 2-device cap.
 - **Legal Pages & Store Safety**: Replaced website legal placeholder text with permanent 308 redirects for `/terms`, `/privacy`, `/en/terms`, and `/en/privacy` to `https://legal.elmetracademy.app/terms` and `https://legal.elmetracademy.app/privacy`. `/refund` and `/en/refund` remain owner TODO placeholders.
 
+## Amendment 2026-11-07 (UI/UX brief: owner decisions)
+
+Owner decisions of 2026-11-07, after the UI/UX brief's step 4 report. The
+text above is unchanged.
+
+1. **LCP accepted as measured.** Lighthouse mobile LCP 2.72-3.60 s
+   (budget 2.5 s, `docs/web/README.md` "Performance") is accepted; fonts and
+   the framework are not changed for it. The owner checks real-user numbers
+   on Vercel after launch.
+2. **`noindex` stays until the owner says "launch".** Then, in one commit:
+   remove `noindex`, and add `sitemap.xml` and `robots.txt` for the public
+   pages (home, catalog, subject pages, legal), with the account and form
+   pages (`/login`, `/signup`, `/forgot-password`, `/account` and their
+   `/en` versions) excluded.
+3. **Store links.** The Google Play listing is
+   `https://play.google.com/store/apps/details?id=com.wael.app`. The iOS app
+   is not live (in App Review): the website shows no App Store link, badge
+   or "coming soon" anywhere until the owner says it is live
+   (`web/test/store-links.test.ts` fails on any App Store link).
+4. **Landing assets.** The teacher portrait is the app's director portrait
+   (v3, 2026-10-12); the app section uses the existing Google Play store
+   screenshots (`docs/asset-provenance.md`).
