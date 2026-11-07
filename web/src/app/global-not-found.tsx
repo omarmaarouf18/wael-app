@@ -3,7 +3,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { fontVariables } from "@/lib/fonts";
+import { fontVariablesAr } from "@/lib/fonts-ar";
 
 import styles from "./global-not-found.module.css";
 
@@ -17,9 +17,12 @@ export const metadata: Metadata = {
 
 export default function GlobalNotFound() {
   return (
-    <html lang="ar" dir="rtl" className={fontVariables}>
+    <html lang="ar" dir="rtl" className={fontVariablesAr}>
       <body>
-        <main className={styles.page}>
+        <a href="#main" className={styles.skipLink}>
+          تخطَّ إلى المحتوى
+        </a>
+        <main id="main" tabIndex={-1} className={styles.page}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/logo-72.png" alt="" width={56} height={56} className={styles.logo} />
           <p className={styles.code} aria-hidden="true">

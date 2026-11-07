@@ -173,7 +173,7 @@
 .heroText {
   position: relative;
   padding: 0 var(--margin-mobile) var(--space-4xl);
-  margin-block-start: calc(-1 * var(--space-5xl));
+  margin-block-start: calc(-1 * var(--space-xl));
 }
 
 .heroArt {
@@ -188,7 +188,8 @@
   aspect-ratio: 1 / 1;
   object-fit: cover;
   object-position: top;
-  mask-image: linear-gradient(to bottom, var(--void-canvas) 60%, transparent);
+  /* Fully faded before the text that overlaps its bottom (contrast). */
+  mask-image: linear-gradient(to bottom, var(--void-canvas) 45%, transparent 92%);
 }
 
 .heroTitle {

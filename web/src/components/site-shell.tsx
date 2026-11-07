@@ -60,13 +60,13 @@ export function SiteShell({ lang, path, children, fullBleed = false }: SiteShell
       </a>
       <header className={styles.header}>
         <div className={styles.headerInner}>
-          <Link href={to("/")} className={styles.brand} aria-label={t.brand}>
+          <Link href={to("/")} className={styles.brand}>
             {/* A plain <img>: next/image adds an inline style attribute,
                 which the strict CSP (style-src without 'unsafe-inline')
                 blocks. The logo is a local, already-sized file. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/brand/logo-72.png" alt="" width={36} height={36} className={styles.logo} />
-            <span className={styles.brandText} aria-hidden="true">
+            <span className={styles.brandText}>
               <span className={styles.brandName}>{t.brand}</span>
               <span className={styles.brandEyebrow} lang={other}>
                 {t.brandEyebrow}

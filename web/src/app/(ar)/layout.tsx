@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 import { AuthProvider } from "@/components/auth-provider";
 import { CartProvider } from "@/components/cart-provider";
-import { fontVariables } from "@/lib/fonts";
+import { fontVariablesAr } from "@/lib/fonts-ar";
 
 export const metadata: Metadata = {
   title: { default: "أكاديمية المتر", template: "%s | أكاديمية المتر" },
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 // get the per-request nonce (ADR-0014 decision 7, options A + C).
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ar" dir="rtl" className={fontVariables}>
+    <html lang="ar" dir="rtl" className={fontVariablesAr}>
       <body>
         <AuthProvider>
           <CartProvider>{children}</CartProvider>

@@ -359,6 +359,41 @@ website's hosts — the apex, `www.` and `*.vercel.app` — and allows `legal.`,
 W3 will need CORS on the API for the chosen website origin; nothing allows
 it today.
 
+## Performance
+
+*(Added 2026-11-07, UI/UX brief step 4.)* Lighthouse 13.5.0, mobile
+(simulated Slow 4G: 150 ms RTT, 1.6 Mbps, 4x CPU), `next build` +
+`next start` on localhost with the real catalog, 2026-11-07:
+
+| Page | Perf | A11y | Best pr. | SEO | LCP | CLS | TBT |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| `/` | 95 | 100 | 96 | 66 | 2.87 s | 0 | 12 ms |
+| `/subjects` | 96 | 100 | 96 | 63 | 2.72 s | 0 | 18 ms |
+| `/subjects/[id]` | 96 | 100 | 96 | 54 | 2.78 s | 0.007 | 28 ms |
+| `/en` | 95 | 100 | 96 | 66 | 2.86 s | 0.033 | 18 ms |
+| `/en/subjects` | 94 | 100 | 96 | 63 | 3.01 s | 0 | 16 ms |
+| `/en/subjects/[id]` | 90 | 100 | 96 | 54 | 3.60 s | 0.007 | 31 ms |
+
+- **Budget** (UI/UX brief): CLS ≤ 0.1 met everywhere; added home-page JS
+  ≤ 150 KB met (the landing adds none: `/` and `/about` load the same
+  169.5 KB of gzipped scripts, about 157 KB of it React and Next.js); **LCP
+  ≤ 2.5 s not met** under this simulation.
+- **Why:** in the observed (unthrottled) trace LCP equals first paint
+  (34–81 ms; 500 ms on the English subject page, whose largest text is the
+  client-rendered sign-in prompt of the buy section). The simulated LCP
+  counts every request that starts before it — HTML, CSS, preloaded fonts
+  and the framework scripts — on a 1.6 Mbps link.
+- **Tried:** WOFF2 subsets (step 2); per-layout font modules; preloading
+  no font (FCP 0.9 → 1.5 s, no LCP gain); preloading Cairo only (kept:
+  Arabic `/` 3.31 → 2.86 s, `/subjects` 2.94 → 2.71 s, medians of 3 runs);
+  square hero files for phones (`hero-sq-*`).
+- **Not tried (owner decision):** dropping Cairo ExtraBold (headings at
+  700), or the Latin brand fonts, or framework-level JS changes.
+- SEO is low only because every page is `noindex` until the owner says so
+  (`is-crawlable`) and some subjects have no description; Best practices
+  96 is the localhost CORS error on `/auth/refresh` (the production API
+  allows only the website's own origins).
+
 ## Security headers
 
 Set on every response. `web/next.config.ts` sets the static headers;

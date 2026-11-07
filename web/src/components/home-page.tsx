@@ -19,9 +19,14 @@ import { SiteShell } from "./site-shell";
 // server-side catalog read. Plain <img>/<picture>, never next/image (its
 // inline style breaks the CSP).
 
+// Phones (< 768 px) show a 1:1 crop of the art's top: they get square files
+// (hero-sq-*) instead of the full 2:3 picture, so fewer bytes before LCP.
 const HERO_WIDTHS = [480, 720, 1024] as const;
-const HERO_SIZES = "(min-width: 1024px) 460px, (min-width: 768px) 38vw, 100vw";
+const HERO_SQ_WIDTHS = [480, 840, 1024] as const;
+const HERO_SIZES = "(min-width: 1024px) 460px, 38vw";
+const MOBILE = "(max-width: 767px)";
 const heroSet = (ext: string) => HERO_WIDTHS.map((w) => `/brand/hero/hero-${w}.${ext} ${w}w`).join(", ");
+const heroSqSet = (ext: string) => HERO_SQ_WIDTHS.map((w) => `/brand/hero/hero-sq-${w}.${ext} ${w}w`).join(", ");
 
 /** A visible note for copy or a photo the owner has not given (non-production builds only). */
 function Todo({ lang, children }: { lang: Lang; children: ReactNode }) {
@@ -89,9 +94,18 @@ export async function HomePage({ lang }: { lang: Lang }) {
 
   // The hero art is the LCP element: preload the AVIF set (browsers without
   // AVIF skip a typed preload and load the WebP/JPEG source instead).
+  preload(`/brand/hero/hero-sq-1024.avif`, {
+    as: "image",
+    type: "image/avif",
+    media: MOBILE,
+    imageSrcSet: heroSqSet("avif"),
+    imageSizes: "100vw",
+    fetchPriority: "high",
+  });
   preload(`/brand/hero/hero-1024.avif`, {
     as: "image",
     type: "image/avif",
+    media: "(min-width: 768px)",
     imageSrcSet: heroSet("avif"),
     imageSizes: HERO_SIZES,
     fetchPriority: "high",
@@ -118,6 +132,8 @@ export async function HomePage({ lang }: { lang: Lang }) {
             </div>
           </div>
           <picture className={styles.heroArt}>
+            <source media={MOBILE} type="image/avif" srcSet={heroSqSet("avif")} sizes="100vw" width={1024} height={1024} />
+            <source media={MOBILE} type="image/webp" srcSet={heroSqSet("webp")} sizes="100vw" width={1024} height={1024} />
             <source type="image/avif" srcSet={heroSet("avif")} sizes={HERO_SIZES} />
             <source type="image/webp" srcSet={heroSet("webp")} sizes={HERO_SIZES} />
             <img

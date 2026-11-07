@@ -132,6 +132,15 @@ copied from `frontend/assets/fonts/`, `docs/asset-provenance.md`
 Cairo also carries Latin and digits, so mixed Arabic text with numbers or
 "EL METR" stays in one face. Step 2 converts the shipped TTFs to WOFF2 and
 loads Cairo only where it is needed, for the LCP budget.
+*(Amended 2026-11-07, step 4: done in step 2 (subset WOFF2). Each layout
+now declares only its own families — Cairo on Arabic pages
+(`src/lib/fonts-ar.ts`), Syne and Plus Jakarta Sans on English pages
+(`src/lib/fonts-en.ts`) — and only Cairo is preloaded: `next/font` merges
+preloads app-wide, and preloading the Latin faces too cost Arabic pages
+0.2–0.45 s of LCP in Lighthouse (`docs/web/README.md` "Performance"). On
+English pages the few Arabic words (language switch, Arabic eyebrow, an
+Arabic-only level title) use the system Arabic font; on Arabic pages the
+Latin bits ("EL METR ACADEMY", store names) use Cairo's Latin.)*
 
 ### Scale (roles, fluid 375 → 1440 px)
 
