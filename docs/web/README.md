@@ -127,6 +127,11 @@ never one per subject.
   (`next/font/local`). Nothing is loaded from Google.
 - Colors, spacing, radius, elevation and motion are CSS variables named after
   the app's tokens (`web/src/app/globals.css`).
+  *(Amended 2026-11-07, UI/UX brief step 1: the tokens moved to
+  `web/src/app/tokens.css` (imported by `globals.css`), the one file with raw
+  design values; the website design system is `web/DESIGN.md`, and
+  `web/test/design-tokens.test.ts` fails on a colour literal outside
+  `tokens.css`, a physical left/right property, or an inline `style=`.)*
 - Logo and art: copies of repo assets listed in `docs/asset-provenance.md`
   ("Website copies").
 
@@ -152,6 +157,8 @@ web/
   src/lib/fonts.ts                  local fonts
   src/fonts/                        font files and OFL licences
   src/components/                   site shell (header, nav, footer), placeholder page, catalog pages
+  DESIGN.md                         website design system (added 2026-11-07)
+  src/app/tokens.css                design tokens (added 2026-11-07)
   test/                             unit tests (node --test)
   src/app/(ar)/...                  Arabic pages, root layout lang="ar" dir="rtl"
   src/app/(en)/en/...               English pages, root layout lang="en" dir="ltr"

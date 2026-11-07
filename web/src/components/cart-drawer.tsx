@@ -241,7 +241,7 @@ export function CartDrawer({ lang }: CartDrawerProps) {
                 {!isLoggedIn ? (
                   <div className={styles.emptyCart}>
                     <p>{checkoutText.loginRequiredPrompt}</p>
-                    <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+                    <div className={styles.buttonRowCentered}>
                       <a href={localePath(lang, "/login")} className={styles.primaryButton}>
                         {checkoutText.loginButton}
                       </a>

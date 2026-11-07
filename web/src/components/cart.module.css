@@ -1,12 +1,12 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
+  background: var(--scrim);
+  backdrop-filter: blur(var(--scrim-blur));
+  z-index: var(--z-overlay);
   display: flex;
   justify-content: flex-end;
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn var(--duration-normal) var(--ease-out);
 }
 
 @keyframes fadeIn {
@@ -21,7 +21,7 @@
 .drawer {
   background: var(--surface-layer-1);
   width: 100%;
-  max-width: 480px;
+  max-width: var(--width-drawer);
   height: 100%;
   overflow-y: auto;
   padding: var(--space-xl);
@@ -29,7 +29,7 @@
   flex-direction: column;
   box-shadow: var(--elevation-modal);
   position: relative;
-  animation: slideIn 0.25s ease-out;
+  animation: slideIn var(--duration-normal) var(--ease-out);
 }
 
 @keyframes slideIn {
@@ -42,7 +42,7 @@
 }
 
 :global([dir="rtl"]) .drawer {
-  animation: slideInRtl 0.25s ease-out;
+  animation: slideInRtl var(--duration-normal) var(--ease-out);
 }
 
 @keyframes slideInRtl {
@@ -58,14 +58,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-lg);
-  padding-bottom: var(--space-md);
-  border-bottom: 1px solid var(--subtle-hairline);
+  margin-block-end: var(--space-lg);
+  padding-block-end: var(--space-md);
+  border-block-end: 1px solid var(--subtle-hairline);
 }
 
 .drawerTitle {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
   color: var(--text-primary);
   margin: 0;
 }
@@ -73,10 +73,10 @@
 .closeButton {
   background: transparent;
   border: none;
-  font-size: 1.5rem;
+  font-size: var(--fs-3xl);
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
   transition: color var(--duration-fast);
 }
@@ -92,14 +92,14 @@
 }
 
 .emptyCart p {
-  margin-bottom: var(--space-lg);
-  font-size: 1.1rem;
+  margin-block-end: var(--space-lg);
+  font-size: var(--fs-lg);
 }
 
 .itemList {
   list-style: none;
   padding: 0;
-  margin: 0 0 var(--space-xl) 0;
+  margin: 0 0 var(--space-xl);
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
@@ -118,34 +118,34 @@
 .itemInfo {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-xs);
 }
 
 .itemTitle {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--text-primary);
 }
 
 .itemPrice {
   color: var(--crimson);
-  font-weight: 700;
-  font-size: 0.95rem;
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-base);
 }
 
 .removeButton {
   background: transparent;
   border: 1px solid var(--prominent-border);
   color: var(--text-muted);
-  padding: 4px 10px;
+  padding: var(--space-xs) var(--space-md);
   border-radius: var(--radius-sm);
-  font-size: 0.85rem;
+  font-size: var(--fs-md);
   cursor: pointer;
   transition: all var(--duration-fast);
 }
 
 .removeButton:hover {
-  border-color: var(--color-error);
-  color: var(--color-error);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .cartSummary {
@@ -153,15 +153,15 @@
   border: 1px solid var(--subtle-hairline);
   border-radius: var(--radius-md);
   padding: var(--space-lg);
-  margin-bottom: var(--space-xl);
+  margin-block-end: var(--space-xl);
 }
 
 .totalRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
   color: var(--text-primary);
 }
 
@@ -177,12 +177,12 @@
 
 .primaryButton {
   background: var(--crimson);
-  color: #ffffff;
+  color: var(--text-on-accent);
   border: none;
   border-radius: var(--radius-pill);
-  padding: 12px 24px;
-  font-size: 1rem;
-  font-weight: 600;
+  padding: var(--space-md) var(--space-xl);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
   font-family: inherit;
   cursor: pointer;
   text-align: center;
@@ -204,9 +204,9 @@
   color: var(--text-secondary);
   border: 1px solid var(--prominent-border);
   border-radius: var(--radius-pill);
-  padding: 10px 20px;
-  font-size: 0.95rem;
-  font-weight: 500;
+  padding: var(--space-md) var(--space-xl);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
   font-family: inherit;
   cursor: pointer;
   text-align: center;
@@ -219,16 +219,16 @@
 }
 
 .checkoutSection {
-  margin-top: var(--space-lg);
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--subtle-hairline);
+  margin-block-start: var(--space-lg);
+  padding-block-start: var(--space-lg);
+  border-block-start: 1px solid var(--subtle-hairline);
 }
 
 .checkoutTitle {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
   color: var(--text-primary);
-  margin-bottom: var(--space-md);
+  margin-block-end: var(--space-md);
 }
 
 .checkoutForm {
@@ -244,8 +244,8 @@
 }
 
 .label {
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
   color: var(--text-secondary);
 }
 
@@ -255,8 +255,8 @@
   border: 1px solid var(--prominent-border);
   border-radius: var(--radius-md);
   color: var(--text-primary);
-  padding: 10px 12px;
-  font-size: 0.95rem;
+  padding: var(--space-md) var(--space-md);
+  font-size: var(--fs-base);
   font-family: inherit;
   transition: border-color var(--duration-fast);
 }
@@ -268,10 +268,10 @@
 }
 
 .legalNotice {
-  font-size: 0.85rem;
+  font-size: var(--fs-md);
   color: var(--text-muted);
-  line-height: 1.4;
-  margin-top: var(--space-xs);
+  line-height: var(--lh-snug);
+  margin-block-start: var(--space-xs);
 }
 
 .legalNotice a {
@@ -280,21 +280,21 @@
 }
 
 .errorBanner {
-  background: rgba(220, 38, 38, 0.1);
-  border: 1px solid rgba(220, 38, 38, 0.3);
-  color: var(--color-error);
-  padding: 10px 14px;
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-md);
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
 }
 
 .warningBanner {
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px solid rgba(245, 158, 11, 0.3);
-  color: #d97706;
-  padding: 8px 12px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
+  padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-md);
-  font-size: 0.85rem;
+  font-size: var(--fs-md);
 }
 
 .successCard {
@@ -303,36 +303,36 @@
 }
 
 .successIcon {
-  font-size: 3rem;
-  margin-bottom: var(--space-md);
+  font-size: var(--fs-6xl);
+  margin-block-end: var(--space-md);
 }
 
 .successTitle {
-  font-size: 1.35rem;
-  font-weight: 700;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
   color: var(--text-primary);
-  margin-bottom: var(--space-sm);
+  margin-block-end: var(--space-sm);
 }
 
 .successLead {
   color: var(--text-muted);
-  font-size: 0.95rem;
-  line-height: 1.5;
-  margin-bottom: var(--space-xl);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  margin-block-end: var(--space-xl);
 }
 
 .cartButton {
   background: transparent;
   border: 1px solid var(--prominent-border);
   color: var(--text-primary);
-  padding: 6px 14px;
+  padding: var(--space-sm) var(--space-lg);
   border-radius: var(--radius-pill);
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-sm);
   transition: all var(--duration-fast);
 }
 
@@ -343,9 +343,15 @@
 
 .cartBadge {
   background: var(--crimson);
-  color: #ffffff;
+  color: var(--text-on-accent);
   border-radius: var(--radius-pill);
-  padding: 2px 7px;
-  font-size: 0.75rem;
-  font-weight: 700;
+  padding: var(--space-2xs) var(--space-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+}
+
+.buttonRowCentered {
+  display: flex;
+  gap: var(--space-md);
+  justify-content: center;
 }

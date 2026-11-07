@@ -1,0 +1,193 @@
+/* Design tokens for the website: the one place raw design values live.
+   Spec and contrast ratios: web/DESIGN.md. Colour, spacing, radius,
+   elevation and motion names and values come from the app
+   (docs/frontend/DESIGN_SYSTEM.md, frontend/lib/core/theme.dart), so the site
+   and the app are one brand; keep them in step. Tokens marked "web" have no
+   app twin and are explained in web/DESIGN.md. Components use var(--…) only:
+   no hex, rgb() or px colour/spacing literals outside this file. */
+:root {
+  color-scheme: dark;
+
+  /* ── Colour: surfaces (AppColors) ─────────────────────────────── */
+  --void-canvas: #080808; /* page background */
+  --surface-container-lowest: #040404;
+  --surface-container-low: #0e0e0e; /* input fill (app inputDecorationTheme) */
+  --surface-layer-1: #111111; /* footer, drawer, card */
+  --surface-container: #141414;
+  --surface-elevated: #181818; /* raised card, list row */
+  --surface-high: #202020;
+  --surface-bright: #2a2a2a;
+  --surface-container-highest: #353534;
+
+  /* ── Colour: borders ──────────────────────────────────────────── */
+  --subtle-hairline: #262626; /* decorative dividers only */
+  --prominent-border: #303030; /* decorative card borders */
+  --active-border: #c1121f;
+  --input-border: #6b6b6b; /* web: ≥3:1 on every surface (WCAG 1.4.11) */
+  --glass-hairline: rgb(255 255 255 / 0.08);
+  --brand-rule: rgb(255 255 255 / 0.3);
+
+  /* ── Colour: accent ───────────────────────────────────────────── */
+  --crimson: #c1121f; /* fills, borders, large display text only */
+  --deep-crimson: #7f0d15;
+  --crimson-hover: #a30f1a;
+  --crimson-tinted: rgb(193 18 31 / 0.12);
+  --crimson-faint: rgb(193 18 31 / 0.06); /* web: selected-row wash */
+  --crimson-glow: rgb(193 18 31 / 0.22);
+  --text-on-accent: #ffffff; /* text on crimson fills (6.22:1) */
+
+  /* ── Colour: text ─────────────────────────────────────────────── */
+  --text-primary: #ffffff;
+  --text-secondary: #b8b8b8; /* body */
+  --text-muted: #9a9a9a;
+  --text-tertiary: #8a8a8a;
+  --text-placeholder: #808080;
+
+  /* ── Colour: semantic (feedback); fg / tinted bg / border ─────── */
+  --success: #10b981;
+  --success-bg: rgb(16 185 129 / 0.15);
+  --success-border: rgb(16 185 129 / 0.35);
+  --warning: #f59e0b;
+  --warning-bg: rgb(245 158 11 / 0.15);
+  --warning-border: rgb(245 158 11 / 0.35);
+  --danger: #f67e86; /* red text and small icons (crimson is too dark for text) */
+  --danger-bg: rgb(244 112 122 / 0.15);
+  --danger-border: rgb(244 112 122 / 0.35);
+  --danger-fill: var(--crimson); /* destructive button fill */
+  --danger-fill-hover: var(--crimson-hover);
+  --info: #60a5fa;
+  --info-bg: rgb(96 165 250 / 0.15);
+  --info-border: rgb(96 165 250 / 0.35);
+
+  /* ── Colour: chrome and overlays ──────────────────────────────── */
+  --header-glass: rgb(9 9 9 / 0.95);
+  --nav-bar-glass: rgb(11 11 11 / 0.95);
+  --scrim: rgb(0 0 0 / 0.6); /* drawer backdrop */
+  --scrim-strong: rgb(0 0 0 / 0.7); /* modal backdrop */
+  --scrim-blur: 4px;
+
+  /* ── Focus ────────────────────────────────────────────────────── */
+  --focus-ring-color: var(--crimson);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* ── Spacing (AppSpacing, plus web section steps) ─────────────── */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 40px;
+  --space-4xl: 48px; /* web */
+  --space-5xl: 64px; /* web: section padding, mobile */
+  --space-6xl: 96px; /* web: section padding, desktop */
+  --gutter-mobile: 12px;
+  --margin-mobile: 16px;
+  --header-height: 56px;
+
+  /* ── Sizes and widths ─────────────────────────────────────────── */
+  --content-width: 1080px;
+  --width-form: 520px;
+  --width-form-narrow: 480px;
+  --width-account: 720px;
+  --width-drawer: 480px;
+  --width-dialog: 500px;
+  --width-grid-min: 200px;
+  --size-logo: 36px;
+  --tap-target: 44px; /* minimum interactive size */
+  --control-height: 52px; /* app PrimaryButton / input height */
+
+  /* ── Radius (AppRadius) ───────────────────────────────────────── */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-card: 12px;
+  --radius-pill: 9999px;
+
+  /* ── Elevation (AppElevation) ─────────────────────────────────── */
+  --elevation-card: 0 4px 12px rgb(0 0 0 / 0.5);
+  --elevation-crimson-glow: 0 4px 20px rgb(193 18 31 / 0.25);
+  --elevation-modal: 0 10px 25px rgb(0 0 0 / 0.5); /* web */
+
+  /* ── Motion (AppMotion) ───────────────────────────────────────── */
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+  --ease-standard: cubic-bezier(0.42, 0, 0.58, 1); /* Curves.easeInOut */
+  --ease-emphasized: cubic-bezier(0.4, 0, 0.2, 1); /* Curves.fastOutSlowIn */
+  --ease-out: cubic-bezier(0, 0, 0.2, 1); /* web: things entering */
+
+  /* ── Typography ───────────────────────────────────────────────── */
+  /* Families: Cairo for Arabic; Syne (display) and Plus Jakarta Sans (body)
+     for Latin — the app's three families, self-hosted. */
+  --font-display: var(--font-syne), system-ui, sans-serif;
+  --font-body: var(--font-plus-jakarta-sans), system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* Fixed size steps (rem, 16px root). */
+  --fs-2xs: 0.625rem; /* 10 */
+  --fs-xs: 0.75rem; /* 12 */
+  --fs-sm: 0.8125rem; /* 13 */
+  --fs-md: 0.875rem; /* 14 */
+  --fs-base: 1rem; /* 16 */
+  --fs-lg: 1.125rem; /* 18 */
+  --fs-xl: 1.25rem; /* 20 */
+  --fs-2xl: 1.375rem; /* 22 */
+  --fs-3xl: 1.5rem; /* 24 */
+  --fs-4xl: 1.75rem; /* 28 */
+  --fs-5xl: 2.125rem; /* 34 */
+  --fs-6xl: 3rem; /* 48 */
+
+  /* Fluid roles (375 → 1440 px), Latin; Arabic overrides below. */
+  --fs-display: clamp(2.25rem, 1.85rem + 1.7vw, 3.5rem); /* 36 → 56 */
+  --fs-h1: clamp(1.75rem, 1.55rem + 0.85vw, 2.375rem); /* 28 → 38 */
+  --fs-h2: clamp(1.5rem, 1.35rem + 0.6vw, 2rem); /* 24 → 32 */
+  --fs-h3: clamp(1.125rem, 1.08rem + 0.2vw, 1.25rem); /* 18 → 20 */
+  --fs-lead: clamp(1.0625rem, 1.03rem + 0.15vw, 1.1875rem); /* 17 → 19 */
+  --fs-body: 1rem; /* 16 */
+  --fs-small: 0.875rem; /* 14 */
+  --fs-caption: 0.8125rem; /* 13 */
+  --fs-eyebrow: 0.75rem; /* 12 */
+
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+
+  /* Fixed line-height steps (never overridden per language). */
+  --lh-tight: 1.2;
+  --lh-snug: 1.4;
+  --lh-normal: 1.5;
+  --lh-relaxed: 1.6;
+  /* Line-height roles (Arabic overrides below). */
+  --lh-display: 1.15;
+  --lh-heading: 1.2;
+  --lh-body: 1.55;
+  --ls-eyebrow: 0.2em;
+
+  /* ── Layers ───────────────────────────────────────────────────── */
+  --z-header: 10;
+  --z-overlay: 1000;
+}
+
+/* Arabic: Cairo for everything; taller lines (diacritics and the Arabic
+   x-height), no letter spacing, display a step smaller (app: Arabic styles
+   are 1–2 px smaller than Latin at the same role). */
+:lang(ar) {
+  --font-display: var(--font-cairo), system-ui, sans-serif;
+  --font-body: var(--font-cairo), system-ui, sans-serif;
+  --fs-display: clamp(2.125rem, 1.75rem + 1.6vw, 3.25rem); /* 34 → 52 */
+  --fs-h1: clamp(1.75rem, 1.6rem + 0.65vw, 2.25rem); /* 28 → 36 */
+  --lh-display: 1.3;
+  --lh-heading: 1.35;
+  --lh-body: 1.75;
+  --ls-eyebrow: 0;
+}
+
+/* Breakpoints (CSS custom properties cannot be used inside @media, so the
+   values are written literally and listed here and in DESIGN.md):
+   base 375 px (mobile first) · 768 px (tablet) · 1440 px (desktop wide). */

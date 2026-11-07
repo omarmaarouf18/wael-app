@@ -14,3 +14,6 @@ next-env.d.ts
 
 # Vercel CLI state
 /.vercel
+
+# Review screenshots (UI/UX brief: web/screenshots/<step>/), not committed
+/screenshots/

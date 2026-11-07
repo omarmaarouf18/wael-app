@@ -273,7 +273,7 @@ export function SubjectBuySection({
         <h3 className={styles.title}>{text.buyFormTitle}</h3>
         <p className={styles.lead}>{text.price(String(price))}</p>
 
-        <div style={{ marginBottom: "1.25rem", display: "flex", gap: "0.5rem" }}>
+        <div className={styles.buyActions}>
           {inCart ? (
             <button
               type="button"
@@ -392,14 +392,7 @@ export function SubjectBuySection({
               />
             </div>
 
-            <p
-              style={{
-                fontSize: "0.85rem",
-                color: "var(--text-muted, #999)",
-                textAlign: "center",
-                margin: "12px 0",
-              }}
-            >
+            <p className={`${styles.legalNotice} ${styles.legalNoticeCentered}`}>
               {t.auth.signup.legalNoticePrefix}
               <a
                 href={
@@ -409,7 +402,7 @@ export function SubjectBuySection({
                 }
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ textDecoration: "underline", color: "inherit" }}
+                className={styles.inlineLink}
               >
                 {t.auth.signup.termsLink}
               </a>
@@ -422,7 +415,7 @@ export function SubjectBuySection({
                 }
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ textDecoration: "underline", color: "inherit" }}
+                className={styles.inlineLink}
               >
                 {t.auth.signup.privacyLink}
               </a>

@@ -14,13 +14,13 @@
 }
 
 .title {
-  font-size: 34px;
-  font-weight: 800;
+  font-size: var(--fs-5xl);
+  font-weight: var(--fw-extrabold);
   margin-block-end: var(--space-md);
 }
 
 .lead {
-  font-size: 17px;
+  font-size: var(--fs-lg);
   color: var(--text-secondary);
   margin: 0 0 var(--space-xl);
 }
@@ -42,6 +42,19 @@
   background: var(--warning-bg);
   border-radius: var(--radius-pill);
   padding: var(--space-2xs) var(--space-md);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+}
+
+/* Legal link pages (/terms, /privacy; normally 308-redirected, next.config.ts). */
+.legalPara {
+  margin: var(--space-lg) 0 0;
+}
+
+.legalLinkRow {
+  margin: var(--space-sm) 0 0;
+}
+
+.legalLink {
+  text-decoration: underline;
 }

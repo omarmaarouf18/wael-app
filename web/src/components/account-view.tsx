@@ -455,16 +455,8 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
           {/* Tab 1: Overview & My Subjects */}
           {activeTab === "overview" && (
             <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginTop: "var(--space-md)",
-                  marginBottom: "var(--space-md)",
-                }}
-              >
-                <h2 className={styles.sectionTitle} style={{ margin: 0, border: "none" }}>
+              <div className={styles.sectionHeaderRow}>
+                <h2 className={`${styles.sectionTitle} ${styles.sectionTitleBare}`}>
                   {text.profileSection}
                 </h2>
                 <button
@@ -566,13 +558,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                       <div className={styles.orderCardHeader}>
                         <div>
                           <strong>{hubText.orders.orderNumber(order.id)}</strong>
-                          <span
-                            style={{
-                              marginInlineStart: "8px",
-                              color: "var(--text-muted)",
-                              fontSize: "0.85rem",
-                            }}
-                          >
+                          <span className={styles.orderDate}>
                             {hubText.orders.orderDate(formatDate(order.created_at, lang))}
                           </span>
                         </div>
@@ -716,7 +702,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                     return (
                       <li key={s.sid} className={styles.requestItem}>
                         <div className={styles.requestHeader}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <div className={styles.titleWithBadges}>
                             <span className={styles.subjectTitle}>{s.device_label}</span>
                             {web && (
                               <span className={`${styles.badge} ${styles.badgeWeb}`}>
@@ -734,8 +720,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleSignOutSession(s.sid, s.current)}
-                            className={styles.secondaryButton}
-                            style={{ color: "#f87171", borderColor: "rgb(239 68 68 / 0.4)" }}
+                            className={`${styles.secondaryButton} ${styles.secondaryButtonDanger}`}
                           >
                             {isBusy ? hubText.devices.signingOut : hubText.devices.signOut}
                           </button>
@@ -750,7 +735,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                           </span>
                         </div>
                         {s.current && (
-                          <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                          <span className={styles.helperText}>
                             {hubText.devices.signOutCurrentWarning}
                           </span>
                         )}
@@ -779,15 +764,10 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                     return (
                       <li
                         key={n.id}
-                        className={styles.requestItem}
-                        style={{
-                          borderInlineStart: !n.read
-                            ? "4px solid var(--crimson)"
-                            : undefined,
-                        }}
+                        className={`${styles.requestItem} ${!n.read ? styles.requestItemUnread : ""}`}
                       >
                         <div className={styles.requestHeader}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <div className={styles.titleWithBadges}>
                             <span className={styles.subjectTitle}>{title}</span>
                             {!n.read && (
                               <span className={`${styles.badge} ${styles.badgeUnread}`}>
@@ -810,7 +790,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                           )}
                         </div>
 
-                        <p style={{ margin: "6px 0", color: "var(--text-secondary)", fontSize: "0.95rem" }}>
+                        <p className={styles.notificationBody}>
                           {body}
                         </p>
 
@@ -831,7 +811,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
               <h2 className={styles.sectionTitle}>{hubText.password.title}</h2>
               <p className={styles.lead}>{hubText.password.lead}</p>
 
-              <form onSubmit={handlePasswordChange} className={styles.form} style={{ maxWidth: 460 }}>
+              <form onSubmit={handlePasswordChange} className={`${styles.form} ${styles.formNarrow}`}>
                 {passwordError && <div className={styles.errorBanner}>{passwordError}</div>}
                 {passwordSuccess && <div className={styles.successBanner}>{passwordSuccess}</div>}
 
@@ -892,7 +872,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                   {passwordLoading ? hubText.password.submitting : hubText.password.submit}
                 </button>
 
-                <div style={{ marginTop: "12px" }}>
+                <div className={styles.stackGapTop}>
                   <a href={localePath(lang, "/forgot-password")} className={styles.link}>
                     {hubText.password.forgotLink}
                   </a>
@@ -904,7 +884,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
           {/* Tab 6: Delete Account */}
           {activeTab === "danger" && (
             <div>
-              <h2 className={styles.sectionTitle} style={{ color: "#ef4444" }}>
+              <h2 className={`${styles.sectionTitle} ${styles.sectionTitleDanger}`}>
                 {hubText.deleteAccount.title}
               </h2>
 
@@ -917,10 +897,10 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                   {hubText.deleteAccount.scheduledNotice(formatDate(scheduledPurgeDate, lang))}
                 </div>
               ) : (
-                <form onSubmit={handleDeleteAccount} className={styles.form} style={{ maxWidth: 480 }}>
+                <form onSubmit={handleDeleteAccount} className={`${styles.form} ${styles.formNarrow}`}>
                   {deleteError && <div className={styles.errorBanner}>{deleteError}</div>}
 
-                  <p style={{ fontSize: "0.95rem", color: "var(--text-secondary)" }}>
+                  <p className={styles.bodyText}>
                     {hubText.deleteAccount.confirmPrompt}
                   </p>
 
@@ -974,12 +954,12 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
       {isEditingProfile && (
         <div className={styles.modalOverlay} onClick={() => setIsEditingProfile(false)}>
           <div className={styles.modalDialog} onClick={(e) => e.stopPropagation()}>
-            <h3 className={styles.title} style={{ fontSize: "1.3rem" }}>
+            <h3 className={`${styles.title} ${styles.titleSmall}`}>
               {hubText.profile.editTitle}
             </h3>
 
-            {editError && <div className={styles.errorBanner} style={{ marginBottom: "12px" }}>{editError}</div>}
-            {editSuccess && <div className={styles.successBanner} style={{ marginBottom: "12px" }}>{editSuccess}</div>}
+            {editError && <div className={`${styles.errorBanner} ${styles.bannerSpaced}`}>{editError}</div>}
+            {editSuccess && <div className={`${styles.successBanner} ${styles.bannerSpaced}`}>{editSuccess}</div>}
 
             <form onSubmit={handleProfileSubmit} className={styles.form}>
               <div className={styles.field}>
@@ -1009,7 +989,7 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                   className={styles.input}
                   dir="ltr"
                 />
-                <span style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                <span className={styles.helperText}>
                   {hubText.profile.phoneHelper}
                 </span>
               </div>
@@ -1029,12 +1009,11 @@ export function AccountPageView({ lang }: AccountPageViewProps) {
                 />
               </div>
 
-              <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
+              <div className={styles.buttonRow}>
                 <button
                   type="submit"
                   disabled={editLoading}
-                  className={styles.submit}
-                  style={{ flex: 1 }}
+                  className={`${styles.submit} ${styles.grow}`}
                 >
                   {editLoading ? hubText.profile.saving : hubText.profile.save}
                 </button>

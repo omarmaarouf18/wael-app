@@ -209,7 +209,7 @@ export function SignupPageView({ lang }: SignupPageViewProps) {
                   />
                 </div>
 
-                <p className={styles.legalNotice} style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
+                <p className={styles.legalNotice}>
                   {text.legalNoticePrefix}
                   <a
                     href={lang === "en" ? "https://legal.elmetracademy.app/terms#en" : "https://legal.elmetracademy.app/terms"}

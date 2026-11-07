@@ -1,14 +1,14 @@
 /* Plain functional styles for the catalog pages (W2b); design comes later. */
 
 .title {
-  font-size: 28px;
-  font-weight: 800;
+  font-size: var(--fs-4xl);
+  font-weight: var(--fw-extrabold);
   margin-block-end: var(--space-md);
   overflow-wrap: anywhere;
 }
 
 .lead {
-  font-size: 17px;
+  font-size: var(--fs-lg);
   color: var(--text-secondary);
   margin: 0 0 var(--space-xl);
 }
@@ -29,8 +29,8 @@
 }
 
 .studyTypeTitle {
-  font-size: 22px;
-  font-weight: 800;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-extrabold);
   margin-block-end: var(--space-md);
 }
 
@@ -39,8 +39,8 @@
 }
 
 .levelTitle {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
   margin-block-end: var(--space-sm);
 }
 
@@ -60,19 +60,19 @@
 }
 
 .subjectLink {
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   overflow-wrap: anywhere;
 }
 
 .price {
   margin-inline-start: auto;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   white-space: nowrap;
 }
 
 .priceLarge {
-  font-size: 22px;
-  font-weight: 800;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-extrabold);
 }
 
 .description {
