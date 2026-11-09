@@ -423,6 +423,10 @@
   background: var(--surface-high);
 }
 
+.cartButton:active {
+  transform: scale(0.96);
+}
+
 .cartIcon {
   inline-size: var(--space-xl);
   block-size: var(--space-xl);
@@ -443,6 +447,72 @@
   font-weight: var(--fw-bold);
   line-height: var(--lh-normal);
   text-align: center;
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.cartBadgeBump {
+  animation: badgeBump 250ms var(--ease-out);
+}
+
+@keyframes badgeBump {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+.cartToast {
+  position: fixed;
+  inset-block-end: 5.5rem;
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: fit-content;
+  max-inline-size: calc(100% - 2rem);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-pill);
+  background: var(--surface-layer-1);
+  color: var(--text-primary);
+  border: 1px solid var(--prominent-border);
+  box-shadow: var(--elevation-toast);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  z-index: var(--z-modal);
+  animation: toastFade 200ms var(--ease-out);
+}
+
+@media (min-width: 768px) {
+  .cartToast {
+    inset-block-end: 2rem;
+  }
+}
+
+.toastIcon {
+  inline-size: 16px;
+  block-size: 16px;
+  fill: none;
+  stroke: var(--success);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@keyframes toastFade {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cartButton:active {
+    transform: none;
+  }
+  .cartBadgeBump {
+    animation: none;
+  }
+  .cartToast {
+    animation: none;
+  }
 }
 
 .primaryButton:focus-visible,

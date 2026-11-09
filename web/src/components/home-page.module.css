@@ -1,5 +1,6 @@
-/* Landing page (web/DESIGN.md). Mobile first: base is 375 px; 768 and
-   1024 px add columns. Tokens only; logical properties only. */
+/* Landing page (web/DESIGN.md, Part 3 engagement pass).
+   Mobile first: base is 375 px; 768 and 1024 px add columns.
+   Tokens only; logical properties only. */
 
 .container {
   width: 100%;
@@ -106,14 +107,17 @@
   font-size: var(--fs-base);
   font-weight: var(--fw-bold);
   text-decoration: none;
+  cursor: pointer;
   transition:
     background var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard);
+    border-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
 }
 
 .primaryButton {
   background: var(--crimson);
   color: var(--text-on-accent);
+  border: none;
   box-shadow: var(--elevation-crimson-glow);
 }
 
@@ -121,13 +125,22 @@
   background: var(--crimson-hover);
 }
 
+.primaryButton:active {
+  transform: scale(0.96);
+}
+
 .secondaryButton {
+  background: var(--surface-container-low);
   border: 1px solid var(--input-border);
   color: var(--text-primary);
 }
 
 .secondaryButton:hover {
   background: var(--surface-high);
+}
+
+.secondaryButton:active {
+  transform: scale(0.96);
 }
 
 .textLink {
@@ -147,9 +160,11 @@
 .primaryButton:focus-visible,
 .secondaryButton:focus-visible,
 .textLink:focus-visible,
-.levelCard:focus-visible,
 .storeLink:focus-visible,
-.faqQuestion:focus-visible {
+.faqQuestion:focus-visible,
+.subjectLink:focus-visible,
+.subjectDetailsBtn:focus-visible,
+.mapLink:focus-visible {
   outline: var(--focus-ring-width) solid var(--text-primary);
   outline-offset: var(--focus-ring-offset);
 }
@@ -172,41 +187,53 @@
 
 .heroText {
   position: relative;
-  padding: 0 var(--margin-mobile) var(--space-4xl);
-  margin-block-start: calc(-1 * var(--space-xl));
+  padding: var(--space-xl) var(--margin-mobile) var(--space-xl);
+  animation: heroEntrance 300ms var(--ease-out) 1;
+}
+
+@keyframes heroEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .heroArt {
-  order: -1;
   display: block;
 }
 
 .heroImg {
   display: block;
   width: 100%;
+  max-width: 320px;
   height: auto;
+  margin-inline: auto;
   aspect-ratio: 1 / 1;
   object-fit: cover;
   object-position: top;
-  /* Fully faded before the text that overlaps its bottom (contrast). */
-  mask-image: linear-gradient(to bottom, var(--void-canvas) 45%, transparent 92%);
+  mask-image: linear-gradient(to bottom, var(--void-canvas) 50%, transparent 95%);
 }
 
 .heroTitle {
-  font-size: var(--fs-display);
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw + 0.5rem, 3.25rem);
   font-weight: var(--fw-extrabold);
-  line-height: var(--lh-display);
+  line-height: var(--lh-tight);
   text-wrap: balance;
+  color: var(--text-primary);
 }
 
 .heroAccent {
-  display: block;
   color: var(--crimson);
 }
 
 .heroLead {
   max-width: 34rem;
-  margin: var(--space-lg) 0 0;
+  margin: var(--space-md) 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-lead);
   line-height: var(--lh-body);
@@ -220,23 +247,20 @@
   }
 
   .heroText {
-    margin: 0;
     padding: var(--space-5xl) var(--margin-mobile);
   }
 
   .heroArt {
-    order: 0;
     align-self: end;
   }
 
   .heroImg {
+    max-width: none;
     aspect-ratio: 2 / 3;
     max-height: 40rem;
     mask-composite: intersect;
   }
 
-  /* The fade runs from the art toward the text (the start edge). Gradients
-     have no logical direction, so it is written per direction. */
   :global([dir="ltr"]) .heroImg {
     mask-image:
       linear-gradient(to bottom, var(--void-canvas) 70%, transparent),
@@ -309,113 +333,359 @@
 }
 
 /* ── 3. Subjects by year ─────────────────────────────────────── */
-.studyGroup + .studyGroup {
-  margin-block-start: var(--space-2xl);
+.subjectsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xl);
+}
+
+.studyGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xl);
 }
 
 .studyTitle {
-  margin-block-end: var(--space-md);
+  margin: 0;
   font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.levelBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.levelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding-block-end: var(--space-xs);
+  border-block-end: 1px solid var(--subtle-hairline);
+}
+
+.levelTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.levelCountBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-sm);
+  background: var(--surface-container-low);
+  border: 1px solid var(--prominent-border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+
+/* Horizontal scroll per year on mobile with snap */
+.subjectSnapScroll {
+  display: flex;
+  gap: var(--space-md);
+  margin: 0 calc(-1 * var(--margin-mobile));
+  padding: var(--space-xs) var(--margin-mobile) var(--space-md);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  list-style: none;
+}
+
+.subjectCard {
+  flex: 0 0 calc(84vw - 20px);
+  max-width: 320px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--space-lg);
+  background: var(--surface-elevated);
+  border: 1px solid var(--subtle-hairline);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.subjectCard:hover {
+  border-color: var(--crimson);
+  box-shadow: var(--elevation-card-hover);
+}
+
+.subjectCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-block-end: var(--space-sm);
+}
+
+.termBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-xs);
+  background: var(--crimson-tinted);
+  border: 1px solid var(--crimson-border);
+  border-radius: var(--radius-sm);
+  color: var(--crimson);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+
+.termPlaceholder {
+  display: inline-block;
+  min-height: 20px;
+}
+
+.subjectPrice {
+  color: var(--text-primary);
+  font-size: var(--fs-md);
   font-weight: var(--fw-bold);
 }
 
-.levelGrid {
+.subjectTitle {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+
+.subjectLink {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.subjectLink:hover {
+  color: var(--crimson);
+}
+
+.subjectInstructor {
+  margin: 0 0 var(--space-lg);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.subjectCardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-block-start: auto;
+  padding-block-start: var(--space-sm);
+  border-block-start: 1px solid var(--subtle-hairline);
+}
+
+.subjectDetailsBtn {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+}
+
+.subjectDetailsBtn:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+@media (min-width: 768px) {
+  .subjectSnapScroll {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    overflow-x: visible;
+    scroll-snap-type: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .subjectCard {
+    flex: auto;
+    max-width: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .subjectSnapScroll {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Trust banner near buy actions */
+.trustBanner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: center;
+  justify-content: space-between;
+  margin-block-start: var(--space-2xl);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--surface-elevated);
+  border: 1px solid var(--prominent-border);
+  border-radius: var(--radius-card);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .trustBanner {
+    flex-direction: row;
+    text-align: start;
+  }
+}
+
+.trustItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.trustIcon {
+  inline-size: 18px;
+  block-size: 18px;
+  fill: none;
+  stroke: var(--success);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+.trustLinks {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--text-muted);
+}
+
+.trustLinks a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trustLinks a:hover {
+  color: var(--text-primary);
+}
+
+.trustLinks a:focus-visible {
+  outline: var(--focus-ring-width) solid var(--text-primary);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ── 4. How to start ─────────────────────────────────────────── */
+.stepsSequence {
+  position: relative;
+  margin: var(--space-2xl) 0 0;
+}
+
+.stepsLine {
+  position: absolute;
+  inset-block-start: 24px;
+  inset-inline-start: 10%;
+  inset-inline-end: 10%;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--prominent-border) 15%,
+    var(--prominent-border) 85%,
+    transparent 100%
+  );
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .stepsLine {
+    display: block;
+  }
+}
+
+.stepsList {
+  position: relative;
   display: grid;
-  gap: var(--space-md);
+  gap: var(--space-xl);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 @media (min-width: 768px) {
-  .levelGrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (min-width: 1024px) {
-  .levelGrid {
+  .stepsList {
     grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-xl);
   }
 }
 
-.levelCard {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: var(--space-2xs) var(--space-md);
-  min-height: var(--tap-target);
-  padding: var(--space-lg) var(--space-xl);
-  background: var(--surface-elevated);
-  border: 1px solid var(--subtle-hairline);
-  border-radius: var(--radius-card);
-  text-decoration: none;
-  transition: border-color var(--duration-fast) var(--ease-standard);
-}
-
-.levelCard:hover {
-  border-color: var(--crimson);
-}
-
-.levelTitle {
-  color: var(--text-primary);
-  font-weight: var(--fw-bold);
-  font-size: var(--fs-lg);
-}
-
-.levelCount {
-  grid-row: 2;
-  color: var(--text-muted);
-  font-size: var(--fs-md);
-}
-
-.levelArrow {
-  grid-row: 1 / span 2;
-  grid-column: 2;
-  color: var(--text-muted);
-  font-size: var(--fs-xl);
-}
-
-:global([dir="ltr"]) .levelArrow {
-  transform: scaleX(-1);
-}
-
-/* ── 4. How to start ─────────────────────────────────────────── */
-.steps {
-  display: grid;
-  gap: var(--space-lg);
-  margin: var(--space-2xl) 0 0;
-  padding: 0;
-  list-style: none;
-  counter-reset: none;
-}
-
-@media (min-width: 768px) {
-  .steps {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-.step {
+.stepItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   padding: var(--space-xl);
   background: var(--surface-layer-1);
   border: 1px solid var(--subtle-hairline);
   border-radius: var(--radius-card);
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
-.stepNumber {
-  display: block;
-  color: var(--crimson);
+.stepItem:hover {
+  border-color: var(--prominent-border);
+}
+
+.stepBadgeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-block-end: var(--space-md);
+}
+
+.stepNumberBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 38px;
+  block-size: 38px;
+  background: var(--crimson);
+  color: var(--text-on-accent);
+  border-radius: var(--radius-pill);
   font-family: var(--font-display);
-  font-size: var(--fs-6xl);
-  font-weight: var(--fw-extrabold);
-  line-height: 1;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  box-shadow: var(--elevation-badge);
+}
+
+.stepIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 36px;
+  block-size: 36px;
+  background: var(--surface-container-low);
+  border: 1px solid var(--prominent-border);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+}
+
+.stepIcon {
+  inline-size: 18px;
+  block-size: 18px;
 }
 
 .stepTitle {
-  margin-block: var(--space-md) var(--space-sm);
+  margin: 0 0 var(--space-xs);
   font-size: var(--fs-h3);
   font-weight: var(--fw-bold);
+  color: var(--text-primary);
 }
 
 .stepBody {
@@ -425,6 +695,87 @@
 }
 
 /* ── 5. The app ──────────────────────────────────────────────── */
+.appLayout {
+  display: grid;
+  gap: var(--space-3xl);
+  align-items: center;
+}
+
+@media (min-width: 768px) {
+  .appLayout {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.appInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.appVisual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block: var(--space-lg);
+}
+
+.phoneFrame {
+  position: relative;
+  width: 160px;
+  border: 7px solid var(--phone-bezel);
+  border-radius: 28px;
+  background: var(--phone-screen-bg);
+  overflow: hidden;
+  box-shadow: var(--elevation-phone);
+  transition: transform var(--duration-normal) var(--ease-standard);
+}
+
+@media (min-width: 480px) {
+  .phoneFrame {
+    width: 190px;
+    border-width: 8px;
+    border-radius: 32px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .phoneFrame {
+    width: 220px;
+    border-width: 9px;
+    border-radius: 36px;
+  }
+}
+
+.phoneSpeaker {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 3px;
+  background: var(--phone-speaker);
+  border-radius: 2px;
+  z-index: 5;
+}
+
+.phoneTilt1 {
+  transform: rotate(-4deg);
+  margin-inline-end: -20px;
+  z-index: 1;
+}
+
+.phoneTilt2 {
+  transform: rotate(4deg);
+  margin-block-start: 32px;
+  z-index: 2;
+}
+
+.phoneScreenImg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .storeLinks {
   display: flex;
   flex-wrap: wrap;
@@ -519,35 +870,7 @@
   border-color: var(--text-primary);
 }
 
-.mapLink:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
-.screens {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-lg);
-  margin: var(--space-2xl) 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.screens li {
-  inline-size: 42vw;
-  max-inline-size: 240px;
-}
-
-.screenImg {
-  display: block;
-  width: 100%;
-  height: auto;
-  border: 1px solid var(--prominent-border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--elevation-card);
-}
-
-/* ── 8. FAQ ──────────────────────────────────────────────────── */
+/* ── 7. FAQ ──────────────────────────────────────────────────── */
 .faqList {
   display: grid;
   gap: var(--space-sm);
@@ -600,7 +923,7 @@
   margin: 0 var(--space-xl) var(--space-lg);
 }
 
-/* ── 9. Closing ──────────────────────────────────────────────── */
+/* ── 8. Closing ──────────────────────────────────────────────── */
 .closing {
   padding-block: var(--space-5xl);
   background:
@@ -620,6 +943,22 @@
   .section,
   .closing {
     padding-block: var(--space-6xl);
+  }
+}
+
+/* ── Reduced motion overrides ────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .heroText {
+    animation: none !important;
+  }
+  .primaryButton:active,
+  .secondaryButton:active {
+    transform: none !important;
+  }
+  .phoneTilt1,
+  .phoneTilt2 {
+    transform: none !important;
+    margin: 0 var(--space-xs) !important;
   }
 }
 

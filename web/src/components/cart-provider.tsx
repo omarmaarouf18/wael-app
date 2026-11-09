@@ -18,13 +18,15 @@ export interface CartContextValue {
   itemCount: number;
   totalPrice: number;
   isCartOpen: boolean;
-  addItem: (item: CartItem) => boolean;
+  toastMessage: string | null;
+  addItem: (item: CartItem, toastText?: string) => boolean;
   removeItem: (id: string) => void;
   clearCart: () => void;
   isInCart: (id: string) => boolean;
   openCart: () => void;
   closeCart: () => void;
   toggleCart: () => void;
+  showToast: (msg: string) => void;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -64,6 +66,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -81,7 +84,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
     saveCart(items);
   }, [items, hydrated]);
 
-  const addItem = (item: CartItem): boolean => {
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+  };
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => {
+      setToastMessage(null);
+    }, 2200);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+  const addItem = (item: CartItem, toastText?: string): boolean => {
     let added = false;
     setItems((prev) => {
       if (prev.some((i) => i.id === item.id)) {
@@ -90,6 +105,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
       added = true;
       return [...prev, item];
     });
+    if (toastText) {
+      showToast(toastText);
+    }
     return added;
   };
 
@@ -123,6 +141,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         itemCount: items.length,
         totalPrice,
         isCartOpen,
+        toastMessage,
         addItem,
         removeItem,
         clearCart,
@@ -130,9 +149,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
         openCart,
         closeCart,
         toggleCart,
+        showToast,
       }}
     >
       {children}
+      {toastMessage ? (
+        <div role="status" aria-live="polite" className={styles.cartToast}>
+          <svg className={styles.toastIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          <span>{toastMessage}</span>
+        </div>
+      ) : null}
     </CartContext.Provider>
   );
 }
@@ -147,6 +175,17 @@ export function useCart(): CartContextValue {
 
 export function HeaderCartButton({ lang }: { lang: Lang }) {
   const { itemCount, openCart } = useCart();
+  const [bumping, setBumping] = useState(false);
+
+  useEffect(() => {
+    if (itemCount === 0) return;
+    const bumpTimer = setTimeout(() => setBumping(true), 0);
+    const resetTimer = setTimeout(() => setBumping(false), 250);
+    return () => {
+      clearTimeout(bumpTimer);
+      clearTimeout(resetTimer);
+    };
+  }, [itemCount]);
 
   return (
     <button
@@ -164,7 +203,9 @@ export function HeaderCartButton({ lang }: { lang: Lang }) {
       {itemCount > 0 ? (
         <>
           {" "}
-          <span className={styles.cartBadge}>{itemCount}</span>
+          <span className={`${styles.cartBadge} ${bumping ? styles.cartBadgeBump : ""}`}>
+            {itemCount}
+          </span>
         </>
       ) : null}
     </button>

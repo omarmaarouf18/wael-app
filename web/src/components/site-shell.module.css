@@ -440,6 +440,12 @@
   font-size: var(--fs-sm);
 }
 
+@media (max-width: 767px) {
+  .footerBottom {
+    padding-block-end: calc(var(--space-lg) + 64px + env(safe-area-inset-bottom));
+  }
+}
+
 /* Under 480 px the button shows its icon only; the word stays for screen
    readers (the header row must fit 375 px in English, where Syne is wide). */
 @media (max-width: 479px) {

@@ -1,0 +1,77 @@
+.bar {
+  position: fixed;
+  inset-block-end: 0;
+  inset-inline: 0;
+  z-index: var(--z-sticky);
+  display: block;
+  padding: var(--space-xs) var(--space-md);
+  padding-block-end: max(var(--space-sm), env(safe-area-inset-bottom));
+  background: var(--sticky-bar-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-block-start: 1px solid var(--prominent-border);
+  box-shadow: var(--elevation-sticky-bar);
+}
+
+@media (min-width: 768px) {
+  .bar {
+    display: none;
+  }
+}
+
+.actionButton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 48px;
+  padding-inline: var(--space-lg);
+  background: var(--crimson);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-xl);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--elevation-crimson-glow);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.actionButton:active {
+  transform: scale(0.98);
+}
+
+.actionButton:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.icon {
+  inline-size: 20px;
+  block-size: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.label {
+  flex: 1;
+  margin-inline: var(--space-sm);
+  text-align: start;
+}
+
+.actionPrompt {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  opacity: 0.9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionButton:active {
+    transform: none;
+  }
+}

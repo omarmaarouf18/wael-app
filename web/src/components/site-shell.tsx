@@ -7,6 +7,7 @@ import { HeaderAuthNav } from "./auth-provider";
 import { CartDrawer } from "./cart-drawer";
 import { HeaderCartButton } from "./cart-provider";
 import { HeaderMenu } from "./header-menu";
+import { StickyMobileAction } from "./sticky-mobile-action";
 
 import styles from "./site-shell.module.css";
 
@@ -101,6 +102,7 @@ export function SiteShell({ lang, path, children, fullBleed = false }: SiteShell
         {children}
       </main>
       <CartDrawer lang={lang} />
+      <StickyMobileAction lang={lang} path={path} />
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
           <div className={styles.footerBrand}>

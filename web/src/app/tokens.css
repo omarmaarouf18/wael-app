@@ -32,6 +32,7 @@
   --deep-crimson: #7f0d15;
   --crimson-hover: #a30f1a;
   --crimson-tinted: rgb(193 18 31 / 0.12);
+  --crimson-border: rgb(193 18 31 / 0.3);
   --crimson-faint: rgb(193 18 31 / 0.06); /* web: selected-row wash */
   --crimson-glow: rgb(193 18 31 / 0.22);
   --text-on-accent: #ffffff; /* text on crimson fills (6.22:1) */
@@ -62,6 +63,10 @@
   /* ── Colour: chrome and overlays ──────────────────────────────── */
   --header-glass: rgb(9 9 9 / 0.95);
   --nav-bar-glass: rgb(11 11 11 / 0.95);
+  --sticky-bar-glass: rgb(14 14 14 / 0.94);
+  --phone-bezel: #222222;
+  --phone-screen-bg: #000000;
+  --phone-speaker: #3a3a3a;
   --scrim: rgb(0 0 0 / 0.6); /* drawer backdrop */
   --scrim-strong: rgb(0 0 0 / 0.7); /* modal backdrop */
   --scrim-blur: 4px;
@@ -110,7 +115,12 @@
 
   /* ── Elevation (AppElevation) ─────────────────────────────────── */
   --elevation-card: 0 4px 12px rgb(0 0 0 / 0.5);
+  --elevation-card-hover: 0 4px 16px rgb(0 0 0 / 0.4);
   --elevation-crimson-glow: 0 4px 20px rgb(193 18 31 / 0.25);
+  --elevation-badge: 0 2px 8px rgb(193 18 31 / 0.35);
+  --elevation-toast: 0 8px 24px rgb(0 0 0 / 0.6);
+  --elevation-sticky-bar: 0 -4px 16px rgb(0 0 0 / 0.5);
+  --elevation-phone: 0 16px 36px rgb(0 0 0 / 0.7);
   --elevation-modal: 0 10px 25px rgb(0 0 0 / 0.5); /* web */
 
   /* ── Motion (AppMotion) ───────────────────────────────────────── */
@@ -171,7 +181,9 @@
 
   /* ── Layers ───────────────────────────────────────────────────── */
   --z-header: 10;
+  --z-sticky: 100;
   --z-overlay: 1000;
+  --z-modal: 1100;
 }
 
 /* Arabic: Cairo for everything; taller lines (diacritics and the Arabic
