@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // AcademyInstructor is the platform's one teacher (SPEC Section 1 decision 1),
 // served as every subject's instructor on the public catalog (W2a). Subjects
@@ -43,9 +46,43 @@ type PublicStudyTypeDTO struct {
 	Levels []PublicLevelDTO `json:"levels"`
 }
 
+// TeacherProfileDTO is the teacher bio on the public catalog.
+type TeacherProfileDTO struct {
+	NameAr   string `json:"name_ar"`
+	NameEn   string `json:"name_en"`
+	TitlesAr string `json:"titles_ar"`
+	TitlesEn string `json:"titles_en"`
+	BioAr    string `json:"bio_ar"`
+	BioEn    string `json:"bio_en"`
+}
+
+// EffectiveTeacherProfileDTO returns TeacherProfileDTO with default name_ar and name_en
+// from models.AcademyInstructor when empty.
+func EffectiveTeacherProfileDTO(s *AppSettings) TeacherProfileDTO {
+	tp := TeacherProfileDTO{
+		NameAr: AcademyInstructor.Ar,
+		NameEn: AcademyInstructor.En,
+	}
+	if s == nil {
+		return tp
+	}
+	if strings.TrimSpace(s.TeacherProfile.NameAr) != "" {
+		tp.NameAr = s.TeacherProfile.NameAr
+	}
+	if strings.TrimSpace(s.TeacherProfile.NameEn) != "" {
+		tp.NameEn = s.TeacherProfile.NameEn
+	}
+	tp.TitlesAr = s.TeacherProfile.TitlesAr
+	tp.TitlesEn = s.TeacherProfile.TitlesEn
+	tp.BioAr = s.TeacherProfile.BioAr
+	tp.BioEn = s.TeacherProfile.BioEn
+	return tp
+}
+
 // PublicCatalogDTO is the GET /academy/public/catalog response.
 type PublicCatalogDTO struct {
-	StudyTypes []PublicStudyTypeDTO `json:"study_types"`
+	StudyTypes     []PublicStudyTypeDTO `json:"study_types"`
+	TeacherProfile TeacherProfileDTO    `json:"teacher_profile"`
 }
 
 // PublicSubjectDetailDTO is the GET /academy/public/subjects/{id} response:

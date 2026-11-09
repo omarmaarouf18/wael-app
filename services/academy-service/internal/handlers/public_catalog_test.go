@@ -458,3 +458,104 @@ func TestPublicSubjectExpired(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicCatalog_TeacherProfile(t *testing.T) {
+	s := publicCatalogFixture(t)
+
+	// 1. Default teacher profile when settings are empty
+	rec := doPublicCatalog(t, s, http.MethodGet, "/academy/public/catalog", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog GET = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var cat models.PublicCatalogDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &cat); err != nil {
+		t.Fatal(err)
+	}
+	if cat.TeacherProfile.NameAr != models.AcademyInstructor.Ar || cat.TeacherProfile.NameEn != models.AcademyInstructor.En {
+		t.Errorf("default teacher profile name mismatch: %+v", cat.TeacherProfile)
+	}
+	if cat.TeacherProfile.BioAr != "" || cat.TeacherProfile.TitlesAr != "" {
+		t.Errorf("default teacher profile should have empty titles and bio: %+v", cat.TeacherProfile)
+	}
+
+	// 2. Custom teacher profile configured
+	ctx := context.Background()
+	_ = s.Store.SaveAppSettings(ctx, &models.AppSettings{
+		ShowPrices:      true,
+		SupportWhatsApp: "201012345678",
+		TeacherProfile: models.TeacherProfile{
+			NameAr:   "أ.د. وائل السعيد",
+			NameEn:   "Prof. Wael El Saeed",
+			TitlesAr: "محاضر القانون المدني",
+			TitlesEn: "Civil Law Lecturer",
+			BioAr:    "خبرة أكثر من 15 عاماً في تدريس مواد الحقوق.",
+			BioEn:    "Over 15 years experience teaching law.",
+		},
+	})
+
+	rec2 := doPublicCatalog(t, s, http.MethodGet, "/academy/public/catalog", nil)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("catalog GET after settings = %d (%s)", rec2.Code, rec2.Body.String())
+	}
+	var cat2 models.PublicCatalogDTO
+	if err := json.Unmarshal(rec2.Body.Bytes(), &cat2); err != nil {
+		t.Fatal(err)
+	}
+	if cat2.TeacherProfile.NameAr != "أ.د. وائل السعيد" || cat2.TeacherProfile.BioEn != "Over 15 years experience teaching law." {
+		t.Errorf("custom teacher profile mismatch: %+v", cat2.TeacherProfile)
+	}
+}
+
+func TestPublicCatalog_NoSettingsLeak(t *testing.T) {
+	s := publicCatalogFixture(t)
+	ctx := context.Background()
+
+	// Populate sensitive settings
+	_ = s.Store.SaveAppSettings(ctx, &models.AppSettings{
+		ShowPrices:      false,
+		SupportWhatsApp: "201012345678",
+		CenterNameAr:    "مقر الأكاديمية بالمنصورة",
+		CenterNameEn:    "Mansoura Academy",
+		CenterAddressAr: "شارع 18",
+		CenterAddressEn: "18th Street",
+		CenterHoursAr:   "9 صباحا - 5 مساء",
+		CenterHoursEn:   "9 AM - 5 PM",
+		CenterMapURL:    "https://maps.example.com",
+		PaymentMethods: []models.PaymentMethod{
+			{Kind: "wallet", Label: "Secret Wallet", NumberOrAddress: "01099999999"},
+		},
+		TeacherProfile: models.TeacherProfile{
+			NameAr: "وائل السعيد",
+			BioAr:  "سيرة المحاضر",
+		},
+	})
+
+	rec := doPublicCatalog(t, s, http.MethodGet, "/academy/public/catalog", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog GET = %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify top-level keys
+	for k := range raw {
+		if k != "study_types" && k != "teacher_profile" {
+			t.Errorf("unexpected top-level key in public catalog: %q", k)
+		}
+	}
+
+	// Verify no internal settings leak anywhere into the serialized JSON
+	bodyStr := rec.Body.String()
+	leakedStrings := []string{
+		"show_prices", "support_whatsapp", "payment_methods", "Secret Wallet", "01099999999",
+		"center_name_ar", "center_address_ar", "center_hours_ar", "center_map_url",
+	}
+	for _, leak := range leakedStrings {
+		if strings.Contains(bodyStr, leak) {
+			t.Errorf("public catalog leaks internal settings property %q: %s", leak, bodyStr)
+		}
+	}
+}

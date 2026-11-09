@@ -96,9 +96,16 @@ func (s *Server) GetPublicCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	settingsCtx, settingsCancel := context.WithTimeout(r.Context(), dbTimeout)
+	settings, _ := s.Store.GetAppSettings(settingsCtx)
+	settingsCancel()
+
 	// Only the three fixed study types: a level with an unknown study type
 	// (bad data) is left off the public site.
-	resp := models.PublicCatalogDTO{StudyTypes: make([]models.PublicStudyTypeDTO, 0, len(models.StudyTypeOrder))}
+	resp := models.PublicCatalogDTO{
+		StudyTypes:     make([]models.PublicStudyTypeDTO, 0, len(models.StudyTypeOrder)),
+		TeacherProfile: models.EffectiveTeacherProfileDTO(settings),
+	}
 	for _, key := range models.StudyTypeOrder {
 		group := byType[key]
 		sort.SliceStable(group, func(i, j int) bool {

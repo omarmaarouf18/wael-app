@@ -301,6 +301,61 @@
           <span class="muted small" data-i18n="settings.centerMapUrlHint"></span>
         </div>
 
+        <h3 data-i18n="settings.teacherSection"></h3>
+        <p class="muted small" data-i18n="settings.teacherNote"></p>
+
+        <div class="settings-grid">
+          <div class="field">
+            <label for="settings-teacher-name-ar" data-i18n="settings.teacherNameAr"></label>
+            <input id="settings-teacher-name-ar" type="text" maxlength="100" autocomplete="off">
+            <span class="muted small"><span id="settings-teacher-name-ar-count">0</span> / 100</span>
+          </div>
+          <div class="field">
+            <label for="settings-teacher-name-en" data-i18n="settings.teacherNameEn"></label>
+            <input id="settings-teacher-name-en" type="text" dir="ltr" maxlength="100" autocomplete="off">
+            <span class="muted small"><span id="settings-teacher-name-en-count">0</span> / 100</span>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <div class="field">
+            <label for="settings-teacher-titles-ar" data-i18n="settings.teacherTitlesAr"></label>
+            <input id="settings-teacher-titles-ar" type="text" maxlength="200" autocomplete="off">
+            <span class="muted small"><span id="settings-teacher-titles-ar-count">0</span> / 200</span>
+          </div>
+          <div class="field">
+            <label for="settings-teacher-titles-en" data-i18n="settings.teacherTitlesEn"></label>
+            <input id="settings-teacher-titles-en" type="text" dir="ltr" maxlength="200" autocomplete="off">
+            <span class="muted small"><span id="settings-teacher-titles-en-count">0</span> / 200</span>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <div class="field">
+            <label for="settings-teacher-bio-ar" data-i18n="settings.teacherBioAr"></label>
+            <textarea id="settings-teacher-bio-ar" rows="3" maxlength="2000"></textarea>
+            <span class="muted small"><span id="settings-teacher-bio-ar-count">0</span> / 2000</span>
+          </div>
+          <div class="field">
+            <label for="settings-teacher-bio-en" data-i18n="settings.teacherBioEn"></label>
+            <textarea id="settings-teacher-bio-en" dir="ltr" rows="3" maxlength="2000"></textarea>
+            <span class="muted small"><span id="settings-teacher-bio-en-count">0</span> / 2000</span>
+          </div>
+        </div>
+
+        <div class="teacher-preview-card">
+          <h4 data-i18n="settings.teacherPreview"></h4>
+          <p class="muted small" data-i18n="settings.teacherPreviewNote"></p>
+          <div class="teacher-preview-box">
+            <div class="teacher-preview-avatar" aria-hidden="true">👨‍🏫</div>
+            <div class="teacher-preview-content">
+              <div id="teacher-preview-name" class="teacher-preview-name strong"></div>
+              <div id="teacher-preview-titles" class="teacher-preview-titles muted small"></div>
+              <div id="teacher-preview-bio" class="teacher-preview-bio small"></div>
+            </div>
+          </div>
+        </div>
+
         <h3 data-i18n="settings.paymentMethodsSection"></h3>
         <p class="muted small" data-i18n="settings.paymentMethodsNote"></p>
         <div id="settings-payment-methods"></div>

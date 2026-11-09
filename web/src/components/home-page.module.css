@@ -280,6 +280,23 @@
   box-shadow: var(--elevation-card);
 }
 
+.teacherTitles {
+  color: var(--crimson);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-base);
+  margin-block-start: var(--space-xs);
+  margin-block-end: var(--space-sm);
+}
+
+.teacherBio {
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+  line-height: var(--lh-body);
+  white-space: pre-line;
+  max-width: 42rem;
+  margin: 0;
+}
+
 @media (min-width: 768px) {
   .teacher {
     grid-template-columns: 12rem 1fr;

@@ -770,6 +770,47 @@ td.detail {
   margin: 0;
 }
 
+.teacher-preview-card {
+  padding: 1rem;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-block-start: 0.5rem;
+}
+
+.teacher-preview-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-block-start: 0.75rem;
+  padding: 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.teacher-preview-avatar {
+  font-size: 2rem;
+  inline-size: 3rem;
+  block-size: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-3);
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.teacher-preview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.teacher-preview-name {
+  font-size: 1.1rem;
+}
+
 @media (max-width: 40rem) {
   .shell {
     padding: 12px;

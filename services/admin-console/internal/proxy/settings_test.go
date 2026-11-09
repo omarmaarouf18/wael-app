@@ -96,6 +96,48 @@ func TestSettingsUpdate_RelaysUpstreamDomainErrors(t *testing.T) {
 	}
 }
 
+func TestSettingsUpdate_TeacherProfile(t *testing.T) {
+	restore := logWriter(ioDiscard{})
+	defer restore()
+
+	upstream := newUpstream(t, 200, `{"show_prices":true,"teacher_profile":{"name_ar":"د. أحمد"}}`)
+	p := newProxy(t, upstream)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings/update", strings.NewReader(`{
+		"show_prices": true,
+		"teacher_profile": {
+			"name_ar": "د. أحمد",
+			"name_en": "Dr. Ahmed",
+			"titles_ar": "أستاذ القانون",
+			"titles_en": "Professor of Law",
+			"bio_ar": "نبذة بالعربي",
+			"bio_en": "Bio in English"
+		}
+	}`))
+	req.Header.Set(AdminTokenHeader, testToken)
+	rec := httptest.NewRecorder()
+	p.SettingsUpdate(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", rec.Code)
+	}
+	calls := upstream.calls()
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	var receivedBody map[string]any
+	if err := json.Unmarshal([]byte(calls[0].Body), &receivedBody); err != nil {
+		t.Fatalf("unmarshal upstream body: %v", err)
+	}
+	tp, ok := receivedBody["teacher_profile"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected teacher_profile in upstream body: %#v", receivedBody)
+	}
+	if tp["name_ar"] != "د. أحمد" || tp["bio_en"] != "Bio in English" {
+		t.Fatalf("unexpected teacher_profile forwarded: %#v", tp)
+	}
+}
+
 type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (n int, err error) { return len(p), nil }

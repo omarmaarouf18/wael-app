@@ -23,6 +23,15 @@ type paymentMethodDTO struct {
 	NumberOrAddress string `json:"number_or_address"`
 }
 
+type teacherProfileDTO struct {
+	NameAr   string `json:"name_ar"`
+	NameEn   string `json:"name_en"`
+	TitlesAr string `json:"titles_ar"`
+	TitlesEn string `json:"titles_en"`
+	BioAr    string `json:"bio_ar"`
+	BioEn    string `json:"bio_en"`
+}
+
 // settingsUpdateRequest is the body of POST /api/settings/update.
 type settingsUpdateRequest struct {
 	ShowPrices      *bool               `json:"show_prices"`
@@ -35,6 +44,7 @@ type settingsUpdateRequest struct {
 	CenterHoursEn   string              `json:"center_hours_en"`
 	CenterMapURL    string              `json:"center_map_url"`
 	PaymentMethods  *[]paymentMethodDTO `json:"payment_methods"`
+	TeacherProfile  *teacherProfileDTO  `json:"teacher_profile"`
 }
 
 // SettingsUpdate handles POST /api/settings/update -> PUT academy /internal/admin/settings.
@@ -64,6 +74,9 @@ func (p *Proxy) SettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.PaymentMethods != nil {
 		payload["payment_methods"] = *in.PaymentMethods
+	}
+	if in.TeacherProfile != nil {
+		payload["teacher_profile"] = *in.TeacherProfile
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

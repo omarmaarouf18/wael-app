@@ -253,3 +253,54 @@ test('payment methods: renders rows from loaded settings and submits updated lis
   ]);
 });
 
+test('teacher profile: loads, updates preview, tracks dirty, and saves', async () => {
+  const { mod, elements, getLastSentUpdate } = setup({
+    teacher_profile: {
+      name_ar: 'د. أحمد',
+      name_en: 'Dr. Ahmed',
+      titles_ar: 'دكتوراه في القانون المدني',
+      titles_en: 'PhD in Civil Law',
+      bio_ar: 'خبرة ٢٠ عامًا في تدريس القانون.',
+      bio_en: '20 years of experience teaching law.',
+    },
+  });
+
+  await mod.load();
+
+  const teacherNameAr = doc.getElementById('settings-teacher-name-ar');
+  const teacherNameEn = doc.getElementById('settings-teacher-name-en');
+  const teacherTitlesAr = doc.getElementById('settings-teacher-titles-ar');
+  const teacherBioAr = doc.getElementById('settings-teacher-bio-ar');
+  const previewName = doc.getElementById('teacher-preview-name');
+  const previewTitles = doc.getElementById('teacher-preview-titles');
+  const previewBio = doc.getElementById('teacher-preview-bio');
+
+  assert.equal(teacherNameAr.value, 'د. أحمد');
+  assert.equal(teacherNameEn.value, 'Dr. Ahmed');
+  assert.equal(previewName.textContent, 'د. أحمد');
+  assert.equal(previewTitles.textContent, 'دكتوراه في القانون المدني');
+  assert.equal(previewBio.textContent, 'خبرة ٢٠ عامًا في تدريس القانون.');
+  assert.equal(mod.isDirty(), false);
+
+  // Edit bio
+  teacherBioAr.value = 'نبذة معدلة وجديدة.';
+  teacherBioAr.fire('input');
+  assert.equal(previewBio.textContent, 'نبذة معدلة وجديدة.');
+  assert.equal(mod.isDirty(), true);
+
+  await mod.save();
+  assert.equal(mod.isDirty(), false);
+
+  const sent = getLastSentUpdate();
+  assert.ok(sent);
+  assert.equal(sent.teacher_profile.bio_ar, 'نبذة معدلة وجديدة.');
+  assert.equal(sent.teacher_profile.name_ar, 'د. أحمد');
+
+  // Discard restores previous state
+  teacherBioAr.value = 'تغيير غير محفوظ';
+  assert.equal(mod.isDirty(), true);
+  mod.discard();
+  assert.equal(teacherBioAr.value, 'نبذة معدلة وجديدة.');
+  assert.equal(mod.isDirty(), false);
+});
+

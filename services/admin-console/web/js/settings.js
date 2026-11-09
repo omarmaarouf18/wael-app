@@ -17,6 +17,21 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
   const centerHoursAr = doc.getElementById('settings-center-hours-ar');
   const centerHoursEn = doc.getElementById('settings-center-hours-en');
   const centerMapUrl = doc.getElementById('settings-center-map-url');
+  const teacherNameAr = doc.getElementById('settings-teacher-name-ar');
+  const teacherNameEn = doc.getElementById('settings-teacher-name-en');
+  const teacherNameArCount = doc.getElementById('settings-teacher-name-ar-count');
+  const teacherNameEnCount = doc.getElementById('settings-teacher-name-en-count');
+  const teacherTitlesAr = doc.getElementById('settings-teacher-titles-ar');
+  const teacherTitlesEn = doc.getElementById('settings-teacher-titles-en');
+  const teacherTitlesArCount = doc.getElementById('settings-teacher-titles-ar-count');
+  const teacherTitlesEnCount = doc.getElementById('settings-teacher-titles-en-count');
+  const teacherBioAr = doc.getElementById('settings-teacher-bio-ar');
+  const teacherBioEn = doc.getElementById('settings-teacher-bio-en');
+  const teacherBioArCount = doc.getElementById('settings-teacher-bio-ar-count');
+  const teacherBioEnCount = doc.getElementById('settings-teacher-bio-en-count');
+  const teacherPreviewName = doc.getElementById('teacher-preview-name');
+  const teacherPreviewTitles = doc.getElementById('teacher-preview-titles');
+  const teacherPreviewBio = doc.getElementById('teacher-preview-bio');
   const paymentMethodsContainer = doc.getElementById('settings-payment-methods');
   const addPaymentMethodBtn = doc.getElementById('settings-add-payment-method');
   const submitBtn = doc.getElementById('settings-submit');
@@ -25,6 +40,62 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
   let loadedState = null;
   let inFlight = false;
   const cooldown = createCooldown();
+
+  function updateTeacherFieldCounts() {
+    if (teacherNameArCount && teacherNameAr) teacherNameArCount.textContent = String(teacherNameAr.value.length);
+    if (teacherNameEnCount && teacherNameEn) teacherNameEnCount.textContent = String(teacherNameEn.value.length);
+    if (teacherTitlesArCount && teacherTitlesAr) teacherTitlesArCount.textContent = String(teacherTitlesAr.value.length);
+    if (teacherTitlesEnCount && teacherTitlesEn) teacherTitlesEnCount.textContent = String(teacherTitlesEn.value.length);
+    if (teacherBioArCount && teacherBioAr) teacherBioArCount.textContent = String(teacherBioAr.value.length);
+    if (teacherBioEnCount && teacherBioEn) teacherBioEnCount.textContent = String(teacherBioEn.value.length);
+  }
+
+  function updateTeacherPreview() {
+    updateTeacherFieldCounts();
+    if (!teacherPreviewName) return;
+
+    const isEn = (doc.documentElement?.lang === 'en');
+    const nameAr = (teacherNameAr?.value ?? '').trim();
+    const nameEn = (teacherNameEn?.value ?? '').trim();
+    const titlesAr = (teacherTitlesAr?.value ?? '').trim();
+    const titlesEn = (teacherTitlesEn?.value ?? '').trim();
+    const bioAr = (teacherBioAr?.value ?? '').trim();
+    const bioEn = (teacherBioEn?.value ?? '').trim();
+
+    const defaultName = isEn ? 'Wael El Saeed' : 'وائل السعيد';
+    const effectiveName = isEn
+      ? (nameEn || nameAr || defaultName)
+      : (nameAr || nameEn || defaultName);
+
+    const effectiveTitles = isEn
+      ? (titlesEn || titlesAr)
+      : (titlesAr || titlesEn);
+
+    const effectiveBio = isEn
+      ? (bioEn || bioAr)
+      : (bioAr || bioEn);
+
+    teacherPreviewName.textContent = effectiveName;
+
+    if (teacherPreviewTitles) {
+      teacherPreviewTitles.textContent = effectiveTitles;
+      teacherPreviewTitles.hidden = !effectiveTitles;
+    }
+
+    if (teacherPreviewBio) {
+      teacherPreviewBio.textContent = effectiveBio;
+      teacherPreviewBio.hidden = !effectiveBio;
+    }
+  }
+
+  const teacherInputs = [
+    teacherNameAr, teacherNameEn,
+    teacherTitlesAr, teacherTitlesEn,
+    teacherBioAr, teacherBioEn,
+  ];
+  for (const input of teacherInputs) {
+    input?.addEventListener('input', updateTeacherPreview);
+  }
 
   cooldown.subscribe((left) => {
     if (left === 0 && !inFlight) {
@@ -105,6 +176,17 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     paymentMethodsContainer.append(createPaymentMethodRow());
   });
 
+  function getTeacherProfileValues() {
+    return {
+      name_ar: (teacherNameAr?.value ?? '').trim(),
+      name_en: (teacherNameEn?.value ?? '').trim(),
+      titles_ar: (teacherTitlesAr?.value ?? '').trim(),
+      titles_en: (teacherTitlesEn?.value ?? '').trim(),
+      bio_ar: (teacherBioAr?.value ?? '').trim(),
+      bio_en: (teacherBioEn?.value ?? '').trim(),
+    };
+  }
+
   function getFormValues() {
     return {
       show_prices: Boolean(showPrices?.checked),
@@ -117,6 +199,7 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
       center_hours_en: (centerHoursEn?.value ?? '').trim(),
       center_map_url: (centerMapUrl?.value ?? '').trim(),
       payment_methods: getPaymentMethodsValues(),
+      teacher_profile: getTeacherProfileValues(),
     };
   }
 
@@ -132,6 +215,15 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     if (centerHoursEn) centerHoursEn.value = state.center_hours_en ?? '';
     if (centerMapUrl) centerMapUrl.value = state.center_map_url ?? '';
     renderPaymentMethods(state.payment_methods ?? []);
+
+    const tp = state.teacher_profile ?? {};
+    if (teacherNameAr) teacherNameAr.value = tp.name_ar ?? '';
+    if (teacherNameEn) teacherNameEn.value = tp.name_en ?? '';
+    if (teacherTitlesAr) teacherTitlesAr.value = tp.titles_ar ?? '';
+    if (teacherTitlesEn) teacherTitlesEn.value = tp.titles_en ?? '';
+    if (teacherBioAr) teacherBioAr.value = tp.bio_ar ?? '';
+    if (teacherBioEn) teacherBioEn.value = tp.bio_en ?? '';
+    updateTeacherPreview();
 
     updateMeta(state);
   }
@@ -158,6 +250,19 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     return true;
   }
 
+  function teacherProfileEqual(a, b) {
+    const tpA = a ?? {};
+    const tpB = b ?? {};
+    return (
+      (tpA.name_ar ?? '') === (tpB.name_ar ?? '') &&
+      (tpA.name_en ?? '') === (tpB.name_en ?? '') &&
+      (tpA.titles_ar ?? '') === (tpB.titles_ar ?? '') &&
+      (tpA.titles_en ?? '') === (tpB.titles_en ?? '') &&
+      (tpA.bio_ar ?? '') === (tpB.bio_ar ?? '') &&
+      (tpA.bio_en ?? '') === (tpB.bio_en ?? '')
+    );
+  }
+
   function isDirty() {
     if (!loadedState) return false;
     const current = getFormValues();
@@ -171,7 +276,8 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
       current.center_hours_ar !== (loadedState.center_hours_ar ?? '') ||
       current.center_hours_en !== (loadedState.center_hours_en ?? '') ||
       current.center_map_url !== (loadedState.center_map_url ?? '') ||
-      !paymentMethodsEqual(current.payment_methods, loadedState.payment_methods ?? [])
+      !paymentMethodsEqual(current.payment_methods, loadedState.payment_methods ?? []) ||
+      !teacherProfileEqual(current.teacher_profile, loadedState.teacher_profile)
     );
   }
 
@@ -243,6 +349,7 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     if (submitBtn && !inFlight) {
       submitBtn.textContent = t('settings.save');
     }
+    updateTeacherPreview();
   }
 
   function reset() {
@@ -258,6 +365,13 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     if (centerHoursAr) centerHoursAr.value = '';
     if (centerHoursEn) centerHoursEn.value = '';
     if (centerMapUrl) centerMapUrl.value = '';
+    if (teacherNameAr) teacherNameAr.value = '';
+    if (teacherNameEn) teacherNameEn.value = '';
+    if (teacherTitlesAr) teacherTitlesAr.value = '';
+    if (teacherTitlesEn) teacherTitlesEn.value = '';
+    if (teacherBioAr) teacherBioAr.value = '';
+    if (teacherBioEn) teacherBioEn.value = '';
+    updateTeacherPreview();
     renderPaymentMethods([]);
     if (metaSpan) metaSpan.textContent = '';
     if (banner) hideBanner(banner);

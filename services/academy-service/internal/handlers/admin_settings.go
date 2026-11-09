@@ -76,6 +76,7 @@ type AdminSettingsRequest struct {
 	CenterHoursEn   string                  `json:"center_hours_en"`
 	CenterMapURL    string                  `json:"center_map_url"`
 	PaymentMethods  *[]models.PaymentMethod `json:"payment_methods"`
+	TeacherProfile  *models.TeacherProfile  `json:"teacher_profile"`
 }
 
 // effectiveAppSettings returns the stored settings with the support number
@@ -230,6 +231,49 @@ func (s *Server) putAdminSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var cleanTP models.TeacherProfile
+	if req.TeacherProfile != nil {
+		var ok bool
+		cleanTP.NameAr, ok = cleanSettingsText(req.TeacherProfile.NameAr, 100)
+		if !ok {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_teacher_name", "teacher_profile.name_ar must be at most 100 characters", nil)
+			return
+		}
+		cleanTP.NameEn, ok = cleanSettingsText(req.TeacherProfile.NameEn, 100)
+		if !ok {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_teacher_name", "teacher_profile.name_en must be at most 100 characters", nil)
+			return
+		}
+		cleanTP.TitlesAr, ok = cleanSettingsText(req.TeacherProfile.TitlesAr, 200)
+		if !ok {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_teacher_titles", "teacher_profile.titles_ar must be at most 200 characters", nil)
+			return
+		}
+		cleanTP.TitlesEn, ok = cleanSettingsText(req.TeacherProfile.TitlesEn, 200)
+		if !ok {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_teacher_titles", "teacher_profile.titles_en must be at most 200 characters", nil)
+			return
+		}
+		cleanTP.BioAr, ok = cleanSettingsText(req.TeacherProfile.BioAr, 2000)
+		if !ok {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_teacher_bio", "teacher_profile.bio_ar must be at most 2000 characters", nil)
+			return
+		}
+		cleanTP.BioEn, ok = cleanSettingsText(req.TeacherProfile.BioEn, 2000)
+		if !ok {
+			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "invalid_teacher_bio", "teacher_profile.bio_en must be at most 2000 characters", nil)
+			return
+		}
+
+		tpFields := []string{cleanTP.NameAr, cleanTP.NameEn, cleanTP.TitlesAr, cleanTP.TitlesEn, cleanTP.BioAr, cleanTP.BioEn}
+		for _, txt := range tpFields {
+			if HasForbiddenSettingsWord(txt) {
+				handlerutil.WriteSafeError(w, r, http.StatusBadRequest, "settings_forbidden_word", "contains forbidden payment term", nil)
+				return
+			}
+		}
+	}
+
 	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	defer cancel()
 
@@ -267,6 +311,13 @@ func (s *Server) putAdminSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if current.CenterMapURL != cleanMap {
 		changed = append(changed, "center_map_url")
+	}
+	if req.TeacherProfile != nil {
+		if current.TeacherProfile != cleanTP {
+			changed = append(changed, "teacher_profile")
+		}
+	} else {
+		cleanTP = current.TeacherProfile
 	}
 
 	var cleanMethods []models.PaymentMethod
@@ -316,6 +367,7 @@ func (s *Server) putAdminSettings(w http.ResponseWriter, r *http.Request) {
 		CenterHoursEn:   cleanHoursEn,
 		CenterMapURL:    cleanMap,
 		PaymentMethods:  cleanMethods,
+		TeacherProfile:  cleanTP,
 		UpdatedAt:       now,
 		UpdatedBy:       adm.ID,
 	}

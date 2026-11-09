@@ -15,6 +15,16 @@ type PaymentMethod struct {
 	NumberOrAddress string `bson:"number_or_address" json:"number_or_address"`
 }
 
+// TeacherProfile stores the instructor bio and titles edited in admin console.
+type TeacherProfile struct {
+	NameAr   string `bson:"name_ar" json:"name_ar"`
+	NameEn   string `bson:"name_en" json:"name_en"`
+	TitlesAr string `bson:"titles_ar" json:"titles_ar"`
+	TitlesEn string `bson:"titles_en" json:"titles_en"`
+	BioAr    string `bson:"bio_ar" json:"bio_ar"`
+	BioEn    string `bson:"bio_en" json:"bio_en"`
+}
+
 // AppSettings stores app-facing settings configured by the admin console (A1).
 type AppSettings struct {
 	ID              string          `bson:"_id" json:"-"`
@@ -28,6 +38,7 @@ type AppSettings struct {
 	CenterHoursEn   string          `bson:"center_hours_en" json:"center_hours_en"`
 	CenterMapURL    string          `bson:"center_map_url" json:"center_map_url"`
 	PaymentMethods  []PaymentMethod `bson:"payment_methods" json:"payment_methods"`
+	TeacherProfile  TeacherProfile  `bson:"teacher_profile" json:"teacher_profile"`
 	UpdatedAt       time.Time       `bson:"updated_at,omitempty" json:"updated_at,omitempty"`
 	UpdatedBy       string          `bson:"updated_by,omitempty" json:"updated_by,omitempty"`
 }

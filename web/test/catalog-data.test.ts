@@ -130,3 +130,61 @@ test("findSubject and pick", () => {
   assert.equal(pick({ ar: "عربي", en: "English" }, "en"), "English");
   assert.equal(pick({ ar: "عربي", en: "English" }, "ar"), "عربي");
 });
+
+test("parses full, partial, and empty teacher_profile", () => {
+  // 1. Full teacher profile
+  const full = parseCatalog({
+    study_types: [],
+    teacher_profile: {
+      name_ar: "وائل السعيد",
+      name_en: "Wael El Saeed",
+      titles_ar: "محاضر القانون المدني",
+      titles_en: "Civil Law Lecturer",
+      bio_ar: "نبذة بالعربي",
+      bio_en: "Bio in English",
+      extra_leaked_field: "SHOULD_NOT_LEAK",
+    },
+  });
+  assert.ok(full);
+  assert.deepEqual(full.teacherProfile, {
+    name: { ar: "وائل السعيد", en: "Wael El Saeed" },
+    titles: { ar: "محاضر القانون المدني", en: "Civil Law Lecturer" },
+    bio: { ar: "نبذة بالعربي", en: "Bio in English" },
+  });
+  assert.ok(!JSON.stringify(full).includes("SHOULD_NOT_LEAK"));
+
+  // 2. Partial teacher profile
+  const partial = parseCatalog({
+    study_types: [],
+    teacher_profile: {
+      name_ar: "د. أحمد",
+      name_en: "",
+      titles_ar: "مستشار",
+      titles_en: "",
+      bio_ar: "",
+      bio_en: "",
+    },
+  });
+  assert.ok(partial);
+  assert.deepEqual(partial.teacherProfile, {
+    name: { ar: "د. أحمد", en: "" },
+    titles: { ar: "مستشار", en: "" },
+    bio: { ar: "", en: "" },
+  });
+
+  // 3. Empty / missing teacher profile
+  const empty = parseCatalog({
+    study_types: [],
+  });
+  assert.ok(empty);
+  assert.equal(empty.teacherProfile, undefined);
+
+  // 4. Invalid shape teacher profile
+  const invalid = parseCatalog({
+    study_types: [],
+    teacher_profile: "not-an-object",
+  });
+  assert.ok(invalid);
+  assert.equal(invalid.teacherProfile, undefined);
+});
+

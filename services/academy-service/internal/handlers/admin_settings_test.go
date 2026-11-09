@@ -459,3 +459,80 @@ func TestWarnIfNoSupportWhatsApp(t *testing.T) {
 		t.Fatal("warned with a valid stored number")
 	}
 }
+
+func TestAdminSettings_TeacherProfile(t *testing.T) {
+	s, _ := newAdminTestServer(t, okVerify)
+
+	// Happy path: save valid teacher profile
+	validBody := map[string]any{
+		"show_prices":      true,
+		"support_whatsapp": "201012345678",
+		"teacher_profile": map[string]any{
+			"name_ar":   "وائل السعيد",
+			"name_en":   "Wael El Saeed",
+			"titles_ar": "أستاذ القانون",
+			"titles_en": "Law Lecturer",
+			"bio_ar":    "شرح شامل لكافة المواد القانونية.",
+			"bio_en":    "Comprehensive law lectures.",
+		},
+	}
+	rec := doAdminJSON(t, s, http.MethodPut, "/internal/admin/settings", validBody)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT valid teacher profile = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var res models.AppSettings
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.TeacherProfile.NameAr != "وائل السعيد" || res.TeacherProfile.BioEn != "Comprehensive law lectures." {
+		t.Fatalf("saved teacher profile mismatch: %+v", res.TeacherProfile)
+	}
+
+	// Length caps validation
+	cases := []struct {
+		field    string
+		length   int
+		wantCode string
+	}{
+		{"name_ar", 101, "invalid_teacher_name"},
+		{"name_en", 101, "invalid_teacher_name"},
+		{"titles_ar", 201, "invalid_teacher_titles"},
+		{"titles_en", 201, "invalid_teacher_titles"},
+		{"bio_ar", 2001, "invalid_teacher_bio"},
+		{"bio_en", 2001, "invalid_teacher_bio"},
+	}
+
+	for _, tc := range cases {
+		badBody := map[string]any{
+			"show_prices":      true,
+			"support_whatsapp": "201012345678",
+			"teacher_profile": map[string]any{
+				tc.field: strings.Repeat("a", tc.length),
+			},
+		}
+		badRec := doAdminJSON(t, s, http.MethodPut, "/internal/admin/settings", badBody)
+		if badRec.Code != http.StatusBadRequest {
+			t.Errorf("%s length %d: expected 400, got %d (%s)", tc.field, tc.length, badRec.Code, badRec.Body.String())
+		}
+		var errResp map[string]any
+		_ = json.Unmarshal(badRec.Body.Bytes(), &errResp)
+		if errResp["code"] != tc.wantCode {
+			t.Errorf("%s length %d: expected code %q, got %q", tc.field, tc.length, tc.wantCode, errResp["code"])
+		}
+	}
+
+	// Forbidden word check
+	for _, word := range []string{"vodafone cash", "فودافون كاش", "instapay"} {
+		fBody := map[string]any{
+			"show_prices":      true,
+			"support_whatsapp": "201012345678",
+			"teacher_profile": map[string]any{
+				"bio_ar": "دفع " + word + " متاح",
+			},
+		}
+		fRec := doAdminJSON(t, s, http.MethodPut, "/internal/admin/settings", fBody)
+		if fRec.Code != http.StatusBadRequest {
+			t.Errorf("forbidden word %q: expected 400, got %d (%s)", word, fRec.Code, fRec.Body.String())
+		}
+	}
+}

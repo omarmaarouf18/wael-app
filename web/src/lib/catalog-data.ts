@@ -39,8 +39,15 @@ export interface CatalogStudyType {
   levels: CatalogLevel[];
 }
 
+export interface TeacherProfile {
+  name: Text;
+  titles: Text;
+  bio: Text;
+}
+
 export interface Catalog {
   studyTypes: CatalogStudyType[];
+  teacherProfile?: TeacherProfile;
 }
 
 /** Ids and keys go into URLs: letters, digits, "-" and "_" only. */
@@ -131,6 +138,21 @@ function parseLevel(v: unknown): CatalogLevel | null {
   return { key, studyType, title, subjects };
 }
 
+function parseTeacherProfile(v: unknown): TeacherProfile | undefined {
+  if (!isObj(v)) return undefined;
+  const nameAr = str(v.name_ar) ?? "";
+  const nameEn = str(v.name_en) ?? "";
+  const titlesAr = str(v.titles_ar) ?? "";
+  const titlesEn = str(v.titles_en) ?? "";
+  const bioAr = str(v.bio_ar) ?? "";
+  const bioEn = str(v.bio_en) ?? "";
+  return {
+    name: { ar: nameAr, en: nameEn },
+    titles: { ar: titlesAr, en: titlesEn },
+    bio: { ar: bioAr, en: bioEn },
+  };
+}
+
 /**
  * Parses the catalog response. Returns null when the top-level shape is
  * wrong; a malformed level or subject is dropped on its own. A subject id
@@ -158,7 +180,8 @@ export function parseCatalog(raw: unknown): Catalog | null {
     }
     studyTypes.push({ key, title, levels });
   }
-  return { studyTypes };
+  const teacherProfile = parseTeacherProfile(raw.teacher_profile);
+  return { studyTypes, ...(teacherProfile ? { teacherProfile } : {}) };
 }
 
 /** Every subject in catalog order. */

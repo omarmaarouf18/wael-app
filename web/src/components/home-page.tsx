@@ -167,34 +167,45 @@ export async function HomePage({ lang }: { lang: Lang }) {
       </section>
 
       {/* 2. About the teacher */}
-      <section id="teacher" className={styles.section} aria-labelledby="teacher-title">
-        <div className={`${styles.container} ${styles.teacher}`}>
-          {/* The app's director portrait (v3, owner decision 2026-11-07). */}
-          <picture className={styles.portrait}>
-            <source type="image/avif" srcSet="/brand/teacher/wael-192.avif 192w, /brand/teacher/wael-384.avif 384w" sizes="(min-width: 768px) 12rem, 9rem" />
-            <source type="image/webp" srcSet="/brand/teacher/wael-192.webp 192w, /brand/teacher/wael-384.webp 384w" sizes="(min-width: 768px) 12rem, 9rem" />
-            <img
-              src="/brand/teacher/wael-384.jpg"
-              srcSet="/brand/teacher/wael-192.jpg 192w, /brand/teacher/wael-384.jpg 384w"
-              sizes="(min-width: 768px) 12rem, 9rem"
-              alt={c.teacher.portraitAlt}
-              width={384}
-              height={384}
-              loading="lazy"
-              decoding="async"
-              className={styles.portraitImg}
-            />
-          </picture>
-          <div>
-            <Eyebrow>{c.teacher.eyebrow}</Eyebrow>
-            <h2 id="teacher-title" className={styles.sectionTitle}>
-              {c.teacher.title}
-            </h2>
-            <p className={styles.sectionLead}>{c.teacher.lead}</p>
-            <Todo lang={lang}>{c.teacher.todoBio}</Todo>
-          </div>
-        </div>
-      </section>
+      {(() => {
+        const profile = catalog.ok ? catalog.catalog.teacherProfile : undefined;
+        const nameVal = profile?.name ? pick(profile.name, lang).trim() : "";
+        const teacherName = nameVal || (lang === "en" ? "Ustaz Wael El Saeed" : "الأستاذ وائل السعيد");
+        const heading = nameVal ? (lang === "en" ? `About ${nameVal}` : `عن ${nameVal}`) : c.teacher.title;
+        const titles = profile?.titles ? pick(profile.titles, lang).trim() : "";
+        const bio = profile?.bio ? pick(profile.bio, lang).trim() : "";
+
+        return (
+          <section id="teacher" className={styles.section} aria-labelledby="teacher-title">
+            <div className={`${styles.container} ${styles.teacher}`}>
+              {/* The app's director portrait (v3, owner decision 2026-11-07). */}
+              <picture className={styles.portrait}>
+                <source type="image/avif" srcSet="/brand/teacher/wael-192.avif 192w, /brand/teacher/wael-384.avif 384w" sizes="(min-width: 768px) 12rem, 9rem" />
+                <source type="image/webp" srcSet="/brand/teacher/wael-192.webp 192w, /brand/teacher/wael-384.webp 384w" sizes="(min-width: 768px) 12rem, 9rem" />
+                <img
+                  src="/brand/teacher/wael-384.jpg"
+                  srcSet="/brand/teacher/wael-192.jpg 192w, /brand/teacher/wael-384.jpg 384w"
+                  sizes="(min-width: 768px) 12rem, 9rem"
+                  alt={teacherName}
+                  width={384}
+                  height={384}
+                  loading="lazy"
+                  decoding="async"
+                  className={styles.portraitImg}
+                />
+              </picture>
+              <div>
+                <Eyebrow>{c.teacher.eyebrow}</Eyebrow>
+                <h2 id="teacher-title" className={styles.sectionTitle}>
+                  {heading}
+                </h2>
+                {titles ? <p className={styles.teacherTitles}>{titles}</p> : null}
+                {bio ? <p className={styles.teacherBio}>{bio}</p> : null}
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* 3. Subjects by year (live catalog) */}
       <section id="subjects" className={`${styles.section} ${styles.sectionAlt}`} aria-labelledby="subjects-title">
