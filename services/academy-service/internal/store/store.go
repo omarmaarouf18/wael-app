@@ -121,6 +121,11 @@ type Store interface {
 	// It reports whether the row changed; a row in another status is a
 	// no-op (false, nil), a missing row is ErrNotFound.
 	DecideRequest(ctx context.Context, id, fromStatus, toStatus, decidedBy string, decidedAt time.Time, reason string) (bool, error)
+	// UndoAccept puts an accepted request back to pending, but only when it
+	// is still the accept made by decidedBy at decidedAt (the claim of one
+	// accept call), clearing decided_at and decided_by. It reports whether
+	// the row changed; any other state is a no-op (false, nil).
+	UndoAccept(ctx context.Context, id, decidedBy string, decidedAt time.Time) (bool, error)
 
 	// Orders (2026-11-05 orders brief, ADR-0014 W4/C2).
 	// CreateOrderWithRequests creates one order and its requests all-or-none.
@@ -1054,6 +1059,26 @@ func (s *MemoryStore) DecideRequest(_ context.Context, id, fromStatus, toStatus,
 		}
 	}
 	return false, ErrNotFound
+}
+
+// UndoAccept reverts this accept call's claim (accepted -> pending).
+func (s *MemoryStore) UndoAccept(_ context.Context, id, decidedBy string, decidedAt time.Time) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, r := range s.purchaseRequests {
+		if r.ID != id {
+			continue
+		}
+		if r.Status != models.RequestStatusAccepted || r.DecidedBy != decidedBy || r.DecidedAt == nil || !r.DecidedAt.Equal(decidedAt) {
+			return false, nil
+		}
+		r.Status = models.RequestStatusPending
+		r.DecidedAt = nil
+		r.DecidedBy = ""
+		return true, nil
+	}
+	return false, nil
 }
 
 // CreateOrderWithRequests creates one order and its requests all-or-none.

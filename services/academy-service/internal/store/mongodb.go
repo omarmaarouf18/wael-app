@@ -1298,6 +1298,29 @@ func (s *MongoStore) DecideRequest(ctx context.Context, id, fromStatus, toStatus
 	return false, nil
 }
 
+// UndoAccept reverts this accept call's claim (accepted -> pending). The
+// filter matches only the accept made by decidedBy at decidedAt, so it can
+// never undo another admin's decision. decidedAt is truncated to the
+// millisecond, the precision BSON dates store.
+func (s *MongoStore) UndoAccept(ctx context.Context, id, decidedBy string, decidedAt time.Time) (bool, error) {
+	res, err := s.db.Collection("purchase_requests").UpdateOne(ctx,
+		bson.M{
+			"_id":        id,
+			"status":     models.RequestStatusAccepted,
+			"decided_by": decidedBy,
+			"decided_at": decidedAt.Truncate(time.Millisecond),
+		},
+		bson.M{
+			"$set":   bson.M{"status": models.RequestStatusPending},
+			"$unset": bson.M{"decided_at": "", "decided_by": ""},
+		},
+	)
+	if err != nil {
+		return false, fmt.Errorf("store: undo accept: %w", err)
+	}
+	return res.ModifiedCount > 0, nil
+}
+
 // CreateOrderWithRequests creates one order and its requests all-or-none.
 // MongoDB is standalone here (SPEC R4), so there is no transaction: the order
 // is inserted first, and any failure removes the partial requests and the

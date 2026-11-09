@@ -298,16 +298,51 @@ func (s *Server) acceptRequestCore(ctx context.Context, adm *AdminIdentity, reqI
 		return decisionFailure(http.StatusConflict, "subject_expired", "انتهت فترة التسجيل في هذه المادة", "Subject access has expired")
 	}
 
-	// 2. Upsert the entitlement (idempotent): source=request, request_id,
+	// 2. Claim the request: compare-and-set pending -> accepted (decided_at,
+	// decided_by) BEFORE anything is granted (SPEC Section 7 R4, amended
+	// 2026-11-09). A concurrent reject or accept that wins this CAS makes
+	// this call a clean 409 with nothing written, so a rejected request can
+	// never end up with an entitlement or a payment record.
+	ok, err := s.Store.DecideRequest(ctx, pr.ID, models.RequestStatusPending, models.RequestStatusAccepted, adm.ID, now, "")
+	if err != nil {
+		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
+	}
+	if !ok {
+		return decisionFailure(http.StatusConflict, "request_not_pending", "الطلب لم يعد معلقًا", "Request is not pending")
+	}
+
+	// undo gives the claim back when a later step fails: the entitlement this
+	// call created (if any) is revoked first, then the request returns to
+	// pending, so accepting again is safe and a reject afterwards leaves no
+	// access behind. It runs on its own deadline so an expired request (or
+	// bulk) context cannot skip it.
+	undo := func(createdEntID string) {
+		undoCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
+		defer cancel()
+		if createdEntID != "" {
+			if _, rErr := s.Store.RevokeEntitlement(undoCtx, createdEntID, adm.ID, "accept did not complete", time.Now().UTC()); rErr != nil {
+				s.logAcceptUndoFailure(adm, pr.ID, "revoke entitlement", rErr)
+			}
+		}
+		reverted, uErr := s.Store.UndoAccept(undoCtx, pr.ID, adm.ID, now)
+		if uErr != nil {
+			s.logAcceptUndoFailure(adm, pr.ID, "revert request", uErr)
+		} else if !reverted {
+			s.logAcceptUndoFailure(adm, pr.ID, "revert request", errors.New("request no longer holds this accept"))
+		}
+	}
+
+	// 3. Upsert the entitlement (idempotent): source=request, request_id,
 	// expires_at = subject.AccessExpiresAt (D21), granted_by = admin.ID.
 	// If student already holds an active entitlement for that subject (for example
 	// a manual grant), reuse it: no second entitlement and no second payment record.
 	activeEnt, err := s.Store.GetActiveEntitlement(ctx, pr.UserID, pr.SubjectID)
 	if err != nil {
+		undo("")
 		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 	}
 
-	var entID string
+	var entID, createdEntID string
 	skipPayment := false
 	if activeEnt != nil {
 		entID = activeEnt.ID
@@ -331,20 +366,24 @@ func (s *Server) acceptRequestCore(ctx context.Context, adm *AdminIdentity, reqI
 			if errors.Is(err, store.ErrDuplicate) {
 				reloaded, rErr := s.Store.GetActiveEntitlement(ctx, pr.UserID, pr.SubjectID)
 				if rErr != nil || reloaded == nil {
+					undo("")
 					return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 				}
 				entID = reloaded.ID
 			} else if errors.Is(err, store.ErrSubjectExpired) {
+				undo("")
 				return decisionFailure(http.StatusConflict, "subject_expired", "انتهت فترة التسجيل في هذه المادة", "Subject access has expired")
 			} else {
+				undo("")
 				return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 			}
 		} else {
 			entID = newEntID
+			createdEntID = newEntID
 		}
 	}
 
-	// 3. Insert the payment record for that entitlement.
+	// 4. Insert the payment record for that entitlement.
 	// A duplicate on entitlement_id means it was already recorded: treat it as success.
 	if !skipPayment && entID != "" {
 		payID, _ := jwtutil.GenerateUUID()
@@ -361,17 +400,9 @@ func (s *Server) acceptRequestCore(ctx context.Context, adm *AdminIdentity, reqI
 			RecordedAt:    now,
 		}
 		if err := s.Store.CreatePaymentRecord(ctx, payRec); err != nil && !errors.Is(err, store.ErrDuplicate) {
+			undo(createdEntID)
 			return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
 		}
-	}
-
-	// 4. Compare-and-set the request from pending to accepted (decided_at, decided_by).
-	ok, err := s.Store.DecideRequest(ctx, pr.ID, models.RequestStatusPending, models.RequestStatusAccepted, adm.ID, now, "")
-	if err != nil {
-		return decisionFailure(http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "الخدمة غير متاحة مؤقتًا", "Service temporarily unavailable")
-	}
-	if !ok {
-		return decisionFailure(http.StatusConflict, "request_not_pending", "الطلب لم يعد معلقًا", "Request is not pending")
 	}
 
 	// 5. Close the order once its last pending request is decided. Closing is
@@ -502,6 +533,15 @@ func (s *Server) rejectRequestCore(ctx context.Context, adm *AdminIdentity, reqI
 	})
 
 	return decisionResult{OK: true, Status: models.RequestStatusRejected, Request: pr, Subject: subj}
+}
+
+// logAcceptUndoFailure records a failed undo of an accept claim with ids
+// only. The request may then stay accepted without its entitlement or
+// payment record and needs an admin look; it never changes the response.
+func (s *Server) logAcceptUndoFailure(adm *AdminIdentity, reqID, step string, err error) {
+	cleanID := strings.ReplaceAll(strings.ReplaceAll(reqID, "\r", ""), "\n", "")
+	// #nosec G706 -- cleanID sanitized of CR/LF; step is a fixed string
+	log.Printf("[ERROR] accept undo failed step=%s actor_id=%s request_id=%s: %v", step, adm.ID, cleanID, err)
 }
 
 // logOrderCloseFailure records a best-effort order close failure. The decision
