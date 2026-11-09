@@ -132,7 +132,9 @@ export async function HomePage({ lang }: { lang: Lang }) {
           <div className={styles.heroText}>
             <Eyebrow lang={lang === "ar" ? otherLang : undefined}>{c.eyebrow}</Eyebrow>
             <h1 id="hero-title" className={styles.heroTitle}>
-              {c.heroTitle} <span className={styles.heroAccent}>{c.heroAccent}</span>
+              {c.heroHeading.prefix}
+              <span className={styles.heroAccent}>{c.heroHeading.accent}</span>
+              {c.heroHeading.suffix}
             </h1>
             <p className={styles.heroLead}>{c.heroLead}</p>
             <div className={styles.actions}>
@@ -271,29 +273,54 @@ export async function HomePage({ lang }: { lang: Lang }) {
             ))}
           </ul>
           <div className={styles.storeLinks}>
-            <a href={STORE_URLS.android} className={styles.storeLink} rel="noopener noreferrer" target="_blank" lang="en">
-              {c.app.android}
+            <a
+              href={STORE_URLS.android}
+              className={styles.playBadgeLink}
+              rel="noopener noreferrer"
+              target="_blank"
+              aria-label={lang === "ar" ? "احصل عليه من Google Play" : "Get it on Google Play"}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lang === "ar" ? "/brand/play-badge-ar.png" : "/brand/play-badge-en.png"}
+                alt={lang === "ar" ? "احصل عليه من Google Play" : "Get it on Google Play"}
+                width={162}
+                height={48}
+                loading="lazy"
+                decoding="async"
+                className={styles.playBadgeImg}
+              />
             </a>
           </div>
-          <Todo lang={lang}>{c.app.todoBadges}</Todo>
         </div>
       </section>
 
-      {/* 6. The center and 7. Testimonials: omitted on the live site until the owner gives the facts. */}
-      {showTodoBlocks() ? (
-        <section id="center" className={styles.section} aria-labelledby="center-title">
-          <div className={styles.container}>
-            <h2 id="center-title" className={styles.sectionTitle}>
-              {c.center.title}
-            </h2>
-            <Todo lang={lang}>{c.center.todo}</Todo>
-            <h2 className={`${styles.sectionTitle} ${styles.spacedTitle}`}>{c.testimonials.title}</h2>
-            <Todo lang={lang}>{c.testimonials.todo}</Todo>
+      {/* 6. Academy address & map (item 9) */}
+      <section id="academy" className={styles.section} aria-labelledby="academy-title">
+        <div className={styles.container}>
+          <Eyebrow>{c.academy.eyebrow}</Eyebrow>
+          <h2 id="academy-title" className={styles.sectionTitle}>
+            {c.academy.title}
+          </h2>
+          <p className={styles.sectionLead}>{c.academy.lead}</p>
+          <div className={styles.academyCard}>
+            <h3 className={styles.academyName}>{c.academy.name}</h3>
+            <p className={styles.academyAddress}>{c.academy.address}</p>
+            <p className={styles.academyActions}>
+              <a
+                href={c.academy.mapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.mapLink}
+              >
+                {c.academy.mapLinkText}
+              </a>
+            </p>
           </div>
-        </section>
-      ) : null}
+        </div>
+      </section>
 
-      {/* 8. FAQ: only answered questions on the live site */}
+      {/* 7. FAQ (item 12) */}
       <section id="faq" className={`${styles.section} ${styles.sectionAlt}`} aria-labelledby="faq-title">
         <div className={`${styles.container} ${styles.narrow}`}>
           <Eyebrow>{c.faq.eyebrow}</Eyebrow>
@@ -301,19 +328,22 @@ export async function HomePage({ lang }: { lang: Lang }) {
             {c.faq.title}
           </h2>
           <div className={styles.faqList}>
-            {c.faq.items.map((item) =>
-              item.a !== null ? (
-                <details key={item.q} className={styles.faqItem}>
-                  <summary className={styles.faqQuestion}>{item.q}</summary>
-                  <p className={styles.faqAnswer}>{item.a}</p>
-                </details>
-              ) : showTodoBlocks() ? (
-                <details key={item.q} className={styles.faqItem}>
-                  <summary className={styles.faqQuestion}>{item.q}</summary>
-                  <Todo lang={lang}>{item.todo}</Todo>
-                </details>
-              ) : null,
-            )}
+            {c.faq.items.map((item) => (
+              <details key={item.q} className={styles.faqItem}>
+                <summary className={styles.faqQuestion}>{item.q}</summary>
+                <p className={styles.faqAnswer}>
+                  {item.a}
+                  {item.link ? (
+                    <>
+                      {" "}
+                      <Link href={localePath(lang, item.link.href)} className={styles.textLink}>
+                        {item.link.text}
+                      </Link>
+                    </>
+                  ) : null}
+                </p>
+              </details>
+            ))}
           </div>
         </div>
       </section>

@@ -434,6 +434,79 @@
   border-color: var(--text-primary);
 }
 
+.playBadgeLink {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.playBadgeLink:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.playBadgeImg {
+  display: block;
+  height: 48px;
+  width: auto;
+  border-radius: var(--radius-sm);
+}
+
+/* ── 6. Academy address & map ─────────────────────────────────── */
+.academyCard {
+  margin-block-start: var(--space-xl);
+  padding: var(--space-xl);
+  background: var(--surface-elevated);
+  border: 1px solid var(--prominent-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--elevation-card);
+  max-width: 600px;
+}
+
+.academyName {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.academyAddress {
+  margin: 0 0 var(--space-lg);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+.academyActions {
+  margin: 0;
+}
+
+.mapLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding-inline: var(--space-xl);
+  background: var(--surface-high);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-xl);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.mapLink:hover {
+  border-color: var(--text-primary);
+}
+
+.mapLink:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 .screens {
   display: flex;
   align-items: flex-start;

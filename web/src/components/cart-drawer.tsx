@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import {
   ApiError,
@@ -379,6 +380,10 @@ export function CartDrawer({ lang }: CartDrawerProps) {
                       <a href={legalPrivacyUrl} target="_blank" rel="noopener noreferrer">
                         {checkoutText.privacyLink}
                       </a>
+                      {lang === "ar" ? "، و" : " and "}
+                      <Link href={localePath(lang, "/refund")} target="_blank">
+                        {lang === "ar" ? "سياسة الاسترداد" : "Refund Policy"}
+                      </Link>
                       .
                     </p>
 

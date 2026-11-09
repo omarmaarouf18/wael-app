@@ -89,6 +89,8 @@ Byte-identical copies of assets listed above, so the website matches the app
 | `web/public/app/play-{ar,en}-{1,2}-{360,540}.{avif,webp,jpg}` | the Google Play listing screenshots (`play_ar_1_home.png`, `play_ar_2_courses.png`, `play_en_1_home.png`, `play_en_2_courses.png`, 1080 px wide, made 2026-10-12 from the app; kept in the untracked `Claude outputs/store-assets/screenshots/`, not in git) | Resized copies (sharp 0.35.5, 2026-11-07) — the app section of the landing page | Owner decision 2026-11-07: use the existing Google Play store screenshots. They show the app's own screens with no personal data. |
 | `web/public/brand/og-ar.jpg`, `og-en.jpg` | the hero copy above and `logo-512.png` | Open Graph cards (1200 x 630) rendered 2026-11-07 in headless Chrome from the brand art, the logo and the site's own fonts and wording | As their sources (owner-approved 2026-10-02; fonts OFL) |
 | `web/public/favicon.ico`, `web/public/brand/favicon-32.png`, `icon-192.png`, `apple-touch-icon.png`, `logo-72.png` | `web/public/brand/logo-512.png` | Resized copies (sharp, ImageMagick for the .ico), 2026-11-07: favicon set and the 36 px header logo at 2x | As `logo-512.png` (owner-approved 2026-10-02) |
+| `web/public/brand/play-badge-ar.png`, `play-badge-en.png` | none (official store badges) | Downloaded 2026-11-09 unmodified from Google Play Badge Generator (`https://play.google.com/intl/en_us/badges/static/images/badges/{ar,en}_badge_web_generic.png`) | Google brand permissions (Google Play badge guidelines) |
+
 
 ## Removed assets
 

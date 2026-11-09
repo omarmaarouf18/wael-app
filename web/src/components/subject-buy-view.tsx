@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 import {
   apiGet,
@@ -423,6 +424,10 @@ export function SubjectBuySection({
               >
                 {t.auth.signup.privacyLink}
               </a>
+              {lang === "ar" ? "، و" : " and "}
+              <Link href={localePath(lang, "/refund")} target="_blank" className={styles.inlineLink}>
+                {lang === "ar" ? "سياسة الاسترداد" : "Refund Policy"}
+              </Link>
               .
             </p>
 

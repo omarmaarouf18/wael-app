@@ -109,6 +109,18 @@ export function SiteShell({ lang, path, children, fullBleed = false }: SiteShell
               {t.brandEyebrow}
             </span>
             <p className={styles.footerLine}>{t.footer.brandLine}</p>
+            <p className={styles.footerAddress}>
+              {lang === "ar" ? "61 - شارع 18 - توريل الجديدة - المنصورة" : "61 -18St - new toril - Mansoura"}
+              {" · "}
+              <a
+                href="https://maps.app.goo.gl/ASegpJDpQALSDf3D6"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.footerMapLink}
+              >
+                {lang === "ar" ? "خرائط Google" : "Google Maps"}
+              </a>
+            </p>
           </div>
           <nav className={styles.footerCol} aria-label={t.footer.explore}>
             <h2 className={styles.footerTitle}>{t.footer.explore}</h2>
@@ -129,8 +141,23 @@ export function SiteShell({ lang, path, children, fullBleed = false }: SiteShell
           <div className={styles.footerCol}>
             <h2 className={styles.footerTitle}>{t.footer.app}</h2>
             <div className={styles.footerStores}>
-              <a href={STORE_URLS.android} target="_blank" rel="noopener noreferrer" className={styles.storeLink} lang="en">
-                Google Play
+              <a
+                href={STORE_URLS.android}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.playBadgeLink}
+                aria-label={lang === "ar" ? "احصل عليه من Google Play" : "Get it on Google Play"}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lang === "ar" ? "/brand/play-badge-ar.png" : "/brand/play-badge-en.png"}
+                  alt={lang === "ar" ? "احصل عليه من Google Play" : "Get it on Google Play"}
+                  width={135}
+                  height={40}
+                  className={styles.playBadgeImg}
+                  loading="lazy"
+                  decoding="async"
+                />
               </a>
             </div>
             <h2 className={styles.footerTitle}>{t.footer.language}</h2>

@@ -1,7 +1,7 @@
-import { PlaceholderPage, placeholderMetadata } from "@/components/placeholder-page";
+import { RefundPage, refundMetadata } from "@/components/refund-page";
 
-export const metadata = placeholderMetadata("en", "refund");
+export const metadata = refundMetadata("en");
 
 export default function Page() {
-  return <PlaceholderPage lang="en" page="refund" path="/refund" />;
+  return <RefundPage lang="en" />;
 }

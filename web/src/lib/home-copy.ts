@@ -1,22 +1,26 @@
-// Landing page wording (docs/web/landing-plan.md, approved for step 2 on
-// 2026-11-07). Arabic first. Nothing here is a fact the owner has not given
-// or the system does not already define: activation time, the teacher's bio
-// and titles, the center and testimonials are TODO blocks (lib/site-env.ts),
-// never invented text.
+// Landing page wording (docs/web/landing-plan.md, owner answers 2026-11-07).
+// Arabic first. The business is always called الأكاديمية / the academy
+// (EL METR Academy), never «السنتر» / "the center". Everything here is built
+// only on confirmed owner answers and system reality; nothing is invented.
 
 import type { Lang } from "./api";
 
 export interface FaqItem {
   q: string;
-  /** null: the owner has not answered yet; shown only as a TODO block. */
   a: string | null;
   todo?: string;
+  link?: { href: string; text: string };
 }
 
 export interface HomeCopy {
   metaTitle: string;
   metaDescription: string;
   eyebrow: string;
+  heroHeading: {
+    prefix: string;
+    accent: string;
+    suffix: string;
+  };
   heroTitle: string;
   heroAccent: string;
   heroLead: string;
@@ -51,6 +55,15 @@ export interface HomeCopy {
     android: string;
     todoBadges: string;
   };
+  academy: {
+    eyebrow: string;
+    title: string;
+    lead: string;
+    name: string;
+    address: string;
+    mapUrl: string;
+    mapLinkText: string;
+  };
   center: { title: string; todo: string };
   testimonials: { title: string; todo: string };
   faq: { eyebrow: string; title: string; items: FaqItem[] };
@@ -74,11 +87,16 @@ function arSubjects(n: number): string {
 
 const ar: HomeCopy = {
   metaTitle: "أكاديمية المتر — شرح مواد كلية الحقوق",
-  metaDescription: "فيديوهات ومذكرات لكل فرقة ودبلومة، تذاكرها على موبايلك في أي وقت.",
+  metaDescription: "شرح مواد كلية الحقوق لكل الفرق — في الأكاديمية وعلى التطبيق.",
   eyebrow: "EL METR ACADEMY",
-  heroTitle: "شرح مواد كلية الحقوق…",
-  heroAccent: "مع EL\u00a0METR Academy",
-  heroLead: "فيديوهات ومذكرات لكل فرقة ودبلومة، تذاكرها على موبايلك في أي وقت.",
+  heroHeading: {
+    prefix: "شرح مواد كلية الحقوق لكل الفرق — في ",
+    accent: "الأكاديمية",
+    suffix: " وعلى التطبيق.",
+  },
+  heroTitle: "شرح مواد كلية الحقوق لكل الفرق — في الأكاديمية وعلى التطبيق.",
+  heroAccent: "الأكاديمية",
+  heroLead: "اختار مادتك، ادفع أونلاين أو في الأكاديمية، وذاكر من موبايلك.",
   heroArtAlt: "شخصية EL METR: رجل ببدلة سوداء وقبعة وكرافتة حمراء",
   ctaBrowse: "تصفّح المواد",
   ctaApp: "حمّل التطبيق",
@@ -103,43 +121,86 @@ const ar: HomeCopy = {
     items: [
       {
         title: "اختار المادة وادفع",
-        body: "أونلاين بتحويل (محفظة أو InstaPay) من الموقع، أو في السنتر.",
+        body: "أونلاين بتحويل من الموقع، أو في الأكاديمية.",
       },
-      { title: "المادة بتتفعّل على حسابك", body: "بعد ما نراجع التحويل." },
-      { title: "ذاكر من التطبيق", body: "الفيديوهات والمذكرات على التطبيق بنفس الحساب." },
+      { title: "المادة بتتفعّل على حسابك", body: "بعد ما الأكاديمية تراجع التحويل." },
+      { title: "ذاكر من التطبيق", body: "الفيديوهات والملفات على تطبيق EL METR Academy بنفس الحساب." },
     ],
-    todoActivation: "مدة التفعيل المعتادة (مثلًا «خلال ٢٤ ساعة») — بند ٥ في خطة الصفحة.",
+    todoActivation: "",
   },
   app: {
     eyebrow: "التطبيق",
     title: "كل محاضراتك في مكان واحد",
     lead: "فيديوهات ومذكرات مرتبة لكل مادة، وحسابك وأجهزتك تحت إيدك.",
     android: "Google Play",
-    todoBadges: "شارة Google Play الرسمية — بند ٨. (رابط تطبيق iPhone مخفي حتى يصبح متاحًا.)",
+    todoBadges: "",
+  },
+  academy: {
+    eyebrow: "المقر",
+    title: "مقر الأكاديمية",
+    lead: "تقدر تدفع وتفعّل موادك وتحضر في مقر الأكاديمية.",
+    name: "المتر اكاديمي",
+    address: "61 - شارع 18 - توريل الجديدة - المنصورة",
+    mapUrl: "https://maps.app.goo.gl/ASegpJDpQALSDf3D6",
+    mapLinkText: "عرض على خرائط Google",
   },
   center: {
-    title: "السنتر",
-    todo: "عنوان السنتر ومواعيده ورابط الخريطة ورقم التواصل وصور — بندا ٩ و١٠. القسم لا يظهر في الموقع الحقيقي بدونها.",
+    title: "الأكاديمية",
+    todo: "",
   },
   testimonials: {
     title: "آراء الطلاب",
-    todo: "آراء حقيقية بموافقة مكتوبة من أصحابها — بند ١١. القسم لا يظهر بدونها.",
+    todo: "",
   },
   faq: {
     eyebrow: "أسئلة",
     title: "أسئلة شائعة",
     items: [
       {
-        q: "الدفع بيتم إزاي؟",
-        a: "ضيف المواد للسلة، وحوّل المبلغ لمحفظة أو InstaPay من اللي بتظهر لك وقت الدفع، وبعدين ابعت رقم التحويل والرقم اللي حوّلت منه والمبلغ. وتقدر كمان تدفع في السنتر.",
+        q: "إزاي أشتري مادة؟",
+        a: "ضيف المادة للسلة، حوّل المبلغ على واحدة من طرق الدفع اللي هتظهرلك في صفحة الدفع، واكتب رقم العملية والرقم اللي حوّلت منه. الأكاديمية بتراجع التحويل وتفعّل المادة على حسابك.",
       },
-      { q: "التفعيل بياخد قد إيه؟", a: null, todo: "إجابة المالك — بند ١٢." },
       {
-        q: "أقدر أذاكر على كام جهاز؟",
-        a: "على جهازين بحد أقصى في نفس الوقت بنفس الحساب؛ لو دخلت من جهاز تالت، أقدم جهاز بيخرج. استخدام الموقع مش محسوب.",
+        q: "المادة بتتفعّل إمتى؟",
+        a: "بعد ما الأكاديمية تراجع التحويل. تقدر تتابع حالة كل مادة من «طلباتي» في حسابك.",
       },
-      { q: "أنا بذاكر في السنتر، أعمل إيه؟", a: null, todo: "إجابة المالك — بند ١٢." },
-      { q: "لو التحويل اتعمل غلط؟", a: null, todo: "إجابة المالك وسياسة الاسترداد — بندا ١٢ و١٣." },
+      {
+        q: "ينفع أشتري كذا مادة مرة واحدة؟",
+        a: "أيوه، ضيفهم كلهم للسلة وادفع بتحويل واحد.",
+      },
+      {
+        q: "هذاكر فين؟",
+        a: "على تطبيق EL METR Academy. الموقع للشراء وإدارة حسابك، والفيديوهات والملفات على التطبيق بس.",
+      },
+      {
+        q: "أنا بحضر في الأكاديمية، أعمل إيه؟",
+        a: "اعمل حساب على التطبيق، والأكاديمية بتفعّل موادك على حسابك.",
+      },
+      {
+        q: "ينفع أستخدم حسابي على كام جهاز؟",
+        a: "على جهازين في نفس الوقت. لو دخلت من جهاز تالت، أقدم جهاز بيخرج تلقائيًا.",
+      },
+      {
+        q: "المادة متاحة لحد إمتى؟",
+        a: "كل مادة مكتوب في صفحتها هي متاحة لحد إمتى.",
+      },
+      {
+        q: "طلبي اترفض، أعمل إيه؟",
+        a: "هتلاقي سبب الرفض في «طلباتي». لو عندك استفسار عن التحويل، تواصل مع الأكاديمية.",
+      },
+      {
+        q: "فيه استرداد؟",
+        a: "مفيش استرداد من خلال الموقع. لأي طلب استرداد تواصل مع الأكاديمية مباشرة.",
+        link: { href: "/refund", text: "تفاصيل سياسة الاسترداد" },
+      },
+      {
+        q: "نسيت كلمة السر؟",
+        a: "استخدم «نسيت كلمة السر» في صفحة الدخول.",
+      },
+      {
+        q: "أغيّر رقم تليفوني إزاي؟",
+        a: "من «حسابي»، ومسموح بتغييره مرة كل 30 يوم.",
+      },
     ],
   },
   closing: { title: "جاهز تبدأ؟", lead: "اختار مادتك وابدأ المذاكرة من التطبيق." },
@@ -147,11 +208,16 @@ const ar: HomeCopy = {
 
 const en: HomeCopy = {
   metaTitle: "EL METR Academy — Law school subjects, explained",
-  metaDescription: "Videos and notes for every year and diploma, on your phone, any time.",
+  metaDescription: "Law school subjects explained, for every year — at the academy and in the app.",
   eyebrow: "EL METR ACADEMY",
-  heroTitle: "Law school subjects, explained",
-  heroAccent: "with EL\u00a0METR Academy",
-  heroLead: "Videos and notes for every year and diploma, on your phone, any time.",
+  heroHeading: {
+    prefix: "Law school subjects explained, for every year — at the ",
+    accent: "academy",
+    suffix: " and in the app.",
+  },
+  heroTitle: "Law school subjects explained, for every year — at the academy and in the app.",
+  heroAccent: "academy",
+  heroLead: "Pick your subject, pay online or at the academy, and study on your phone.",
   heroArtAlt: "The EL METR character: a man in a black suit, hat and red tie",
   ctaBrowse: "Browse subjects",
   ctaApp: "Get the app",
@@ -174,42 +240,85 @@ const en: HomeCopy = {
     eyebrow: "Steps",
     title: "How to start",
     items: [
-      { title: "Choose and pay", body: "Online by transfer (wallet or InstaPay) on this site, or at the center." },
-      { title: "The subject is activated on your account", body: "After we check the transfer." },
-      { title: "Study in the app", body: "Videos and notes, same account." },
+      { title: "Choose and pay", body: "Online by transfer on this site, or at the academy." },
+      { title: "The subject is activated on your account", body: "After the academy checks the transfer." },
+      { title: "Study in the app", body: "Videos and files in the EL METR Academy app, same account." },
     ],
-    todoActivation: 'Typical activation time (e.g. "within 24 hours") — plan item 5.',
+    todoActivation: "",
   },
   app: {
     eyebrow: "The app",
     title: "All your lectures in one place",
     lead: "Videos and notes organised by subject, and your account in your hands.",
     android: "Google Play",
-    todoBadges: "The official Google Play badge — item 8. (The iPhone app link stays hidden until it is live.)",
+    todoBadges: "",
+  },
+  academy: {
+    eyebrow: "Location",
+    title: "Academy Location",
+    lead: "You can pay, activate subjects and attend classes in person at the academy.",
+    name: "El Metr Academy",
+    address: "61 -18St - new toril - Mansoura",
+    mapUrl: "https://maps.app.goo.gl/ASegpJDpQALSDf3D6",
+    mapLinkText: "View on Google Maps",
   },
   center: {
-    title: "The center",
-    todo: "Center address, hours, map link, contact number and photos — items 9 and 10. The section is not shown on the live site without them.",
+    title: "The academy",
+    todo: "",
   },
   testimonials: {
     title: "What students say",
-    todo: "Real quotes with their authors' written consent — item 11. The section is not shown without them.",
+    todo: "",
   },
   faq: {
     eyebrow: "Questions",
     title: "FAQ",
     items: [
       {
-        q: "How does payment work?",
-        a: "Add subjects to your cart, transfer the amount to one of the wallets or the InstaPay address shown at checkout, then send the transfer reference, the number you paid from and the amount. You can also pay at the center.",
+        q: "How do I buy a subject?",
+        a: "Add it to your cart, transfer the amount using one of the payment methods shown at checkout, then enter the transfer reference and the number you paid from. The academy checks the transfer and activates the subject on your account.",
       },
-      { q: "How long does activation take?", a: null, todo: "Owner's answer — item 12." },
       {
-        q: "On how many devices can I study?",
-        a: "Up to two devices at a time on one account; signing in on a third signs out the oldest. Using this website does not count.",
+        q: "When is my subject activated?",
+        a: "As soon as the academy has checked your transfer. Follow each subject's status under \"My orders\" in your account.",
       },
-      { q: "I study at the center — what do I do?", a: null, todo: "Owner's answer — item 12." },
-      { q: "What if my transfer was wrong?", a: null, todo: "Owner's answer and the refund policy — items 12 and 13." },
+      {
+        q: "Can I buy several subjects at once?",
+        a: "Yes. Add them all to the cart and pay with one transfer.",
+      },
+      {
+        q: "Where do I study?",
+        a: "In the EL METR Academy app. The website is for buying and managing your account; videos and files are in the app only.",
+      },
+      {
+        q: "I attend classes at the academy. What do I do?",
+        a: "Create an account in the app; the academy activates your subjects on it.",
+      },
+      {
+        q: "On how many devices can I use my account?",
+        a: "Two at the same time. Signing in on a third device signs out the oldest one.",
+      },
+      {
+        q: "How long can I access a subject?",
+        a: "Each subject page shows the date it is available until.",
+      },
+      {
+        q: "My order was rejected. What now?",
+        a: "The reason is shown under \"My orders\". For questions about your transfer, contact the academy.",
+      },
+      {
+        q: "Can I get a refund?",
+        a: "There are no refunds through the website. Contact the academy directly for any refund request.",
+        link: { href: "/en/refund", text: "Refund policy details" },
+      },
+      {
+        q: "Forgot your password?",
+        a: "Use \"Forgot password\" on the sign-in page.",
+      },
+      {
+        q: "How do I change my phone number?",
+        a: "From \"My account\"; it can be changed once every 30 days.",
+      },
     ],
   },
   closing: { title: "Ready to start?", lead: "Pick your subject and start studying in the app." },

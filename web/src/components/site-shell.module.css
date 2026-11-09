@@ -380,6 +380,42 @@
   gap: var(--space-sm);
 }
 
+.footerAddress {
+  margin: var(--space-md) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-small);
+  line-height: var(--lh-body);
+}
+
+.footerMapLink {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.footerMapLink:hover {
+  color: var(--crimson-hover);
+}
+
+.playBadgeLink {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+
+.playBadgeLink:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.playBadgeImg {
+  display: block;
+  height: 40px;
+  width: auto;
+  border-radius: var(--radius-sm);
+}
+
 .storeLink {
   display: inline-flex;
   align-items: center;
