@@ -198,7 +198,7 @@ func (s *Server) writeAdminAudit(ctx context.Context, adm *AdminIdentity, action
 		Detail:     sanitizeDetail(detail),
 		CreatedAt:  time.Now().UTC(),
 	}
-	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
 	defer cancel()
 	return s.Store.CreateAuditLog(dbCtx, entry)
 }
@@ -277,17 +277,21 @@ func (s *Server) AuditLogs(w http.ResponseWriter, r *http.Request) {
 
 // notifyStudent delivers an internal push to notification-service, best-effort.
 // A failure is logged with clean ids only (no secrets) and never fails the admin call.
+// The push runs asynchronously in a goroutine so slow notification delivery never
+// consumes the calling item's database deadline.
 func (s *Server) notifyStudent(ctx context.Context, userID, action string, pushFn func(context.Context) error) {
 	if s.NotifyURL == "" {
 		return
 	}
-	pushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	cleanID := strings.ReplaceAll(strings.ReplaceAll(userID, "\r", ""), "\n", "")
-	if err := pushFn(pushCtx); err != nil {
-		// #nosec G706 -- cleanID sanitized of CR/LF
-		log.Printf("[ACADEMY] student notification failed (%s user %s): %v", action, cleanID, err)
-	}
+	go func() {
+		pushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		cleanID := strings.ReplaceAll(strings.ReplaceAll(userID, "\r", ""), "\n", "")
+		if err := pushFn(pushCtx); err != nil {
+			// #nosec G706 -- cleanID sanitized of CR/LF
+			log.Printf("[ACADEMY] student notification failed (%s user %s): %v", action, cleanID, err)
+		}
+	}()
 }
 
 // AdminHandler constructs the HTTP handler for the internal admin listener.

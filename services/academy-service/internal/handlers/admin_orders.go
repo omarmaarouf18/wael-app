@@ -272,17 +272,16 @@ func (s *Server) BulkRequests(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
-	defer cancel()
-
 	results := make([]models.BulkRequestResult, 0, len(ids))
 	for _, id := range ids {
+		itemCtx, itemCancel := context.WithTimeout(r.Context(), dbTimeout)
 		var res decisionResult
 		if action == "accept" {
-			res = s.acceptRequestCore(ctx, adm, id)
+			res = s.acceptRequestCore(itemCtx, adm, id)
 		} else {
-			res = s.rejectRequestCore(ctx, adm, id, reason)
+			res = s.rejectRequestCore(itemCtx, adm, id, reason)
 		}
+		itemCancel()
 		if res.OK {
 			results = append(results, models.BulkRequestResult{ID: id, Status: res.Status})
 			continue
@@ -301,9 +300,11 @@ func (s *Server) BulkRequests(w http.ResponseWriter, r *http.Request) {
 		summaryAction = "request_bulk_reject"
 	}
 	detail := fmt.Sprintf("count=%d ids=%s", len(ids), strings.Join(ids, ","))
-	if err := s.writeAdminAudit(r.Context(), adm, summaryAction, "request_bulk", ids[0], detail); err != nil {
+	auditCtx, auditCancel := context.WithTimeout(context.WithoutCancel(r.Context()), dbTimeout)
+	if err := s.writeAdminAudit(auditCtx, adm, summaryAction, "request_bulk", ids[0], detail); err != nil {
 		logAuditFailure(adm, summaryAction, ids[0], err)
 	}
+	auditCancel()
 
 	handlerutil.WriteJSON(w, http.StatusOK, models.BulkRequestsResponseDTO{Results: results})
 }
