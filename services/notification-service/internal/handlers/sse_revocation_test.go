@@ -114,6 +114,20 @@ func openTestStream(t *testing.T, s *Server, token string) (*pipeRecorder, conte
 	return rec, cancel, handlerDone
 }
 
+func awaitAccountEventsSubscribed(t *testing.T, s *Server) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.AccountEventsSubscribed() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !s.AccountEventsSubscribed() {
+		t.Fatal("timed out waiting for AccountEventsSubscribed")
+	}
+}
+
 // 1. publish revoke for user A closes A's streams and not B's
 func TestSSE_PublishRevokeUser_ClosesOnlyUserA(t *testing.T) {
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")
@@ -127,6 +141,7 @@ func TestSSE_PublishRevokeUser_ClosesOnlyUserA(t *testing.T) {
 	s := New(store.NewMemoryStore(), b, "gw-secret", "internal-123")
 	stopListener := s.StartAccountEventsListener(context.Background())
 	defer stopListener()
+	awaitAccountEventsSubscribed(t, s)
 
 	tokA1, err := jwtutil.GenerateTokenWithSession("user-A", "user", "a@example.com", "sid-a-1")
 	if err != nil {
@@ -230,6 +245,7 @@ func TestSSE_PublishRevokeSession_ClosesOnlyTargetSID(t *testing.T) {
 	s := New(store.NewMemoryStore(), b, "gw-secret", "internal-123")
 	stopListener := s.StartAccountEventsListener(context.Background())
 	defer stopListener()
+	awaitAccountEventsSubscribed(t, s)
 
 	tok1, err := jwtutil.GenerateTokenWithSession("user-single", "user", "single@example.com", "sid-to-close")
 	if err != nil {
@@ -639,6 +655,7 @@ func TestSSE_RequireDB_RealRedisPubSub(t *testing.T) {
 	s := New(store.NewMemoryStore(), b, "gw-secret", "internal-123")
 	stopListener := s.StartAccountEventsListener(context.Background())
 	defer stopListener()
+	awaitAccountEventsSubscribed(t, s)
 
 	sid := "sid-real-redis-1"
 	tok, err := jwtutil.GenerateTokenWithSession("user-real-redis", "user", "real@example.com", sid)
