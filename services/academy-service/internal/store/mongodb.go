@@ -18,11 +18,12 @@ import (
 
 // MongoStore persists academy entities in MongoDB.
 type MongoStore struct {
-	client           *mongo.Client
-	db               *mongo.Database
-	settingsMu       sync.RWMutex
-	cachedSettings   *models.AppSettings
-	cachedSettingsAt time.Time
+	client               *mongo.Client
+	db                   *mongo.Database
+	settingsMu           sync.RWMutex
+	cachedSettings       *models.AppSettings
+	cachedSettingsAt     time.Time
+	beforeAppOrderInsert func(orderID string)
 }
 
 // NewMongoStore connects to MongoDB, verifies the connection, ensures indexes,
@@ -1553,24 +1554,44 @@ func (s *MongoStore) CreateOrGetPendingAppRequest(ctx context.Context, req *mode
 		return nil, false, fmt.Errorf("store: find pending app request: %w", err)
 	}
 
-	orderID, err := s.ensureOpenAppOrder(ctx, req.UserID, req.CreatedAt)
-	if err != nil {
-		return nil, false, err
-	}
-	req.OrderID = orderID
-
-	if _, err := col.InsertOne(ctx, req); err == nil {
-		return req, true, nil
-	} else if mongo.IsDuplicateKeyError(err) {
-		// Another concurrent call for the same subject won: return its row.
-		var existing models.PurchaseRequest
-		if err := col.FindOne(ctx, filter).Decode(&existing); err == nil {
-			return &existing, false, nil
+	for attempt := 0; attempt < 2; attempt++ {
+		orderID, err := s.ensureOpenAppOrder(ctx, req.UserID, req.CreatedAt)
+		if err != nil {
+			return nil, false, err
 		}
-		return nil, false, fmt.Errorf("store: find pending app request after duplicate: %w", err)
-	} else {
-		return nil, false, fmt.Errorf("store: insert app request: %w", err)
+		if s.beforeAppOrderInsert != nil {
+			s.beforeAppOrderInsert(orderID)
+		}
+
+		// Re-check that the order is still open. If closed concurrently, retry with a fresh order.
+		updateRes, err := s.db.Collection("orders").UpdateOne(ctx,
+			bson.M{"_id": orderID, "status": models.OrderStatusOpen},
+			bson.M{"$set": bson.M{"updated_at": time.Now().UTC()}},
+		)
+		if err != nil {
+			return nil, false, fmt.Errorf("store: re-check open app order: %w", err)
+		}
+		if updateRes.MatchedCount == 0 {
+			// Matched nothing: order was closed concurrently. Retry once to open a fresh order.
+			continue
+		}
+
+		req.OrderID = orderID
+
+		if _, err := col.InsertOne(ctx, req); err == nil {
+			return req, true, nil
+		} else if mongo.IsDuplicateKeyError(err) {
+			// Another concurrent call for the same subject won: return its row.
+			var existing models.PurchaseRequest
+			if err := col.FindOne(ctx, filter).Decode(&existing); err == nil {
+				return &existing, false, nil
+			}
+			return nil, false, fmt.Errorf("store: find pending app request after duplicate: %w", err)
+		} else {
+			return nil, false, fmt.Errorf("store: insert app request: %w", err)
+		}
 	}
+	return nil, false, errors.New("store: failed to attach app request to open order after retry")
 }
 
 // ensureOpenAppOrder returns the student's open app order id, creating the
