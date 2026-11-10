@@ -18,12 +18,13 @@ import (
 
 // MongoStore persists academy entities in MongoDB.
 type MongoStore struct {
-	client               *mongo.Client
-	db                   *mongo.Database
-	settingsMu           sync.RWMutex
-	cachedSettings       *models.AppSettings
-	cachedSettingsAt     time.Time
-	beforeAppOrderInsert func(orderID string)
+	client                         *mongo.Client
+	db                             *mongo.Database
+	settingsMu                     sync.RWMutex
+	cachedSettings                 *models.AppSettings
+	cachedSettingsAt               time.Time
+	beforeAppOrderInsert           func(orderID string)
+	beforeMigrateAppRequestsAttach func(ids []string)
 }
 
 // NewMongoStore connects to MongoDB, verifies the connection, ensures indexes,
@@ -1883,8 +1884,18 @@ func (s *MongoStore) MigrateLegacyAppRequests(ctx context.Context) error {
 		if len(ids) == 0 {
 			continue
 		}
+		if s.beforeMigrateAppRequestsAttach != nil {
+			s.beforeMigrateAppRequestsAttach(ids)
+		}
 		if _, err := s.db.Collection("purchase_requests").UpdateMany(ctx,
-			bson.M{"_id": bson.M{"$in": ids}},
+			bson.M{
+				"_id":    bson.M{"$in": ids},
+				"status": models.RequestStatusPending,
+				"$or": bson.A{
+					bson.M{"order_id": bson.M{"$exists": false}},
+					bson.M{"order_id": ""},
+				},
+			},
 			bson.M{"$set": bson.M{"order_id": orderID}},
 		); err != nil {
 			return fmt.Errorf("store: attach legacy app requests: %w", err)
