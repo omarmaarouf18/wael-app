@@ -452,3 +452,16 @@ text above is unchanged.
 4. **Landing assets.** The teacher portrait is the app's director portrait
    (v3, 2026-10-12); the app section uses the existing Google Play store
    screenshots (`docs/asset-provenance.md`).
+
+## Amendment 2026-11-10 (Compensating controls for static-page CSP: H1 / 5.3)
+
+Owner decision of 2026-11-10 on review finding H1 / 5.3:
+
+1. **Evolution of static pages**: Originally (decision 7), static pages carried no login state, no token, and no forms. Following the client-side cart, `AuthProvider` (Amendment 2026-11-05), and `SubjectBuySection` additions, prerendered static catalog and detail pages now execute client components that mount the shopping cart, manage in-memory session access tokens, and render checkout forms.
+2. **Why `'unsafe-inline'` is retained on static pages**: Next.js static prerendering generates inline bootstrap scripts on build without access to a per-request CSP nonce. Turning all catalog and subject pages dynamic solely to inject per-request nonces would defeat static site caching and degrade mobile LCP. Therefore, the static CSP policy (`script-src 'self' 'unsafe-inline'`) is retained on static pages.
+3. **Compensating controls**: To strictly mitigate XSS risks on pages with `'unsafe-inline'`, automated build-time ESLint rules (`web/eslint.config.mjs`, verified by `web/test/csp-compensating-controls.test.ts` and `scripts/web_gate.sh`) forbid:
+   - `dangerouslySetInnerHTML` in JSX attributes and property accesses
+   - Direct HTML assignments or calls: `innerHTML`, `outerHTML`, `insertAdjacentHTML`
+   - Document writes: `document.write`, `document.writeln`
+   - Dynamic code evaluation: `eval()`, `new Function()`, and `Function()`
+   The site renders all dynamic API data strictly via React standard text bindings, which escape HTML characters.
