@@ -28,6 +28,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -187,7 +188,10 @@ func sanitizeDetail(s string) string {
 // The detail carries no secrets; no IP address is persisted (SPEC Section 5,
 // ADR-0008 Sections 7 and 9).
 func (s *Server) writeAdminAudit(ctx context.Context, adm *AdminIdentity, action, targetType, targetID, detail string) error {
-	id, _ := jwtutil.GenerateUUID()
+	id, err := jwtutil.GenerateUUID()
+	if err != nil {
+		return fmt.Errorf("generate audit id: %w", err)
+	}
 	entry := &models.AuditLog{
 		ID:         id,
 		ActorID:    adm.ID,
@@ -277,9 +281,22 @@ func (s *Server) AuditLogs(w http.ResponseWriter, r *http.Request) {
 
 // notifyStudent delivers an internal push to notification-service, best-effort.
 // A failure is logged with clean ids only (no secrets) and never fails the admin call.
-// The push runs asynchronously in a goroutine so slow notification delivery never
-// consumes the calling item's database deadline.
 func (s *Server) notifyStudent(ctx context.Context, userID, action string, pushFn func(context.Context) error) {
+	if s.NotifyURL == "" {
+		return
+	}
+	pushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	cleanID := strings.ReplaceAll(strings.ReplaceAll(userID, "\r", ""), "\n", "")
+	if err := pushFn(pushCtx); err != nil {
+		// #nosec G706 -- cleanID sanitized of CR/LF
+		log.Printf("[ACADEMY] student notification failed (%s user %s): %v", action, cleanID, err)
+	}
+}
+
+// notifyStudentAsync delivers an internal push in a background goroutine so slow notification delivery
+// never consumes an item's database deadline (Item 2.2 / H2 for bulk operations).
+func (s *Server) notifyStudentAsync(ctx context.Context, userID, action string, pushFn func(context.Context) error) {
 	if s.NotifyURL == "" {
 		return
 	}

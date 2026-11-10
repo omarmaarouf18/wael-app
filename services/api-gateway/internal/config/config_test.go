@@ -46,6 +46,7 @@ func fullProdEnv(t *testing.T) {
 	setEnv(t, "AUTH_SERVICE_URL", "https://auth-service:3002")
 	setEnv(t, "NOTIFICATION_SERVICE_URL", "https://notification-service:3004")
 	setEnv(t, "ACADEMY_SERVICE_URL", "https://academy-service:3003")
+	setEnv(t, "ALLOWED_ORIGIN", "https://api.elmetracademy.app,https://elmetracademy.app,https://www.elmetracademy.app")
 }
 
 func TestLoad_HTTPDevNoTLS(t *testing.T) {
@@ -123,6 +124,7 @@ func TestLoad_RequiredVariablesTable(t *testing.T) {
 		"TLS_CERT_PATH",
 		"TLS_KEY_PATH",
 		"TLS_CA_PATH",
+		"ALLOWED_ORIGIN",
 	}
 
 	for _, v := range requiredVars {
@@ -237,5 +239,13 @@ func TestLoad_AllowedOriginsValidation(t *testing.T) {
 	}
 	if len(cfg.AllowedOrigins) != 2 || cfg.AllowedOrigins[0] != "https://elmetracademy.app" || cfg.AllowedOrigins[1] != "https://www.elmetracademy.app" {
 		t.Fatalf("unexpected AllowedOrigins: %v", cfg.AllowedOrigins)
+	}
+
+	// 5. ALLOWED_ORIGIN unset in production must fail (no hardcoded fallback)
+	fullProdEnv(t)
+	_ = os.Unsetenv("ALLOWED_ORIGIN")
+	_ = os.Unsetenv("ALLOWED_ORIGINS")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error when ALLOWED_ORIGIN is unset in production")
 	}
 }

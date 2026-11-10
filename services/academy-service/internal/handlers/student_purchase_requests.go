@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -157,8 +158,16 @@ func (s *Server) CreatePurchaseRequest(w http.ResponseWriter, r *http.Request, i
 	// The single-subject endpoint is kept for compatibility as an order of one
 	// (2026-11-05 orders brief): one web order holds the proof, one request
 	// keeps the same fields so the existing console list is unchanged.
-	orderID, _ := jwtutil.GenerateUUID()
-	prID, _ := jwtutil.GenerateUUID()
+	orderID, err := jwtutil.GenerateUUID()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "failed to generate order id", err)
+		return
+	}
+	prID, err := jwtutil.GenerateUUID()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "failed to generate request id", err)
+		return
+	}
 	newReq := &models.PurchaseRequest{
 		ID:                  prID,
 		UserID:              claims.UserID,
@@ -238,7 +247,12 @@ func (s *Server) GetMyRequests(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]models.StudentPurchaseRequestItemDTO, 0, len(requests))
 	for _, req := range requests {
-		subj, _ := s.Store.GetSubjectByID(dbCtx, req.SubjectID)
+		subj, err := s.Store.GetSubjectByID(dbCtx, req.SubjectID)
+		if err != nil {
+			cleanID := strings.ReplaceAll(strings.ReplaceAll(req.SubjectID, "\r", ""), "\n", "")
+			// #nosec G706 -- cleanID sanitized of CR/LF
+			log.Printf("[ACADEMY] student request list: get subject %s: %v", cleanID, err)
+		}
 		titleAr := ""
 		titleEn := ""
 		if subj != nil {
@@ -302,7 +316,12 @@ func (s *Server) GetMyRequestByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	subj, _ := s.Store.GetSubjectByID(dbCtx, pr.SubjectID)
+	subj, err := s.Store.GetSubjectByID(dbCtx, pr.SubjectID)
+	if err != nil {
+		cleanID := strings.ReplaceAll(strings.ReplaceAll(pr.SubjectID, "\r", ""), "\n", "")
+		// #nosec G706 -- cleanID sanitized of CR/LF
+		log.Printf("[ACADEMY] student get request: get subject %s: %v", cleanID, err)
+	}
 	titleAr := ""
 	titleEn := ""
 	if subj != nil {

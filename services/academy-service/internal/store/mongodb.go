@@ -193,6 +193,8 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 	// We drop the legacy unique index if present.
 	if err := s.db.Collection("purchase_requests").Indexes().DropOne(ctx, "uniq_purchase_requests_normalized_reference"); err == nil {
 		log.Printf("[ACADEMY] dropped legacy unique index uniq_purchase_requests_normalized_reference on purchase_requests")
+	} else if !isIndexNotFound(err) {
+		return fmt.Errorf("store: drop legacy purchase_requests index: %w", err)
 	}
 	_, err = s.db.Collection("purchase_requests").Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{
@@ -2118,4 +2120,16 @@ func (s *MongoStore) SaveAppSettings(ctx context.Context, settings *models.AppSe
 	s.settingsMu.Unlock()
 
 	return nil
+}
+
+// isIndexNotFound reports whether err represents MongoDB error code 27 (IndexNotFound).
+func isIndexNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var cmdErr mongo.CommandError
+	if errors.As(err, &cmdErr) {
+		return cmdErr.HasErrorCode(27) || cmdErr.Name == "IndexNotFound"
+	}
+	return strings.Contains(err.Error(), "index not found") || strings.Contains(err.Error(), "IndexNotFound")
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -97,8 +98,11 @@ func (s *Server) GetPublicCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	settingsCtx, settingsCancel := context.WithTimeout(r.Context(), dbTimeout)
-	settings, _ := s.Store.GetAppSettings(settingsCtx)
+	settings, err := s.Store.GetAppSettings(settingsCtx)
 	settingsCancel()
+	if err != nil {
+		log.Printf("[ACADEMY] public catalog: get app settings: %v", err)
+	}
 
 	// Only the three fixed study types: a level with an unknown study type
 	// (bad data) is left off the public site.

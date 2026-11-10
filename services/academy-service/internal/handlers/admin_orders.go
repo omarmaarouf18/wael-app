@@ -277,9 +277,9 @@ func (s *Server) BulkRequests(w http.ResponseWriter, r *http.Request) {
 		itemCtx, itemCancel := context.WithTimeout(r.Context(), dbTimeout)
 		var res decisionResult
 		if action == "accept" {
-			res = s.acceptRequestCore(itemCtx, adm, id)
+			res = s.acceptRequestCore(itemCtx, adm, id, true)
 		} else {
-			res = s.rejectRequestCore(itemCtx, adm, id, reason)
+			res = s.rejectRequestCore(itemCtx, adm, id, reason, true)
 		}
 		itemCancel()
 		if res.OK {

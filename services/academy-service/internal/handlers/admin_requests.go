@@ -161,7 +161,12 @@ func (s *Server) ListAdminRequests(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]RequestAdminDTO, 0, len(requests))
 	for _, req := range requests {
-		subj, _ := s.Store.GetSubjectByID(dbCtx, req.SubjectID)
+		subj, err := s.Store.GetSubjectByID(dbCtx, req.SubjectID)
+		if err != nil {
+			cleanID := strings.ReplaceAll(strings.ReplaceAll(req.SubjectID, "\r", ""), "\n", "")
+			// #nosec G706 -- cleanID sanitized of CR/LF
+			log.Printf("[ACADEMY] request list: get subject %s: %v", cleanID, err)
+		}
 		titleAr := ""
 		lvlName := ""
 		price := 0
@@ -267,7 +272,7 @@ func (s *Server) AcceptRequest(w http.ResponseWriter, r *http.Request, reqID str
 
 // acceptRequestCore applies today's single-accept rules to one request. It is
 // shared by the single endpoint and the bulk endpoint so both behave the same.
-func (s *Server) acceptRequestCore(ctx context.Context, adm *AdminIdentity, reqID string) decisionResult {
+func (s *Server) acceptRequestCore(ctx context.Context, adm *AdminIdentity, reqID string, async ...bool) decisionResult {
 	if !validResourceID(reqID) {
 		return decisionFailure(http.StatusBadRequest, "invalid_request_id", "معرّف الطلب غير صالح", "Invalid request id")
 	}
@@ -420,7 +425,11 @@ func (s *Server) acceptRequestCore(ctx context.Context, adm *AdminIdentity, reqI
 	}
 
 	// 7. Notify the student, best-effort.
-	s.notifyStudent(ctx, pr.UserID, "request_accept", func(pushCtx context.Context) error {
+	push := s.notifyStudent
+	if len(async) > 0 && async[0] {
+		push = s.notifyStudentAsync
+	}
+	push(ctx, pr.UserID, "request_accept", func(pushCtx context.Context) error {
 		return notify.SubjectActivated(pushCtx, s.NotifyURL, s.NotifyToken, pr.UserID, pr.SubjectID, subj.TitleAr, subj.TitleEn)
 	})
 
@@ -483,7 +492,7 @@ func (s *Server) RejectRequest(w http.ResponseWriter, r *http.Request, reqID str
 
 // rejectRequestCore applies today's single-reject rules to one request. It is
 // shared by the single endpoint and the bulk endpoint.
-func (s *Server) rejectRequestCore(ctx context.Context, adm *AdminIdentity, reqID, reason string) decisionResult {
+func (s *Server) rejectRequestCore(ctx context.Context, adm *AdminIdentity, reqID, reason string, async ...bool) decisionResult {
 	if !validResourceID(reqID) {
 		return decisionFailure(http.StatusBadRequest, "invalid_request_id", "معرّف الطلب غير صالح", "Invalid request id")
 	}
@@ -521,14 +530,23 @@ func (s *Server) rejectRequestCore(ctx context.Context, adm *AdminIdentity, reqI
 		logAuditFailure(adm, "request_reject", pr.ID, err)
 	}
 
-	subj, _ := s.Store.GetSubjectByID(ctx, pr.SubjectID)
+	subj, err := s.Store.GetSubjectByID(ctx, pr.SubjectID)
+	if err != nil {
+		cleanID := strings.ReplaceAll(strings.ReplaceAll(pr.SubjectID, "\r", ""), "\n", "")
+		// #nosec G706 -- cleanID sanitized of CR/LF
+		log.Printf("[ACADEMY] reject request: get subject %s: %v", cleanID, err)
+	}
 	titleAr := ""
 	titleEn := ""
 	if subj != nil {
 		titleAr = subj.TitleAr
 		titleEn = subj.TitleEn
 	}
-	s.notifyStudent(ctx, pr.UserID, "request_reject", func(pushCtx context.Context) error {
+	push := s.notifyStudent
+	if len(async) > 0 && async[0] {
+		push = s.notifyStudentAsync
+	}
+	push(ctx, pr.UserID, "request_reject", func(pushCtx context.Context) error {
 		return notify.SubjectRejected(pushCtx, s.NotifyURL, s.NotifyToken, pr.UserID, pr.SubjectID, titleAr, titleEn, reason)
 	})
 

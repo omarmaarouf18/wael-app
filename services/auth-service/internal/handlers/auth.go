@@ -667,7 +667,12 @@ func (s *Server) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if web && (req.DeviceID == "" || !isValidUUIDv4(req.DeviceID)) {
-		req.DeviceID, _ = jwtutil.GenerateUUID()
+		devID, err := jwtutil.GenerateUUID()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "failed to generate device id", err)
+			return
+		}
+		req.DeviceID = devID
 	}
 	deviceLabel := strings.TrimSpace(req.DeviceLabel)
 	if deviceLabel == "" && web {
@@ -876,7 +881,12 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if web && (req.DeviceID == "" || !isValidUUIDv4(req.DeviceID)) {
-		req.DeviceID, _ = jwtutil.GenerateUUID()
+		devID, err := jwtutil.GenerateUUID()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "failed to generate device id", err)
+			return
+		}
+		req.DeviceID = devID
 	}
 	deviceLabel := strings.TrimSpace(req.DeviceLabel)
 	if deviceLabel == "" && web {
@@ -1036,9 +1046,11 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 			req.RefreshToken = c.Value
 		}
 		if r.Body != nil && r.ContentLength > 0 {
-			dec := json.NewDecoder(r.Body)
-			dec.DisallowUnknownFields()
-			_ = dec.Decode(&req)
+			var bodyReq refreshRequest
+			if !decodeJSON(w, r, &bodyReq) {
+				return
+			}
+			// body refresh_token is ignored; token comes from cookie only
 		}
 	} else {
 		if !decodeJSON(w, r, &req) {

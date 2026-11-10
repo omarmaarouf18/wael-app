@@ -125,10 +125,7 @@ func Load() (*Config, error) {
 				"http://localhost:3000",
 			}
 		} else {
-			allowedOrigins = []string{
-				"https://elmetracademy.app",
-				"https://www.elmetracademy.app",
-			}
+			return nil, fmt.Errorf("config: ALLOWED_ORIGIN must be set in production")
 		}
 	}
 

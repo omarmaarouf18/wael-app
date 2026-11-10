@@ -24,6 +24,7 @@ func setGatewayProdEnv(t *testing.T) {
 	t.Setenv("AUTH_SERVICE_URL", "https://auth-service:3002")
 	t.Setenv("NOTIFICATION_SERVICE_URL", "https://notification-service:3004")
 	t.Setenv("ACADEMY_SERVICE_URL", "https://academy-service:3003")
+	t.Setenv("ALLOWED_ORIGIN", "https://api.elmetracademy.app,https://elmetracademy.app,https://www.elmetracademy.app")
 }
 
 func setGatewayLocalEnv(t *testing.T) {
@@ -60,6 +61,7 @@ func TestRunCheckEnv_ProductionMissingVarsTable(t *testing.T) {
 		"TLS_CERT_PATH",
 		"TLS_KEY_PATH",
 		"TLS_CA_PATH",
+		"ALLOWED_ORIGIN",
 	}
 	for _, v := range requiredVars {
 		t.Run("missing_"+v, func(t *testing.T) {

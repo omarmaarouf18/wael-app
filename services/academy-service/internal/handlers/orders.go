@@ -154,7 +154,11 @@ func (s *Server) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
-	orderID, _ := jwtutil.GenerateUUID()
+	orderID, err := jwtutil.GenerateUUID()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "failed to generate order id", err)
+		return
+	}
 	subjects := make(map[string]*models.Subject, len(subjectIDs))
 	reqs := make([]*models.PurchaseRequest, 0, len(subjectIDs))
 
@@ -210,7 +214,11 @@ func (s *Server) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		}
 
 		subjects[sid] = subj
-		reqID, _ := jwtutil.GenerateUUID()
+		reqID, err := jwtutil.GenerateUUID()
+		if err != nil {
+			handlerutil.WriteSafeError(w, r, http.StatusInternalServerError, handlerutil.ErrCodeInternal, "failed to generate request id", err)
+			return
+		}
 		reqs = append(reqs, &models.PurchaseRequest{
 			ID:                  reqID,
 			UserID:              claims.UserID,
