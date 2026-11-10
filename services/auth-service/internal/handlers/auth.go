@@ -1060,16 +1060,24 @@ func (s *Server) Refresh(w http.ResponseWriter, r *http.Request) {
 		dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
 		sess, findErr := s.Store.FindSessionByRefreshHash(dbCtx, refreshHash)
 		cancel()
-		if findErr == nil && sess != nil && sess.EndReason == models.EndReasonReplaced {
-			msg := "Sorry, this account's usage limit has been exceeded"
-			if strings.HasPrefix(strings.ToLower(r.Header.Get("Accept-Language")), "ar") {
-				msg = "عفوًا، لقد تجاوزت الحد المسموح لاستخدام هذا الحساب"
+		if findErr == nil && sess != nil {
+			if (sess.Client == "web" || web) && sess.EndedAt == nil {
+				now := time.Now().UTC()
+				endCtx, endCancel := context.WithTimeout(ctx, dbTimeout)
+				_ = s.Store.EndSession(endCtx, sess.ID, models.EndReasonLogout, now)
+				endCancel()
 			}
-			handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]string{
-				"error": msg,
-				"code":  "session_replaced",
-			})
-			return
+			if sess.EndReason == models.EndReasonReplaced {
+				msg := "Sorry, this account's usage limit has been exceeded"
+				if strings.HasPrefix(strings.ToLower(r.Header.Get("Accept-Language")), "ar") {
+					msg = "عفوًا، لقد تجاوزت الحد المسموح لاستخدام هذا الحساب"
+				}
+				handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]string{
+					"error": msg,
+					"code":  "session_replaced",
+				})
+				return
+			}
 		}
 		handlerutil.WriteSafeError(w, r, http.StatusUnauthorized, handlerutil.ErrCodeInvalidToken, "invalid refresh token", nil)
 		return

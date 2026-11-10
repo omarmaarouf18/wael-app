@@ -603,33 +603,38 @@ func (s *MemoryStore) CreateOrReplaceSession(_ context.Context, sess *models.Ses
 	// 2. Insert new session
 	s.sessions[sess.ID] = cloneSession(sess)
 
-	// 3. Web sessions do not count toward the app's device limit.
-	if sess.Client != "web" {
-		// Re-read all active app sessions for this user, sorted by last_used_at DESC, created_at DESC, ID DESC
-		var active []*models.Session
-		for _, existing := range s.sessions {
-			if existing.UserID == sess.UserID && existing.EndedAt == nil && existing.Client != "web" {
+	// 3. Web sessions cap at newest 5; mobile sessions cap at newest 2.
+	maxAllowed := 2
+	isWeb := sess.Client == "web"
+	if isWeb {
+		maxAllowed = 5
+	}
+
+	var active []*models.Session
+	for _, existing := range s.sessions {
+		if existing.UserID == sess.UserID && existing.EndedAt == nil {
+			if (isWeb && existing.Client == "web") || (!isWeb && existing.Client != "web") {
 				active = append(active, existing)
 			}
 		}
-		sort.Slice(active, func(i, j int) bool {
-			if !active[i].LastUsedAt.Equal(active[j].LastUsedAt) {
-				return active[i].LastUsedAt.After(active[j].LastUsedAt)
-			}
-			if !active[i].CreatedAt.Equal(active[j].CreatedAt) {
-				return active[i].CreatedAt.After(active[j].CreatedAt)
-			}
-			return active[i].ID > active[j].ID
-		})
+	}
+	sort.Slice(active, func(i, j int) bool {
+		if !active[i].LastUsedAt.Equal(active[j].LastUsedAt) {
+			return active[i].LastUsedAt.After(active[j].LastUsedAt)
+		}
+		if !active[i].CreatedAt.Equal(active[j].CreatedAt) {
+			return active[i].CreatedAt.After(active[j].CreatedAt)
+		}
+		return active[i].ID > active[j].ID
+	})
 
-		// 4. End sessions beyond the newest 2
-		if len(active) > 2 {
-			for _, excess := range active[2:] {
-				t := sess.CreatedAt
-				excess.EndedAt = &t
-				excess.EndReason = models.EndReasonReplaced
-				ended = append(ended, cloneSession(excess))
-			}
+	// 4. End sessions beyond the limit
+	if len(active) > maxAllowed {
+		for _, excess := range active[maxAllowed:] {
+			t := sess.CreatedAt
+			excess.EndedAt = &t
+			excess.EndReason = models.EndReasonReplaced
+			ended = append(ended, cloneSession(excess))
 		}
 	}
 

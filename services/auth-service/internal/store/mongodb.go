@@ -687,9 +687,15 @@ func (s *MongoStore) CreateOrReplaceSession(ctx context.Context, sess *models.Se
 		return nil, fmt.Errorf("store: insert session: %w", err)
 	}
 
-	// 3. Web sessions do not count toward the app's device limit.
-	if sess.Client != "web" {
-		trimmed, err := s.trimActiveSessions(ctx, sess.UserID, 2, models.EndReasonReplaced, sess.CreatedAt)
+	// 3. Web sessions cap at newest 5; mobile sessions cap at newest 2.
+	if sess.Client == "web" {
+		trimmed, err := s.trimActiveSessions(ctx, sess.UserID, "web", 5, models.EndReasonReplaced, sess.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		ended = append(ended, trimmed...)
+	} else {
+		trimmed, err := s.trimActiveSessions(ctx, sess.UserID, sess.Client, 2, models.EndReasonReplaced, sess.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -699,11 +705,15 @@ func (s *MongoStore) CreateOrReplaceSession(ctx context.Context, sess *models.Se
 	return ended, nil
 }
 
-func (s *MongoStore) trimActiveSessions(ctx context.Context, userID string, maxActive int, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
+func (s *MongoStore) trimActiveSessions(ctx context.Context, userID string, client string, maxActive int, reason models.SessionEndReason, at time.Time) ([]*models.Session, error) {
 	filter := bson.M{
 		"user_id":  userID,
 		"ended_at": nil,
-		"client":   bson.M{"$ne": "web"},
+	}
+	if client == "web" {
+		filter["client"] = "web"
+	} else {
+		filter["client"] = bson.M{"$ne": "web"}
 	}
 	findOpts := options.Find().SetSort(bson.D{
 		{Key: "last_used_at", Value: -1},
