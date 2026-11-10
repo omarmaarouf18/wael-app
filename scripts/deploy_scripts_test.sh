@@ -516,10 +516,11 @@ run_preflight() {
 	local secret
 	secret="$(printf 's%.0s' {1..40})"
 	{
-		for v in API_DOMAIN ADMIN_DOMAIN ACME_EMAIL ALLOWED_ORIGIN AUTH_MONGO_URI NOTIFICATION_MONGO_URI \
+		for v in API_DOMAIN ADMIN_DOMAIN ACME_EMAIL AUTH_MONGO_URI NOTIFICATION_MONGO_URI \
 			ACADEMY_MONGO_URI REDIS_URI RESEND_API_KEY RESEND_FROM_EMAIL SUPPORT_WHATSAPP MONGO_ROOT_USERNAME; do
 			printf '%s=value-for-%s\n' "$v" "$v"
 		done
+		printf 'ALLOWED_ORIGIN=https://api.elmetracademy.app,https://elmetracademy.app,https://www.elmetracademy.app\n'
 		for v in JWT_SECRET GATEWAY_SECRET INTERNAL_SERVICE_TOKEN BLOCKLIST_HMAC_KEY; do
 			printf '%s=%s\n' "$v" "$secret"
 		done
@@ -614,6 +615,15 @@ PF_STORAGE_MODE=755 run_preflight pf-mode "$GOOD_REDIS"
 check "preflight fails when STORAGE_DIR is not mode 700" 1 "FAIL: STORAGE_DIR mode is 700"
 PF_EXTRA_ENV="FEATURES_FILES=1" run_preflight pf-features "$GOOD_REDIS"
 check "preflight fails on a loose FEATURES_FILES" 1 "FAIL: FEATURES_FILES is empty, true or false"
+
+PF_EXTRA_ENV="ALLOWED_ORIGIN=https://*" run_preflight pf-origin-wildcard "$GOOD_REDIS"
+check "preflight fails when ALLOWED_ORIGIN contains wildcard" 1 "ALLOWED_ORIGIN contains wildcard '*'"
+PF_EXTRA_ENV="ALLOWED_ORIGIN=https://wael.vercel.app" run_preflight pf-origin-vercel "$GOOD_REDIS"
+check "preflight fails when ALLOWED_ORIGIN contains vercel.app" 1 "ALLOWED_ORIGIN contains vercel.app"
+PF_EXTRA_ENV="ALLOWED_ORIGIN=https://api.elmetracademy.app" run_preflight pf-origin-missing-root "$GOOD_REDIS"
+check "preflight fails when ALLOWED_ORIGIN missing root website origin" 1 "ALLOWED_ORIGIN missing website origin https://elmetracademy.app"
+PF_EXTRA_ENV="ALLOWED_ORIGIN=https://elmetracademy.app" run_preflight pf-origin-missing-www "$GOOD_REDIS"
+check "preflight fails when ALLOWED_ORIGIN missing www website origin" 1 "ALLOWED_ORIGIN missing website origin https://www.elmetracademy.app"
 
 DEPLOY_COMPOSE="$REPO_ROOT/infrastructure/deploy/docker-compose.yml"
 DEV_COMPOSE="$REPO_ROOT/infrastructure/docker-compose.yml"

@@ -48,6 +48,24 @@ if grep -q '^APP_ENV=' "$ENV_FILE"; then
 	errors=$((errors + 1))
 fi
 
+allowed_origin="$(read_var "$ENV_FILE" ALLOWED_ORIGIN)"
+if grep -q '\*' <<<"$allowed_origin"; then
+	log "FAIL: ALLOWED_ORIGIN contains wildcard '*'"
+	errors=$((errors + 1))
+fi
+if grep -q 'vercel\.app' <<<"$allowed_origin"; then
+	log "FAIL: ALLOWED_ORIGIN contains vercel.app"
+	errors=$((errors + 1))
+fi
+if ! grep -q 'https://elmetracademy\.app' <<<"$allowed_origin"; then
+	log "FAIL: ALLOWED_ORIGIN missing website origin https://elmetracademy.app"
+	errors=$((errors + 1))
+fi
+if ! grep -q 'https://www\.elmetracademy\.app' <<<"$allowed_origin"; then
+	log "FAIL: ALLOWED_ORIGIN missing website origin https://www.elmetracademy.app"
+	errors=$((errors + 1))
+fi
+
 # 3b. Uploaded files (SPEC Phase 5, ADR-0009). The key is exactly 64 hex
 # characters (never padded); academy-service runs as WAEL_UID:WAEL_GID, which
 # must be the user running this (deploybot), so the service, backup.sh and

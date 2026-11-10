@@ -306,9 +306,7 @@ checked against each service's `config.Load()` and `env.production.example`.
 |---|---|---|---|---|
 | `API_DOMAIN` | caddy (+ gateway `APP_DOMAIN`) | yes | Public API host | `api.<domain>` (DNS §2) |
 | `ADMIN_DOMAIN` | caddy, admin-console reachability | yes | Public admin host | `admin.<domain>` (DNS §2) |
-| `ACME_EMAIL` | caddy | yes | Let's Encrypt account mail | operator email address |
-| `ALLOWED_ORIGIN` | api-gateway | yes | CORS origin for browser clients | `https://api.<domain>` |
-| `JWT_SECRET` | auth, notification, academy | yes | Signs access/refresh tokens | `<GENERATE: openssl rand -hex 32>` |
+| `ALLOWED_ORIGIN` | api-gateway | yes | Exact CORS allowlist for browser clients (ADR-0014 W3.4). No wildcards, no vercel.app. Must include both website origins and api host | `https://api.<domain>,https://<domain>,https://www.<domain>` |
 | `GATEWAY_SECRET` | gateway + auth/notification/academy | yes | `X-Gateway-Secret` edge auth | `<GENERATE: openssl rand -hex 32>` |
 | `INTERNAL_SERVICE_TOKEN` | auth, notification, academy, admin-console | yes | `X-Internal-Token` for admin listeners | `<GENERATE: openssl rand -hex 32>` |
 | `MONGO_ROOT_USERNAME` | mongo | yes | InitDB root user | `wael_root` |
@@ -373,7 +371,7 @@ REDIS_PW="$(openssl rand -hex 24)"
 echo "API_DOMAIN=${OPERATOR_API_DOMAIN}"
 echo "ADMIN_DOMAIN=${OPERATOR_ADMIN_DOMAIN}"
 echo "ACME_EMAIL=${OPERATOR_ACME_EMAIL}"
-echo "ALLOWED_ORIGIN=https://${OPERATOR_API_DOMAIN}"
+echo "ALLOWED_ORIGIN=https://${OPERATOR_API_DOMAIN},https://${OPERATOR_API_DOMAIN#api.},https://www.${OPERATOR_API_DOMAIN#api.}"
 echo "JWT_SECRET=$(openssl rand -hex 32)"
 echo "GATEWAY_SECRET=$(openssl rand -hex 32)"
 echo "INTERNAL_SERVICE_TOKEN=$(openssl rand -hex 32)"
@@ -672,7 +670,9 @@ running container (added 2026-10-06 from the script; the items are in its order)
    `BLOCKLIST_HMAC_KEY`, `SUPPORT_WHATSAPP`, and (added 2026-10-09, Phase 5)
    `STORAGE_DIR`, `DOCUMENT_ENCRYPTION_KEY`, `WAEL_UID`, `WAEL_GID`; `JWT_SECRET`,
    `GATEWAY_SECRET`, `INTERNAL_SERVICE_TOKEN` and `BLOCKLIST_HMAC_KEY` are at
-   least 32 characters; `APP_ENV` is absent.
+   least 32 characters; `APP_ENV` is absent; `ALLOWED_ORIGIN` contains no
+   wildcard `*` or `vercel.app` and includes both `https://elmetracademy.app`
+   and `https://www.elmetracademy.app`.
    3b. *(Added 2026-10-09.)* `DOCUMENT_ENCRYPTION_KEY` is 64 hex characters;
    `WAEL_UID`/`WAEL_GID` equal the running user's ids; `STORAGE_DIR` is an
    absolute path to an existing directory with mode `700` owned by `WAEL_UID`;
@@ -958,6 +958,15 @@ re-deploy the current `release.env` so every container picks it up together):
   console together, or admin calls fail.
 - Never rotate `BLOCKLIST_HMAC_KEY` casually: existing blocklist entries stop
   matching (documented in the env table, §5).
+
+Manual api-gateway restart / changing ALLOWED_ORIGIN:
+When changing `ALLOWED_ORIGIN` (or other gateway settings) without running a full deployment:
+1. Update `$WAEL_HOME/.env.production`.
+2. Sync the updated value into `$WAEL_HOME/state/last-good/last-good.env` (if present) so that a subsequent rollback does not revert the CORS allowlist.
+3. Restart `api-gateway` explicitly as deploybot with `WAEL_HOME` and `--env-file`:
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cd <deploy-checkout> && export WAEL_HOME=/home/deploybot/wael && docker compose -p wael --env-file "$WAEL_HOME/.env.production" up -d --no-deps api-gateway'
+```
 
 Updating mongo/redis/caddy: the three third-party images are pinned by digest
 in `docker-compose.yml` (W-07 resolved 2026-10-02), with weekly Dependabot
