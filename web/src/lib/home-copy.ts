@@ -178,7 +178,7 @@ const ar: HomeCopy = {
       },
       {
         q: "ينفع أستخدم حسابي على كام جهاز؟",
-        a: "على جهازين في نفس الوقت. لو دخلت من جهاز تالت، أقدم جهاز بيخرج تلقائيًا.",
+        a: "على جهازين في نفس الوقت. لو دخلت من جهاز تالت، الجهاز اللي بقاله أطول وقت ما اتستخدمش بيخرج. الدخول من الموقع مش بيتحسب.",
       },
       {
         q: "المادة متاحة لحد إمتى؟",
@@ -296,7 +296,7 @@ const en: HomeCopy = {
       },
       {
         q: "On how many devices can I use my account?",
-        a: "Two at the same time. Signing in on a third device signs out the oldest one.",
+        a: "Two at the same time. Signing in on a third device signs out the one used least recently. Signing in on the website does not count.",
       },
       {
         q: "How long can I access a subject?",
