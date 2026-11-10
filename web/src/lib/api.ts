@@ -211,8 +211,7 @@ export async function verifyOTP(data: {
 }
 
 export async function resendSignupOTP(data: {
-  email?: string;
-  pending_id: string;
+  email: string;
 }): Promise<{ dev_otp?: string }> {
   return apiPost<{ dev_otp?: string }>("/api/v1/auth/signup/resend", data, { skipAuth: true });
 }

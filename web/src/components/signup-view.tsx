@@ -119,7 +119,6 @@ export function SignupPageView({ lang }: SignupPageViewProps) {
     try {
       const res = await resendSignupOTP({
         email: email.trim(),
-        pending_id: pendingId,
       });
       if (res.dev_otp) {
         setOtpCode(res.dev_otp);

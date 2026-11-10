@@ -13,6 +13,7 @@ import {
   getMyRequestById,
   getMyRequests,
   getPaymentMethods,
+  resendSignupOTP,
   setAccessToken,
 } from "../src/lib/api.ts";
 
@@ -238,5 +239,25 @@ test("getMyRequestById calls GET /api/v1/academy/me/requests/{id}", async () => 
   assert.ok(capturedUrl.endsWith("/api/v1/academy/me/requests/req-42"));
   assert.equal(res.id, "req-42");
   assert.equal(res.status, "accepted");
+});
+
+test("resendSignupOTP pins exact payload with only email and no pending_id", async () => {
+  let capturedUrl = "";
+  let capturedBody = "";
+  globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    capturedUrl = String(url);
+    capturedBody = String(init?.body);
+    return new Response(JSON.stringify({ status: "ok" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  await resendSignupOTP({ email: "student@example.com" });
+  assert.ok(capturedUrl.endsWith("/api/v1/auth/signup/resend"));
+  assert.equal(capturedBody, JSON.stringify({ email: "student@example.com" }));
+  const parsed = JSON.parse(capturedBody);
+  assert.deepEqual(parsed, { email: "student@example.com" });
+  assert.equal(Object.prototype.hasOwnProperty.call(parsed, "pending_id"), false);
 });
 
