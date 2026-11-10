@@ -266,9 +266,8 @@ func TestMongoStore_PhoneIndexMigrationToPendingDeletion(t *testing.T) {
 	}
 
 	// 3. Roll the phone index back to the pre-change shape.
-	if err := coll.Indexes().DropOne(ctx, "phone_1"); err != nil {
-		t.Fatalf("drop phone_1: %v", err)
-	}
+	_ = coll.Indexes().DropOne(ctx, "uniq_phone_verified_v2")
+	_ = coll.Indexes().DropOne(ctx, "phone_1")
 	oldPhone, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{{Key: "phone", Value: 1}},
 		Options: options.Index().
@@ -307,7 +306,7 @@ func TestMongoStore_PhoneIndexMigrationToPendingDeletion(t *testing.T) {
 		if err := cursor.Decode(&doc); err != nil {
 			t.Fatalf("decode index: %v", err)
 		}
-		if doc.Name == "phone_1" {
+		if doc.Name == "uniq_phone_verified_v2" || doc.Name == "phone_1" {
 			var statuses bson.A
 			switch v := doc.PartialFilterExpression["status"].(type) {
 			case bson.M:

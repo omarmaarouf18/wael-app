@@ -130,9 +130,8 @@ func TestMongoStore_PhoneIndexMigrationWithNoPhoneAccounts(t *testing.T) {
 		t.Fatalf("first NewMongoStore: %v", err)
 	}
 	coll := first.coll
-	if err := coll.Indexes().DropOne(ctx, "phone_1"); err != nil {
-		t.Fatalf("drop phone_1: %v", err)
-	}
+	_ = coll.Indexes().DropOne(ctx, "uniq_phone_verified_v2")
+	_ = coll.Indexes().DropOne(ctx, "phone_1")
 	if _, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{{Key: "phone", Value: 1}},
 		Options: options.Index().
@@ -172,7 +171,7 @@ func TestMongoStore_PhoneIndexMigrationWithNoPhoneAccounts(t *testing.T) {
 		if err := cursor.Decode(&doc); err != nil {
 			t.Fatalf("decode index: %v", err)
 		}
-		if doc.Name == "phone_1" {
+		if doc.Name == "uniq_phone_verified_v2" || doc.Name == "phone_1" {
 			phoneFilter = doc.PartialFilterExpression
 		}
 	}

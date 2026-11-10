@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/models"
@@ -61,12 +62,15 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 	// phone-reserving accounts hold phones; unverified signups do not).
 	// Phone-reserving statuses are active, suspended, and pending_deletion
 	// (owner decision D2, F-UX2 review: identifiers free only when deletion
-	// is final). Drop the pre-amendment index first so the changed partial
-	// filter applies.
-	_ = coll.Indexes().DropOne(ctx, "phone_1")
+	// is final). Give the new index its own dedicated name (uniq_phone_verified_v2)
+	// and drop only the legacy un-named index "phone_1" once if present.
+	if err := coll.Indexes().DropOne(ctx, "phone_1"); err != nil && !isIndexNotFound(err) {
+		return nil, fmt.Errorf("store: drop legacy phone index: %w", err)
+	}
 	_, err = coll.Indexes().CreateOne(ctx, mongo.IndexModel{
 		Keys: bson.D{{Key: "phone", Value: 1}},
 		Options: options.Index().
+			SetName("uniq_phone_verified_v2").
 			SetUnique(true).
 			SetPartialFilterExpression(bson.M{
 				"phone":          bson.M{"$type": "string", "$gt": ""},
@@ -202,6 +206,18 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		sessionColl:    sessionColl,
 		accountEvtColl: accountEvtColl,
 	}, nil
+}
+
+// isIndexNotFound reports whether err represents MongoDB error code 27 (IndexNotFound).
+func isIndexNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var cmdErr mongo.CommandError
+	if errors.As(err, &cmdErr) {
+		return cmdErr.HasErrorCode(27) || cmdErr.Name == "IndexNotFound"
+	}
+	return strings.Contains(err.Error(), "index not found") || strings.Contains(err.Error(), "IndexNotFound")
 }
 
 // Create inserts a new user. Status defaults to "active" explicitly for new users.

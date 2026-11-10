@@ -986,9 +986,8 @@ func TestMongoStore_IndexMigrationFromPreChangeOptions(t *testing.T) {
 	coll := first.coll
 
 	// 2. Roll the users collection back to the pre-change shape.
-	if err := coll.Indexes().DropOne(ctx, "phone_1"); err != nil {
-		t.Fatalf("drop phone_1: %v", err)
-	}
+	_ = coll.Indexes().DropOne(ctx, "uniq_phone_verified_v2")
+	_ = coll.Indexes().DropOne(ctx, "phone_1")
 	if err := coll.Indexes().DropOne(ctx, "created_at_1"); err != nil {
 		t.Fatalf("drop created_at_1: %v", err)
 	}
@@ -1036,7 +1035,7 @@ func TestMongoStore_IndexMigrationFromPreChangeOptions(t *testing.T) {
 			t.Fatalf("decode index: %v", err)
 		}
 		switch doc.Name {
-		case "phone_1":
+		case "uniq_phone_verified_v2", "phone_1":
 			phoneUnique = doc.Unique
 			phoneFilter = doc.PartialFilterExpression
 		case "created_at_1":
