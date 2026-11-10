@@ -244,7 +244,13 @@ func (s *Server) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Store.CreateOrderWithRequests(ctx, order, reqs); err != nil {
-		if errors.Is(err, store.ErrDuplicate) {
+		if errors.Is(err, store.ErrPendingRequestExists) {
+			writeOrderError(w, http.StatusConflict, "pending_request_exists",
+				"لديك طلب اشتراك معلق لمادة في السلة بالفعل",
+				"You already have a pending purchase request for a subject in your cart", "")
+			return
+		}
+		if errors.Is(err, store.ErrDuplicateReference) || errors.Is(err, store.ErrDuplicate) {
 			writeOrderError(w, http.StatusConflict, "duplicate_reference",
 				"تم استخدام رقم الحوالة هذا في طلب سابق",
 				"This transfer reference has already been used", "")

@@ -187,7 +187,11 @@ func (s *Server) CreatePurchaseRequest(w http.ResponseWriter, r *http.Request, i
 	}
 
 	if err := s.Store.CreateOrderWithRequests(ctx, order, []*models.PurchaseRequest{newReq}); err != nil {
-		if errors.Is(err, store.ErrDuplicate) {
+		if errors.Is(err, store.ErrPendingRequestExists) {
+			writePurchaseRequestError(w, http.StatusConflict, "pending_request_exists", "لديك طلب اشتراك معلق لهذه المادة بالفعل", "You already have a pending purchase request for this subject")
+			return
+		}
+		if errors.Is(err, store.ErrDuplicateReference) || errors.Is(err, store.ErrDuplicate) {
 			writePurchaseRequestError(w, http.StatusConflict, "duplicate_reference", "تم استخدام رقم الحوالة هذا في طلب سابق", "This transfer reference has already been used")
 			return
 		}

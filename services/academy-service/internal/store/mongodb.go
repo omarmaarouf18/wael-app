@@ -1142,7 +1142,7 @@ func (s *MongoStore) CreatePurchaseRequest(ctx context.Context, req *models.Purc
 	_, err := s.db.Collection("purchase_requests").InsertOne(ctx, req)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return ErrDuplicate
+			return mapDuplicateKeyError(err)
 		}
 		return fmt.Errorf("store: insert purchase request: %w", err)
 	}
@@ -1362,7 +1362,7 @@ func (s *MongoStore) CreateOrderWithRequests(ctx context.Context, order *models.
 
 	if _, err := s.db.Collection("orders").InsertOne(ctx, order); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return ErrDuplicate
+			return mapDuplicateKeyError(err)
 		}
 		return fmt.Errorf("store: insert order: %w", err)
 	}
@@ -1396,11 +1396,41 @@ func (s *MongoStore) CreateOrderWithRequests(ctx context.Context, order *models.
 	if _, err := s.db.Collection("purchase_requests").InsertMany(ctx, docs, options.InsertMany().SetOrdered(true)); err != nil {
 		s.deleteOrderWithRequests(ctx, order.ID)
 		if mongo.IsDuplicateKeyError(err) {
-			return ErrDuplicate
+			return mapDuplicateKeyError(err)
 		}
 		return fmt.Errorf("store: insert order requests: %w", err)
 	}
 	return nil
+}
+
+// mapDuplicateKeyError inspects a MongoDB duplicate key error to distinguish between
+// a duplicate transfer reference and a duplicate pending request per subject.
+func mapDuplicateKeyError(err error) error {
+	if !mongo.IsDuplicateKeyError(err) {
+		return err
+	}
+	msg := err.Error()
+	var we mongo.WriteException
+	if errors.As(err, &we) {
+		for _, wErr := range we.WriteErrors {
+			msg += " " + wErr.Message
+		}
+	}
+	var bwe mongo.BulkWriteException
+	if errors.As(err, &bwe) {
+		for _, wErr := range bwe.WriteErrors {
+			msg += " " + wErr.Message
+		}
+	}
+	if strings.Contains(msg, "uniq_orders_normalized_reference") ||
+		strings.Contains(msg, "uniq_purchase_requests_normalized_reference") ||
+		strings.Contains(msg, "normalized_reference") {
+		return ErrDuplicateReference
+	}
+	if strings.Contains(msg, "uniq_pending_user_subject_request") {
+		return ErrPendingRequestExists
+	}
+	return ErrDuplicate
 }
 
 // deleteOrderWithRequests removes an order and any request rows already

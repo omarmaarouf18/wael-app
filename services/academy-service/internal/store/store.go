@@ -18,9 +18,11 @@ import (
 
 // Common store errors.
 var (
-	ErrDuplicate      = errors.New("store: duplicate key")
-	ErrNotFound       = errors.New("store: not found")
-	ErrSubjectExpired = errors.New("store: subject access has expired")
+	ErrDuplicate            = errors.New("store: duplicate key")
+	ErrDuplicateReference   = errors.New("store: duplicate transfer reference")
+	ErrPendingRequestExists = errors.New("store: pending request exists")
+	ErrNotFound             = errors.New("store: not found")
+	ErrSubjectExpired       = errors.New("store: subject access has expired")
 	// ErrSubjectPublished: a published subject cannot be deleted; unpublish
 	// it first (owner amendment 2026-11-02 to ADR-0012 decision 5).
 	ErrSubjectPublished = errors.New("store: subject is published")
@@ -894,10 +896,10 @@ func (s *MemoryStore) CreatePurchaseRequest(_ context.Context, req *models.Purch
 
 	for _, r := range s.purchaseRequests {
 		if r.UserID == req.UserID && r.SubjectID == req.SubjectID && r.Status == models.RequestStatusPending {
-			return ErrDuplicate
+			return ErrPendingRequestExists
 		}
 		if req.NormalizedReference != "" && r.NormalizedReference == req.NormalizedReference {
-			return ErrDuplicate
+			return ErrDuplicateReference
 		}
 	}
 
@@ -1107,12 +1109,12 @@ func (s *MemoryStore) CreateOrderWithRequests(_ context.Context, order *models.O
 	if order.NormalizedReference != "" {
 		for _, o := range s.orders {
 			if o.NormalizedReference != "" && o.NormalizedReference == order.NormalizedReference {
-				return ErrDuplicate
+				return ErrDuplicateReference
 			}
 		}
 		for _, r := range s.purchaseRequests {
 			if r.NormalizedReference != "" && r.NormalizedReference == order.NormalizedReference {
-				return ErrDuplicate
+				return ErrDuplicateReference
 			}
 		}
 	}
@@ -1123,12 +1125,12 @@ func (s *MemoryStore) CreateOrderWithRequests(_ context.Context, order *models.O
 			return errors.New("store: nil request")
 		}
 		if seen[req.SubjectID] {
-			return ErrDuplicate
+			return ErrPendingRequestExists
 		}
 		seen[req.SubjectID] = true
 		for _, existing := range s.purchaseRequests {
 			if existing.UserID == req.UserID && existing.SubjectID == req.SubjectID && existing.Status == models.RequestStatusPending {
-				return ErrDuplicate
+				return ErrPendingRequestExists
 			}
 		}
 	}
