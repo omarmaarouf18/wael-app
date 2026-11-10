@@ -1652,6 +1652,9 @@ func (f *failingStore) ListActiveSessions(ctx context.Context, userID string) ([
 func (f *failingStore) CreateAccountEvent(ctx context.Context, e *models.AccountEvent) error {
 	return f.err
 }
+func (f *failingStore) ListAccountEvents(ctx context.Context, filter store.AccountEventFilter, page, limit int) ([]*models.AccountEvent, int, error) {
+	return nil, 0, f.err
+}
 func (f *failingStore) RequestDeletion(ctx context.Context, userID string, at, purgeAfter time.Time) error {
 	return f.err
 }

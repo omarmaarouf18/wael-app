@@ -120,25 +120,36 @@ type AuditLog struct {
 }
 
 // AccountEvent is one entry in the account_events collection (SPEC Section 5,
-// F-UX2). It records that a self-service account change happened, without any
-// PII values: only the user id, the event type, and the timestamp.
+// F-UX2). It records that an account change or security event happened, without
+// any raw PII values (no passwords, raw emails or phones).
 type AccountEvent struct {
-	ID        string    `json:"id" bson:"_id"`
-	UserID    string    `json:"user_id" bson:"user_id"`
-	Type      string    `json:"type" bson:"type"`
-	CreatedAt time.Time `json:"created_at" bson:"created_at"`
+	ID          string    `json:"id" bson:"_id"`
+	UserID      string    `json:"user_id" bson:"user_id"`
+	Type        string    `json:"type" bson:"type"`
+	DeviceLabel string    `json:"device_label,omitempty" bson:"device_label,omitempty"`
+	ActorType   string    `json:"actor_type,omitempty" bson:"actor_type,omitempty"` // "student" or "admin"
+	ActorID     string    `json:"actor_id,omitempty" bson:"actor_id,omitempty"`
+	ActorName   string    `json:"actor_name,omitempty" bson:"actor_name,omitempty"`
+	Detail      string    `json:"detail,omitempty" bson:"detail,omitempty"`
+	CreatedAt   time.Time `json:"created_at" bson:"created_at"`
 }
 
-// Account event types written by the self-service account endpoints.
+// Account event types.
 const (
-	AccountEventPasswordChanged   = "password_changed"
-	AccountEventProfileChanged    = "profile_changed"
-	AccountEventEmailChangeSent   = "email_change_requested"
-	AccountEventEmailChanged      = "email_changed"
-	AccountEventDeletionRequested = "deletion_requested"
-	AccountEventDeletionCancelled = "deletion_cancelled"
-	AccountEventAccountPurged     = "account_purged"
-	AccountEventSessionRevoked    = "session_revoked"
+	AccountEventPasswordChanged    = "password_changed"
+	AccountEventProfileChanged     = "profile_changed"
+	AccountEventEmailChangeSent    = "email_change_requested"
+	AccountEventEmailChanged       = "email_changed"
+	AccountEventDeletionRequested  = "deletion_requested"
+	AccountEventDeletionCancelled  = "deletion_cancelled"
+	AccountEventAccountPurged      = "account_purged"
+	AccountEventSessionRevoked     = "session_revoked"
+	AccountEventLogin              = "login"
+	AccountEventLogout             = "logout"
+	AccountEventSessionEndedCap    = "session_ended_cap"
+	AccountEventAccountSuspended   = "account_suspended"
+	AccountEventAccountReactivated = "account_reactivated"
+	AccountEventAccountDeleted     = "account_deleted"
 )
 
 // UserDTO represents a sanitized account view for admin listing and detail endpoints.

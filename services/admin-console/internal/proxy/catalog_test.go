@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -210,6 +211,33 @@ func TestAudit_SourceAcademyGoesToAcademy(t *testing.T) {
 	}
 	if calls[0].Path != "/internal/admin/audit-log" || calls[0].RawQuery != "limit=20&page=1" {
 		t.Fatalf("academy got %s?%s", calls[0].Path, calls[0].RawQuery)
+	}
+}
+
+func TestAudit_SourceStudentGoesToAuthAccountEvents(t *testing.T) {
+	authUp := newUpstream(t, 200, `{"items":[],"total":0,"page":1,"limit":20}`)
+	academyUp := newUpstream(t, 200, `{"items":[]}`)
+	p := newSplitProxy(t, authUp, academyUp)
+	w := do(p.Audit, http.MethodGet, "/api/audit?source=student&student=wagdy@example.com&type=login&page=1&limit=20", "", withToken())
+	if w.Code != 200 {
+		t.Fatalf("status = %d body=%q", w.Code, w.Body.String())
+	}
+	if n := len(academyUp.calls()); n != 0 {
+		t.Fatalf("academy upstream was called %d times", n)
+	}
+	calls := authUp.calls()
+	if len(calls) != 1 {
+		t.Fatalf("auth calls = %d, want 1", len(calls))
+	}
+	if calls[0].Path != "/internal/admin/account-events" {
+		t.Fatalf("auth got path %s, want /internal/admin/account-events", calls[0].Path)
+	}
+	q, err := url.ParseQuery(calls[0].RawQuery)
+	if err != nil {
+		t.Fatalf("ParseQuery: %v", err)
+	}
+	if q.Get("student") != "wagdy@example.com" || q.Get("type") != "login" || q.Get("page") != "1" || q.Get("limit") != "20" {
+		t.Fatalf("unexpected query params: %s", calls[0].RawQuery)
 	}
 }
 

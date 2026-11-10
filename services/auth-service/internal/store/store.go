@@ -62,6 +62,14 @@ type UserFilter struct {
 	Limit           int
 }
 
+// AccountEventFilter specifies filtering parameters for ListAccountEvents.
+type AccountEventFilter struct {
+	UserID string
+	Type   string
+	From   time.Time
+	To     time.Time
+}
+
 // Store is the user persistence contract.
 type Store interface {
 	Create(ctx context.Context, u *models.User) error
@@ -97,6 +105,7 @@ type Store interface {
 	// Self-service account events (F-UX2): one append-only entry per change,
 	// carrying user_id, type and created_at only (no PII values).
 	CreateAccountEvent(ctx context.Context, e *models.AccountEvent) error
+	ListAccountEvents(ctx context.Context, filter AccountEventFilter, page, limit int) ([]*models.AccountEvent, int, error)
 
 	// Self-deletion grace period (F-UX2, 30 days). All three are atomic
 	// compare-and-set operations on status, so a login that races the purge
@@ -763,6 +772,49 @@ func (s *MemoryStore) CreateAccountEvent(_ context.Context, e *models.AccountEve
 	cp := *e
 	s.accountEvts = append(s.accountEvts, &cp)
 	return nil
+}
+
+// ListAccountEvents returns paginated account events newest first matching the filter.
+func (s *MemoryStore) ListAccountEvents(_ context.Context, filter AccountEventFilter, page, limit int) ([]*models.AccountEvent, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var matched []*models.AccountEvent
+	// Traverse newest first
+	for i := len(s.accountEvts) - 1; i >= 0; i-- {
+		e := s.accountEvts[i]
+		if filter.UserID != "" && e.UserID != filter.UserID {
+			continue
+		}
+		if filter.Type != "" && e.Type != filter.Type {
+			continue
+		}
+		if !filter.From.IsZero() && e.CreatedAt.Before(filter.From) {
+			continue
+		}
+		if !filter.To.IsZero() && e.CreatedAt.After(filter.To) {
+			continue
+		}
+		cp := *e
+		matched = append(matched, &cp)
+	}
+
+	total := len(matched)
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	start := (page - 1) * limit
+	if start >= total {
+		return []*models.AccountEvent{}, total, nil
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	return matched[start:end], total, nil
 }
 
 // RequestDeletion compare-and-sets an active account to pending_deletion with

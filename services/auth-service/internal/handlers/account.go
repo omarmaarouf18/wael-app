@@ -132,19 +132,31 @@ func (s *Server) verifyCurrentPassword(w http.ResponseWriter, r *http.Request, u
 	return true
 }
 
-// recordAccountEvent writes one account_events entry. A write failure is
-// logged with IDs only and never fails the call (same policy as the admin
-// audit log).
-func (s *Server) recordAccountEvent(ctx context.Context, userID, eventType string, at time.Time) {
-	entry := &models.AccountEvent{UserID: userID, Type: eventType, CreatedAt: at}
-	dbCtx, cancel := context.WithTimeout(ctx, dbTimeout)
+// recordAccountEventDetailed writes one account_events entry with all fields.
+func (s *Server) recordAccountEventDetailed(ctx context.Context, entry *models.AccountEvent) {
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = s.now()
+	}
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
 	err := s.Store.CreateAccountEvent(dbCtx, entry)
 	cancel()
 	if err != nil {
-		cleanID := strings.ReplaceAll(strings.ReplaceAll(userID, "\r", ""), "\n", "")
+		cleanID := strings.ReplaceAll(strings.ReplaceAll(entry.UserID, "\r", ""), "\n", "")
 		// #nosec G706 -- cleanID sanitized of CR/LF
-		log.Printf("[AUTH] account event write failed type=%s user %s: %v", eventType, cleanID, err)
+		log.Printf("[AUTH] account event write failed type=%s user %s: %v", entry.Type, cleanID, err)
 	}
+}
+
+// recordAccountEvent writes one account_events entry for a student action. A write failure is
+// logged with IDs only and never fails the call (same policy as the admin audit log).
+func (s *Server) recordAccountEvent(ctx context.Context, userID, eventType string, at time.Time) {
+	s.recordAccountEventDetailed(ctx, &models.AccountEvent{
+		UserID:    userID,
+		Type:      eventType,
+		ActorType: "student",
+		ActorID:   userID,
+		CreatedAt: at,
+	})
 }
 
 // endOtherSessions terminates every session except exceptSID: end_reason,
@@ -302,7 +314,14 @@ func (s *Server) DeleteSession(w http.ResponseWriter, r *http.Request, sid strin
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", revErr)
 		return
 	}
-	s.recordAccountEvent(r.Context(), sc.user.ID, models.AccountEventSessionRevoked, now)
+	s.recordAccountEventDetailed(r.Context(), &models.AccountEvent{
+		UserID:      sc.user.ID,
+		Type:        models.AccountEventSessionRevoked,
+		DeviceLabel: target.DeviceLabel,
+		ActorType:   "student",
+		ActorID:     sc.user.ID,
+		CreatedAt:   now,
+	})
 	go notify.DeviceSessionEnded(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, sc.user.ID)
 	w.WriteHeader(http.StatusNoContent)
 }

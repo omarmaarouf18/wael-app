@@ -125,6 +125,14 @@ func runDeletionSuite(t *testing.T, s Store) {
 	if err := s.CreateAccountEvent(ctx, &models.AccountEvent{UserID: u.ID, Type: models.AccountEventAccountPurged, CreatedAt: now}); err != nil {
 		t.Fatalf("event: %v", err)
 	}
+
+	evts, total, err := s.ListAccountEvents(ctx, AccountEventFilter{UserID: u.ID}, 1, 10)
+	if err != nil {
+		t.Fatalf("ListAccountEvents: %v", err)
+	}
+	if total != 2 || len(evts) != 2 {
+		t.Fatalf("expected 2 account events, got total=%d len=%d", total, len(evts))
+	}
 }
 
 func TestMemoryStore_DeletionLifecycle(t *testing.T) {

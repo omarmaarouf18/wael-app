@@ -188,14 +188,21 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 
 	// Self-service account events (F-UX2): append-only, indexed by user and time.
 	accountEvtColl := db.Collection("account_events")
-	_, err = accountEvtColl.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{
-			{Key: "user_id", Value: 1},
-			{Key: "created_at", Value: -1},
+	_, err = accountEvtColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{
+			Keys: bson.D{
+				{Key: "user_id", Value: 1},
+				{Key: "created_at", Value: -1},
+			},
+		},
+		{
+			Keys: bson.D{
+				{Key: "created_at", Value: -1},
+			},
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("store: ensure account_events user_id_created_at index: %w", err)
+		return nil, fmt.Errorf("store: ensure account_events indexes: %w", err)
 	}
 
 	return &MongoStore{
@@ -939,6 +946,62 @@ func (s *MongoStore) CreateAccountEvent(ctx context.Context, e *models.AccountEv
 		return fmt.Errorf("store: insert account event: %w", err)
 	}
 	return nil
+}
+
+// ListAccountEvents returns paginated account events newest first matching filter.
+func (s *MongoStore) ListAccountEvents(ctx context.Context, filter AccountEventFilter, page, limit int) ([]*models.AccountEvent, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	filterDoc := bson.M{}
+	if filter.UserID != "" {
+		filterDoc["user_id"] = filter.UserID
+	}
+	if filter.Type != "" {
+		filterDoc["type"] = filter.Type
+	}
+	dateFilter := bson.M{}
+	if !filter.From.IsZero() {
+		dateFilter["$gte"] = filter.From
+	}
+	if !filter.To.IsZero() {
+		dateFilter["$lte"] = filter.To
+	}
+	if len(dateFilter) > 0 {
+		filterDoc["created_at"] = dateFilter
+	}
+
+	total, err := s.accountEvtColl.CountDocuments(ctx, filterDoc)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: count account events: %w", err)
+	}
+
+	skip := int64((page - 1) * limit)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "created_at", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(limit))
+
+	cursor, err := s.accountEvtColl.Find(ctx, filterDoc, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("store: find account events: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var events []*models.AccountEvent
+	if err := cursor.All(ctx, &events); err != nil {
+		return nil, 0, fmt.Errorf("store: decode account events: %w", err)
+	}
+	if events == nil {
+		events = []*models.AccountEvent{}
+	}
+	return events, int(total), nil
 }
 
 // activeStatusFilter matches active accounts including legacy documents with a

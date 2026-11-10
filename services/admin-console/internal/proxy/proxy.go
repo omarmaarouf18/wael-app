@@ -284,6 +284,22 @@ func (p *Proxy) Audit(w http.ResponseWriter, r *http.Request) {
 		p.relayNotif(w, r, token, upstreamCall{
 			route: "audit.notifications", method: http.MethodGet, path: "/internal/admin/audit-log", query: q,
 		})
+	case "student", "account_events":
+		if sVal := strings.TrimSpace(in.Get("student")); sVal != "" && utf8.RuneCountInString(sVal) <= maxSearchRunes {
+			q.Set("student", sVal)
+		}
+		if tVal := strings.TrimSpace(in.Get("type")); tVal != "" && len(tVal) <= 64 {
+			q.Set("type", tVal)
+		}
+		if fromVal := strings.TrimSpace(in.Get("from")); fromVal != "" && len(fromVal) <= 64 {
+			q.Set("from", fromVal)
+		}
+		if toVal := strings.TrimSpace(in.Get("to")); toVal != "" && len(toVal) <= 64 {
+			q.Set("to", toVal)
+		}
+		p.relayCall(w, r, token, upstreamCall{
+			route: "audit.student", method: http.MethodGet, path: "/internal/admin/account-events", query: q,
+		})
 	default:
 		writeError(w, http.StatusBadRequest, "bad_request")
 	}

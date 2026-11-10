@@ -429,6 +429,16 @@ func (s *Server) SuspendAccount(w http.ResponseWriter, r *http.Request, id strin
 		log.Printf("[ERROR] admin audit log write failed for action %s actor_id=%s target_id=%s: %v", auditEntry.Action, adm.ID, cleanID, auditErr)
 	}
 
+	s.recordAccountEventDetailed(r.Context(), &models.AccountEvent{
+		UserID:    id,
+		Type:      models.AccountEventAccountSuspended,
+		ActorType: "admin",
+		ActorID:   adm.ID,
+		ActorName: adm.Name,
+		Detail:    cleanReason,
+		CreatedAt: now,
+	})
+
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -516,6 +526,15 @@ func (s *Server) ReactivateAccount(w http.ResponseWriter, r *http.Request, id st
 		// #nosec G706 -- cleanID sanitized of CR/LF
 		log.Printf("[ERROR] admin audit log write failed for action %s actor_id=%s target_id=%s: %v", auditEntry.Action, adm.ID, cleanID, auditErr)
 	}
+
+	s.recordAccountEventDetailed(r.Context(), &models.AccountEvent{
+		UserID:    id,
+		Type:      models.AccountEventAccountReactivated,
+		ActorType: "admin",
+		ActorID:   adm.ID,
+		ActorName: adm.Name,
+		CreatedAt: now,
+	})
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -661,6 +680,16 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, id string
 		log.Printf("[ERROR] admin audit log write failed for action %s actor_id=%s target_id=%s: %v", auditEntry.Action, adm.ID, cleanID, auditErr)
 	}
 
+	s.recordAccountEventDetailed(r.Context(), &models.AccountEvent{
+		UserID:    id,
+		Type:      models.AccountEventAccountDeleted,
+		ActorType: "admin",
+		ActorID:   adm.ID,
+		ActorName: adm.Name,
+		Detail:    cleanReason,
+		CreatedAt: now,
+	})
+
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -719,6 +748,191 @@ func (s *Server) AuditLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// AccountEventDTO is the sanitized view of an account event exposed to admins.
+// It never includes unmasked email addresses, phone numbers, or passwords.
+type AccountEventDTO struct {
+	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
+	Student     string    `json:"student"`
+	Type        string    `json:"type"`
+	DeviceLabel string    `json:"device_label,omitempty"`
+	ActorType   string    `json:"actor_type"`
+	ActorID     string    `json:"actor_id,omitempty"`
+	ActorName   string    `json:"actor_name,omitempty"`
+	Detail      string    `json:"detail,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func maskPhone(phone string) string {
+	if len(phone) <= 4 {
+		return "***"
+	}
+	if len(phone) <= 6 {
+		return phone[:1] + "***" + phone[len(phone)-1:]
+	}
+	return phone[:3] + "***" + phone[len(phone)-2:]
+}
+
+// AccountEvents handles GET /internal/admin/account-events.
+// Returns paginated account lifecycle and security events, newest first.
+// Supports filtering by student (email, phone, or user_id), event type, and date range.
+func (s *Server) AccountEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		handlerutil.WriteSafeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil)
+		return
+	}
+
+	_, status, msg, err := s.authenticateAdmin(r)
+	if status != http.StatusOK {
+		writeAdminAuthError(w, r, status, msg, err)
+		return
+	}
+
+	q := r.URL.Query()
+	page := 1
+	if pStr := strings.TrimSpace(q.Get("page")); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil && p >= 1 {
+			page = p
+		}
+	}
+
+	limit := 20
+	if lStr := strings.TrimSpace(q.Get("limit")); lStr != "" {
+		if l, err := strconv.Atoi(lStr); err == nil {
+			if l <= 0 {
+				limit = 20
+			} else if l > 100 {
+				limit = 100
+			} else {
+				limit = l
+			}
+		}
+	}
+
+	filter := store.AccountEventFilter{
+		Type: strings.TrimSpace(q.Get("type")),
+	}
+
+	if fromStr := strings.TrimSpace(q.Get("from")); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			filter.From = t
+		}
+	}
+	if toStr := strings.TrimSpace(q.Get("to")); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			filter.To = t
+		}
+	}
+
+	studentQuery := strings.TrimSpace(q.Get("student"))
+	if studentQuery != "" {
+		if isValidUUIDv4(studentQuery) {
+			filter.UserID = studentQuery
+		} else if strings.Contains(studentQuery, "@") {
+			dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+			u, err := s.Store.FindByEmail(dbCtx, normalizeEmail(studentQuery))
+			cancel()
+			if err != nil {
+				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+				return
+			}
+			if u == nil {
+				handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+					"items": []*AccountEventDTO{},
+					"total": 0,
+					"page":  page,
+					"limit": limit,
+				})
+				return
+			}
+			filter.UserID = u.ID
+		} else {
+			dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+			u, err := s.Store.FindByPhone(dbCtx, studentQuery)
+			cancel()
+			if err != nil {
+				handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+				return
+			}
+			if u == nil {
+				dbCtx2, cancel2 := context.WithTimeout(r.Context(), dbTimeout)
+				u, _ = s.Store.FindByID(dbCtx2, studentQuery)
+				cancel2()
+			}
+			if u == nil {
+				handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+					"items": []*AccountEventDTO{},
+					"total": 0,
+					"page":  page,
+					"limit": limit,
+				})
+				return
+			}
+			filter.UserID = u.ID
+		}
+	}
+
+	dbCtx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	events, total, err := s.Store.ListAccountEvents(dbCtx, filter, page, limit)
+	cancel()
+	if err != nil {
+		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
+		return
+	}
+
+	userLabels := make(map[string]string)
+	dtos := make([]*AccountEventDTO, len(events))
+	for i, e := range events {
+		lbl, ok := userLabels[e.UserID]
+		if !ok {
+			dbCtxU, cancelU := context.WithTimeout(r.Context(), dbTimeout)
+			u, _ := s.Store.FindByID(dbCtxU, e.UserID)
+			cancelU()
+			if u != nil {
+				if u.Email != "" {
+					lbl = maskEmail(u.Email)
+				} else if u.Phone != "" {
+					lbl = maskPhone(u.Phone)
+				} else {
+					lbl = u.ID
+				}
+			} else {
+				lbl = e.UserID
+			}
+			userLabels[e.UserID] = lbl
+		}
+
+		actorType := e.ActorType
+		if actorType == "" {
+			actorType = "student"
+		}
+
+		dtos[i] = &AccountEventDTO{
+			ID:          e.ID,
+			UserID:      e.UserID,
+			Student:     lbl,
+			Type:        e.Type,
+			DeviceLabel: e.DeviceLabel,
+			ActorType:   actorType,
+			ActorID:     e.ActorID,
+			ActorName:   e.ActorName,
+			Detail:      e.Detail,
+			CreatedAt:   e.CreatedAt,
+		}
+	}
+
+	if dtos == nil {
+		dtos = []*AccountEventDTO{}
+	}
+
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+		"items": dtos,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
 // AdminHandler constructs the HTTP handler for the admin listener.
 // It serves ONLY /internal/admin/* routes and 404s on all public routes.
 func (s *Server) AdminHandler() http.Handler {
@@ -727,6 +941,7 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("/internal/admin/accounts", s.Accounts)
 	mux.HandleFunc("/internal/admin/accounts/", s.AccountSubroute)
 	mux.HandleFunc("/internal/admin/audit-log", s.AuditLogs)
+	mux.HandleFunc("/internal/admin/account-events", s.AccountEvents)
 
 	var h http.Handler = mux
 	h = s.InternalTokenAuth(h)

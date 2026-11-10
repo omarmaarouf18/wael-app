@@ -116,20 +116,49 @@
             <button id="audit-source-auth" class="btn small secondary" type="button" data-i18n="audit.source.auth" aria-pressed="true"></button>
             <button id="audit-source-academy" class="btn small secondary" type="button" data-i18n="audit.source.academy" aria-pressed="false"></button>
             <button id="audit-source-notifications" class="btn small secondary" type="button" data-i18n="audit.source.notifications" aria-pressed="false"></button>
+            <button id="audit-source-student" class="btn small secondary" type="button" data-i18n="audit.source.student" aria-pressed="false"></button>
           </div>
           <button id="audit-refresh" class="btn secondary" type="button" data-i18n="common.refresh"></button>
         </div>
       </div>
+      <form id="audit-filter" class="toolbar" hidden>
+        <div class="field">
+          <label for="audit-student" data-i18n="audit.filterStudent"></label>
+          <input id="audit-student" type="search" data-i18n-placeholder="audit.filterStudentPlaceholder" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="audit-type" data-i18n="audit.filterType"></label>
+          <select id="audit-type">
+            <option value="" data-i18n="audit.typeAll"></option>
+            <option value="login" data-i18n="audit.action.login"></option>
+            <option value="logout" data-i18n="audit.action.logout"></option>
+            <option value="session_revoked" data-i18n="audit.action.session_revoked"></option>
+            <option value="session_ended_cap" data-i18n="audit.action.session_ended_cap"></option>
+            <option value="password_changed" data-i18n="audit.action.password_changed"></option>
+            <option value="profile_changed" data-i18n="audit.action.profile_changed"></option>
+            <option value="email_change_requested" data-i18n="audit.action.email_change_requested"></option>
+            <option value="email_changed" data-i18n="audit.action.email_changed"></option>
+            <option value="deletion_requested" data-i18n="audit.action.deletion_requested"></option>
+            <option value="deletion_cancelled" data-i18n="audit.action.deletion_cancelled"></option>
+            <option value="account_purged" data-i18n="audit.action.account_purged"></option>
+            <option value="account_suspended" data-i18n="audit.action.account_suspend"></option>
+            <option value="account_reactivated" data-i18n="audit.action.account_reactivate"></option>
+            <option value="account_deleted" data-i18n="audit.action.account_delete"></option>
+          </select>
+        </div>
+        <button id="audit-filter-submit" class="btn primary" type="submit" data-i18n="audit.filter"></button>
+        <button id="audit-filter-reset" class="btn secondary" type="button" data-i18n="audit.reset"></button>
+      </form>
       <div id="audit-banner" class="banner" role="alert" hidden></div>
       <div class="table-wrap">
         <table id="audit-table">
           <thead>
             <tr>
-              <th scope="col" data-i18n="audit.col.time"></th>
-              <th scope="col" data-i18n="audit.col.actor"></th>
-              <th scope="col" data-i18n="audit.col.action"></th>
-              <th scope="col" data-i18n="audit.col.target"></th>
-              <th scope="col" data-i18n="audit.col.detail"></th>
+              <th id="audit-th-time" scope="col" data-i18n="audit.col.time"></th>
+              <th id="audit-th-actor" scope="col" data-i18n="audit.col.actor"></th>
+              <th id="audit-th-action" scope="col" data-i18n="audit.col.action"></th>
+              <th id="audit-th-target" scope="col" data-i18n="audit.col.target"></th>
+              <th id="audit-th-detail" scope="col" data-i18n="audit.col.detail"></th>
             </tr>
           </thead>
           <tbody></tbody>

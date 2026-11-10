@@ -339,11 +339,30 @@ func (s *Server) createSessionAndTokensWithClient(ctx context.Context, u *models
 		if err := jwtutil.RevokeSession(endedSess.ID); err != nil {
 			return "", "", err
 		}
+		if endedSess.EndReason == models.EndReasonReplaced {
+			s.recordAccountEventDetailed(ctx, &models.AccountEvent{
+				UserID:      u.ID,
+				Type:        models.AccountEventSessionEndedCap,
+				DeviceLabel: endedSess.DeviceLabel,
+				ActorType:   "student",
+				ActorID:     u.ID,
+				CreatedAt:   now,
+			})
+		}
 	}
 
 	if err := s.Codes.Set(ctx, "refresh:"+refreshHash, u.ID+":"+sid, 7*24*time.Hour); err != nil {
 		return "", "", err
 	}
+
+	s.recordAccountEventDetailed(ctx, &models.AccountEvent{
+		UserID:      u.ID,
+		Type:        models.AccountEventLogin,
+		DeviceLabel: deviceLabel,
+		ActorType:   "student",
+		ActorID:     u.ID,
+		CreatedAt:   now,
+	})
 	return access, refresh, nil
 }
 
@@ -1254,6 +1273,14 @@ func (s *Server) Logout(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+			s.recordAccountEventDetailed(r.Context(), &models.AccountEvent{
+				UserID:      claims.UserID,
+				Type:        models.AccountEventLogout,
+				DeviceLabel: sess.DeviceLabel,
+				ActorType:   "student",
+				ActorID:     claims.UserID,
+				CreatedAt:   now,
+			})
 		}
 
 		if revErr := jwtutil.RevokeSession(claims.SID); revErr != nil {
@@ -1488,6 +1515,13 @@ func (s *Server) ConfirmReset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go notify.PasswordChanged(context.WithoutCancel(r.Context()), s.NotifyURL, s.NotifyToken, u.ID)
+	s.recordAccountEventDetailed(r.Context(), &models.AccountEvent{
+		UserID:    u.ID,
+		Type:      models.AccountEventPasswordChanged,
+		ActorType: "student",
+		ActorID:   u.ID,
+		CreatedAt: now,
+	})
 	// Successful password reset clears both login locks for that email.
 	if ll := s.LoginLockout; ll != nil {
 		ll.ResetEmailAll(email)

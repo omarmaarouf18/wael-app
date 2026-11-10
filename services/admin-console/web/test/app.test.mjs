@@ -383,6 +383,99 @@ test('the audit source switch loads the academy log without merging pages', asyn
   assert.equal(back.url, '/api/audit?source=auth&page=1&limit=20');
 });
 
+test('the audit student source switch loads student account events, filters by student and type, and back to auth', async () => {
+  globalThis.fetch = makeFetch(routes({
+    'GET /api/audit': ({ url }) => {
+      if (url.includes('source=student')) {
+        return {
+          body: {
+            items: [
+              {
+                id: 'evt-1',
+                user_id: IDS.active,
+                student: 'a***@example.com',
+                type: 'login',
+                device_label: 'iPhone 15',
+                actor_type: 'student',
+                actor_id: IDS.active,
+                created_at: '2026-10-01T10:00:00Z',
+              },
+              {
+                id: 'evt-2',
+                user_id: IDS.suspended,
+                student: 'm***@example.com',
+                type: 'account_suspended',
+                device_label: '',
+                actor_type: 'admin',
+                actor_name: 'Wael',
+                created_at: '2026-10-01T11:00:00Z',
+              },
+            ],
+            total: 2,
+            page: 1,
+            limit: 20,
+          },
+        };
+      }
+      return {
+        body: {
+          items: [
+            { id: 'a1', actor_name: 'Wael', action: 'account_suspend', target_type: 'user', target_id: IDS.active, detail: 'spam', created_at: '2026-10-01T09:00:00Z' },
+          ],
+          total: 1,
+        },
+      };
+    },
+  }));
+
+  globalThis.fetch.calls.length = 0;
+  $('audit-source-student').click();
+  await flush();
+
+  const call = globalThis.fetch.calls.find((c) => c.path === '/api/audit');
+  assert.equal(call.url, '/api/audit?source=student&page=1&limit=20');
+  assert.equal($('audit-source-student').getAttribute('aria-pressed'), 'true');
+  assert.equal($('audit-source-auth').getAttribute('aria-pressed'), 'false');
+  assert.equal($('audit-filter').hidden, false);
+
+  // Check table headers for student source
+  assert.equal($('audit-th-actor').textContent, MESSAGES.ar['audit.col.student']);
+  assert.equal($('audit-th-action').textContent, MESSAGES.ar['audit.col.event']);
+  assert.equal($('audit-th-target').textContent, MESSAGES.ar['audit.col.device']);
+  assert.equal($('audit-th-detail').textContent, MESSAGES.ar['audit.col.actor']);
+
+  // Check rows
+  const rows = auditBody$().children;
+  assert.equal(rows.length, 2);
+  assert.ok(rows[0].textContent.includes('a***@example.com'));
+  assert.ok(rows[0].textContent.includes(MESSAGES.ar['audit.action.login']));
+  assert.ok(rows[0].textContent.includes('iPhone 15'));
+  assert.ok(rows[0].textContent.includes(MESSAGES.ar['audit.actor.student']));
+  assert.ok(rows[1].textContent.includes('m***@example.com'));
+  assert.ok(rows[1].textContent.includes(MESSAGES.ar['audit.action.account_suspended']));
+  assert.ok(rows[1].textContent.includes('Wael'));
+
+  // Test filter by student and type
+  $('audit-student').value = 'ali@example.com';
+  $('audit-type').value = 'login';
+  $('audit-filter').fire('submit');
+  await flush();
+
+  const filterCall = globalThis.fetch.calls[globalThis.fetch.calls.length - 1];
+  assert.ok(filterCall.url.includes('student=ali%40example.com'));
+  assert.ok(filterCall.url.includes('type=login'));
+
+  // Test reset returns to auth source and shows admin action
+  $('audit-source-auth').click();
+  await flush();
+  const back = globalThis.fetch.calls[globalThis.fetch.calls.length - 1];
+  assert.equal(back.url, '/api/audit?source=auth&page=1&limit=20');
+  assert.equal($('audit-source-auth').getAttribute('aria-pressed'), 'true');
+  assert.equal($('audit-source-student').getAttribute('aria-pressed'), 'false');
+  assert.equal($('audit-filter').hidden, true);
+  assert.ok(auditBody$().children[0].textContent.includes(MESSAGES.ar['audit.action.account_suspend']));
+});
+
 test('unknown tabs cannot be activated', () => {
   const before = globalThis.fetch.calls.length;
   app.activate('nope');
