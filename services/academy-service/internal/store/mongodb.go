@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -1403,10 +1404,21 @@ func (s *MongoStore) CreateOrderWithRequests(ctx context.Context, order *models.
 }
 
 // deleteOrderWithRequests removes an order and any request rows already
-// written for it (compensating delete after a partial create).
+// written for it (compensating delete after a partial create). It runs
+// under a detached context so an expired parent context cannot skip it,
+// and logs any deletion failures.
 func (s *MongoStore) deleteOrderWithRequests(ctx context.Context, orderID string) {
-	_, _ = s.db.Collection("purchase_requests").DeleteMany(ctx, bson.M{"order_id": orderID})
-	_, _ = s.db.Collection("orders").DeleteOne(ctx, bson.M{"_id": orderID})
+	compCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	cleanID := strings.ReplaceAll(strings.ReplaceAll(orderID, "\r", ""), "\n", "")
+	if _, err := s.db.Collection("purchase_requests").DeleteMany(compCtx, bson.M{"order_id": orderID}); err != nil {
+		// #nosec G706 -- cleanID sanitized of CR/LF
+		log.Printf("[ERROR] checkout compensation failed to delete purchase_requests for order %s: %v", cleanID, err)
+	}
+	if _, err := s.db.Collection("orders").DeleteOne(compCtx, bson.M{"_id": orderID}); err != nil {
+		// #nosec G706 -- cleanID sanitized of CR/LF
+		log.Printf("[ERROR] checkout compensation failed to delete order %s: %v", cleanID, err)
+	}
 }
 
 // HasOrderWithNormalizedReference checks if any order uses the normalized transfer reference.
