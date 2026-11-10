@@ -77,11 +77,14 @@ func TestAccountEventsSubscriber_RetryOnFailureAndChannelClose(t *testing.T) {
 		stop := s.StartAccountEventsListener(context.Background())
 		defer stop()
 
-		// Before 2nd attempt succeeds, health should report degraded
+		// Before 2nd attempt succeeds, health should report degraded (503 Service Unavailable)
 		// Check health endpoint
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		rec := httptest.NewRecorder()
 		s.Health(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected HTTP 503 while unsubscribed, got %d", rec.Code)
+		}
 		var initialHealth map[string]any
 		_ = json.NewDecoder(rec.Body).Decode(&initialHealth)
 		if initialHealth["status"] != "degraded" {
@@ -104,6 +107,9 @@ func TestAccountEventsSubscriber_RetryOnFailureAndChannelClose(t *testing.T) {
 		// Verify health is now ok
 		rec2 := httptest.NewRecorder()
 		s.Health(rec2, req)
+		if rec2.Code != http.StatusOK {
+			t.Fatalf("expected HTTP 200 when subscribed, got %d", rec2.Code)
+		}
 		var okHealth map[string]any
 		_ = json.NewDecoder(rec2.Body).Decode(&okHealth)
 		if okHealth["status"] != "ok" || okHealth["subscribed"] != true {
@@ -241,4 +247,28 @@ func TestAccountEventsSubscriber_RetryOnFailureAndChannelClose(t *testing.T) {
 			t.Fatalf("goroutine leak: baseline=%d, final=%d", baselineGoroutines, finalGoroutines)
 		}
 	})
+}
+
+func TestHealth_SubscriptionDown_Returns503(t *testing.T) {
+	mb := &mockRetryBus{
+		subscribeFn: func(ctx context.Context) (<-chan *bus.AccountEvent, func(), error) {
+			return nil, nil, errors.New("redis down")
+		},
+	}
+	s := New(store.NewMemoryStore(), mb, "gw-secret", "internal")
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	s.Health(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected HTTP 503 when subscription is down, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode health body: %v", err)
+	}
+	if body["status"] != "degraded" || body["subscribed"] != false {
+		t.Fatalf("expected degraded/unsubscribed payload, got %v", body)
+	}
 }

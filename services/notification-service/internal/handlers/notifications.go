@@ -642,10 +642,10 @@ func (s *Server) Push(w http.ResponseWriter, r *http.Request) {
 }
 
 // Health is the unauthenticated liveness and readiness probe on the server,
-// reporting degraded when account events bus is unsubscribed.
+// reporting 503 when account events bus is unsubscribed so compose healthchecks see it.
 func (s *Server) Health(w http.ResponseWriter, _ *http.Request) {
 	if s != nil && s.Bus != nil && !s.AccountEventsSubscribed() {
-		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+		handlerutil.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"status":     "degraded",
 			"subscribed": false,
 		})
