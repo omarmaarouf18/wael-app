@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main, develop]
 
-# Public repo: CI never needs write access to the repo contents.
+# Private repo: CI never needs write access to the repo contents.
 permissions:
   contents: read
 

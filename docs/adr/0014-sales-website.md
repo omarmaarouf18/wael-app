@@ -364,7 +364,7 @@ amendment supersedes the sentences it names.
 3. **In-memory access token**: The website keeps the access token strictly in JavaScript memory; tokens are never persisted in localStorage or IndexedDB.
 4. **Gateway CORS allowlist**: Exact match from env without wildcards (`https://elmetracademy.app`, `https://www.elmetracademy.app`, plus `http://localhost:3000` outside production). Credentials allowed only for allowlisted origins.
 5. **CSRF protection**: On cookie-using routes (or whenever a refresh cookie is sent), the gateway verifies that the `Origin` header matches the exact allowlist and `X-Client: web` is present, else returns 403 `csrf_refused`.
-6. **Web token restriction and device limits**: Tokens minted for web sessions carry `client: "web"`. `academy-service` refuses `POST /academy/videos/{id}/play` and `GET /academy/files/{id}/download` with 403 `web_access_forbidden`. Web sessions do not count toward the mobile 2-device cap and do not evict app sessions.
+6. **Web token restriction and device limits**: Tokens minted for web sessions carry `client: "web"`. `academy-service` refuses `POST /academy/videos/{id}/play` and `GET /academy/subjects/{id}/files/{fileId}/download` with 403 `web_access_forbidden`. Web sessions do not count toward the mobile 2-device cap and do not evict app sessions.
 7. **Dynamic pages**: The form and authenticated user pages (`/login`, `/signup`, `/forgot-password`, `/account`, and their `/en/...` variants) render dynamically with per-request CSP nonces. All other pages remain static. `scripts/web_gate.sh` enforces this exact route list.
 
 ## Amendment 2026-11-05 (Part D / W4: Purchase request and payment methods)
@@ -397,7 +397,7 @@ amendment supersedes the sentences it names.
    - Admin console review (`GET /api/requests?status=pending`) -> displays web fields (instapay, ref, sender, amount).
    - Admin accept (`POST /api/requests/accept`) -> 200 OK. Grants entitlement and appends `payment_records` row without reference field.
    - Web ownership verification: `GET /api/v1/academy/me/entitlements` returns subject ID; `GET /api/v1/academy/me/requests` shows status `accepted`. Re-requesting returns 409 `already_owned`.
-   - Web token restrictions: `POST /api/v1/academy/videos/{id}/play` and `GET /api/v1/academy/subjects/{id}/files/{id}/download` return 403 `web_access_forbidden`.
+   - Web token restrictions: `POST /api/v1/academy/videos/{id}/play` and `GET /api/v1/academy/subjects/{id}/files/{fileId}/download` return 403 `web_access_forbidden`.
 2. **Production-only items**: Production Caddy edge routing on public catalog, Vercel mirror repo sync via GitHub App access, production DNS, and real Resend email delivery.
 
 ## Amendment 2026-11-05 (Orders architecture: W4, W5, C2)
@@ -465,3 +465,4 @@ Owner decision of 2026-11-10 on review finding H1 / 5.3:
    - Document writes: `document.write`, `document.writeln`
    - Dynamic code evaluation: `eval()`, `new Function()`, and `Function()`
    The site renders all dynamic API data strictly via React standard text bindings, which escape HTML characters.
+4. **Download route reconciliation**: Reconciled the file download path to match `academy-service`: `GET /academy/subjects/{id}/files/{fileId}/download`.
