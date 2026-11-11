@@ -231,17 +231,18 @@ func (sl *StreamLimiter) TotalActiveSlots() int {
 
 // Server wires notification dependencies.
 type Server struct {
-	Store                    store.Store
-	Bus                      bus.Bus
-	GatewaySecret            string
-	InternalToken            string
-	Limiter                  *StreamLimiter
-	HeartbeatInterval        time.Duration
-	CheckEveryNth            int
-	AccountSubInitialBackoff time.Duration
-	accountSubActive         atomic.Bool
-	accountSubCancel         context.CancelFunc
-	accountSubDone           chan struct{}
+	Store                        store.Store
+	Bus                          bus.Bus
+	GatewaySecret                string
+	InternalToken                string
+	Limiter                      *StreamLimiter
+	HeartbeatInterval            time.Duration
+	CheckEveryNth                int
+	MaxHeartbeatRevocationErrors int
+	AccountSubInitialBackoff     time.Duration
+	accountSubActive             atomic.Bool
+	accountSubCancel             context.CancelFunc
+	accountSubDone               chan struct{}
 }
 
 func (s *Server) AccountEventsSubscribed() bool {
@@ -499,6 +500,11 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 	// refreshes on 401 and opens a new stream.
 	expiry := time.NewTimer(time.Until(claims.ExpiresAt.Time))
 	defer expiry.Stop()
+	maxRevocationErrors := s.MaxHeartbeatRevocationErrors
+	if maxRevocationErrors <= 0 {
+		maxRevocationErrors = 3
+	}
+	consecutiveRevocationErrors := 0
 	heartbeatCount := 0
 	for {
 		select {
@@ -528,10 +534,18 @@ func (s *Server) Stream(w http.ResponseWriter, r *http.Request) {
 						// Session or user token revoked: close stream cleanly.
 						return
 					}
-					// For any other error (transient Redis outage / lookup failure): log a warning,
-					// keep the stream open, and retry on the next heartbeat check to prevent thundering herds.
-					// Note: Never log the full token or full sid.
-					log.Printf("[NOTIF] warning: Redis error during SSE heartbeat revocation check for user %s: %v", claims.UserID, err)
+					consecutiveRevocationErrors++
+					cleanID := strings.ReplaceAll(strings.ReplaceAll(claims.UserID, "\r", ""), "\n", "")
+					// #nosec G706 -- cleanID sanitized of CR/LF
+					log.Printf("[NOTIF] warning: Redis error during SSE heartbeat revocation check for user %s (%d/%d): %v", cleanID, consecutiveRevocationErrors, maxRevocationErrors, err)
+					if consecutiveRevocationErrors >= maxRevocationErrors {
+						// Fail closed after max consecutive Redis revocation check errors.
+						// #nosec G706 -- cleanID sanitized of CR/LF
+						log.Printf("[NOTIF] closing SSE stream for user %s after %d consecutive Redis revocation check errors (fail closed)", cleanID, consecutiveRevocationErrors)
+						return
+					}
+				} else {
+					consecutiveRevocationErrors = 0
 				}
 			}
 			s.setWriteDeadline(w, time.Now().Add(10*time.Second))

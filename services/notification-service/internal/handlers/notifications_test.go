@@ -20,7 +20,14 @@ import (
 	"github.com/omarmaarouf18/wael-app/notification-service/internal/store"
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 	"github.com/redis/go-redis/v9"
+	"os"
 )
+
+func init() {
+	if os.Getenv("APP_ENV") == "" {
+		_ = os.Setenv("APP_ENV", "test")
+	}
+}
 
 func testServer() *Server {
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")
