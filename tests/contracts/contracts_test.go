@@ -18,6 +18,12 @@ import (
 	"github.com/omarmaarouf18/wael-app/shared/infra/jwtutil"
 )
 
+func init() {
+	if os.Getenv("APP_ENV") == "" {
+		_ = os.Setenv("APP_ENV", "test")
+	}
+}
+
 // 1. Gateway contract: strips X-Internal-Token from client requests so no client-supplied
 // internal token reaches downstream services, and never injects an internal token to backends.
 func TestContract_GatewayStripsInternalToken(t *testing.T) {

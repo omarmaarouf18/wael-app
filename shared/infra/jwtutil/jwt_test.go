@@ -15,7 +15,14 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
+	"os"
 )
+
+func init() {
+	if os.Getenv("APP_ENV") == "" {
+		_ = os.Setenv("APP_ENV", "test")
+	}
+}
 
 func TestValidateToken_Expired(t *testing.T) {
 	Init("super-secret-key-that-is-at-least-thirty-two-bytes-long")

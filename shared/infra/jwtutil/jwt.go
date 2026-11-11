@@ -261,6 +261,10 @@ func CheckRevocation(claims *Claims) error {
 		return errors.New("jwtutil: nil claims")
 	}
 	if redisClient == nil {
+		env := os.Getenv("APP_ENV")
+		if env != "local" && env != "test" {
+			return errors.New("jwtutil: redis client not initialized")
+		}
 		return nil
 	}
 
