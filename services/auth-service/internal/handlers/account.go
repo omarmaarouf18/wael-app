@@ -132,18 +132,37 @@ func (s *Server) verifyCurrentPassword(w http.ResponseWriter, r *http.Request, u
 	return true
 }
 
-// recordAccountEventDetailed writes one account_events entry with all fields.
+// recordAccountEventDetailed writes one account_events entry asynchronously with bounded concurrency.
+// If the in-flight semaphore is full, the write is dropped immediately without blocking the request.
 func (s *Server) recordAccountEventDetailed(ctx context.Context, entry *models.AccountEvent) {
-	if entry.CreatedAt.IsZero() {
-		entry.CreatedAt = s.now()
+	if entry == nil {
+		return
 	}
-	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
-	err := s.Store.CreateAccountEvent(dbCtx, entry)
-	cancel()
-	if err != nil {
-		cleanID := strings.ReplaceAll(strings.ReplaceAll(entry.UserID, "\r", ""), "\n", "")
+	evt := *entry
+	if evt.CreatedAt.IsZero() {
+		evt.CreatedAt = s.now()
+	}
+	sem := s.getEvtSem()
+	select {
+	case sem <- struct{}{}:
+		s.evtWg.Add(1)
+		go func(e models.AccountEvent) {
+			defer func() {
+				<-sem
+				s.evtWg.Done()
+			}()
+			dbCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+			defer cancel()
+			if err := s.Store.CreateAccountEvent(dbCtx, &e); err != nil {
+				cleanID := strings.ReplaceAll(strings.ReplaceAll(e.UserID, "\r", ""), "\n", "")
+				// #nosec G706 -- cleanID sanitized of CR/LF
+				log.Printf("[AUTH] account event write failed type=%s user %s: %v", e.Type, cleanID, err)
+			}
+		}(evt)
+	default:
+		cleanID := strings.ReplaceAll(strings.ReplaceAll(evt.UserID, "\r", ""), "\n", "")
 		// #nosec G706 -- cleanID sanitized of CR/LF
-		log.Printf("[AUTH] account event write failed type=%s user %s: %v", entry.Type, cleanID, err)
+		log.Printf("[AUTH] account event dropped type=%s user %s", evt.Type, cleanID)
 	}
 }
 

@@ -12,6 +12,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/omarmaarouf18/wael-app/auth-service/internal/config"
@@ -190,8 +192,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("[AUTH] %v", err)
 	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = publicRunner.server.Shutdown(shutCtx)
+		_ = adminRunner.server.Shutdown(shutCtx)
+		if err := srv.Shutdown(shutCtx); err != nil {
+			log.Printf("[AUTH] account events drain on shutdown: %v", err)
+		}
+	}()
+
 	fmt.Printf("auth-service listening %s on %s\n", publicRunner.desc, addr)
-	log.Fatal(publicRunner.serve())
+	if err := publicRunner.serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatal(err)
+	}
 }
 
 type serverRunner struct {

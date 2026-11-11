@@ -186,19 +186,43 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 		return nil, fmt.Errorf("store: ensure users status_purge_after index: %w", err)
 	}
 
-	// Self-service account events (F-UX2): append-only, indexed by user and time.
+	// Self-service account events (F-UX2): append-only, indexed by user, type and time.
 	accountEvtColl := db.Collection("account_events")
+	_, err = accountEvtColl.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "user_id", Value: 1},
+			{Key: "created_at", Value: -1},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("store: ensure account_events user_id_created_at index: %w", err)
+	}
+
+	// Drop legacy non-TTL index on created_at alone by name once, ignoring only IndexNotFound.
+	if err := accountEvtColl.Indexes().DropOne(ctx, "created_at_-1"); err != nil && !isIndexNotFound(err) {
+		return nil, fmt.Errorf("store: drop legacy account_events created_at_-1 index: %w", err)
+	}
+
+	accountEvtTTL := int32(180 * 24 * 3600)
 	_, err = accountEvtColl.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{
 			Keys: bson.D{
 				{Key: "user_id", Value: 1},
+				{Key: "type", Value: 1},
 				{Key: "created_at", Value: -1},
 			},
 		},
 		{
 			Keys: bson.D{
+				{Key: "type", Value: 1},
 				{Key: "created_at", Value: -1},
 			},
+		},
+		{
+			Keys: bson.D{
+				{Key: "created_at", Value: 1},
+			},
+			Options: options.Index().SetName("account_events_created_at_ttl").SetExpireAfterSeconds(accountEvtTTL),
 		},
 	})
 	if err != nil {
@@ -215,16 +239,16 @@ func NewMongoStore(ctx context.Context, mongoURI, dbName string) (*MongoStore, e
 	}, nil
 }
 
-// isIndexNotFound reports whether err represents MongoDB error code 27 (IndexNotFound).
+// isIndexNotFound reports whether err represents MongoDB error code 27 (IndexNotFound) or 26 (NamespaceNotFound).
 func isIndexNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
 	var cmdErr mongo.CommandError
 	if errors.As(err, &cmdErr) {
-		return cmdErr.HasErrorCode(27) || cmdErr.Name == "IndexNotFound"
+		return cmdErr.HasErrorCode(27) || cmdErr.Name == "IndexNotFound" || cmdErr.HasErrorCode(26) || cmdErr.Name == "NamespaceNotFound"
 	}
-	return strings.Contains(err.Error(), "index not found") || strings.Contains(err.Error(), "IndexNotFound")
+	return strings.Contains(err.Error(), "index not found") || strings.Contains(err.Error(), "IndexNotFound") || strings.Contains(err.Error(), "ns not found") || strings.Contains(err.Error(), "NamespaceNotFound")
 }
 
 // Create inserts a new user. Status defaults to "active" explicitly for new users.

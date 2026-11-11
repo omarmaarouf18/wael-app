@@ -75,6 +75,12 @@ type Server struct {
 	// to revoke all tokens for a purged user. Injectable for tests; nil
 	// defaults to jwtutil.RevokeAllUserTokens.
 	PurgeRevokeAllTokens func(userID string) error
+
+	// AccountEventSemCap bounds in-flight async account event writes (default 50).
+	AccountEventSemCap int
+	evtSem             chan struct{}
+	evtWg              sync.WaitGroup
+	evtSemOnce         sync.Once
 }
 
 // dummyBcryptHash is a fixed bcrypt hash generated once with the same cost as
@@ -108,7 +114,41 @@ func New(st store.Store, codes otp.Store, lockout Lockout, sender mailer.Sender,
 		GatewaySecret:      gatewaySecret,
 		DefaultPhoneRegion: "EG",
 		BcryptCompare:      bcrypt.CompareHashAndPassword,
+		AccountEventSemCap: 50,
 	}
+}
+
+func (s *Server) getEvtSem() chan struct{} {
+	s.evtSemOnce.Do(func() {
+		capacity := s.AccountEventSemCap
+		if capacity <= 0 {
+			capacity = 50
+		}
+		s.evtSem = make(chan struct{}, capacity)
+	})
+	return s.evtSem
+}
+
+// Shutdown waits for in-flight account event writes to complete, honoring ctx deadline.
+func (s *Server) Shutdown(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.evtWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// WaitAccountEvents waits up to timeout for in-flight account event writes to complete.
+func (s *Server) WaitAccountEvents(timeout time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return s.Shutdown(ctx) == nil
 }
 
 func (s *Server) bcryptCompare(hashed, password []byte) error {
