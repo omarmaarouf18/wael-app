@@ -235,6 +235,7 @@ func TestAccountEvents_AllEventTypesRecorded(t *testing.T) {
 			CreatedAt:   evtTime,
 		})
 	}
+	s.evtWg.Wait()
 
 	// 1. Query all events for student by phone
 	recPhone := doAdminRequest(s, http.MethodGet, "/internal/admin/account-events?student=%2B201012345678&limit=100", "internal-test-token", validTok, nil)

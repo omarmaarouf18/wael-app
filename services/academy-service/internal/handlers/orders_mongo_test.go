@@ -191,7 +191,7 @@ func TestOrders_LiveMongo_ReferenceUniqueness(t *testing.T) {
 			"source":               "web",
 			"payment_method":       "instapay",
 			"transfer_reference":   legacyRef,
-			"normalized_reference": legacyRef,
+			"normalized_reference": normalizeTransferReference(legacyRef),
 			"sender_number":        "01055555555",
 			"amount":               120,
 			"created_at":           now.Add(-time.Hour),

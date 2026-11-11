@@ -26,6 +26,12 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func init() {
+	if os.Getenv("APP_ENV") == "" {
+		_ = os.Setenv("APP_ENV", "test")
+	}
+}
+
 func testServer() *Server {
 	jwtutil.Init("test-jwt-secret-0123456789abcdef")
 	s := New(store.NewMemoryStore(), otp.NewMemoryStore(), NewMemoryLockout(), mailer.LogSender{}, "test", "gw-secret")
