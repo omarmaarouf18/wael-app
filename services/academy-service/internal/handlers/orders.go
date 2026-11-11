@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
@@ -37,6 +38,33 @@ func writeOrderError(w http.ResponseWriter, status int, code, msgAr, msgEn, subj
 		MessageEn: msgEn,
 		SubjectID: subjectID,
 	})
+}
+
+// normalizeTransferReference normalises a transfer reference for uniqueness:
+// strips whitespace and separators (dashes, underscores, slashes, punctuation),
+// maps Arabic-Indic digits (U+0660..U+0669 and U+06F0..U+06F9) to ASCII 0-9,
+// and converts letters to uppercase (item 2.4).
+func normalizeTransferReference(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		// Map Arabic-Indic digits (U+0660..U+0669)
+		if r >= '\u0660' && r <= '\u0669' {
+			b.WriteByte(byte('0' + (r - '\u0660')))
+			continue
+		}
+		// Map Eastern Arabic-Indic digits (U+06F0..U+06F9)
+		if r >= '\u06F0' && r <= '\u06F9' {
+			b.WriteByte(byte('0' + (r - '\u06F0')))
+			continue
+		}
+		// Strip whitespace and common separators/punctuation
+		if unicode.IsSpace(r) || r == '-' || r == '_' || r == '/' || r == '\\' || r == '.' || r == ',' || r == ':' || r == ';' {
+			continue
+		}
+		b.WriteRune(unicode.ToUpper(r))
+	}
+	return b.String()
 }
 
 // CreateOrder handles POST /academy/orders: one web order for 1-50 subjects,
@@ -125,7 +153,13 @@ func (s *Server) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	normRef := strings.ToUpper(ref)
+	normRef := normalizeTransferReference(ref)
+	if normRef == "" {
+		writeOrderError(w, http.StatusBadRequest, "invalid_transfer_reference",
+			"رقم أو مرجع الحوالة يجب أن يكون بين 3 و 100 حرف",
+			"Transfer reference must be between 3 and 100 characters", "")
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	defer cancel()

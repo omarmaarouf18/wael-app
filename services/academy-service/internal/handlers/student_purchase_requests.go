@@ -139,7 +139,11 @@ func (s *Server) CreatePurchaseRequest(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 
-	normRef := strings.ToUpper(ref)
+	normRef := normalizeTransferReference(ref)
+	if normRef == "" {
+		writePurchaseRequestError(w, http.StatusBadRequest, "invalid_transfer_reference", "رقم أو مرجع الحوالة يجب أن يكون بين 3 و 100 حرف", "Transfer reference must be between 3 and 100 characters")
+		return
+	}
 	hasRef, err := s.Store.HasPurchaseRequestWithReference(ctx, normRef)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)

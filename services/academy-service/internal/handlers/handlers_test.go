@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,6 +27,9 @@ import (
 )
 
 func init() {
+	if os.Getenv("APP_ENV") == "" {
+		_ = os.Setenv("APP_ENV", "test")
+	}
 	jwtutil.Init("test-jwt-secret")
 }
 
