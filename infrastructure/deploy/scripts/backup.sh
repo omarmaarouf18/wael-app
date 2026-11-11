@@ -84,10 +84,16 @@ STAMP="$(date -u +%Y-%m-%dT%H%M%SZ)"
 DEST="$BACKUP_DIR/mongo-${BACKUP_LABEL:+$BACKUP_LABEL-}$STAMP.archive.gz"
 TMP="$DEST.tmp.$$"
 
-docker exec "$CID" mongodump \
-	--username "$ROOT_USER" --password "$ROOT_PW" \
-	--authenticationDatabase admin \
-	--archive --gzip >"$TMP" \
+export ROOT_USER ROOT_PW
+docker exec -e ROOT_USER -e ROOT_PW "$CID" sh -c '
+	TMP_CONF="$(mktemp)"
+	chmod 600 "$TMP_CONF"
+	printf "password: |-\n  %s\n" "$ROOT_PW" > "$TMP_CONF"
+	trap "rm -f \"$TMP_CONF\"" EXIT
+	mongodump --config="$TMP_CONF" --username "$ROOT_USER" \
+		--authenticationDatabase admin \
+		--archive --gzip
+' >"$TMP" \
 	|| fail "mongodump failed; nothing was kept"
 chmod 600 "$TMP"
 [ -s "$TMP" ] || fail "mongodump produced an empty archive; nothing was kept"

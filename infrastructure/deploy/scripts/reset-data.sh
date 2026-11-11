@@ -131,10 +131,10 @@ ROOT_USER="$(read_var "$ENV_FILE" MONGO_ROOT_USERNAME)"
 
 # mongo_list DB prints one "name|count" line per collection (counts only).
 mongo_list() {
-	docker exec "$CID" mongosh \
-		--username "$ROOT_USER" --password "$ROOT_PW" \
+	export ROOT_USER ROOT_PW
+	docker exec -e ROOT_USER -e ROOT_PW "$CID" mongosh \
 		--authenticationDatabase admin --quiet --eval \
-		"var dbx=db.getSiblingDB(\"$1\");dbx.getCollectionNames().forEach(function(n){print(n+\"|\"+dbx.getCollection(n).countDocuments({}))});"
+		"db.getSiblingDB('admin').auth(process.env.ROOT_USER, process.env.ROOT_PW);var dbx=db.getSiblingDB(\"$1\");dbx.getCollectionNames().forEach(function(n){print(n+\"|\"+dbx.getCollection(n).countDocuments({}))});"
 }
 
 # mongo_drop DB NAME... drops the named collections. Names are validated by
@@ -146,10 +146,10 @@ mongo_drop() {
 		list+="\"$name\","
 	done
 	list="${list%,}"
-	docker exec "$CID" mongosh \
-		--username "$ROOT_USER" --password "$ROOT_PW" \
+	export ROOT_USER ROOT_PW
+	docker exec -e ROOT_USER -e ROOT_PW "$CID" mongosh \
 		--authenticationDatabase admin --quiet --eval \
-		"var dbx=db.getSiblingDB(\"$db\");[$list].forEach(function(n){dbx.getCollection(n).drop()});"
+		"db.getSiblingDB('admin').auth(process.env.ROOT_USER, process.env.ROOT_PW);var dbx=db.getSiblingDB(\"$db\");[$list].forEach(function(n){dbx.getCollection(n).drop()});"
 }
 
 # is_kept DB NAME: the collections a reset never drops (owner decisions).

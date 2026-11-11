@@ -742,6 +742,11 @@ assert "last-backup.env names an existing archive" test -s "$LAST17"
 assert "the recorded archive passes gzip -t" gzip -t "$LAST17"
 assert "success pinged BACKUP_PING_URL" grep -qF "$PING17" "$BOX17/curl.log"
 assert "success did not ping /fail" bash -c "! grep -qF '$PING17/fail' \"$BOX17/curl.log\""
+if grep -qF "pw-for-test17" "$BOX17/docker.log" || grep -qF -- "--password" "$BOX17/docker.log"; then
+	bad "backup passed the mongo root password on the command line"
+else
+	ok "the mongo root password is never on argv during backup"
+fi
 
 rm -f "$BOX17/curl.log"
 COUNT17="$(find "$BOX17/wael/backups" -name 'mongo-*.archive.gz' | wc -l)"
@@ -837,6 +842,11 @@ OUT="$(PATH="$BOX20/bin:$PATH" WAEL_HOME="$BOX20/wael" MONGO_CONTAINER=mockcid S
 check "restore discovers the sibling files archive" 0 "found the matching files archive"
 assert "files were extracted into STORAGE_DIR" grep -qF "restored-bytes" "$BOX20/restored/objects/o1"
 check "restore reports both archives of the set" 0 "and $BOX20/wael/backups/files-manual-$STAMP20.archive.gz complete and healthy"
+if grep -qF "pw-for-test20" "$BOX20/docker.log" || grep -qF -- "--password" "$BOX20/docker.log"; then
+	bad "restore passed the mongo root password on the command line"
+else
+	ok "the mongo root password is never on argv during restore"
+fi
 
 printf 'NOT-GZIP' > "$BOX20/wael/backups/files-manual-$STAMP20.archive.gz"
 RC=0
@@ -1060,10 +1070,10 @@ if grep -qF "pw-for-test23-redis-never-logged" <<<"$OUT" || grep -qF "pw-for-tes
 else
 	ok "the redis password is never on argv or stdout"
 fi
-if grep -qF "pw-for-test23" <<<"$OUT"; then
-	bad "the mongo root password was printed"
+if grep -qF "pw-for-test23" <<<"$OUT" || grep -qF "pw-for-test23" "$BOX23/docker.log" || grep -qF -- "--password" "$BOX23/docker.log"; then
+	bad "the mongo root password was printed or on argv during reset"
 else
-	ok "the mongo root password is never printed"
+	ok "the mongo root password is never printed or on argv during reset"
 fi
 
 # 23f: a wipe failure after the stop prints the restore command and

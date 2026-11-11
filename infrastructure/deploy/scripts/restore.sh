@@ -128,11 +128,16 @@ if [ "$SKIP_RESTART" = 0 ]; then
 	compose stop "${APP_SERVICES[@]}" || fail "could not stop app services; aborting restore"
 fi
 
-log "restoring $ARCHIVE (collections are dropped before re-insertion)"
-if ! docker exec -i "$CID" mongorestore \
-	--username "$ROOT_USER" --password "$ROOT_PW" \
-	--authenticationDatabase admin \
-	--archive --gzip --drop <"$ARCHIVE"; then
+export ROOT_USER ROOT_PW
+if ! docker exec -i -e ROOT_USER -e ROOT_PW "$CID" sh -c '
+	TMP_CONF="$(mktemp)"
+	chmod 600 "$TMP_CONF"
+	printf "password: |-\n  %s\n" "$ROOT_PW" > "$TMP_CONF"
+	trap "rm -f \"$TMP_CONF\"" EXIT
+	mongorestore --config="$TMP_CONF" --username "$ROOT_USER" \
+		--authenticationDatabase admin \
+		--archive --gzip --drop
+' <"$ARCHIVE"; then
 	recovery "mongorestore failed"
 fi
 
