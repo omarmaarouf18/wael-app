@@ -43,6 +43,7 @@ type StreamLimiter struct {
 	rateLimit     int
 	window        time.Duration
 	nextID        uint64
+	opCount       uint64
 	userStreams   map[string][]*streamSlot
 	sidStreams    map[string][]*streamSlot
 	openAttempts  map[string][]time.Time
@@ -185,6 +186,11 @@ func (sl *StreamLimiter) allowStreamOpenAt(userID string, now time.Time) (bool, 
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
+	sl.opCount++
+	if sl.opCount%64 == 0 {
+		sl.pruneStaleAttemptsLocked(now)
+	}
+
 	cutoff := now.Add(-sl.window)
 	attempts := sl.openAttempts[userID]
 
@@ -209,6 +215,39 @@ func (sl *StreamLimiter) allowStreamOpenAt(userID string, now time.Time) (bool, 
 	valid = append(valid, now)
 	sl.openAttempts[userID] = valid
 	return true, 0
+}
+
+func (sl *StreamLimiter) pruneStaleAttemptsLocked(now time.Time) int {
+	cutoff := now.Add(-sl.window)
+	pruned := 0
+	for uid, atts := range sl.openAttempts {
+		hasRecent := false
+		for _, t := range atts {
+			if t.After(cutoff) {
+				hasRecent = true
+				break
+			}
+		}
+		if !hasRecent {
+			delete(sl.openAttempts, uid)
+			pruned++
+		}
+	}
+	return pruned
+}
+
+// PruneStaleAttempts removes openAttempts entries older than the rate limit window.
+func (sl *StreamLimiter) PruneStaleAttempts(now time.Time) int {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	return sl.pruneStaleAttemptsLocked(now)
+}
+
+// OpenAttemptsCount returns the number of users currently tracked in openAttempts.
+func (sl *StreamLimiter) OpenAttemptsCount() int {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	return len(sl.openAttempts)
 }
 
 // ActiveSlots returns the count of active stream slots for userID.
