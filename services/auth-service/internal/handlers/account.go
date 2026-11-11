@@ -146,19 +146,24 @@ func (s *Server) recordAccountEventDetailed(ctx context.Context, entry *models.A
 	select {
 	case sem <- struct{}{}:
 		s.evtWg.Add(1)
-		go func(e models.AccountEvent) {
+		parentCtx := ctx
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
+		// #nosec G118 -- background event write detaches from request cancellation with its own bounded timeout
+		go func(e models.AccountEvent, pCtx context.Context) {
 			defer func() {
 				<-sem
 				s.evtWg.Done()
 			}()
-			dbCtx, cancel := context.WithTimeout(context.Background(), dbTimeout)
+			dbCtx, cancel := context.WithTimeout(context.WithoutCancel(pCtx), dbTimeout)
 			defer cancel()
 			if err := s.Store.CreateAccountEvent(dbCtx, &e); err != nil {
 				cleanID := strings.ReplaceAll(strings.ReplaceAll(e.UserID, "\r", ""), "\n", "")
 				// #nosec G706 -- cleanID sanitized of CR/LF
 				log.Printf("[AUTH] account event write failed type=%s user %s: %v", e.Type, cleanID, err)
 			}
-		}(evt)
+		}(evt, parentCtx)
 	default:
 		cleanID := strings.ReplaceAll(strings.ReplaceAll(evt.UserID, "\r", ""), "\n", "")
 		// #nosec G706 -- cleanID sanitized of CR/LF
