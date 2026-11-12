@@ -147,6 +147,21 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 			}
 		}
 	}
+	// A "__x_client__" key in a map[string]string body becomes the X-Client
+	// header (e.g. "ios" for the phone-optional signup) and is not sent.
+	var xClient string
+	if m, ok := body.(map[string]string); ok {
+		if v, has := m["__x_client__"]; has {
+			xClient = v
+			cp := make(map[string]string, len(m))
+			for k, val := range m {
+				if k != "__x_client__" {
+					cp[k] = val
+				}
+			}
+			body = cp
+		}
+	}
 	var buf bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
@@ -155,6 +170,9 @@ func doRequest(t *testing.T, s *Server, method, path string, body any, token str
 	}
 	req := httptest.NewRequest(method, path, &buf)
 	req.Header.Set("X-Gateway-Secret", "gw-secret")
+	if xClient != "" {
+		req.Header.Set("X-Client", xClient)
+	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}

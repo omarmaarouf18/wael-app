@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -59,10 +60,11 @@ func decodeAny(t *testing.T, body []byte) map[string]any {
 
 // signupNoPhone signs up and verifies an account without a phone (the
 // "phone" key absent, or blank when phone is non-nil) and returns its access
-// token.
+// token. It signs up as the iOS app, the only client allowed to leave the
+// phone out (owner amendment 2026-11-12).
 func signupNoPhone(t *testing.T, s *Server, email string, phone *string) string {
 	t.Helper()
-	body := map[string]string{"full_name": "No Phone User", "email": email, "password": "Password123!"}
+	body := map[string]string{"full_name": "No Phone User", "email": email, "password": "Password123!", "__x_client__": "ios"}
 	if phone != nil {
 		body["phone"] = *phone
 	}
@@ -265,5 +267,60 @@ func TestAdmin_Delete_WithoutPhone(t *testing.T) {
 	}
 	if list.Items[0]["phone"] != "" {
 		t.Fatalf("admin account phone = %v, want empty", list.Items[0]["phone"])
+	}
+}
+
+// TestSignup_PhoneRequiredOutsideIOS: the phone is optional only for the iOS
+// app (owner amendment 2026-11-12). Without X-Client: ios a missing or blank
+// phone is refused with 400 before any account is created; the header is
+// matched case-insensitively and trimmed.
+func TestSignup_PhoneRequiredOutsideIOS(t *testing.T) {
+	s := testServer()
+	blank := "   "
+	for i, tc := range []struct {
+		name   string
+		client string
+		phone  *string
+	}{
+		{"no header", "", nil},
+		{"android", "android", nil},
+		{"web", "web", nil},
+		{"android blank phone", "android", &blank},
+		{"unknown client", "ipad-web", nil},
+	} {
+		email := fmt.Sprintf("needphone%d@example.com", i)
+		body := map[string]string{"full_name": "Needs Phone", "email": email, "password": "Password123!"}
+		if tc.client != "" {
+			body["__x_client__"] = tc.client
+		}
+		if tc.phone != nil {
+			body["phone"] = *tc.phone
+		}
+		rec := doRequest(t, s, http.MethodPost, "/auth/signup", body, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s: signup without phone = %d, want 400 (%s)", tc.name, rec.Code, rec.Body.String())
+		}
+		if u, err := s.Store.FindByEmail(context.Background(), email); err == nil && u != nil {
+			t.Fatalf("%s: account created despite the missing phone: %+v", tc.name, u)
+		}
+	}
+
+	for i, client := range []string{"ios", " IOS "} {
+		email := fmt.Sprintf("iosnophone%d@example.com", i)
+		rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+			"full_name": "iOS No Phone", "email": email, "password": "Password123!", "__x_client__": client,
+		}, "")
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("X-Client %q: signup without phone = %d, want 201 (%s)", client, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Android with a phone still signs up.
+	rec := doRequest(t, s, http.MethodPost, "/auth/signup", map[string]string{
+		"full_name": "Android Phone", "email": "androidphone@example.com", "phone": "01012345950",
+		"password": "Password123!", "__x_client__": "android",
+	}, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("android with phone = %d, want 201 (%s)", rec.Code, rec.Body.String())
 	}
 }

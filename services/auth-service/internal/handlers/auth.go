@@ -313,6 +313,14 @@ func isWebClient(r *http.Request) bool {
 	return strings.TrimSpace(r.Header.Get("X-Client")) == "web"
 }
 
+// isIOSClient reports whether the request comes from the iOS app, the only
+// client allowed to sign up without a phone (owner amendment 2026-11-12).
+// The header is a client hint, not a security boundary: it only relaxes a
+// form rule, never access.
+func isIOSClient(r *http.Request) bool {
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Client")), "ios")
+}
+
 func setWebRefreshCookie(w http.ResponseWriter, refreshToken string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refresh_token",
@@ -436,6 +444,8 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 
 	// The phone is optional (owner amendment 2026-11-03, App Store 5.1.1(v)):
 	// absent or blank means no phone; a given phone keeps the signup rules.
+	// Amended 2026-11-12 (owner): optional only for the iOS app (X-Client: ios);
+	// Android, the website and any other client must give a phone.
 	var phone string
 	if strings.TrimSpace(req.Phone) != "" {
 		var err error
@@ -444,6 +454,9 @@ func (s *Server) Signup(w http.ResponseWriter, r *http.Request) {
 			handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "invalid phone number", err)
 			return
 		}
+	} else if !isIOSClient(r) {
+		handlerutil.WriteSafeError(w, r, http.StatusBadRequest, handlerutil.ErrCodeInvalidJSON, "phone number is required", nil)
+		return
 	}
 
 	email := normalizeEmail(req.Email)

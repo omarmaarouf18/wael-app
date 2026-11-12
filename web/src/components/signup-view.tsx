@@ -52,7 +52,9 @@ export function SignupPageView({ lang }: SignupPageViewProps) {
       const res = await signup({
         full_name: trimmedName,
         email: email.trim(),
-        phone: phone.trim() || undefined,
+        // Required on the website (owner amendment 2026-11-12); only the
+        // iOS app may sign up without a phone.
+        phone: phone.trim(),
         password,
       });
       setPendingId(res.pending_id);
@@ -181,6 +183,7 @@ export function SignupPageView({ lang }: SignupPageViewProps) {
                   <input
                     id="signup-phone"
                     type="tel"
+                    required
                     autoComplete="tel"
                     dir="ltr"
                     placeholder={text.phonePlaceholder}
