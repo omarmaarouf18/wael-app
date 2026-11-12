@@ -97,3 +97,10 @@ activation stays in parallel. The apps keep the rules of the 2026-10-08
 amendment and never mention or link to the website. Built so far: the
 website foundations only (no payment code); the refund policy text is still
 open (ADR-0014 open question 4).
+
+## Amendment (2026-11-12, owner decision)
+
+The earlier text above is unchanged. On iOS the app is a content (reader)
+app for the academy's enrolled students. It shows all subjects, locked ones
+too, never a price (already true) and never a way to get a subject activated
+or bought. Android and the website stay as they are.
