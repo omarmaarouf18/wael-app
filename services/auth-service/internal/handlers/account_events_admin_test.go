@@ -103,6 +103,12 @@ func TestAccountEvents_LifecycleEvents_Recorded_Filtered_NoPII(t *testing.T) {
 		t.Fatalf("reactivate failed: %d (%s)", reactivateRec.Code, reactivateRec.Body.String())
 	}
 
+	// Account events are written asynchronously (bounded writer); wait for the
+	// in-flight writes before reading them back.
+	if !s.WaitAccountEvents(5 * time.Second) {
+		t.Fatal("account event writes did not finish within 5s")
+	}
+
 	// 5. Query account events via admin listener filterable by student
 	rec := doAdminRequest(s, http.MethodGet, "/internal/admin/account-events?student="+rawEmail, "internal-test-token", validTok, nil)
 	if rec.Code != http.StatusOK {
