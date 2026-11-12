@@ -35,6 +35,25 @@ func breakerName(route config.ServiceRoute) string {
 	return "api-gateway-" + route.Name
 }
 
+// Upstream time-to-response-headers limits (one attempt). Auth gets a longer
+// one: signup, login and password reset hash with bcrypt and signup sends the
+// OTP email synchronously, which together took longer than 2 s in production
+// (2026-11-12: every signup through the gateway ended in 502 "context
+// canceled" after 2 s). Slow answers also count as breaker failures, so a
+// short limit on auth could open the auth breaker and block logins.
+var (
+	defaultAttemptTimeout = 2 * time.Second
+	authAttemptTimeout    = 15 * time.Second
+)
+
+// attemptTimeoutFor returns the per-attempt timeout of one upstream.
+func attemptTimeoutFor(route config.ServiceRoute) time.Duration {
+	if route.Name == "auth" {
+		return authAttemptTimeout
+	}
+	return defaultAttemptTimeout
+}
+
 // newMux builds the gateway routes. Every upstream gets its own resilience
 // round tripper and therefore its own circuit breaker, so a failing upstream
 // (for example academy answering 5xx) opens only its own breaker and never
@@ -46,7 +65,7 @@ func newMux(cfg *config.Config, base http.RoundTripper) (*http.ServeMux, error) 
 		handlerutil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	for _, route := range cfg.Routes {
-		transport := resilience.NewRoundTripper(base, breakerName(route), 2, 2*time.Second)
+		transport := resilience.NewRoundTripper(base, breakerName(route), 2, attemptTimeoutFor(route))
 		h, err := proxy.New(route, cfg.GatewaySecret, cfg.TrustedProxyIPs, transport)
 		if err != nil {
 			return nil, fmt.Errorf("route %s: %w", route.Prefix, err)
