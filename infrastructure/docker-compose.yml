@@ -263,6 +263,12 @@ services:
       FEATURES_FILES: ${FEATURES_FILES:-false}
       MAX_CONCURRENT_DOWNLOADS: ${MAX_CONCURRENT_DOWNLOADS:-}
       DOWNLOAD_STALL_TIMEOUT: ${DOWNLOAD_STALL_TIMEOUT:-}
+      # iOS in-app purchases (ADR-0015). IAP_SANDBOX_ALLOW_ALL=true accepts
+      # every Sandbox purchase; academy-service refuses it unless APP_ENV is
+      # local or test.
+      IAP_BUNDLE_ID: ${IAP_BUNDLE_ID:-com.wael.app}
+      IAP_SANDBOX_ALLOWED_USER_IDS: ${IAP_SANDBOX_ALLOWED_USER_IDS:-}
+      IAP_SANDBOX_ALLOW_ALL: ${IAP_SANDBOX_ALLOW_ALL:-false}
     depends_on:
       mongo:
         condition: service_healthy

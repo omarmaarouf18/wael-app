@@ -524,6 +524,31 @@ tuning overrides, `IMAGE_TAG` (from `release.env`) and `WAEL_HOME` (host env):
 [laptop] comm -23 /tmp/used <(sort -u /tmp/set /tmp/tuning); echo "only IMAGE_TAG and WAEL_HOME may remain"
 ```
 
+### IAP (ADR-0015)
+
+*(Added 2026-11-14.)* academy-service reads two variables from
+`.env.production` for iOS in-app purchases:
+
+- `IAP_BUNDLE_ID`: the iOS app's bundle id (default `com.wael.app`). A
+  StoreKit transaction for any other bundle is refused.
+- `IAP_SANDBOX_ALLOWED_USER_IDS`: comma-separated user ids whose Apple
+  Sandbox purchases are accepted: the App Review account and the owner's test
+  accounts. Empty means every Sandbox purchase is refused with `403
+  sandbox_not_allowed`; real (Production) purchases are not affected.
+
+To find a user id: admin console, Accounts, search the account; the id is the
+line under the name. `IAP_SANDBOX_ALLOW_ALL` does not exist in production:
+the deploy compose does not pass it and academy-service refuses to start with
+it set to `true` unless `APP_ENV` is `local` or `test`.
+
+After editing `$WAEL_HOME/.env.production`, recreate academy-service as
+deploybot so it reads the new values (the `compose` helper adds the
+production env file and the current release tag):
+
+```bash
+[server azureuser] sudo -u deploybot bash -c 'cd <deploy-checkout> && export WAEL_HOME=/home/deploybot/wael && source scripts/lib.sh && compose up -d --no-deps --wait academy-service'
+```
+
 ### Redis memory
 
 Without a cap, Redis grows until the kernel OOM-kills the 128m container —

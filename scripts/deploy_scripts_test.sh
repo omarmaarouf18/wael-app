@@ -16,7 +16,9 @@
 # 14. preflight.sh redis memory checks: cap + noeviction passes; either alone fails
 # 14b. preflight.sh file storage checks (Phase 5): 64-hex key, WAEL_UID/GID of the
 #     running user, STORAGE_DIR absolute, present, mode 700, owned by WAEL_UID,
-#     strict FEATURES_FILES; the compose files wire storage, key and caps
+#     strict FEATURES_FILES; the compose files wire storage, key and caps,
+#     and pass IAP_BUNDLE_ID / IAP_SANDBOX_ALLOWED_USER_IDS (never
+#     IAP_SANDBOX_ALLOW_ALL in the deploy compose)
 # 15. Caddyfile sends the exact HSTS header with includeSubDomains (no preload) on both site blocks
 # 16. Deploy takes a verified pre-deploy backup before touching containers; a failed backup
 #     aborts the deploy; first deploy (no mongo) and SKIP_PREDEPLOY_BACKUP=1 skip it; a failed
@@ -644,9 +646,22 @@ assert "dev compose keeps files in the academy_files volume" grep -qF -- '- acad
 # shellcheck disable=SC2016 # literal ${...}: the text the compose file must contain
 assert "dev compose passes MAX_PDF_BYTES to academy and console" \
 	test "$(grep -cF 'MAX_PDF_BYTES: ${MAX_PDF_BYTES:-}' "$DEV_COMPOSE")" -eq 2
-for v in STORAGE_DIR DOCUMENT_ENCRYPTION_KEY WAEL_UID WAEL_GID FEATURES_FILES; do
+for v in STORAGE_DIR DOCUMENT_ENCRYPTION_KEY WAEL_UID WAEL_GID FEATURES_FILES \
+	IAP_BUNDLE_ID IAP_SANDBOX_ALLOWED_USER_IDS; do
 	assert "env.production.example documents $v" grep -qE "^$v=" "$REPO_ROOT/infrastructure/deploy/env.production.example"
 done
+# iOS IAP config (ADR-0015, 2026-11-14): the explicit environment lists must
+# pass it, or academy-service silently runs on defaults in the container.
+# shellcheck disable=SC2016 # literal ${...}: the text the compose file must contain
+for needle in 'IAP_BUNDLE_ID: ${IAP_BUNDLE_ID:-com.wael.app}' \
+	'IAP_SANDBOX_ALLOWED_USER_IDS: ${IAP_SANDBOX_ALLOWED_USER_IDS:-}'; do
+	assert "deploy compose has: $needle" grep -qF -- "$needle" "$DEPLOY_COMPOSE"
+	assert "dev compose has: $needle" grep -qF -- "$needle" "$DEV_COMPOSE"
+done
+assert "deploy compose never passes IAP_SANDBOX_ALLOW_ALL (production refuses it)" \
+	bash -c '! grep -q "^[[:space:]]*IAP_SANDBOX_ALLOW_ALL:" "$1"' _ "$DEPLOY_COMPOSE"
+assert "env.production.example never sets IAP_SANDBOX_ALLOW_ALL" \
+	bash -c '! grep -qE "^#? ?IAP_SANDBOX_ALLOW_ALL=" "$1"' _ "$REPO_ROOT/infrastructure/deploy/env.production.example"
 # shellcheck disable=SC2016 # $1 expands in the inner bash
 assert "Caddyfile sets no request body limit on the admin host (the console caps uploads)" \
 	bash -c '! grep -q "max_size\|request_body" "$1"' _ "$REPO_ROOT/infrastructure/deploy/Caddyfile"

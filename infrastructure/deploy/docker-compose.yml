@@ -244,6 +244,11 @@ services:
       # A download whose client stops reading this long is cut and frees its
       # slot (Go duration 5s..5m). Empty means 30s.
       DOWNLOAD_STALL_TIMEOUT: ${DOWNLOAD_STALL_TIMEOUT:-}
+      # iOS in-app purchases (ADR-0015). Sandbox purchases are accepted only
+      # for the comma-separated user ids listed here; empty refuses them all.
+      # IAP_SANDBOX_ALLOW_ALL is deliberately absent: production refuses it.
+      IAP_BUNDLE_ID: ${IAP_BUNDLE_ID:-com.wael.app}
+      IAP_SANDBOX_ALLOWED_USER_IDS: ${IAP_SANDBOX_ALLOWED_USER_IDS:-}
     volumes:
       - ${WAEL_HOME}/certs/ca.crt:/app/certs/ca.crt:ro
       - ${WAEL_HOME}/certs/academy-service.crt:/app/certs/academy-service.crt:ro
