@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { SOURCE_ACTIONS } from '../js/audit.js';
+import { FILTER_HIDDEN, SOURCE_ACTIONS, filterActions } from '../js/audit.js';
 import { MESSAGES } from '../js/i18n.js';
 
 const servicesDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -84,7 +84,9 @@ test('every audit action and student event type has ar+en labels, a verb, and a 
         assert.ok(`audit.action.${a}` in MESSAGES[lang], `${lang} audit.action.${a} (${source})`);
         assert.ok(`audit.verb.${a}` in MESSAGES[lang], `${lang} audit.verb.${a} (${source})`);
       }
-      assert.ok(SOURCE_ACTIONS[source].includes(a), `${a} is missing from the ${source} action filter`);
+      assert.ok(SOURCE_ACTIONS[source].includes(a), `${a} is missing from the ${source} action list`);
+      // Every written action is offered in the filter except the owner's exclusions (no Apple option).
+      assert.equal(filterActions(source).includes(a), !FILTER_HIDDEN.includes(a), `${a} filter entry`);
     }
   }
 });
@@ -93,4 +95,21 @@ test('every audit target type has ar+en labels', () => {
   const targets = new Set(Object.values(sources).flatMap((files) => [...collect(files, TARGET_PATTERNS)]));
   assert.ok(targets.has('iap_package') && targets.has('user') && targets.has('broadcast'));
   for (const tt of targets) for (const lang of ['ar', 'en']) assert.ok(`audit.target.${tt}` in MESSAGES[lang], `${lang} audit.target.${tt}`);
+});
+
+test('owner rule: the only hidden filter entry is the in-app purchase, and it still has labels', () => {
+  assert.deepEqual([...FILTER_HIDDEN], ['iap_purchase']);
+  for (const lang of ['ar', 'en']) {
+    assert.ok(MESSAGES[lang]['audit.verb.iap_purchase'], lang);
+    assert.ok(MESSAGES[lang]['audit.action.iap_purchase'], lang);
+    for (const a of SOURCE_ACTIONS.academy.filter((x) => x.startsWith('iap_package_'))) assert.ok(MESSAGES[lang][`audit.verb.${a}`], `${lang} ${a}`);
+  }
+});
+
+test('an action no label covers falls back to its raw code (drift is visible, not hidden)', async () => {
+  const { describe } = await import('../js/audit.js');
+  const m = describe({ actor_name: 'wael', action: 'brand_new_action', target_type: 'thing', target_id: 'x1' }, 'academy');
+  assert.equal(m.unknown, true);
+  assert.equal(m.verb, 'brand_new_action');
+  assert.equal(m.kind, 'neutral');
 });

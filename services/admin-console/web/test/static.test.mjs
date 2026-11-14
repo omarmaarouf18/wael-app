@@ -339,3 +339,13 @@ test('the redesign tokens are defined once on :root', () => {
     assert.match(root, new RegExp(`--${name}\\s*:`), `--${name}`);
   }
 });
+
+test('audit source chips follow the mockup order and labels; no gold purchase styling', () => {
+  const order = [...html.matchAll(/<button id="audit-source-(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, ['academy', 'student', 'auth', 'notifications']);
+  assert.equal(MESSAGES.ar['audit.source.academy'], 'المحتوى والطلبات');
+  assert.equal(MESSAGES.ar['audit.source.student'], 'نشاط الطلاب');
+  assert.equal(MESSAGES.ar['audit.source.auth'], 'إجراءات على الحسابات');
+  assert.equal(MESSAGES.ar['audit.source.notifications'], 'الإشعارات');
+  assert.ok(!/kind-purchase/.test(css), 'owner rule: an in-app purchase row is neutral grey');
+});

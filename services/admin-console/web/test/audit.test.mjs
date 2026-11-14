@@ -48,7 +48,7 @@ test('admin actions read as "<actor> <verb> <target name>" with names resolved f
   assert.equal(sentence(buy), `${shortId(STUDENT)} اشترى باكدج الفرقة 2`);
   assert.deepEqual(buy.actor.link, { tab: 'accounts', user: STUDENT });
   assert.equal(buy.extras[0].text, ar('iap.env.sandbox'));
-  assert.equal(buy.kind, 'purchase');
+  assert.equal(buy.kind, 'neutral', 'owner rule: an in-app purchase is neutral grey');
 
   const grant = describe({ actor_name: 'wael', action: 'entitlement_grant', target_type: 'entitlement', target_id: 'ent-1', detail: `subject_id=sub-law user_id=${STUDENT} amount=0` }, 'academy', LOOKUPS);
   assert.equal(sentence(grant), 'wael منح مادة قانون مدني');
@@ -100,14 +100,14 @@ test('student events read as "<student> <verb>" with device and the admin who ac
   assert.equal(sus.kind, 'danger');
 });
 
-test('every action has a kind and icon: create/accept success, update info, delete/suspend/reject danger, purchase gold, broadcast neutral', () => {
+test('every action has a kind and icon: create/accept success, update info, delete/suspend/reject danger, purchase neutral grey, broadcast neutral', () => {
   const expect = {
     level_create: 'create', file_upload: 'create', entitlement_grant: 'create', subject_publish: 'create', iap_package_create: 'create',
     request_accept: 'accept', request_bulk_accept: 'accept', account_reactivate: 'accept', account_reactivated: 'accept', deletion_cancelled: 'accept',
     subject_update: 'update', iap_package_update: 'update', video_reorder: 'update', settings_updated: 'update', password_changed: 'update',
     iap_package_delete: 'danger', account_suspend: 'danger', account_suspended: 'danger', request_reject: 'danger', request_bulk_reject: 'danger',
     entitlement_revoke: 'danger', subject_unpublish: 'danger', account_purged: 'danger', deletion_requested: 'danger', session_ended_cap: 'danger',
-    iap_purchase: 'purchase', broadcast_send: 'broadcast', broadcast_retry: 'broadcast', login: 'neutral', logout: 'neutral',
+    iap_purchase: 'neutral', broadcast_send: 'broadcast', broadcast_retry: 'broadcast', login: 'neutral', logout: 'neutral',
   };
   for (const [action, kind] of Object.entries(expect)) assert.equal(actionKind(action), kind, action);
   for (const actions of Object.values(SOURCE_ACTIONS)) {
@@ -221,9 +221,9 @@ test('the tab opens on the academy source, groups by day and renders sentence ro
   const rows = rowsOf(d);
   assert.equal(rows.length, 3);
   assert.equal(rows[0].className, 'audit-row kind-update');
-  assert.equal(rows[1].className, 'audit-row kind-purchase');
+  assert.equal(rows[1].className, 'audit-row kind-neutral');
   const icon = rows[1].children[0];
-  assert.equal(icon.textContent, KIND_ICON.purchase);
+  assert.equal(icon.textContent, KIND_ICON.neutral);
   assert.equal(icon.getAttribute('aria-hidden'), 'true', 'the icon is decorative; the verb carries the meaning');
   assert.ok(rows[1].textContent.includes(ar('audit.verb.iap_purchase')));
   const time = rows[0].findAll((c) => c.tagName === 'TIME')[0];
@@ -289,7 +289,9 @@ test('the search and action filters work on the loaded page without a new reques
   await audit.load();
   assert.equal(d.getElementById('audit-filter-note').textContent, ar('audit.filterNote.client'));
   const options = d.getElementById('audit-action').children.map((o) => o.getAttribute('value'));
-  assert.deepEqual(options, ['', ...SOURCE_ACTIONS.academy]);
+  // Owner rule 2026-11-14: no Apple / in-app purchase option in the filter.
+  assert.deepEqual(options, ['', ...SOURCE_ACTIONS.academy.filter((a) => a !== 'iap_purchase')]);
+  assert.ok(!options.includes('iap_purchase'));
   const before = api.calls.length;
 
   d.getElementById('audit-search').value = 'الفرقة 2';
@@ -307,7 +309,7 @@ test('the search and action filters work on the loaded page without a new reques
   d.getElementById('audit-search').value = 'nobody';
   d.getElementById('audit-action').value = '';
   d.getElementById('audit-filter').fire('submit');
-  assert.equal(listOf(d).textContent, ar('audit.noMatch'));
+  assert.ok(listOf(d).textContent.endsWith(ar('audit.noMatch')));
 
   d.getElementById('audit-filter-reset').click();
   assert.equal(rowsOf(d).length, 3);
@@ -324,7 +326,8 @@ test('each source shows its own empty state explaining what it records', async (
       if (source !== 'academy') d.getElementById(`audit-source-${source}`).click();
       else await audit.load();
       await flush();
-      assert.equal(listOf(d).textContent, MESSAGES[lang][`audit.empty.${source}`], `${lang} ${source}`);
+      assert.ok(listOf(d).textContent.endsWith(MESSAGES[lang][`audit.empty.${source}`]), `${lang} ${source}`);
+      assert.equal(listOf(d).findAll((c) => c.className === 'empty-state').length, 1, 'empty-state component');
     }
   }
   setLang('ar');

@@ -1120,19 +1120,6 @@ td.detail {
   background: var(--danger-bg);
 }
 
-.kind-purchase .audit-icon {
-  color: var(--gold);
-  background: var(--gold-bg);
-}
-
-.kind-purchase {
-  box-shadow: inset 3px 0 0 var(--gold);
-}
-
-[dir="rtl"] .kind-purchase {
-  box-shadow: inset -3px 0 0 var(--gold);
-}
-
 .audit-main {
   min-inline-size: 0;
 }
@@ -1150,10 +1137,10 @@ td.detail {
 .audit-extra.pill {
   display: inline-block;
   padding: 0 0.45rem;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  color: var(--gold);
-  background: var(--gold-bg);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: var(--surface-3);
 }
 
 .name-link {

@@ -15,10 +15,11 @@ import { clear, h } from './dom.js';
 import { MESSAGES, cairoDayKey, formatLongDate, formatNumber, formatTime, getLang, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { fetchAllSubjects } from './iap.js';
-import { createPager, hideBanner, showError, toast } from './ui.js';
+import { copyText, createPager, emptyState, hideBanner, shortId, showError } from './ui.js';
 
 export const PAGE_SIZE = 20;
-export const SOURCES = Object.freeze(['auth', 'academy', 'notifications', 'student']);
+/** Sources in the order of the source chips (owner mockup 2026-11-14). */
+export const SOURCES = Object.freeze(['academy', 'student', 'auth', 'notifications']);
 export const DEFAULT_SOURCE = 'academy';
 /** Below this width the list is shown as cards. */
 export const NARROW_QUERY = '(max-width: 719.98px)';
@@ -43,13 +44,23 @@ export const SOURCE_ACTIONS = Object.freeze({
   ]),
 });
 
+/**
+ * Actions the action filter does not offer even though the log holds them.
+ * Owner rule 2026-11-14: no Apple / in-app purchase option in the filter.
+ */
+export const FILTER_HIDDEN = Object.freeze(['iap_purchase']);
+
+/** The action filter's options for a source. */
+export function filterActions(source) {
+  return (SOURCE_ACTIONS[source] ?? []).filter((a) => !FILTER_HIDDEN.includes(a));
+}
+
 /** Icon per kind. The icon is decorative: the verb always carries the meaning. */
 export const KIND_ICON = Object.freeze({
   create: '+',
   accept: '✓',
   update: '✎',
   danger: '✕',
-  purchase: '★',
   broadcast: '✉',
   neutral: '•',
 });
@@ -66,10 +77,14 @@ export function verbKey(action) {
   return key in MESSAGES.en ? key : null;
 }
 
-/** The colour/icon kind of an action: create, accept, update, danger, purchase, broadcast or neutral. */
+/**
+ * The colour/icon kind of an action: create, accept (success), update (info),
+ * danger, broadcast or neutral. An in-app purchase is neutral grey (owner rule
+ * 2026-11-14): no Apple styling.
+ */
 export function actionKind(action) {
   const a = String(action ?? '');
-  if (a === 'iap_purchase') return 'purchase';
+  if (a === 'iap_purchase') return 'neutral';
   if (a.startsWith('broadcast_')) return 'broadcast';
   if (/(^|_)(accept|reactivate|reactivated|cancelled)$/.test(a)) return 'accept';
   if (/(_delete|_deleted|_reject|_revoke|_unpublish|_suspend|_suspended|_purged|_cap|deletion_requested)$/.test(a)) return 'danger';
@@ -78,11 +93,7 @@ export function actionKind(action) {
   return 'neutral';
 }
 
-/** First 8 characters of an id with an ellipsis; '' for none. */
-export function shortId(id) {
-  const s = String(id ?? '');
-  return s.length > 10 ? `${s.slice(0, 8)}…` : s;
-}
+export { shortId };
 
 /** Parses "key=value key2=value2" audit detail strings (values have no spaces). */
 export function parseDetail(detail) {
@@ -183,7 +194,7 @@ export function describe(entry, source, L = EMPTY_LOOKUPS) {
     ? { text: e.actor_name && e.actor_name !== e.actor_id ? e.actor_name : shortId(e.actor_id) || '—', title: e.actor_id || '', link: userLink(e.actor_id) }
     : { text: e.actor_name || shortId(e.actor_id) || '—', title: e.actor_id || '' };
   const extras = [];
-  if (purchase && d.env) extras.push({ text: d.env === 'Sandbox' ? t('iap.env.sandbox') : t('iap.env.production'), pill: d.env === 'Sandbox' });
+  if (purchase && d.env) extras.push({ text: d.env === 'Sandbox' ? t('iap.env.sandbox') : t('iap.env.production'), pill: true });
   if ((e.target_type === 'entitlement' || e.target_type === 'request') && d.user_id) {
     extras.push({ prefix: t('audit.forStudent'), text: shortId(d.user_id), title: d.user_id, link: userLink(d.user_id), isId: true });
   }
@@ -364,18 +375,14 @@ export function mountAudit({ api, doc = document, win = globalThis.window, navig
     if (!actionSelect) return;
     clear(actionSelect);
     actionSelect.append(h('option', { text: t('audit.typeAll'), attrs: { value: '' } }));
-    for (const a of SOURCE_ACTIONS[state.source]) {
+    for (const a of filterActions(state.source)) {
       const key = actionLabelKey(a);
       actionSelect.append(h('option', { text: key ? t(key) : a, attrs: { value: a, selected: a === state.action } }));
     }
     actionSelect.value = state.action;
   }
 
-  function copyText(text) {
-    const clip = globalThis.navigator?.clipboard;
-    if (!clip || typeof clip.writeText !== 'function') return;
-    clip.writeText(text).then(() => toast(doc, t('audit.copied')), () => {});
-  }
+
 
   function row(entry, index) {
     const m = describe(entry, state.source, lookups);
@@ -390,7 +397,7 @@ export function mountAudit({ api, doc = document, win = globalThis.window, navig
       h('dl', {}, ...m.raw.flatMap(([k, v]) => [h('dt', { text: k }), h('dd', { class: 'id', text: v })])),
       h('button', {
         class: 'btn small secondary audit-copy', text: t('audit.copy'), attrs: { type: 'button' },
-        on: { click: () => copyText(rawText) },
+        on: { click: () => copyText(doc, rawText) },
       }),
     );
     details.hidden = !open;
@@ -433,12 +440,12 @@ export function mountAudit({ api, doc = document, win = globalThis.window, navig
     }
     if (state.items.length === 0) {
       const filtered = filtersOnServer(state.source) && (state.search || state.action);
-      list.append(h('p', { class: 'audit-empty muted', text: filtered ? t('common.empty') : t(`audit.empty.${state.source}`) }));
+      list.append(h('div', { class: 'audit-empty' }, emptyState(filtered ? t('common.empty') : t(`audit.empty.${state.source}`), '○')));
       return;
     }
     const items = visibleItems();
     if (items.length === 0) {
-      list.append(h('p', { class: 'audit-empty muted', text: t('audit.noMatch') }));
+      list.append(h('div', { class: 'audit-empty' }, emptyState(t('audit.noMatch'), '⌕')));
       return;
     }
     let index = 0;
