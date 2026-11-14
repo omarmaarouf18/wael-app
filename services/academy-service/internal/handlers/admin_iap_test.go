@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -610,6 +611,10 @@ func TestAdminIAP_PurchasesFilter(t *testing.T) {
 // "Every read path (#53 coverage/list, #54 packages) must skip subject ids that no
 // longer exist or are draft/hidden/expired, because RemoveSubjectFromAllPackages
 // only logs on failure. Add a test with a stale subject id in a package."
+// Amended 2026-11-14 (owner fix, W5): the admin GET and list keep draft,
+// expired and hidden-level subjects, because the console saves the list it
+// reads; only deleted subject ids are omitted. Coverage and the student read
+// still skip every stale id.
 func TestAdminIAP_StaleSubjectSkipping(t *testing.T) {
 	s, _ := newAdminTestServer(t, okVerify)
 	future := time.Now().UTC().Add(30 * 24 * time.Hour)
@@ -659,7 +664,7 @@ func TestAdminIAP_StaleSubjectSkipping(t *testing.T) {
 		t.Fatalf("CreateIAPPackage: %v", err)
 	}
 
-	// Test 1: GET /internal/admin/iap/packages/{id} must skip stale IDs
+	// Test 1: GET /internal/admin/iap/packages/{id} keeps existing IDs, omits deleted
 	recGet := doAdminJSON(t, s, http.MethodGet, "/internal/admin/iap/packages/"+pkg.ID, nil)
 	if recGet.Code != http.StatusOK {
 		t.Fatalf("GET package failed: %d (%s)", recGet.Code, recGet.Body.String())
@@ -668,11 +673,12 @@ func TestAdminIAP_StaleSubjectSkipping(t *testing.T) {
 	if err := json.Unmarshal(recGet.Body.Bytes(), &gotPkg); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(gotPkg.SubjectIDs) != 1 || gotPkg.SubjectIDs[0] != sActive.ID {
-		t.Errorf("GET package: expected only active subject [%s], got %v", sActive.ID, gotPkg.SubjectIDs)
+	wantKept := []string{sActive.ID, sDraft.ID, sExpired.ID, sHidden.ID}
+	if !slices.Equal(gotPkg.SubjectIDs, wantKept) {
+		t.Errorf("GET package: expected existing subjects %v (deleted omitted), got %v", wantKept, gotPkg.SubjectIDs)
 	}
 
-	// Test 2: GET /internal/admin/iap/packages list must also skip stale IDs
+	// Test 2: GET /internal/admin/iap/packages list does the same
 	recList := doAdminJSON(t, s, http.MethodGet, "/internal/admin/iap/packages", nil)
 	if recList.Code != http.StatusOK {
 		t.Fatalf("list packages failed: %d", recList.Code)
@@ -687,12 +693,79 @@ func TestAdminIAP_StaleSubjectSkipping(t *testing.T) {
 	for _, p := range listRes.Packages {
 		if p.ID == pkg.ID {
 			found = true
-			if len(p.SubjectIDs) != 1 || p.SubjectIDs[0] != sActive.ID {
-				t.Errorf("List package: expected only active subject [%s], got %v", sActive.ID, p.SubjectIDs)
+			if !slices.Equal(p.SubjectIDs, wantKept) {
+				t.Errorf("List package: expected existing subjects %v (deleted omitted), got %v", wantKept, p.SubjectIDs)
 			}
 		}
 	}
 	if !found {
 		t.Errorf("package %s not found in list", pkg.ID)
+	}
+}
+
+// TestAdminIAP_EditKeepsDraftAndExpiredSubjects is the console round trip
+// (owner fix 2026-11-14, W5): the console reads a package, changes one field
+// and PATCHes back the subject_ids it read. Draft and expired subjects the
+// admin picked must survive that save.
+func TestAdminIAP_EditKeepsDraftAndExpiredSubjects(t *testing.T) {
+	s, _ := newAdminTestServer(t, okVerify)
+	future := time.Now().UTC().Add(30 * 24 * time.Hour)
+	past := time.Now().UTC().Add(-24 * time.Hour)
+
+	sActive := createIAPTestSubject(t, s, "subj-keep-active", "bachelor-y1", models.StatusPublished, future)
+	sDraft := createIAPTestSubject(t, s, "subj-keep-draft", "bachelor-y1", models.StatusDraft, future)
+	sExpired := createIAPTestSubject(t, s, "subj-keep-expired", "bachelor-y1", models.StatusPublished, past)
+	want := []string{sActive.ID, sDraft.ID, sExpired.ID}
+
+	recCreate := doAdminJSON(t, s, http.MethodPost, "/internal/admin/iap/packages", map[string]any{
+		"product_id":  "com.wael.app.pkg.keep",
+		"title_ar":    "باقة",
+		"title_en":    "Keep",
+		"subject_ids": want,
+		"published":   true,
+	})
+	if recCreate.Code != http.StatusCreated && recCreate.Code != http.StatusOK {
+		t.Fatalf("create: %d (%s)", recCreate.Code, recCreate.Body.String())
+	}
+	var created IAPPackageAdminDTO
+	if err := json.Unmarshal(recCreate.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create: %v", err)
+	}
+	if !slices.Equal(created.SubjectIDs, want) {
+		t.Fatalf("create response: expected %v, got %v", want, created.SubjectIDs)
+	}
+
+	recGet := doAdminJSON(t, s, http.MethodGet, "/internal/admin/iap/packages/"+created.ID, nil)
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("get: %d (%s)", recGet.Code, recGet.Body.String())
+	}
+	var read IAPPackageAdminDTO
+	if err := json.Unmarshal(recGet.Body.Bytes(), &read); err != nil {
+		t.Fatalf("unmarshal get: %v", err)
+	}
+
+	recPatch := doAdminJSON(t, s, http.MethodPatch, "/internal/admin/iap/packages/"+created.ID, map[string]any{
+		"title_en":    "Keep edited",
+		"subject_ids": read.SubjectIDs,
+	})
+	if recPatch.Code != http.StatusOK {
+		t.Fatalf("patch: %d (%s)", recPatch.Code, recPatch.Body.String())
+	}
+
+	stored, err := s.Store.GetIAPPackage(context.Background(), created.ID)
+	if err != nil || stored == nil {
+		t.Fatalf("GetIAPPackage: %v", err)
+	}
+	if !slices.Equal(stored.SubjectIDs, want) {
+		t.Errorf("stored after edit: expected %v, got %v", want, stored.SubjectIDs)
+	}
+
+	// Coverage still ignores draft and expired subjects.
+	recCov := doAdminJSON(t, s, http.MethodGet, "/internal/admin/iap/coverage", nil)
+	if recCov.Code != http.StatusOK {
+		t.Fatalf("coverage: %d", recCov.Code)
+	}
+	if strings.Contains(recCov.Body.String(), sDraft.ID) || strings.Contains(recCov.Body.String(), sExpired.ID) {
+		t.Errorf("coverage must not list draft or expired subjects: %s", recCov.Body.String())
 	}
 }

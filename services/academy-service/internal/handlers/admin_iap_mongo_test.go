@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -129,8 +130,11 @@ func TestAdminIAP_Mongo(t *testing.T) {
 		if err := json.Unmarshal(recGet.Body.Bytes(), &gotPkg); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
-		if len(gotPkg.SubjectIDs) != 1 || gotPkg.SubjectIDs[0] != sActive.ID {
-			t.Errorf("expected only active subject [%s], got %v", sActive.ID, gotPkg.SubjectIDs)
+		// Owner fix 2026-11-14 (W5): admin reads keep draft and expired
+		// subjects (the console saves what it reads); deleted ids are omitted.
+		wantKept := []string{sActive.ID, sDraft.ID, sExpired.ID}
+		if !slices.Equal(gotPkg.SubjectIDs, wantKept) {
+			t.Errorf("expected existing subjects %v (deleted omitted), got %v", wantKept, gotPkg.SubjectIDs)
 		}
 
 		// Read package list via Admin API
@@ -148,8 +152,8 @@ func TestAdminIAP_Mongo(t *testing.T) {
 		for _, p := range listRes.Packages {
 			if p.ID == stalePkg.ID {
 				found = true
-				if len(p.SubjectIDs) != 1 || p.SubjectIDs[0] != sActive.ID {
-					t.Errorf("list package: expected only active subject [%s], got %v", sActive.ID, p.SubjectIDs)
+				if !slices.Equal(p.SubjectIDs, wantKept) {
+					t.Errorf("list package: expected existing subjects %v (deleted omitted), got %v", wantKept, p.SubjectIDs)
 				}
 			}
 		}

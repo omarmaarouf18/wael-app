@@ -99,28 +99,21 @@ func cleanIAPDescription(raw string) (string, bool) {
 	return s, true
 }
 
-// filterActiveSubjectIDs returns only subject IDs that exist, are published,
-// reside in a published level, and whose AccessExpiresAt is in the future.
-// Stale subject IDs (no longer exist, draft, hidden level, expired) are omitted.
-func filterActiveSubjectIDs(ctx context.Context, st store.Store, subjectIDs []string, now time.Time, levelsByKey map[string]*models.Level, subjectCache map[string]*models.Subject) ([]string, error) {
+// existingSubjectIDs returns the package's stored subject IDs that still
+// exist, in package order. Draft, expired and hidden-level subjects are kept:
+// the admin console edits the package from this list and saves it back, so
+// dropping them here would remove them from the package on the next save
+// (owner fix 2026-11-14, W5). Only deleted subjects are omitted (a PATCH that
+// sends them back would fail with unknown_subject). Student reads (#54) and
+// coverage still filter to active subjects.
+func existingSubjectIDs(ctx context.Context, st store.Store, subjectIDs []string, subjectCache map[string]*models.Subject) ([]string, error) {
 	if len(subjectIDs) == 0 {
 		return []string{}, nil
-	}
-	if levelsByKey == nil {
-		allLevels, err := st.ListLevels(ctx, false)
-		if err != nil {
-			return nil, err
-		}
-		levelsByKey = make(map[string]*models.Level, len(allLevels))
-		for _, l := range allLevels {
-			levelsByKey[l.Key] = l
-		}
 	}
 	if subjectCache == nil {
 		subjectCache = make(map[string]*models.Subject)
 	}
-
-	active := make([]string, 0, len(subjectIDs))
+	kept := make([]string, 0, len(subjectIDs))
 	for _, id := range subjectIDs {
 		subj, ok := subjectCache[id]
 		if !ok {
@@ -134,23 +127,13 @@ func filterActiveSubjectIDs(ctx context.Context, st store.Store, subjectIDs []st
 		if subj == nil {
 			continue // deleted or missing
 		}
-		if subj.Status != models.StatusPublished {
-			continue // draft
-		}
-		lvl := levelsByKey[subj.LevelKey]
-		if lvl == nil || !lvl.Published {
-			continue // hidden level
-		}
-		if !subj.AccessExpiresAt.IsZero() && !subj.AccessExpiresAt.After(now) {
-			continue // expired
-		}
-		active = append(active, id)
+		kept = append(kept, id)
 	}
-	return active, nil
+	return kept, nil
 }
 
-func toIAPPackageAdminDTO(ctx context.Context, st store.Store, pkg *models.IAPPackage, now time.Time, levelsByKey map[string]*models.Level, subjectCache map[string]*models.Subject) (IAPPackageAdminDTO, error) {
-	activeIDs, err := filterActiveSubjectIDs(ctx, st, pkg.SubjectIDs, now, levelsByKey, subjectCache)
+func toIAPPackageAdminDTO(ctx context.Context, st store.Store, pkg *models.IAPPackage, subjectCache map[string]*models.Subject) (IAPPackageAdminDTO, error) {
+	subjectIDs, err := existingSubjectIDs(ctx, st, pkg.SubjectIDs, subjectCache)
 	if err != nil {
 		return IAPPackageAdminDTO{}, err
 	}
@@ -161,7 +144,7 @@ func toIAPPackageAdminDTO(ctx context.Context, st store.Store, pkg *models.IAPPa
 		TitleEn:        pkg.TitleEn,
 		DescriptionAr:  pkg.DescriptionAr,
 		DescriptionEn:  pkg.DescriptionEn,
-		SubjectIDs:     activeIDs,
+		SubjectIDs:     subjectIDs,
 		AvailableUntil: pkg.AvailableUntil,
 		Published:      pkg.Published,
 		Position:       pkg.Position,
@@ -198,21 +181,11 @@ func (s *Server) ListAdminIAPPackages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allLevels, err := s.Store.ListLevels(dbCtx, false)
-	if err != nil {
-		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
-		return
-	}
-	levelsByKey := make(map[string]*models.Level, len(allLevels))
-	for _, l := range allLevels {
-		levelsByKey[l.Key] = l
-	}
 	subjectCache := make(map[string]*models.Subject)
-	now := time.Now().UTC()
 
 	dtos := make([]IAPPackageAdminDTO, 0, len(packages))
 	for _, pkg := range packages {
-		dto, err := toIAPPackageAdminDTO(dbCtx, s.Store, pkg, now, levelsByKey, subjectCache)
+		dto, err := toIAPPackageAdminDTO(dbCtx, s.Store, pkg, subjectCache)
 		if err != nil {
 			handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 			return
@@ -353,7 +326,7 @@ func (s *Server) CreateAdminIAPPackage(w http.ResponseWriter, r *http.Request) {
 		logAuditFailure(adm, "iap_package_create", pkg.ID, err)
 	}
 
-	dto, err := toIAPPackageAdminDTO(dbCtx, s.Store, pkg, now, nil, nil)
+	dto, err := toIAPPackageAdminDTO(dbCtx, s.Store, pkg, nil)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
@@ -405,7 +378,7 @@ func (s *Server) GetAdminIAPPackage(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 
-	dto, err := toIAPPackageAdminDTO(dbCtx, s.Store, pkg, time.Now().UTC(), nil, nil)
+	dto, err := toIAPPackageAdminDTO(dbCtx, s.Store, pkg, nil)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return
@@ -536,7 +509,7 @@ func (s *Server) PatchAdminIAPPackage(w http.ResponseWriter, r *http.Request, id
 		logAuditFailure(adm, "iap_package_update", pkg.ID, err)
 	}
 
-	dto, err := toIAPPackageAdminDTO(dbCtx, s.Store, pkg, time.Now().UTC(), nil, nil)
+	dto, err := toIAPPackageAdminDTO(dbCtx, s.Store, pkg, nil)
 	if err != nil {
 		handlerutil.WriteSafeError(w, r, http.StatusServiceUnavailable, handlerutil.ErrCodeUnavailable, "service temporarily unavailable", err)
 		return

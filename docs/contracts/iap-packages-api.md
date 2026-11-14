@@ -284,6 +284,8 @@ Every mutating call generates an entry in `admin_audit_log`.
 
 List all packages (published and unpublished), ordered by `position` ascending, then `created_at` ascending.
 
+*(Amended 2026-11-14, owner fix (W5): on every admin read (5.1 list, the single-package GET, and the create/PATCH responses) `subject_ids` is the stored hand-picked list in package order, including draft, expired and hidden-level subjects; only ids of deleted subjects are omitted. The admin console saves back the list it reads, so filtering here removed those subjects on the next edit. The student read (Section 3) and coverage still list active subjects only.)*
+
 #### Response `200 OK`
 
 ```json
@@ -485,5 +487,6 @@ Configured in `services/academy-service/internal/config/config.go` following all
 
 ## Change Log
 
+- 2026-11-14 (amendment, W5): Admin reads keep draft, expired and hidden-level `subject_ids` and omit only deleted subjects (Section 5.1 note).
 - 2026-11-14 (amendment): Corrected error response shape to handlerutil.WriteSafeError `{"error","code","request_id"}` (D1); replaced citation with "ADR-0015 / shared brief 3.4" (D2); documented that admin package list orders by `position` then `created_at`; added admin error codes returned by #53 (`duplicate_product_id`, `invalid_title`, `invalid_description`, `invalid_subject_ids`, `invalid_product_id`, `not_found`) to the error catalog.
 - 2026-11-14: Initial version frozen for the 2026-11-14 parallel batch (Lane S and Lane A).
