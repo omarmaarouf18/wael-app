@@ -6,6 +6,7 @@ import "time"
 const (
 	EntitlementSourceAdminGrant = "admin_grant"
 	EntitlementSourceRequest    = "request"
+	EntitlementSourceIAP        = "iap"
 )
 
 // Entitlement represents a student's access grant to a subject.
@@ -15,7 +16,7 @@ type Entitlement struct {
 	SubjectID    string     `bson:"subject_id" json:"subject_id"`
 	ExpiresAt    time.Time  `bson:"expires_at" json:"expires_at"`
 	GrantedAt    time.Time  `bson:"granted_at" json:"granted_at"`
-	Source       string     `bson:"source" json:"source"` // "request" or "admin_grant"
+	Source       string     `bson:"source" json:"source"` // "request", "admin_grant", or "iap"
 	GrantedBy    string     `bson:"granted_by" json:"granted_by"`
 	RequestID    string     `bson:"request_id,omitempty" json:"request_id,omitempty"`
 	Active       bool       `bson:"active" json:"active"` // true for current active entitlement

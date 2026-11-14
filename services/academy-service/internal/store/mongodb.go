@@ -333,6 +333,51 @@ func (s *MongoStore) EnsureIndexes(ctx context.Context) error {
 		return fmt.Errorf("store: ensure payment_records user_recorded index: %w", err)
 	}
 
+	// Indexes on iap_packages: unique product_id (Issue #52, ADR-0015)
+	_, err = s.db.Collection("iap_packages").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "product_id", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("uniq_iap_packages_product_id"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure iap_packages product_id unique index: %w", err)
+	}
+
+	_, err = s.db.Collection("iap_packages").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "published", Value: 1},
+			{Key: "position", Value: 1},
+		},
+		Options: options.Index().SetName("idx_iap_packages_pub_pos"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure iap_packages pub_pos index: %w", err)
+	}
+
+	// Indexes on iap_purchases: unique transaction_id, user_id, package_id
+	_, err = s.db.Collection("iap_purchases").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "transaction_id", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("uniq_iap_purchases_transaction_id"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure iap_purchases transaction_id unique index: %w", err)
+	}
+
+	_, err = s.db.Collection("iap_purchases").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "user_id", Value: 1}},
+		Options: options.Index().SetName("idx_iap_purchases_user_id"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure iap_purchases user_id index: %w", err)
+	}
+
+	_, err = s.db.Collection("iap_purchases").Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "package_id", Value: 1}},
+		Options: options.Index().SetName("idx_iap_purchases_package_id"),
+	})
+	if err != nil {
+		return fmt.Errorf("store: ensure iap_purchases package_id index: %w", err)
+	}
+
 	return nil
 }
 
@@ -807,6 +852,9 @@ func (s *MongoStore) DeleteDraftSubject(ctx context.Context, id string) ([]*mode
 	}
 	if _, err := s.db.Collection("subject_files").DeleteMany(ctx, bson.M{"subject_id": id}); err != nil {
 		log.Printf("[ERROR] delete file rows of deleted subject %s: %v", id, err)
+	}
+	if err := s.RemoveSubjectFromAllPackages(ctx, id); err != nil {
+		log.Printf("[ERROR] remove subject %s from iap packages: %v", id, err)
 	}
 	return files, nil
 }
@@ -2132,4 +2180,237 @@ func isIndexNotFound(err error) bool {
 		return cmdErr.HasErrorCode(27) || cmdErr.Name == "IndexNotFound"
 	}
 	return strings.Contains(err.Error(), "index not found") || strings.Contains(err.Error(), "IndexNotFound")
+}
+
+// ListIAPPackages returns IAP packages, optionally filtered by published status,
+// ordered by position ascending, then title_ar ascending.
+func (s *MongoStore) ListIAPPackages(ctx context.Context, publishedOnly bool) ([]*models.IAPPackage, error) {
+	filter := bson.M{}
+	if publishedOnly {
+		filter["published"] = true
+	}
+	opts := options.Find().SetSort(bson.D{{Key: "position", Value: 1}, {Key: "title_ar", Value: 1}})
+	cursor, err := s.db.Collection("iap_packages").Find(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: find iap packages: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var packages []*models.IAPPackage
+	if err := cursor.All(ctx, &packages); err != nil {
+		return nil, fmt.Errorf("store: decode iap packages: %w", err)
+	}
+	if packages == nil {
+		packages = []*models.IAPPackage{}
+	}
+	return packages, nil
+}
+
+// GetIAPPackage returns a package by ID, or nil if not found.
+func (s *MongoStore) GetIAPPackage(ctx context.Context, id string) (*models.IAPPackage, error) {
+	var pkg models.IAPPackage
+	err := s.db.Collection("iap_packages").FindOne(ctx, bson.M{"_id": id}).Decode(&pkg)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find iap package: %w", err)
+	}
+	return &pkg, nil
+}
+
+// GetIAPPackageByProductID returns a package by its Apple Product ID, or nil if not found.
+func (s *MongoStore) GetIAPPackageByProductID(ctx context.Context, productID string) (*models.IAPPackage, error) {
+	var pkg models.IAPPackage
+	err := s.db.Collection("iap_packages").FindOne(ctx, bson.M{"product_id": productID}).Decode(&pkg)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find iap package by product_id: %w", err)
+	}
+	return &pkg, nil
+}
+
+// CreateIAPPackage stores a new IAP package. ProductID and ID must be unique.
+func (s *MongoStore) CreateIAPPackage(ctx context.Context, pkg *models.IAPPackage) error {
+	if pkg == nil {
+		return errors.New("store: nil iap package")
+	}
+	if pkg.ID == "" {
+		pkg.ID = generateID()
+	}
+	now := time.Now().UTC()
+	if pkg.CreatedAt.IsZero() {
+		pkg.CreatedAt = now
+	}
+	if pkg.UpdatedAt.IsZero() {
+		pkg.UpdatedAt = now
+	}
+	if pkg.SubjectIDs == nil {
+		pkg.SubjectIDs = []string{}
+	}
+
+	_, err := s.db.Collection("iap_packages").InsertOne(ctx, pkg)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert iap package: %w", err)
+	}
+	return nil
+}
+
+// UpdateIAPPackage updates package fields. ProductID is immutable and never updated.
+func (s *MongoStore) UpdateIAPPackage(ctx context.Context, pkg *models.IAPPackage) error {
+	if pkg == nil {
+		return errors.New("store: nil iap package")
+	}
+
+	now := time.Now().UTC()
+	pkg.UpdatedAt = now
+
+	subjectIDs := pkg.SubjectIDs
+	if subjectIDs == nil {
+		subjectIDs = []string{}
+	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"title_ar":        pkg.TitleAr,
+			"title_en":        pkg.TitleEn,
+			"description_ar":  pkg.DescriptionAr,
+			"description_en":  pkg.DescriptionEn,
+			"subject_ids":     subjectIDs,
+			"available_until": pkg.AvailableUntil,
+			"published":       pkg.Published,
+			"position":        pkg.Position,
+			"updated_at":      now,
+		},
+	}
+
+	res, err := s.db.Collection("iap_packages").UpdateOne(ctx, bson.M{"_id": pkg.ID}, update)
+	if err != nil {
+		return fmt.Errorf("store: update iap package: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteIAPPackage deletes a package if no purchases reference it. Returns ErrConflict
+// if purchases exist, or ErrNotFound if the package does not exist.
+func (s *MongoStore) DeleteIAPPackage(ctx context.Context, id string) error {
+	count, err := s.CountIAPPurchasesByPackage(ctx, id)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrConflict
+	}
+
+	res, err := s.db.Collection("iap_packages").DeleteOne(ctx, bson.M{"_id": id})
+	if err != nil {
+		return fmt.Errorf("store: delete iap package: %w", err)
+	}
+	if res.DeletedCount == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// CountIAPPurchasesByPackage counts purchases referencing packageID.
+func (s *MongoStore) CountIAPPurchasesByPackage(ctx context.Context, packageID string) (int, error) {
+	count, err := s.db.Collection("iap_purchases").CountDocuments(ctx, bson.M{"package_id": packageID})
+	if err != nil {
+		return 0, fmt.Errorf("store: count iap purchases: %w", err)
+	}
+	return int(count), nil
+}
+
+// InsertIAPPurchase stores a purchase. TransactionID must be unique.
+func (s *MongoStore) InsertIAPPurchase(ctx context.Context, purchase *models.IAPPurchase) error {
+	if purchase == nil {
+		return errors.New("store: nil iap purchase")
+	}
+	if purchase.ID == "" {
+		purchase.ID = generateID()
+	}
+	if purchase.CreatedAt.IsZero() {
+		purchase.CreatedAt = time.Now().UTC()
+	}
+	if purchase.GrantedSubjectIDs == nil {
+		purchase.GrantedSubjectIDs = []string{}
+	}
+	if purchase.Skipped == nil {
+		purchase.Skipped = []models.IAPSkipped{}
+	}
+
+	_, err := s.db.Collection("iap_purchases").InsertOne(ctx, purchase)
+	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
+		return fmt.Errorf("store: insert iap purchase: %w", err)
+	}
+	return nil
+}
+
+// GetIAPPurchaseByTransactionID returns a purchase by Apple transaction ID, or nil if not found.
+func (s *MongoStore) GetIAPPurchaseByTransactionID(ctx context.Context, transactionID string) (*models.IAPPurchase, error) {
+	var purchase models.IAPPurchase
+	err := s.db.Collection("iap_purchases").FindOne(ctx, bson.M{"transaction_id": transactionID}).Decode(&purchase)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("store: find iap purchase: %w", err)
+	}
+	return &purchase, nil
+}
+
+// ListIAPPurchases returns purchases matching filter, newest first (by CreatedAt desc),
+// capped by limit if limit > 0.
+func (s *MongoStore) ListIAPPurchases(ctx context.Context, filter models.IAPPurchaseFilter, limit int) ([]*models.IAPPurchase, error) {
+	filterDoc := bson.M{}
+	if filter.UserID != "" {
+		filterDoc["user_id"] = filter.UserID
+	}
+	if filter.PackageID != "" {
+		filterDoc["package_id"] = filter.PackageID
+	}
+
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})
+	if limit > 0 {
+		opts.SetLimit(int64(limit))
+	}
+
+	cursor, err := s.db.Collection("iap_purchases").Find(ctx, filterDoc, opts)
+	if err != nil {
+		return nil, fmt.Errorf("store: find iap purchases: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var purchases []*models.IAPPurchase
+	if err := cursor.All(ctx, &purchases); err != nil {
+		return nil, fmt.Errorf("store: decode iap purchases: %w", err)
+	}
+	if purchases == nil {
+		purchases = []*models.IAPPurchase{}
+	}
+	return purchases, nil
+}
+
+// RemoveSubjectFromAllPackages removes a subject ID from all packages.
+func (s *MongoStore) RemoveSubjectFromAllPackages(ctx context.Context, subjectID string) error {
+	filter := bson.M{"subject_ids": subjectID}
+	update := bson.M{
+		"$pull": bson.M{"subject_ids": subjectID},
+		"$set":  bson.M{"updated_at": time.Now().UTC()},
+	}
+	if _, err := s.db.Collection("iap_packages").UpdateMany(ctx, filter, update); err != nil {
+		return fmt.Errorf("store: remove subject from packages: %w", err)
+	}
+	return nil
 }

@@ -29,6 +29,9 @@ var (
 	// ErrSubjectHasStudents: an entitlement, purchase request or payment
 	// record (any state) references the subject, so it cannot be deleted.
 	ErrSubjectHasStudents = errors.New("store: subject has students")
+	// ErrConflict: the requested operation conflicts with existing data (e.g.
+	// deleting a package that has recorded purchases).
+	ErrConflict = errors.New("store: conflict")
 )
 
 // SubjectFilter specifies criteria for querying subjects.
@@ -55,6 +58,9 @@ type OrderRequestFilter struct {
 	Status string
 	UserID string
 }
+
+// IAPPurchaseFilter specifies filter criteria for admin purchase queries.
+type IAPPurchaseFilter = models.IAPPurchaseFilter
 
 // Store is the academy persistence contract.
 type Store interface {
@@ -179,6 +185,19 @@ type Store interface {
 	// App Settings (2026-10-08, A1)
 	GetAppSettings(ctx context.Context) (*models.AppSettings, error)
 	SaveAppSettings(ctx context.Context, settings *models.AppSettings) error
+
+	// IAP Packages & Purchases (Issue #52, ADR-0015)
+	ListIAPPackages(ctx context.Context, publishedOnly bool) ([]*models.IAPPackage, error)
+	GetIAPPackage(ctx context.Context, id string) (*models.IAPPackage, error)
+	GetIAPPackageByProductID(ctx context.Context, productID string) (*models.IAPPackage, error)
+	CreateIAPPackage(ctx context.Context, pkg *models.IAPPackage) error
+	UpdateIAPPackage(ctx context.Context, pkg *models.IAPPackage) error
+	DeleteIAPPackage(ctx context.Context, id string) error
+	CountIAPPurchasesByPackage(ctx context.Context, packageID string) (int, error)
+	InsertIAPPurchase(ctx context.Context, purchase *models.IAPPurchase) error
+	GetIAPPurchaseByTransactionID(ctx context.Context, transactionID string) (*models.IAPPurchase, error)
+	ListIAPPurchases(ctx context.Context, filter models.IAPPurchaseFilter, limit int) ([]*models.IAPPurchase, error)
+	RemoveSubjectFromAllPackages(ctx context.Context, subjectID string) error
 }
 
 // MemoryStore is an in-memory Store for local dev and unit testing.
@@ -198,6 +217,8 @@ type MemoryStore struct {
 	cachedSettings   *models.AppSettings
 	cachedSettingsAt time.Time
 	settingsMu       sync.RWMutex
+	iapPackages      map[string]*models.IAPPackage
+	iapPurchases     []*models.IAPPurchase
 }
 
 // NewMemoryStore creates an empty MemoryStore.
@@ -213,6 +234,8 @@ func NewMemoryStore() *MemoryStore {
 		paymentRecords:   make([]*models.PaymentRecord, 0),
 		videoPlays:       make([]*models.VideoPlay, 0),
 		auditLogs:        make([]*models.AuditLog, 0),
+		iapPackages:      make(map[string]*models.IAPPackage),
+		iapPurchases:     make([]*models.IAPPurchase, 0),
 	}
 }
 
@@ -666,6 +689,7 @@ func (s *MemoryStore) DeleteDraftSubject(_ context.Context, id string) ([]*model
 			delete(s.videos, vid)
 		}
 	}
+	s.removeSubjectFromAllPackagesLocked(id)
 	delete(s.subjects, id)
 	return files, nil
 }
@@ -1618,4 +1642,294 @@ func (s *MemoryStore) SaveAppSettings(_ context.Context, settings *models.AppSet
 	s.settingsMu.Unlock()
 
 	return nil
+}
+
+// ListIAPPackages returns IAP packages, optionally filtered by published status,
+// ordered by position ascending, then title_ar ascending.
+func (s *MemoryStore) ListIAPPackages(_ context.Context, publishedOnly bool) ([]*models.IAPPackage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.IAPPackage
+	for _, pkg := range s.iapPackages {
+		if publishedOnly && !pkg.Published {
+			continue
+		}
+		result = append(result, cloneIAPPackage(pkg))
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Position != result[j].Position {
+			return result[i].Position < result[j].Position
+		}
+		return result[i].TitleAr < result[j].TitleAr
+	})
+
+	if result == nil {
+		result = []*models.IAPPackage{}
+	}
+	return result, nil
+}
+
+// GetIAPPackage returns a package by ID, or nil if not found.
+func (s *MemoryStore) GetIAPPackage(_ context.Context, id string) (*models.IAPPackage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	pkg, ok := s.iapPackages[id]
+	if !ok {
+		return nil, nil
+	}
+	return cloneIAPPackage(pkg), nil
+}
+
+// GetIAPPackageByProductID returns a package by its Apple Product ID, or nil if not found.
+func (s *MemoryStore) GetIAPPackageByProductID(_ context.Context, productID string) (*models.IAPPackage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, pkg := range s.iapPackages {
+		if pkg.ProductID == productID {
+			return cloneIAPPackage(pkg), nil
+		}
+	}
+	return nil, nil
+}
+
+// CreateIAPPackage stores a new IAP package. ProductID and ID must be unique.
+func (s *MemoryStore) CreateIAPPackage(_ context.Context, pkg *models.IAPPackage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if pkg == nil {
+		return errors.New("store: nil iap package")
+	}
+	if pkg.ID == "" {
+		pkg.ID = generateID()
+	}
+	if _, exists := s.iapPackages[pkg.ID]; exists {
+		return ErrDuplicate
+	}
+	for _, existing := range s.iapPackages {
+		if existing.ProductID == pkg.ProductID {
+			return ErrDuplicate
+		}
+	}
+
+	cp := cloneIAPPackage(pkg)
+	now := time.Now().UTC()
+	if cp.CreatedAt.IsZero() {
+		cp.CreatedAt = now
+	}
+	if cp.UpdatedAt.IsZero() {
+		cp.UpdatedAt = now
+	}
+	s.iapPackages[cp.ID] = cp
+	return nil
+}
+
+// UpdateIAPPackage updates package fields. ProductID is immutable and never updated.
+func (s *MemoryStore) UpdateIAPPackage(_ context.Context, pkg *models.IAPPackage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if pkg == nil {
+		return errors.New("store: nil iap package")
+	}
+	existing, ok := s.iapPackages[pkg.ID]
+	if !ok {
+		return ErrNotFound
+	}
+
+	// Update mutable fields only; preserve existing.ProductID
+	existing.TitleAr = pkg.TitleAr
+	existing.TitleEn = pkg.TitleEn
+	existing.DescriptionAr = pkg.DescriptionAr
+	existing.DescriptionEn = pkg.DescriptionEn
+	if pkg.SubjectIDs != nil {
+		existing.SubjectIDs = append([]string(nil), pkg.SubjectIDs...)
+	} else {
+		existing.SubjectIDs = []string{}
+	}
+	if pkg.AvailableUntil != nil {
+		t := *pkg.AvailableUntil
+		existing.AvailableUntil = &t
+	} else {
+		existing.AvailableUntil = nil
+	}
+	existing.Published = pkg.Published
+	existing.Position = pkg.Position
+	existing.UpdatedAt = time.Now().UTC()
+
+	return nil
+}
+
+// DeleteIAPPackage deletes a package if no purchases reference it. Returns ErrConflict
+// if purchases exist, or ErrNotFound if the package does not exist.
+func (s *MemoryStore) DeleteIAPPackage(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.iapPackages[id]; !ok {
+		return ErrNotFound
+	}
+
+	for _, p := range s.iapPurchases {
+		if p.PackageID == id {
+			return ErrConflict
+		}
+	}
+
+	delete(s.iapPackages, id)
+	return nil
+}
+
+// CountIAPPurchasesByPackage counts purchases referencing packageID.
+func (s *MemoryStore) CountIAPPurchasesByPackage(_ context.Context, packageID string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	count := 0
+	for _, p := range s.iapPurchases {
+		if p.PackageID == packageID {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// InsertIAPPurchase stores a purchase. TransactionID must be unique.
+func (s *MemoryStore) InsertIAPPurchase(_ context.Context, purchase *models.IAPPurchase) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if purchase == nil {
+		return errors.New("store: nil iap purchase")
+	}
+	for _, existing := range s.iapPurchases {
+		if existing.TransactionID == purchase.TransactionID {
+			return ErrDuplicate
+		}
+	}
+
+	cp := cloneIAPPurchase(purchase)
+	if cp.ID == "" {
+		cp.ID = generateID()
+	}
+	if cp.CreatedAt.IsZero() {
+		cp.CreatedAt = time.Now().UTC()
+	}
+	if cp.GrantedSubjectIDs == nil {
+		cp.GrantedSubjectIDs = []string{}
+	}
+	if cp.Skipped == nil {
+		cp.Skipped = []models.IAPSkipped{}
+	}
+	s.iapPurchases = append(s.iapPurchases, cp)
+	return nil
+}
+
+// GetIAPPurchaseByTransactionID returns a purchase by Apple transaction ID, or nil if not found.
+func (s *MemoryStore) GetIAPPurchaseByTransactionID(_ context.Context, transactionID string) (*models.IAPPurchase, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, p := range s.iapPurchases {
+		if p.TransactionID == transactionID {
+			return cloneIAPPurchase(p), nil
+		}
+	}
+	return nil, nil
+}
+
+// ListIAPPurchases returns purchases matching filter, newest first (by CreatedAt desc),
+// capped by limit if limit > 0.
+func (s *MemoryStore) ListIAPPurchases(_ context.Context, filter models.IAPPurchaseFilter, limit int) ([]*models.IAPPurchase, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var result []*models.IAPPurchase
+	for _, p := range s.iapPurchases {
+		if filter.UserID != "" && p.UserID != filter.UserID {
+			continue
+		}
+		if filter.PackageID != "" && p.PackageID != filter.PackageID {
+			continue
+		}
+		result = append(result, cloneIAPPurchase(p))
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	if result == nil {
+		result = []*models.IAPPurchase{}
+	}
+	return result, nil
+}
+
+// RemoveSubjectFromAllPackages removes a subject ID from all packages.
+func (s *MemoryStore) RemoveSubjectFromAllPackages(_ context.Context, subjectID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.removeSubjectFromAllPackagesLocked(subjectID)
+	return nil
+}
+
+func (s *MemoryStore) removeSubjectFromAllPackagesLocked(subjectID string) {
+	now := time.Now().UTC()
+	for _, pkg := range s.iapPackages {
+		var newIDs []string
+		changed := false
+		for _, id := range pkg.SubjectIDs {
+			if id == subjectID {
+				changed = true
+				continue
+			}
+			newIDs = append(newIDs, id)
+		}
+		if changed {
+			pkg.SubjectIDs = newIDs
+			pkg.UpdatedAt = now
+		}
+	}
+}
+
+func cloneIAPPackage(pkg *models.IAPPackage) *models.IAPPackage {
+	if pkg == nil {
+		return nil
+	}
+	cp := *pkg
+	if pkg.SubjectIDs != nil {
+		cp.SubjectIDs = append([]string(nil), pkg.SubjectIDs...)
+	} else {
+		cp.SubjectIDs = []string{}
+	}
+	if pkg.AvailableUntil != nil {
+		t := *pkg.AvailableUntil
+		cp.AvailableUntil = &t
+	}
+	return &cp
+}
+
+func cloneIAPPurchase(p *models.IAPPurchase) *models.IAPPurchase {
+	if p == nil {
+		return nil
+	}
+	cp := *p
+	if p.GrantedSubjectIDs != nil {
+		cp.GrantedSubjectIDs = append([]string(nil), p.GrantedSubjectIDs...)
+	} else {
+		cp.GrantedSubjectIDs = []string{}
+	}
+	if p.Skipped != nil {
+		cp.Skipped = append([]models.IAPSkipped(nil), p.Skipped...)
+	} else {
+		cp.Skipped = []models.IAPSkipped{}
+	}
+	return &cp
 }

@@ -108,7 +108,7 @@ Landed since the 2026-10-06 order: F-UX3 player speed and next lesson (`b5561e8`
 Session start check from CLAUDE.md applies per worktree; agents never share a worktree directory.
 Issue sequence:
 - Wave 0: Issue #51 (Lane S) — ADR-0015 and frozen API contract (`docs/contracts/iap-packages-api.md`).
-- Wave 1: Issue #52 (Lane S) — backend data models, StoreKit 2 JWS verification, and student/admin endpoints.
+- Wave 1: Issue #52 (Lane S) — academy-service package + purchase model and store.
 - Wave 2 (parallel):
   - Lane S: Issue #53 (admin console package management) + Issue #54 (admin console coverage and warning audit).
   - Lane A: Issue #57 (StoreKit 2 client service and package purchases).
@@ -119,6 +119,8 @@ Issue sequence:
 - Wave 5: Integration — rebase `iap-app` onto `develop` locally, fast-forward merge `iap-app` into `develop` on local Lane S worktree.
 - Wave 6: Issues #59 & #60 — full regression test run, release QA verification, and submission prep.
 Gating rule: As an access-gating change under SPEC Section 12 rule 6, nothing in this batch is pushed to remote `origin/develop` or `main`; all commits remain local on `develop` pending final owner review and confirmation.)*
+
+*(Amended 2026-11-14, Wave 1 · Lane S (Issue #52): academy-service package and purchase model and store on `develop` — `internal/models/iap.go` (`IAPPackage`, `IAPPurchase`, `IAPSkipped`), `models.EntitlementSourceIAP = "iap"`, Store interface and MemoryStore/MongoStore implementations (`ListIAPPackages`, `GetIAPPackage`, `GetIAPPackageByProductID`, `CreateIAPPackage`, `UpdateIAPPackage`, `DeleteIAPPackage`, `CountIAPPurchasesByPackage`, `InsertIAPPurchase`, `GetIAPPurchaseByTransactionID`, `ListIAPPurchases`, `RemoveSubjectFromAllPackages`), indexes in `EnsureIndexes`, and hooked `RemoveSubjectFromAllPackages` into `DeleteDraftSubject`. Store unit/integration tests with `-race` pass. All gates pass; held on `develop` per SPEC Section 12 rule 6; not pushed.)*
 
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy/mobile pipeline live on production with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true` (ADR-0011). *(Amended 2026-10-06: the academy service is built through SPEC Phase 4 and live since 2026-10-03, and the app providers are rebound to `AcademyRepository`; the remaining order is under "Next task".)* *(Amended 2026-10-11: SPEC Phase 5 (files) is also built and on `main` since the 2026-10-09 release; its production turn-on is pending on the host.)*
@@ -165,3 +167,4 @@ the same edit on the legal site.)*
 - [ADR-0012: Academy Admin Content API (Phase 4.1-4.4)](docs/adr/0012-academy-admin-content.md) (Status Accepted; admin endpoints and rules for diplomas, subjects and videos). ADR-0010 (app content) was reserved by ADR-0007 and SPEC Section 15 and has not been written; there is no file for it.
 - [ADR-0013: Admin Broadcast Notifications (SPEC Phase 7)](docs/adr/0013-broadcast-notifications.md) (Status Accepted; owner decisions 2026-10-08/2026-10-12: admin sends from the console, v1 needs no app change; audiences all/subject:<id>, idempotent fan-out with resume, in-app only, no phone push; built on `feat/phase7-broadcast`, held for owner review per SPEC Section 12 rule 6. *(Amended 2026-10-12: owner-reviewed and on `develop`; in the 2026-10-12 release PR, not on `main` until the owner's fast-forward.)*)
 - [ADR-0014: Sales Website (El Metr Academy)](docs/adr/0014-sales-website.md) (Status Accepted, 2026-11-04; sales site in `web/`, manual transfer payments verified by an admin, apps never link to it; foundations built, W2-W5 planned; five open owner decisions; amended 2026-11-04: the five open decisions are decided — see the Decisions entry of 2026-11-04; amended 2026-11-04 (4): Vercel deploys the website from the mirror repo `omarmaarouf18/wael-app-web` (one-way mirror of `web/`, kept in step by the "Sync Website" workflow), so Vercel never gets access to wael-app)
+- [ADR-0015: iOS In-App Purchase Packages](docs/adr/0015-ios-iap-packages.md) (Status Accepted, 2026-11-14; StoreKit 2 curated packages of subjects for iOS IAP, frozen API contract `docs/contracts/iap-packages-api.md`)
