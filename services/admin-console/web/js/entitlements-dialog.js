@@ -98,9 +98,11 @@ export function createEntitlementsDialog({ api, doc = document, onDone }) {
     }
     const statusCell = h('td', {}, h('span', { class: statusClass, text: statusText }));
 
-    const sourceText = ent.source === 'request'
-      ? t('entitlements.source.request')
-      : t('entitlements.source.admin_grant');
+    // "iap" is an Apple in-app purchase (ADR-0015, #55); anything unknown
+    // keeps the admin-grant label as before.
+    let sourceText = t('entitlements.source.admin_grant');
+    if (ent.source === 'request') sourceText = t('entitlements.source.request');
+    else if (ent.source === 'iap') sourceText = t('entitlements.source.iap');
     const sourceCell = h('td', { text: sourceText });
 
     const grantedCell = h('td', { text: formatCairoDateTime(ent.granted_at) });

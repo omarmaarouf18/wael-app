@@ -9,7 +9,7 @@ import (
 )
 
 // academyErrorCodes is the checked-in list of error codes the academy admin
-// handlers (Phase 4.1-4.4) can return to the console. The console relays
+// handlers (Phase 4.1-4.4, plus the #53 iOS package handlers) can return to the console. The console relays
 // upstream 4xx bodies with their code, so every code here needs an ar and en
 // message in web/js/i18n.js (checked by web/test/errors.test.mjs against the
 // same list). Extracted with:
@@ -75,6 +75,15 @@ var academyErrorCodes = []string{
 	"invalid_kind",
 	"invalid_pdf",
 	"file_too_large",
+	// iOS packages admin API (#53, admin_iap.go), relayed by the #56 routes.
+	"internal_error",
+	"invalid_product_id",
+	"invalid_subject_ids",
+	"unknown_subject",
+	"duplicate_product_id",
+	"invalid_package_id",
+	"product_id_immutable",
+	"package_has_purchases",
 }
 
 var (
@@ -92,6 +101,7 @@ var (
 		"handlerutil.ErrCodeUnavailable":  "service_unavailable",
 		"handlerutil.ErrCodeInvalidJSON":  "invalid_json",
 		"handlerutil.ErrCodeConflict":     "conflict",
+		"handlerutil.ErrCodeInternal":     "internal_error",
 	}
 )
 
@@ -101,7 +111,7 @@ var (
 // returns anymore.
 func TestAcademyErrorCodes_MatchHandlers(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "academy-service", "internal", "handlers")
-	files := []string{"admin.go", "admin_levels.go", "admin_subjects.go", "admin_videos.go", "admin_youtube.go", "admin_validate.go", "admin_requests.go", "admin_entitlements.go", "admin_settings.go", "admin_files.go", "admin_subject_delete.go"}
+	files := []string{"admin.go", "admin_levels.go", "admin_subjects.go", "admin_videos.go", "admin_youtube.go", "admin_validate.go", "admin_requests.go", "admin_entitlements.go", "admin_settings.go", "admin_files.go", "admin_subject_delete.go", "admin_iap.go"}
 	found := map[string]bool{}
 	for _, name := range files {
 		raw, err := os.ReadFile(filepath.Join(dir, name))

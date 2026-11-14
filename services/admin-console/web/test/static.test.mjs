@@ -25,7 +25,7 @@ function stripJsComments(src) {
 const jsCode = Object.fromEntries(Object.entries(jsSources).map(([f, s]) => [f, stripJsComments(s)]));
 
 test('the expected modules are present', () => {
-  for (const name of ['api', 'auth', 'i18n', 'accounts', 'audit', 'app', 'account-dialog', 'tabs', 'ui', 'dom', 'catalog', 'levels', 'subjects', 'subject-dialog', 'videos', 'video-dialog', 'confirm', 'requests', 'idle', 'entitlements-dialog', 'unsaved', 'settings', 'files', 'notifications']) {
+  for (const name of ['api', 'auth', 'i18n', 'accounts', 'audit', 'app', 'account-dialog', 'tabs', 'ui', 'dom', 'catalog', 'levels', 'subjects', 'subject-dialog', 'videos', 'video-dialog', 'confirm', 'requests', 'idle', 'entitlements-dialog', 'unsaved', 'settings', 'files', 'notifications', 'iap', 'iap-dialog']) {
     assert.ok(jsFiles.includes(`${name}.js`), `${name}.js`);
   }
 });
@@ -142,6 +142,7 @@ test('only api.js talks to the network, and only to the console itself', () => {
     '/api/broadcasts', '/api/broadcasts/create', '/api/broadcasts/preview', '/api/broadcasts/retry',
     '/api/entitlements', '/api/entitlements/grant', '/api/entitlements/revoke',
     '/api/files', '/api/files/delete', '/api/files/upload',
+    '/api/iap/coverage', '/api/iap/packages', '/api/iap/packages/create', '/api/iap/packages/delete', '/api/iap/packages/update', '/api/iap/purchases',
     '/api/levels', '/api/levels/create', '/api/levels/delete', '/api/levels/update',
     '/api/request-groups', '/api/requests', '/api/requests/accept', '/api/requests/bulk', '/api/requests/reject',
     '/api/settings', '/api/settings/update',

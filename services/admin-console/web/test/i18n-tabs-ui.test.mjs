@@ -151,13 +151,14 @@ test('console tab "Courses" and Settings "Academy" labels (owner 2026-10-12)', (
 });
 
 test('every tab is active, Files included since SPEC Phase 5', () => {
-  assert.deepEqual(TABS.map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files', 'notifications']);
-  assert.deepEqual(visibleTabs().map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'settings', 'files', 'notifications']);
+  assert.deepEqual(TABS.map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'iap', 'settings', 'files', 'notifications']);
+  assert.deepEqual(visibleTabs().map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'iap', 'settings', 'files', 'notifications']);
   assert.equal(isTabEnabled('catalog'), true);
   assert.equal(isTabEnabled('settings'), true);
   assert.equal(isTabEnabled('requests'), true);
   assert.equal(isTabEnabled('files'), true);
   assert.equal(isTabEnabled('accounts'), true);
+  assert.equal(isTabEnabled('iap'), true);
   assert.equal(isTabEnabled('nope'), false);
   assert.equal(TABS.find((x) => x.id === 'requests').badge, true);
   assert.throws(() => { 'use strict'; TABS[0].enabled = false; }, TypeError, 'the registry is frozen');

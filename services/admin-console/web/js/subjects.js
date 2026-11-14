@@ -1,13 +1,17 @@
 // Subjects view: the subjects of one level with a draft/published filter
 // and pagination. Publish needs at least one video upstream; the button is
 // disabled with a hint at zero videos. Drafts can be deleted (owner
-// amendment 2026-11-02); published subjects offer unpublish only.
+// amendment 2026-11-02); published subjects offer unpublish only. A
+// published subject that no published iOS package covers (GET
+// /api/iap/coverage, #56) carries a ⚠️ badge; the badge is informative, so a
+// failed coverage call just shows none.
 
 import { clear, h } from './dom.js';
 import { formatCairoDate } from './subject-dialog.js';
 import { formatNumber, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { createCooldown, createPager, hideBanner, hideToast, messageRow, showError, toast } from './ui.js';
+import { uncoveredSet } from './iap.js';
 
 export const PAGE_SIZE = 15;
 const COLUMNS = 7;
@@ -30,7 +34,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
     load();
   });
 
-  const state = { level: null, published: '', page: 1, total: 0, items: [], loaded: false, error: null };
+  const state = { level: null, published: '', page: 1, total: 0, items: [], loaded: false, error: null, uncovered: new Set() };
   let seq = 0;
   // A 429 with Retry-After keeps the publish buttons off until the wait ends.
   const lock = createCooldown();
@@ -88,7 +92,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
     return h(
       'tr',
       {},
-      h('td', {}, h('div', { class: 'strong', text: subject.title_ar || '—' }), subject.title_en ? h('div', { class: 'muted small ltr', text: subject.title_en }) : null),
+      h('td', {}, h('div', { class: 'strong', text: subject.title_ar || '—' }, coverageBadge(subject)), subject.title_en ? h('div', { class: 'muted small ltr', text: subject.title_en }) : null),
       h('td', {}, badge(subject.published)),
       h('td', { class: 'ltr', text: t('catalog.price', { n: formatNumber(subject.price ?? 0) }) }),
       h('td', { text: formatCairoDate(subject.access_expires_at) || '—' }),
@@ -96,6 +100,12 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
       h('td', { class: 'muted small', text: termText(subject.term) }),
       actions,
     );
+  }
+
+  function coverageBadge(subject) {
+    if (!state.uncovered.has(subject.id)) return null;
+    const tip = t('iap.coverageBadge');
+    return h('span', { class: 'badge badge-warn', text: ' ⚠️', attrs: { title: tip, 'aria-label': tip, role: 'img' }, dataset: { coverage: 'uncovered' } });
   }
 
   function termText(term) {
@@ -209,10 +219,14 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
     const mine = ++seq;
     state.error = null;
     paint();
-    const res = await api.get('/api/subjects', subjectsQuery({
-      levelId: state.level?.key, published: state.published, page: state.page, limit: PAGE_SIZE,
-    }));
+    const [res, cover] = await Promise.all([
+      api.get('/api/subjects', subjectsQuery({
+        levelId: state.level?.key, published: state.published, page: state.page, limit: PAGE_SIZE,
+      })),
+      api.get('/api/iap/coverage'),
+    ]);
     if (mine !== seq || !isSignedIn()) return;
+    state.uncovered = cover.ok ? uncoveredSet(cover.data) : new Set();
     if (!res.ok) {
       state.error = res;
       paint();
@@ -245,7 +259,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
       seq += 1;
       lock.stop();
       hideToast(doc);
-      Object.assign(state, { level: null, published: '', page: 1, total: 0, items: [], loaded: false, error: null });
+      Object.assign(state, { level: null, published: '', page: 1, total: 0, items: [], loaded: false, error: null, uncovered: new Set() });
     },
   };
 }

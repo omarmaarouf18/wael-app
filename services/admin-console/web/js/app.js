@@ -6,6 +6,7 @@ import { api } from './api.js';
 import { mountAudit } from './audit.js';
 import { mountCatalog } from './catalog.js';
 import { mountFiles } from './files.js';
+import { mountIAP } from './iap.js';
 import { mountNotifications } from './notifications.js';
 import { mountRequests } from './requests.js';
 import { mountSettings } from './settings.js';
@@ -40,6 +41,7 @@ export function main(doc = document, win = window) {
     audit: mountAudit({ api, doc }),
     requests: mountRequests({ api, doc, win }),
     catalog: mountCatalog({ api, doc }),
+    iap: mountIAP({ api, doc }),
     settings: mountSettings({ api, doc }),
     files: mountFiles({ api, doc }),
     notifications: mountNotifications({ api, doc }),

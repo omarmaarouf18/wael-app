@@ -1,13 +1,14 @@
 // The tab registry. A tab whose API does not exist yet is declared with
 // `enabled: false` and its button stays hidden; enabling one means adding its
 // module and flipping `enabled`. Every tab is enabled since Files (SPEC
-// Phase 5).
+// Phase 5); "iOS packages" (iap) joined in #56.
 
 export const TABS = Object.freeze([
   Object.freeze({ id: 'accounts', enabled: true }),
   Object.freeze({ id: 'audit', enabled: true }),
   Object.freeze({ id: 'requests', enabled: true, badge: true }),
   Object.freeze({ id: 'catalog', enabled: true }),
+  Object.freeze({ id: 'iap', enabled: true }),
   Object.freeze({ id: 'settings', enabled: true }),
   Object.freeze({ id: 'files', enabled: true }),
   Object.freeze({ id: 'notifications', enabled: true }),

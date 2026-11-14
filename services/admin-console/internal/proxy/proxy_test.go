@@ -184,7 +184,7 @@ func (rt route) want() int {
 }
 
 func routes() []route {
-	return append(append(append(append(baseRoutes(), catalogRoutes()...), requestsRoutes()...), settingsRoutes()...), filesRoutes()...)
+	return append(append(append(append(append(baseRoutes(), catalogRoutes()...), iapRoutes()...), requestsRoutes()...), settingsRoutes()...), filesRoutes()...)
 }
 
 func baseRoutes() []route {

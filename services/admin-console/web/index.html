@@ -54,6 +54,7 @@
       <!-- Hidden until their APIs exist (see js/tabs.js). -->
       <button id="tab-requests" class="tab" type="button" role="tab" aria-controls="panel-requests" aria-selected="false" tabindex="-1" data-tab="requests"><span data-i18n="tabs.requests"></span> <span id="badge-requests" class="count" hidden></span></button>
       <button id="tab-catalog" class="tab" type="button" role="tab" aria-controls="panel-catalog" aria-selected="false" tabindex="-1" data-tab="catalog"><span data-i18n="tabs.catalog"></span></button>
+      <button id="tab-iap" class="tab" type="button" role="tab" aria-controls="panel-iap" aria-selected="false" tabindex="-1" data-tab="iap"><span data-i18n="tabs.iap"></span></button>
       <button id="tab-settings" class="tab" type="button" role="tab" aria-controls="panel-settings" aria-selected="false" tabindex="-1" data-tab="settings"><span data-i18n="tabs.settings"></span></button>
       <button id="tab-files" class="tab" type="button" role="tab" aria-controls="panel-files" aria-selected="false" tabindex="-1" data-tab="files"><span data-i18n="tabs.files"></span></button>
       <button id="tab-notifications" class="tab" type="button" role="tab" aria-controls="panel-notifications" aria-selected="false" tabindex="-1" data-tab="notifications"><span data-i18n="tabs.notifications"></span></button>
@@ -263,6 +264,55 @@
           <button class="btn secondary small" type="button" data-role="prev" data-i18n="common.prev"></button>
           <span data-role="info"></span>
           <button class="btn secondary small" type="button" data-role="next" data-i18n="common.next"></button>
+        </div>
+      </div>
+    </section>
+    <section id="panel-iap" role="tabpanel" aria-labelledby="tab-iap" hidden>
+      <div class="section-head">
+        <div>
+          <h2 data-i18n="iap.title"></h2>
+          <p class="muted small" data-i18n="iap.subtitle"></p>
+        </div>
+        <div class="section-actions">
+          <button id="iap-add" class="btn primary" type="button" data-i18n="iap.add"></button>
+        </div>
+      </div>
+      <p id="iap-coverage" class="callout" hidden></p>
+      <div id="iap-banner" class="banner" role="alert" hidden></div>
+      <div class="table-wrap">
+        <table id="iap-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="iap.col.title"></th>
+              <th scope="col" data-i18n="iap.col.productId"></th>
+              <th scope="col" data-i18n="iap.col.subjects"></th>
+              <th scope="col" data-i18n="iap.col.availableUntil"></th>
+              <th scope="col" data-i18n="iap.col.published"></th>
+              <th scope="col" data-i18n="iap.col.actions"></th>
+            </tr>
+          </thead>
+          <tbody id="iap-body"></tbody>
+        </table>
+      </div>
+      <div id="iap-purchases" class="iap-purchases" hidden>
+        <div class="section-head">
+          <h3 id="iap-purchases-title"></h3>
+          <button id="iap-purchases-close" class="btn secondary small" type="button" data-i18n="iap.purchasesClose"></button>
+        </div>
+        <div id="iap-purchases-banner" class="banner" role="alert" hidden></div>
+        <div class="table-wrap">
+          <table id="iap-purchases-table">
+            <thead>
+              <tr>
+                <th scope="col" data-i18n="iap.pcol.date"></th>
+                <th scope="col" data-i18n="iap.pcol.user"></th>
+                <th scope="col" data-i18n="iap.pcol.transaction"></th>
+                <th scope="col" data-i18n="iap.pcol.environment"></th>
+                <th scope="col" data-i18n="iap.pcol.granted"></th>
+              </tr>
+            </thead>
+            <tbody id="iap-purchases-body"></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -538,6 +588,7 @@
       </div>
     </section>
     <div id="catalog-dialogs"></div>
+    <div id="iap-dialogs"></div>
     <div id="toast" class="toast" role="status" hidden></div>
   </div>
 

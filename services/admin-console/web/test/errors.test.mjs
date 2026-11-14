@@ -71,10 +71,19 @@ const ACADEMY_CODES = [
   'invalid_kind',
   'invalid_pdf',
   'file_too_large',
+  // iOS packages admin API (#53, admin_iap.go), relayed by the #56 routes.
+  'internal_error',
+  'invalid_product_id',
+  'invalid_subject_ids',
+  'unknown_subject',
+  'duplicate_product_id',
+  'invalid_package_id',
+  'product_id_immutable',
+  'package_has_purchases',
 ];
 
 test('every academy admin code has an ar and an en message', () => {
-  assert.equal(ACADEMY_CODES.length, 58);
+  assert.equal(ACADEMY_CODES.length, 66);
   for (const code of ACADEMY_CODES) {
     assert.ok(MESSAGES.ar[`err.${code}`], `ar err.${code}`);
     assert.ok(MESSAGES.en[`err.${code}`], `en err.${code}`);

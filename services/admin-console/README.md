@@ -59,6 +59,12 @@ route under `/internal/`.
 | `GET /api/files?subject_id` | `GET /internal/admin/subjects/{id}/files` |
 | `POST /api/files/upload?subject_id` (multipart: `kind`, `title_ar`, `title_en`, then `file`) | `POST /internal/admin/subjects/{id}/files` (a fresh multipart body, streamed) |
 | `POST /api/files/delete` `{subject_id, id}` | `DELETE /internal/admin/subjects/{subject_id}/files/{id}` |
+| `GET /api/iap/packages` | `GET /internal/admin/iap/packages` (iOS packages, #56; every package, published or not) |
+| `POST /api/iap/packages/create` `{product_id, title_ar, title_en, description_ar?, description_en?, subject_ids?, available_until?, published?, position?}` | `POST /internal/admin/iap/packages` |
+| `POST /api/iap/packages/update` `{id, ...}` (no `product_id`: immutable) | `PATCH /internal/admin/iap/packages/{id}` (`available_until: null` clears the end date) |
+| `POST /api/iap/packages/delete` `{id}` | `DELETE /internal/admin/iap/packages/{id}` (409 `package_has_purchases` when purchases exist) |
+| `GET /api/iap/purchases?package_id&user_id&limit` | `GET /internal/admin/iap/purchases` |
+| `GET /api/iap/coverage` | `GET /internal/admin/iap/coverage` (published subjects in no published package) |
 
 `GET /healthz` is unauthenticated and calls nothing. Everything else is the
 embedded static UI (`web/`).
@@ -119,8 +125,8 @@ or URL), so reloading the page signs the admin out. Any `401` clears the token
 and returns to the sign-in page. The page is Arabic first (right-to-left) with
 an English toggle; the choice is kept in the URL hash only.
 
-Requests, Courses, Accounts, Audit, Settings, Files and Notifications tabs are active in
-`web/js/tabs.js`. *(Amended 2026-10-09: Files was hidden until the Phase 5
+Requests, Courses, iOS packages, Accounts, Audit, Settings, Files and Notifications tabs are active in
+`web/js/tabs.js`. *(Amended 2026-11-14, #56: the "باكدجات iOS" / "iOS packages" tab, id `iap`, joined the list.)* *(Amended 2026-10-09: Files was hidden until the Phase 5
 APIs existed.)* *(Amended 2026-10-12, owner: the "Catalog" tab is now
 "دوراتي" / "Courses", and the Settings "center" labels are now "الأكاديمية" /
 "Academy"; labels only — i18n keys, element ids, JS file names, API paths and
@@ -130,6 +136,7 @@ The UI is split into small ES modules:
 - Accounts: search, status filter, pagination, suspend/reactivate/delete dialogs (`accounts.js`, `account-dialog.js`), and "المواد" button opening the student entitlements modal (`entitlements-dialog.js`) for active/expired/revoked lists, manual grant, and revoke with mandatory reason.
 - Requests (amended 2026-11-05, Part F): requests queue with default grouped view by student (`GET /api/request-groups`), student identity join via auth-service, Cairo date formatting, live `pending_count` badge with 60-second polling, expandable student orders (web orders with payment proof, amount mismatch warning `⚠️`, and app orders), hierarchical selection (item, order, student), bulk action bar with Bulk Accept and Bulk Reject (`POST /api/requests/bulk`), single accept/reject dialogs, and a toggle to the legacy flat list view (`requests.js`).
 - Courses: levels, subjects, videos, publish/unpublish, reorder, and force-delete (`catalog.js`, `levels.js`, `subjects.js`, `subject-dialog.js`, `videos.js`, `video-dialog.js`, `confirm.js`). Subjects support per-subject `price_visibility` configuration (`follow_global`, `show`, `hide`).
+- iOS packages (#56, ADR-0015): the App Store packages students buy in the iPhone app (`iap.js`, `iap-dialog.js`). The list shows title, Product ID, subject count, available-until date and published state; the add/edit dialog takes Arabic and English titles and descriptions, the Product ID (read-only after create, with a hint that it must match App Store Connect exactly), subjects picked with checkboxes grouped by level and term, an optional available-until date (23:59:59 Cairo, empty means no end), published and position. Delete goes through the shared confirm dialog and shows the 409 `package_has_purchases` message when the package has purchases. A per-package purchases list (date, student id, transaction, environment, subjects granted) and a coverage note count published subjects that no published package covers. No price is shown or edited: prices live in App Store Connect only. The Courses subjects view marks each uncovered subject with a ⚠️ badge ("مش داخلة في أي باكدج iOS منشورة"); the coverage call is informative, so if it fails no badge or note is shown. The student-subjects dialog labels source `iap` as "شراء من آبل (iOS)".
 - Settings: app-facing settings form (`settings.js`): `show_prices` toggle, support WhatsApp number, academy name/address/hours (Arabic and English) and map URL, with the last-saved state and update time shown. Unsaved-changes guard, double-submit guard, `429` cooldown, and a toast on save; validation errors (for example `settings_forbidden_word`) offer no Retry button because they need an edit, not a retry.
 - Unsaved changes: the Courses add/edit forms and an unsaved video order ask before they are closed, left through the tabs or breadcrumb, or the page is closed or reloaded (`unsaved.js`; the browser's own prompt for `beforeunload`, an in-page dialog for the rest).
 - Rate limits: a `429` with a `Retry-After` (whole seconds, relayed by the proxy; capped at an hour in the page) shows "حاول بعد N ثانية", counts down, and keeps the action's button and the banner's retry button disabled until the wait ends (`api.js` `parseRetryAfter`, `ui.js` `createCooldown`).

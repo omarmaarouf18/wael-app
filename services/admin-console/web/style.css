@@ -831,3 +831,39 @@ td.detail {
     transition: background-color 0.12s ease, border-color 0.12s ease;
   }
 }
+
+/* iOS packages tab (#56): coverage badge, grouped subject picker, purchases. */
+
+.badge-warn {
+  color: var(--pending);
+  background: var(--pending-bg);
+  cursor: help;
+}
+
+.iap-subjects {
+  max-block-size: 18rem;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+
+.iap-subject-group {
+  margin-block-end: 0.6rem;
+}
+
+.iap-subject-group h4 {
+  margin: 0.4rem 0 0.25rem;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+
+.iap-subject-group .checkbox-label {
+  display: flex;
+  margin-block: 0.2rem;
+}
+
+.iap-purchases {
+  margin-block-start: 1.25rem;
+}
