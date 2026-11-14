@@ -14,15 +14,14 @@ activation) was not purchasable via In-App Purchase inside the app, disqualifyin
 it from the multiplatform services exception under Guideline 3.1.3(b).
 
 The previous attempt on 2026-11-12 (commit fdb83e3) configured the iOS app as a
-content-only "reader app" under Guideline 3.1.3(a). App Review rejected that model
-because university-level curriculum courseware, private video lessons, and academic
-study materials do not qualify as approved reader app categories (which are limited
-to magazines, newspapers, books, audio, music, and video streaming).
+content-only "reader app" under Guideline 3.1.3(a). On 2026-11-13, Apple App Review
+rejected the build under Guideline 3.1.1 / 3.1.3(b), stating that digital content bought
+outside the app is not available to purchase with In-App Purchase.
 
 To unblock iOS App Store distribution while preserving existing business operations,
 the academy will sell packages of subjects on iOS using Apple In-App Purchase
 (StoreKit 2 Non-Renewing Subscriptions). All existing channels (manual transfers
-via the website and wallets/InstaPay, center activations, and the Android mobile app)
+via the website and wallets/InstaPay, academy activations, and the Android mobile app)
 remain completely unchanged and operational in parallel.
 
 ## Decision
@@ -105,8 +104,8 @@ Owner decisions (2026-11-13), locked:
 ## Alternatives Considered
 
 - **Reader-app only (Guideline 3.1.3(a))**: Rejected by Apple App Review on 2026-11-13
-  under Guideline 3.1.1 because courseware, video lessons, and academic notes are not
-  recognized reader app media categories.
+  under Guideline 3.1.1 / 3.1.3(b) because content bought outside the app was not
+  available to purchase via In-App Purchase.
 - **Per-subject IAP**: Rejected because curriculum subjects change, expire, and rotate
   every academic semester. Creating individual IAP products for every subject would
   require maintaining dozens of App Store Connect products and price matrices. Selling
