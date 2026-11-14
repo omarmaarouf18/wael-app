@@ -356,3 +356,11 @@ test('the tab label is "باكدجات iOS" / "iOS packages" and sign-out clears
   assert.equal($('iap-purchases').hidden, true);
   assert.equal($('iap-dialogs').children[0].open, false);
 });
+
+test('packages are listed by position, then product id (not in API order)', async () => {
+  const { sortPackages } = await import('../js/iap.js');
+  const pk = (n, position) => ({ id: `p${n}`, product_id: `com.wael.app.pkg.year${n}`, position });
+  assert.deepEqual(sortPackages([pk(1, 1), pk(3, 3), pk(2, 2), pk(4, 4)]).map((p) => p.id), ['p1', 'p2', 'p3', 'p4']);
+  assert.deepEqual(sortPackages([pk(3, 0), pk(1, 0), pk(2, undefined)]).map((p) => p.id), ['p1', 'p3', 'p2'], 'ties by product id, missing position last');
+  assert.deepEqual(sortPackages(null), []);
+});

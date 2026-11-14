@@ -58,6 +58,8 @@ export function mountNotifications({ api = defaultApi, doc = document } = {}) {
   const titleEn = doc.getElementById('notifications-title-en');
   const bodyAr = doc.getElementById('notifications-body-ar');
   const bodyEn = doc.getElementById('notifications-body-en');
+  const phoneTitle = doc.getElementById('notifications-phone-title');
+  const phoneBody = doc.getElementById('notifications-phone-body');
   const audienceAll = doc.getElementById('notifications-audience-all');
   const audienceSubject = doc.getElementById('notifications-audience-subject');
   const levelSelect = doc.getElementById('notifications-level');
@@ -111,7 +113,23 @@ export function mountNotifications({ api = defaultApi, doc = document } = {}) {
     state.previewed = null;
     hideBanner(banner);
     renderPreview();
+    renderPhone();
   }
+
+  // Phone-style preview of what students see (Arabic first, as in the app).
+  function renderPhone() {
+    const title = (titleAr?.value ?? '').trim();
+    const body = (bodyAr?.value ?? '').trim();
+    if (phoneTitle) {
+      phoneTitle.textContent = title || t('notifications.phone.titleEmpty');
+      phoneTitle.className = title ? 'phone-title strong' : 'phone-title muted';
+    }
+    if (phoneBody) {
+      phoneBody.textContent = body || t('notifications.phone.bodyEmpty');
+      phoneBody.className = body ? 'phone-body small' : 'phone-body small muted';
+    }
+  }
+  for (const el of [titleAr, bodyAr]) el?.addEventListener('input', renderPhone);
 
   function snapshot() {
     return {
@@ -472,6 +490,7 @@ export function mountNotifications({ api = defaultApi, doc = document } = {}) {
     renderSubjects();
     renderAudience();
     renderPreview();
+    renderPhone();
     renderHistory();
     renderForm();
     confirm.rerender();
@@ -503,6 +522,7 @@ export function mountNotifications({ api = defaultApi, doc = document } = {}) {
 
   renderAudience();
   renderPreview();
+  renderPhone();
   renderForm();
 
   return {

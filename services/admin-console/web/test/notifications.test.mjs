@@ -223,3 +223,18 @@ test('no payment wording in the Notifications texts', () => {
     }
   }
 });
+
+test('a phone-style preview shows the Arabic title and body as they are typed', async () => {
+  const { mod } = setup();
+  await mod.load();
+  assert.equal($('notifications-phone-title').textContent, MESSAGES.ar['notifications.phone.titleEmpty']);
+  assert.match($('notifications-phone-title').className, /muted/);
+  fillForm();
+  $('notifications-title-ar').fire('input');
+  $('notifications-body-ar').fire('input');
+  assert.equal($('notifications-phone-title').textContent, 'عنوان مهم');
+  assert.equal($('notifications-phone-body').textContent, 'نص الرسالة');
+  assert.doesNotMatch($('notifications-phone-title').className, /muted/);
+  mod.reset();
+  assert.equal($('notifications-phone-body').textContent, MESSAGES.ar['notifications.phone.bodyEmpty']);
+});

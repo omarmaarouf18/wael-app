@@ -36,6 +36,8 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
   const addPaymentMethodBtn = doc.getElementById('settings-add-payment-method');
   const submitBtn = doc.getElementById('settings-submit');
   const metaSpan = doc.getElementById('settings-meta');
+  const saveBar = doc.getElementById('settings-savebar');
+  const discardBtn = doc.getElementById('settings-discard');
 
   let loadedState = null;
   let inFlight = false;
@@ -292,18 +294,31 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     }
     loadedState = res.data ?? {};
     applyState(loadedState);
+    renderSaveBar();
   }
 
   function discard() {
     if (loadedState) {
       applyState(loadedState);
     }
+    renderSaveBar();
   }
+
+  // The save bar shows only while something is unsaved (or a save runs).
+  function renderSaveBar() {
+    if (saveBar) saveBar.hidden = !(inFlight || isDirty());
+  }
+  // Any edit, including payment rows added or removed, re-checks the bar.
+  for (const type of ['input', 'change']) form?.addEventListener(type, renderSaveBar);
+  form?.addEventListener('click', () => queueMicrotask(renderSaveBar));
+  addPaymentMethodBtn?.addEventListener('click', () => queueMicrotask(renderSaveBar));
+  discardBtn?.addEventListener('click', () => discard());
 
   async function save() {
     if (inFlight || cooldown.active) return;
     const values = getFormValues();
     inFlight = true;
+    renderSaveBar();
     if (submitBtn) {
       submitBtn.disabled = true;
       submitBtn.textContent = t('settings.saving');
@@ -334,6 +349,7 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
         submitBtn.disabled = cooldown.active;
         submitBtn.textContent = t('settings.save');
       }
+      renderSaveBar();
     }
   }
 
@@ -375,6 +391,7 @@ export function mountSettings({ api = defaultApi, doc = document } = {}) {
     renderPaymentMethods([]);
     if (metaSpan) metaSpan.textContent = '';
     if (banner) hideBanner(banner);
+    if (saveBar) saveBar.hidden = true;
   }
 
   return {

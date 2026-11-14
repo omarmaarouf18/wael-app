@@ -304,3 +304,38 @@ test('teacher profile: loads, updates preview, tracks dirty, and saves', async (
   assert.equal(mod.isDirty(), false);
 });
 
+
+test('the sticky save bar shows only while there are unsaved changes; discard and save hide it', async () => {
+  const { mod, elements } = setup();
+  const bar = doc.getElementById('settings-savebar');
+  await mod.load();
+  assert.equal(bar.hidden, true, 'nothing to save after load');
+
+  elements.centerNameAr.value = 'اسم جديد';
+  elements.form.fire('input');
+  assert.equal(bar.hidden, false, 'an edit shows the bar');
+
+  doc.getElementById('settings-discard').click();
+  assert.equal(bar.hidden, true);
+  assert.equal(elements.centerNameAr.value, 'المركز الأصلي', 'discard restores the loaded values');
+
+  elements.centerNameAr.value = 'اسم جديد';
+  elements.form.fire('input');
+  assert.equal(bar.hidden, false);
+  await mod.save();
+  await flush();
+  assert.equal(bar.hidden, true, 'a successful save hides the bar');
+  assert.equal(mod.isDirty(), false);
+
+  mod.reset();
+  assert.equal(bar.hidden, true);
+});
+
+test('settings are grouped in four labelled sections', async () => {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const groups = [...html.matchAll(/<section class="settings-group" aria-labelledby="([\w-]+)">/g)].map((m) => m[1]);
+  assert.deepEqual(groups, ['settings-group-app', 'settings-group-center', 'settings-group-teacher', 'settings-group-payment']);
+  assert.match(html, /<div id="settings-savebar" class="settings-actions savebar"[^>]*hidden>/);
+  assert.equal(MESSAGES.ar['settings.unsaved'].length > 0, true);
+});

@@ -44,6 +44,16 @@ export function uncoveredSet(data) {
   return new Set(ids.filter((id) => typeof id === 'string'));
 }
 
+/**
+ * Packages in display order: position ascending, then product id (so equal or
+ * missing positions are stable). The API order is not relied on.
+ */
+export function sortPackages(packages) {
+  const pos = (p) => (Number.isFinite(Number(p?.position)) ? Number(p.position) : Number.MAX_SAFE_INTEGER);
+  return [...(Array.isArray(packages) ? packages : [])].sort((a, b) =>
+    pos(a) - pos(b) || String(a?.product_id ?? '').localeCompare(String(b?.product_id ?? '')));
+}
+
 export function mountIAP({ api, doc = document }) {
   const addButton = doc.getElementById('iap-add');
   const coverage = doc.getElementById('iap-coverage');
@@ -227,7 +237,7 @@ export function mountIAP({ api, doc = document }) {
       render();
       return;
     }
-    state.packages = Array.isArray(packages.data?.packages) ? packages.data.packages : [];
+    state.packages = sortPackages(packages.data?.packages);
     state.levels = Array.isArray(levels.data?.levels) ? levels.data.levels : [];
     state.subjects = subjects.items;
     state.uncovered = cover.ok ? uncoveredSet(cover.data) : null;

@@ -1969,3 +1969,139 @@ td.detail {
     z-index: 20;
   }
 }
+
+/* ==== Light pass on the other tabs (owner redesign 2026-11-14) ======== */
+
+/* Content: breadcrumb as a pill trail, level cards on the card surface. */
+.crumb {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+}
+
+.level-card {
+  border-radius: var(--radius-lg);
+}
+
+.badge-published,
+.badge-draft,
+.badge-warn {
+  font-size: var(--fs-xs);
+}
+
+/* Settings: grouped sections and a sticky save bar. */
+.settings-grouped {
+  gap: var(--space-4);
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+}
+
+.settings-group h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.savebar {
+  position: sticky;
+  inset-block-end: var(--space-3);
+  z-index: 25;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+.savebar-text {
+  flex: 1 1 12rem;
+  font-weight: 600;
+}
+
+/* Notifications: phone-style preview. */
+.phone-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.phone {
+  position: relative;
+  inline-size: min(20rem, 100%);
+  padding: 2.25rem var(--space-3) var(--space-5);
+  border: 2px solid var(--surface-4);
+  border-radius: 2rem;
+  background: var(--void);
+}
+
+.phone-notch {
+  position: absolute;
+  inset-block-start: 0.6rem;
+  inset-inline-start: 50%;
+  inline-size: 5rem;
+  block-size: 0.9rem;
+  margin-inline-start: -2.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+}
+
+.phone-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--surface-3);
+}
+
+.phone-app {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.phone-app .brand-mark {
+  block-size: 0.9rem;
+  inline-size: 0.3rem;
+  box-shadow: none;
+}
+
+.phone-title,
+.phone-body {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Radios (notification audience) keep their native size, not the text-input box. */
+input[type="radio"] {
+  inline-size: 1.25rem;
+  min-block-size: 1.25rem;
+  block-size: 1.25rem;
+  padding: 0;
+  cursor: pointer;
+  accent-color: var(--crimson);
+}
+
+fieldset.field {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+}
+
+fieldset.field > label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: 44px;
+  cursor: pointer;
+}

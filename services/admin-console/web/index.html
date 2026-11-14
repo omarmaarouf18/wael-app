@@ -318,10 +318,13 @@
         <div>
           <h2 data-i18n="settings.title"></h2>
           <p class="muted small" data-i18n="settings.subtitle"></p>
+          <p id="settings-meta" class="muted small"></p>
         </div>
       </div>
       <div id="settings-banner" class="banner" role="alert" hidden></div>
-      <form id="settings-form" class="settings-form" novalidate>
+      <form id="settings-form" class="settings-form settings-grouped" novalidate>
+        <section class="settings-group" aria-labelledby="settings-group-app">
+        <h3 id="settings-group-app" data-i18n="settings.appSection"></h3>
         <div class="field-toggle">
           <label class="toggle-label" for="settings-show-prices">
             <input id="settings-show-prices" type="checkbox">
@@ -336,7 +339,10 @@
           <span class="muted small" data-i18n="settings.whatsappHint"></span>
         </div>
 
-        <h3 data-i18n="settings.centerSection"></h3>
+        </section>
+
+        <section class="settings-group" aria-labelledby="settings-group-center">
+        <h3 id="settings-group-center" data-i18n="settings.centerSection"></h3>
 
         <div class="settings-grid">
           <div class="field">
@@ -377,7 +383,10 @@
           <span class="muted small" data-i18n="settings.centerMapUrlHint"></span>
         </div>
 
-        <h3 data-i18n="settings.teacherSection"></h3>
+        </section>
+
+        <section class="settings-group" aria-labelledby="settings-group-teacher">
+        <h3 id="settings-group-teacher" data-i18n="settings.teacherSection"></h3>
         <p class="muted small" data-i18n="settings.teacherNote"></p>
 
         <div class="settings-grid">
@@ -432,14 +441,20 @@
           </div>
         </div>
 
-        <h3 data-i18n="settings.paymentMethodsSection"></h3>
+        </section>
+
+        <section class="settings-group" aria-labelledby="settings-group-payment">
+        <h3 id="settings-group-payment" data-i18n="settings.paymentMethodsSection"></h3>
         <p class="muted small" data-i18n="settings.paymentMethodsNote"></p>
         <div id="settings-payment-methods"></div>
         <button id="settings-add-payment-method" class="btn secondary small" type="button" data-i18n="settings.addPaymentMethod"></button>
+        </section>
 
-        <div class="settings-actions">
+        <!-- Sticky save bar: shown only while there are unsaved changes (unsaved.js). -->
+        <div id="settings-savebar" class="settings-actions savebar" role="region" data-i18n-aria-label="settings.unsaved" hidden>
+          <span class="savebar-text" data-i18n="settings.unsaved"></span>
+          <button id="settings-discard" class="btn secondary" type="button" data-i18n="settings.discard"></button>
           <button id="settings-submit" class="btn primary" type="submit" data-i18n="settings.save"></button>
-          <span id="settings-meta" class="muted small"></span>
         </div>
       </form>
     </section>
@@ -543,6 +558,17 @@
           <div class="field">
             <label for="notifications-body-en" data-i18n="notifications.bodyEn"></label>
             <textarea id="notifications-body-en" dir="ltr" rows="3" maxlength="500"></textarea>
+          </div>
+        </div>
+        <div class="phone-preview">
+          <p class="muted small" data-i18n="notifications.phone.label"></p>
+          <div class="phone" aria-live="polite">
+            <span class="phone-notch" aria-hidden="true"></span>
+            <div class="phone-card">
+              <p class="phone-app small muted"><span class="brand-mark" aria-hidden="true"></span> <span data-i18n="app.brand">EL METR</span> · <span data-i18n="notifications.phone.now"></span></p>
+              <p id="notifications-phone-title" class="phone-title muted"></p>
+              <p id="notifications-phone-body" class="phone-body small muted"></p>
+            </div>
           </div>
         </div>
         <fieldset class="field">
