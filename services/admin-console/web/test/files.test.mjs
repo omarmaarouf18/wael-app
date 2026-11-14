@@ -313,3 +313,34 @@ test('no payment wording in the Files texts', () => {
     }
   }
 });
+
+test('drop zone: names the chosen file, shows progress while uploading, and clears after', async () => {
+  let release;
+  const { mod } = setup({
+    'POST /api/files/upload': () => new Promise((resolve) => { release = resolve; }),
+  });
+  await pickSubject(mod);
+  assert.equal(text($('files-file-name')), MESSAGES.ar['files.dropNone']);
+  assert.equal($('files-drop').getAttribute('data-state'), 'empty');
+  fillForm({ file: pdfFile('book.pdf') });
+  $('files-file').fire('change');
+  assert.ok(text($('files-file-name')).includes('book.pdf'));
+  assert.equal($('files-drop').getAttribute('data-state'), 'chosen');
+
+  $('files-drop').fire('dragover');
+  assert.equal($('files-drop').getAttribute('data-drag'), 'on');
+  $('files-drop').fire('drop');
+  assert.equal($('files-drop').getAttribute('data-drag'), 'off');
+
+  assert.equal($('files-progress').hidden, true);
+  $('files-form').fire('submit');
+  await flush();
+  assert.equal($('files-progress').hidden, false, 'progress shown while uploading');
+  assert.equal($('files-drop').getAttribute('data-state'), 'busy');
+  release({ status: 201, body: { id: 'f-9' } });
+  await flush();
+  await flush();
+  await flush();
+  assert.equal($('files-progress').hidden, true);
+  assert.equal(text($('files-file-name')), MESSAGES.ar['files.dropNone']);
+});

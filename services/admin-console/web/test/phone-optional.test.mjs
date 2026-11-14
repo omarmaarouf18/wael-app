@@ -59,6 +59,8 @@ test('accounts list shows — for a student without a phone', async () => {
   $('login-form').fire('submit');
   await flush();
   assert.equal(isSignedIn(), true);
+  $('tab-accounts').click();
+  await flush();
   assert.equal(phoneCell('accounts-table', 0, 2), '—');
   assert.equal(phoneCell('accounts-table', 1, 2), '—');
   assert.equal(phoneCell('accounts-table', 2, 2), '+201000000009');

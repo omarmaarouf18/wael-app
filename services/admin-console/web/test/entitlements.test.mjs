@@ -110,6 +110,8 @@ async function signInOk() {
   $('login-form').fire('submit');
   await flush();
   assert.equal(isSignedIn(), true);
+  $('tab-accounts').click();
+  await flush();
 }
 
 const app = main(doc, win);

@@ -165,6 +165,14 @@ test('signing in shows the app, the admin name and the accounts list; the field 
   assert.equal($('admin-name').textContent, 'Wael');
   assert.equal($('login-token').value, '');
   assert.equal($('login-banner').hidden, true);
+  // Overview is the default tab after sign-in (owner redesign 2026-11-14).
+  assert.equal(app.activeTab, 'overview');
+  assert.equal($('panel-overview').hidden, false);
+  assert.equal($('panel-accounts').hidden, true);
+  assert.equal($('tab-overview').getAttribute('aria-selected'), 'true');
+  $('tab-accounts').click();
+  await flush();
+  assert.equal(app.activeTab, 'accounts');
 
   const listCall = globalThis.fetch.calls.find((c) => c.path === '/api/accounts');
   assert.ok(listCall, 'accounts list was requested');

@@ -57,6 +57,9 @@ export function mountFiles({ api = defaultApi, doc = document, FormDataCtor = gl
   const submitBtn = doc.getElementById('files-submit');
   const cancelBtn = doc.getElementById('files-cancel');
   const status = doc.getElementById('files-status');
+  const dropZone = doc.getElementById('files-drop');
+  const fileName = doc.getElementById('files-file-name');
+  const progress = doc.getElementById('files-progress');
   const limitHint = doc.getElementById('files-limit');
 
   const confirm = createConfirm({ api, doc });
@@ -92,6 +95,15 @@ export function mountFiles({ api = defaultApi, doc = document, FormDataCtor = gl
     if (kindSelect) kindSelect.value = KINDS[0];
     if (fileInput) fileInput.value = '';
     if (formBanner) hideBanner(formBanner);
+    renderDrop();
+  }
+
+  // The drop zone names the chosen file (the input itself stays the source of truth).
+  function renderDrop() {
+    // A reset input has an empty value (browsers then drop the selection too).
+    const file = fileInput?.value ? (fileInput.files?.[0] ?? null) : null;
+    if (fileName) fileName.textContent = file ? t('files.dropChosen', { name: file.name }) : t('files.dropNone');
+    dropZone?.setAttribute('data-state', state.uploading ? 'busy' : file ? 'chosen' : 'empty');
   }
 
   // --- selects ---------------------------------------------------------------
@@ -183,6 +195,8 @@ export function mountFiles({ api = defaultApi, doc = document, FormDataCtor = gl
     }
     for (const el of [kindSelect, titleAr, titleEn, fileInput]) if (el) el.disabled = busy || noSubject;
     if (status) status.textContent = busy ? t('files.uploadingNote') : '';
+    if (progress) progress.hidden = !busy;
+    renderDrop();
     if (limitHint) limitHint.textContent = t('files.limit', { size: formatSize(MAX_PDF_BYTES_HINT) });
   }
 
@@ -347,6 +361,10 @@ export function mountFiles({ api = defaultApi, doc = document, FormDataCtor = gl
     formBanner.append(h('span', { class: 'banner-text', text: t(key) }));
     formBanner.hidden = false;
   }
+
+  fileInput?.addEventListener('change', renderDrop);
+  for (const type of ['dragenter', 'dragover']) dropZone?.addEventListener(type, () => dropZone.setAttribute('data-drag', 'on'));
+  for (const type of ['dragleave', 'drop']) dropZone?.addEventListener(type, () => dropZone.setAttribute('data-drag', 'off'));
 
   form?.addEventListener('submit', (event) => {
     event.preventDefault();

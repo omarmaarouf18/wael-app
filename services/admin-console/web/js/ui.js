@@ -1,5 +1,8 @@
 // Shared building blocks for the tab modules: error banner, pager, status
-// badge. Messages come from i18n by error kind; server text is never shown.
+// badge, and the components of the owner redesign 2026-11-14 (buttons, chips,
+// avatar initial, card, KPI card, copy-id chip, empty state, skeleton rows,
+// side panel). Messages come from i18n by error kind; server text is never
+// shown. Colours come from the tokens in style.css, never from here.
 
 import { clear, h } from './dom.js';
 import { errorText, formatDate, formatNumber, formatTime, t } from './i18n.js';
@@ -137,10 +140,18 @@ export function hideBanner(container) {
   container.hidden = true;
 }
 
+/** Chip tone per account status. */
+export const STATUS_TONE = Object.freeze({
+  active: 'success',
+  suspended: 'warning',
+  pending_deletion: 'danger',
+  deleted: 'neutral',
+});
+
 export function statusBadge(status) {
-  const known = status === 'active' || status === 'suspended' || status === 'deleted' || status === 'pending_deletion';
+  const known = Object.hasOwn(STATUS_TONE, status);
   return h('span', {
-    class: `badge ${known ? `badge-${status}` : 'badge-unknown'}`,
+    class: `badge chip chip-${known ? STATUS_TONE[status] : 'neutral'} ${known ? `badge-${status}` : 'badge-unknown'}`,
     text: known ? t(`status.${status}`) : String(status ?? ''),
   });
 }
@@ -224,4 +235,152 @@ export function hideToast(doc, boxId = 'toast') {
     clear(box);
     box.hidden = true;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Components (owner redesign 2026-11-14)
+// ---------------------------------------------------------------------------
+
+export const BUTTON_VARIANTS = Object.freeze(['primary', 'secondary', 'success', 'danger', 'danger-outline', 'link']);
+
+/**
+ * A button: button(text, { variant, small, onClick, attrs, class }).
+ * The type is always "button" unless attrs.type says otherwise.
+ */
+export function button(text, { variant = 'secondary', small = false, onClick, attrs = {}, class: extra = '' } = {}) {
+  const v = BUTTON_VARIANTS.includes(variant) ? variant : 'secondary';
+  return h('button', {
+    class: ['btn', v, small ? 'small' : '', extra].filter(Boolean).join(' '),
+    text,
+    attrs: { type: 'button', ...attrs },
+    on: onClick ? { click: onClick } : {},
+  });
+}
+
+export const CHIP_TONES = Object.freeze(['neutral', 'success', 'info', 'warning', 'danger', 'accent']);
+
+/** A small status chip; the tone picks one colour token pair. */
+export function chip(text, tone = 'neutral', extra = '') {
+  const tn = CHIP_TONES.includes(tone) ? tone : 'neutral';
+  return h('span', { class: ['chip', `chip-${tn}`, extra].filter(Boolean).join(' '), text });
+}
+
+/** The first letter of a name, for an avatar; '?' when there is none. */
+export function initialOf(name) {
+  const first = [...String(name ?? '').trim()][0];
+  return first ? first.toLocaleUpperCase() : '?';
+}
+
+/** A round avatar with the name's initial. Decorative: the name is always shown beside it. */
+export function avatar(name, size = 'md') {
+  return h('span', { class: `avatar avatar-${size}`, text: initialOf(name), attrs: { 'aria-hidden': 'true' } });
+}
+
+/** A surface card. */
+export function card(props = {}, ...children) {
+  return h(props.tag ?? 'div', { ...props, class: ['card', props.class].filter(Boolean).join(' ') }, ...children);
+}
+
+/**
+ * A KPI card: label, big value, a one-line hint and a decorative icon glyph.
+ * tone tints the icon (neutral, success, info, warning, danger, accent).
+ */
+export function kpiCard({ id, label, value, hint = '', tone = 'neutral', icon = '•' }) {
+  return h('div', { class: `kpi kpi-${tone}`, attrs: { id }, dataset: { kpi: id ?? '' } },
+    h('div', { class: 'kpi-head' },
+      h('span', { class: 'kpi-label', text: label }),
+      h('span', { class: 'kpi-icon', text: icon, attrs: { 'aria-hidden': 'true' } })),
+    h('span', { class: 'kpi-value', text: value }),
+    hint ? h('span', { class: 'kpi-hint muted small', text: hint }) : null,
+  );
+}
+
+/** First 8 characters of an id with an ellipsis; '' for none. */
+export function shortId(id) {
+  const s = String(id ?? '');
+  return s.length > 10 ? `${s.slice(0, 8)}…` : s;
+}
+
+/** Copies text to the clipboard and confirms with a toast; silent when unavailable. */
+export function copyText(doc, text) {
+  const clip = globalThis.navigator?.clipboard;
+  if (!clip || typeof clip.writeText !== 'function') return Promise.resolve(false);
+  return clip.writeText(String(text)).then(() => {
+    toast(doc, t('common.copied'));
+    return true;
+  }, () => false);
+}
+
+/** A copy-id chip: the short id (LTR) and a copy action for the full id. */
+export function copyIdChip(doc, id) {
+  return h('button', {
+    class: 'copy-chip',
+    attrs: { type: 'button', title: String(id ?? ''), 'aria-label': t('common.copyIdFull', { id: String(id ?? '') }) },
+    on: { click: () => copyText(doc, id) },
+  },
+  h('bdi', { class: 'id ltr', text: shortId(id) }),
+  h('span', { class: 'copy-chip-label', text: t('common.copy') }));
+}
+
+/** An empty state: a decorative icon and one line that explains it. */
+export function emptyState(text, icon = '○') {
+  return h('div', { class: 'empty-state' },
+    h('span', { class: 'empty-icon', text: icon, attrs: { 'aria-hidden': 'true' } }),
+    h('p', { class: 'muted', text }));
+}
+
+/** Placeholder rows while a list loads; announced once as "loading". */
+export function skeletonRows(count = 3) {
+  const box = h('div', { class: 'skeleton', attrs: { role: 'status' } },
+    h('span', { class: 'visually-hidden', text: t('common.loading') }));
+  for (let i = 0; i < count; i++) box.append(h('span', { class: 'skeleton-row', attrs: { 'aria-hidden': 'true' } }));
+  return box;
+}
+
+/**
+ * A side panel (drawer) already in the page: open() shows it and moves focus
+ * to its close button, close() hides it and returns focus. Esc closes it.
+ * On a wide screen it sits beside the list; below 900px the stylesheet turns
+ * it into a full-screen drawer.
+ */
+export function createSidePanel({ root, closeButton, onClose = () => {} }) {
+  let returnTo = null;
+  let isOpen = false;
+  function close() {
+    if (!isOpen) return;
+    isOpen = false;
+    root.hidden = true;
+    root.setAttribute('aria-hidden', 'true');
+    onClose();
+    if (returnTo && typeof returnTo.focus === 'function') returnTo.focus();
+    returnTo = null;
+  }
+  closeButton?.addEventListener('click', close);
+  root.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && isOpen) {
+      event.preventDefault?.();
+      close();
+    }
+  });
+  root.hidden = true;
+  return {
+    get isOpen() {
+      return isOpen;
+    },
+    open(from = null) {
+      returnTo = from ?? root.ownerDocument?.activeElement ?? null;
+      isOpen = true;
+      root.hidden = false;
+      root.setAttribute('aria-hidden', 'false');
+      closeButton?.focus?.();
+    },
+    close,
+    /** Hides without moving focus (sign-out, reset). */
+    dismiss() {
+      isOpen = false;
+      returnTo = null;
+      root.hidden = true;
+      root.setAttribute('aria-hidden', 'true');
+    },
+  };
 }

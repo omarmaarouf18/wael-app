@@ -272,7 +272,7 @@ test('text and control colours meet WCAG AA contrast on the dark surfaces', () =
   const c = tokens();
   const surfaces = ['void', 'surface-1', 'surface-2', 'surface-3'];
   for (const s of surfaces) {
-    for (const fg of ['text', 'text-2', 'text-3', 'danger-text', 'approved', 'pending', 'info', 'gold']) {
+    for (const fg of ['text', 'text-2', 'text-3', 'danger-text', 'approved', 'pending', 'info', 'gold', 'muted', 'success', 'warning', 'danger']) {
       assert.ok(contrast(c[fg], c[s]) >= 4.5, `${fg} on ${s}: ${contrast(c[fg], c[s]).toFixed(2)}`);
     }
   }
@@ -304,5 +304,38 @@ test('the dark and crimson tokens match the Flutter design system', () => {
 test('every option built with h() passes its value through attrs', () => {
   for (const [name, src] of Object.entries(jsCode)) {
     assert.ok(!/h\('option',\s*\{\s*value:/.test(src), `${name} passes an option value as a prop; use attrs: { value }`);
+  }
+});
+
+// --- owner redesign 2026-11-14 ----------------------------------------------
+
+test('one numeral rule: only i18n.js picks a display locale or formats numbers', () => {
+  for (const [name, src] of Object.entries(jsCode)) {
+    if (name === 'i18n.js') continue;
+    assert.ok(!/['"]ar-EG['"]|['"]en-GB['"]/.test(src), `${name} picks a display locale`);
+    assert.ok(!/Intl\.NumberFormat|toLocaleString|Intl\.RelativeTimeFormat/.test(src), `${name} formats numbers itself`);
+    assert.ok(!/\bEGP\b|جنيه/.test(src), `${name} hard-codes a currency label`);
+  }
+});
+
+test('the shell is a side navigation with a vertical tablist, a menu button and a drawer scrim', () => {
+  assert.match(html, /<aside id="sidenav"/);
+  assert.match(html, /<nav id="tabs" class="tabs" role="tablist" aria-orientation="vertical"/);
+  assert.match(html, /<button id="nav-open"[^>]*aria-controls="sidenav"[^>]*aria-expanded="false"/);
+  assert.match(html, /<div id="nav-scrim" class="nav-scrim" hidden>/);
+  assert.ok(html.indexOf('id="sidenav"') < html.indexOf('id="main"'), 'navigation comes first (start side)');
+  const order = [...html.matchAll(/<button id="tab-([\w]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(order, TABS.map((x) => x.id), 'markup order matches the registry');
+  assert.equal(order[0], 'overview');
+  assert.match(css, /@media \(max-width: 899\.98px\)/);
+  assert.match(css, /\.shell\[data-nav="open"\] \.sidenav/);
+  for (const svg of html.matchAll(/<svg\b[^>]*>/g)) assert.match(svg[0], /aria-hidden="true"/, 'icons are decorative');
+});
+
+test('the redesign tokens are defined once on :root', () => {
+  const root = css.match(/:root\s*{([^}]*)}/)[1];
+  for (const name of ['muted', 'accent', 'success', 'success-bg', 'info', 'info-bg', 'warning', 'warning-bg', 'danger', 'danger-bg',
+    'radius', 'radius-sm', 'radius-lg', 'space-1', 'space-4', 'space-6', 'fs-xs', 'fs-md', 'fs-xl', 'fs-kpi']) {
+    assert.match(root, new RegExp(`--${name}\\s*:`), `--${name}`);
   }
 });

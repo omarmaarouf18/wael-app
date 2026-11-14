@@ -4,7 +4,7 @@
 // amount check warnings, and flat list available as a toggle.
 
 import { clear, h } from './dom.js';
-import { formatCairoDateTime, formatNumber, getLang, t } from './i18n.js';
+import { formatCairoDateTime, formatMoney, formatNumber, getLang, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { setBadge } from './tabs.js';
 import { createCooldown, createPager, hideBanner, keepOpenWhile, messageRow, showError, statusBadge, toast } from './ui.js';
@@ -339,7 +339,7 @@ export function mountRequests({ api, doc = document, win = window }) {
     const phoneCell = h('td', { class: 'ltr', text: student?.phone || '—' });
     const emailCell = h('td', { class: 'ltr', text: student?.email || '—' });
     const countCell = h('td', { text: formatNumber(subjectCount) });
-    const totalCell = h('td', { text: t('catalog.price', { n: formatNumber(totalAmount) }) });
+    const totalCell = h('td', { text: formatMoney(totalAmount) });
     const dateCell = h('td', { text: oldestDate ? formatCairoDateTime(oldestDate.toISOString()) : '—' });
 
     const sourcesCell = h('td', {});
@@ -448,14 +448,14 @@ export function mountRequests({ api, doc = document, win = window }) {
           h('span', { class: isWeb ? 'badge' : 'badge muted', text: isWeb ? t('requests.source.web') : t('requests.source.mobile') }),
           h('strong', { text: orderTitleText }),
           h('span', { class: 'small muted', text: formatCairoDateTime(order.created_at) }),
-          h('span', { class: 'strong', text: t('catalog.price', { n: formatNumber(order.total) }) }),
+          h('span', { class: 'strong', text: formatMoney(order.total) }),
         ),
       );
 
       if (isWeb) {
         const methodLabel = order.payment_method === 'instapay' ? 'InstaPay' : 'Wallet';
         const webDetails = h('div', { class: 'order-web-info' },
-          h('span', { text: `${methodLabel}: ${formatNumber(order.amount_paid || 0)} EGP` }),
+          h('span', { text: `${methodLabel}: ${formatMoney(order.amount_paid || 0)}` }),
           h('span', { class: 'ltr', text: `Ref: ${order.transfer_reference || '—'}` }),
           h('span', { class: 'ltr muted', text: `From: ${order.sender_number || '—'}` }),
         );
@@ -537,7 +537,7 @@ export function mountRequests({ api, doc = document, win = window }) {
         subTbody.append(h('tr', {},
           h('td', {}, subCheckbox),
           h('td', { text: subTitle || '—' }),
-          h('td', { text: t('catalog.price', { n: formatNumber(it.price) }) }),
+          h('td', { text: formatMoney(it.price) }),
           h('td', {}, h('span', { class: order.source === 'web' ? 'badge' : 'badge muted', text: order.source === 'web' ? t('requests.source.web') : t('requests.source.mobile') })),
           h('td', {}, statusBadge(it.status)),
           actions,
@@ -581,7 +581,7 @@ export function mountRequests({ api, doc = document, win = window }) {
     if (isWeb) {
       const methodLabel = req.payment_method === 'instapay' ? 'InstaPay' : 'Wallet';
       paymentCell.append(
-        h('div', { class: 'strong', text: `${methodLabel}: ${formatNumber(req.amount || 0)} EGP` }),
+        h('div', { class: 'strong', text: `${methodLabel}: ${formatMoney(req.amount || 0)}` }),
         h('div', { class: 'small ltr', text: `Ref: ${req.transfer_reference || '—'}` }),
         h('div', { class: 'small muted ltr', text: `From: ${req.sender_number || '—'}` }),
       );
@@ -597,7 +597,7 @@ export function mountRequests({ api, doc = document, win = window }) {
       paymentCell.append(h('span', { class: 'muted', text: '—' }));
     }
 
-    const priceCell = h('td', { text: t('catalog.price', { n: formatNumber(req.price) }) });
+    const priceCell = h('td', { text: formatMoney(req.price) });
     const requestedCell = h('td', { text: formatCairoDateTime(req.created_at) });
     const statusCell = h('td', {}, statusBadge(req.status));
 

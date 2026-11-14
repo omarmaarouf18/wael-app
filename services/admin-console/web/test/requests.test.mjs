@@ -134,7 +134,7 @@ test('requests tab is visible and loads requests with student identity join in d
   assert.equal(app.activeTab, 'requests');
 
   // Verify badge shows pending count
-  assert.equal($('badge-requests').textContent, '2');
+  assert.equal($('badge-requests').textContent, '٢');
 
   const rows = tableRows();
   // Default view is grouped: 2 students with pending requests (u-1 and u-missing)

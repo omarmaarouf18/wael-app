@@ -8,7 +8,7 @@
 
 import { clear, h } from './dom.js';
 import { formatCairoDate } from './subject-dialog.js';
-import { formatNumber, t } from './i18n.js';
+import { formatMoney, formatNumber, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { createCooldown, createPager, hideBanner, hideToast, messageRow, showError, toast } from './ui.js';
 import { uncoveredSet } from './iap.js';
@@ -94,7 +94,7 @@ export function mountSubjects({ api, doc = document, dialog, confirm, levelsOf, 
       {},
       h('td', {}, h('div', { class: 'strong', text: subject.title_ar || '—' }, coverageBadge(subject)), subject.title_en ? h('div', { class: 'muted small ltr', text: subject.title_en }) : null),
       h('td', {}, badge(subject.published)),
-      h('td', { class: 'ltr', text: t('catalog.price', { n: formatNumber(subject.price ?? 0) }) }),
+      h('td', { text: formatMoney(subject.price ?? 0) }),
       h('td', { text: formatCairoDate(subject.access_expires_at) || '—' }),
       h('td', { text: t('catalog.videos', { n: formatNumber(subject.video_count ?? 0) }) }),
       h('td', { class: 'muted small', text: termText(subject.term) }),

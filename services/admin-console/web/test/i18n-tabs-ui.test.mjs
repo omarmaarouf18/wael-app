@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import {
   DEFAULT_LANG, LANGS, MESSAGES, applyTranslations, dirOf, formatDate, formatTime, getLang, langFromHash, onLangChange, otherLang, setLang, t,
 } from '../js/i18n.js';
-import { TABS, formatBadge, isTabEnabled, nextTabIndex, setBadge, visibleTabs } from '../js/tabs.js';
+import { DEFAULT_TAB, TABS, formatBadge, isTabEnabled, nextTabIndex, setBadge, visibleTabs } from '../js/tabs.js';
 import { pageCount } from '../js/ui.js';
 import { FakeDocument, FakeElement } from './fake-dom.mjs';
 
@@ -151,8 +151,11 @@ test('console tab "Courses" and Settings "Academy" labels (owner 2026-10-12)', (
 });
 
 test('every tab is active, Files included since SPEC Phase 5', () => {
-  assert.deepEqual(TABS.map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'iap', 'settings', 'files', 'notifications']);
-  assert.deepEqual(visibleTabs().map((x) => x.id), ['accounts', 'audit', 'requests', 'catalog', 'iap', 'settings', 'files', 'notifications']);
+  const order = ['overview', 'accounts', 'audit', 'requests', 'catalog', 'iap', 'settings', 'files', 'notifications'];
+  assert.deepEqual(TABS.map((x) => x.id), order);
+  assert.deepEqual(visibleTabs().map((x) => x.id), order);
+  assert.equal(DEFAULT_TAB, 'overview');
+  assert.equal(isTabEnabled('overview'), true);
   assert.equal(isTabEnabled('catalog'), true);
   assert.equal(isTabEnabled('settings'), true);
   assert.equal(isTabEnabled('requests'), true);
@@ -170,9 +173,14 @@ test('badge counter text', () => {
   assert.equal(formatBadge(1.5), '');
   assert.equal(formatBadge(undefined), '');
   assert.equal(formatBadge('5'), '');
+  setLang('en');
   assert.equal(formatBadge(7), '7');
   assert.equal(formatBadge(99), '99');
   assert.equal(formatBadge(100), '99+');
+  setLang('ar');
+  assert.equal(formatBadge(7), '٧');
+  assert.equal(formatBadge(13), '١٣');
+  assert.equal(formatBadge(100), '٩٩+');
 });
 
 test('setBadge shows and hides the counter', () => {
@@ -180,7 +188,7 @@ test('setBadge shows and hides the counter', () => {
   const badge = doc.getElementById('badge-requests');
   badge.hidden = true;
   setBadge(doc, 'requests', 4);
-  assert.deepEqual([badge.textContent, badge.hidden], ['4', false]);
+  assert.deepEqual([badge.textContent, badge.hidden], ['٤', false]);
   setBadge(doc, 'requests', 0);
   assert.deepEqual([badge.textContent, badge.hidden], ['', true]);
   assert.doesNotThrow(() => setBadge({ getElementById: () => null }, 'missing', 3));
@@ -195,6 +203,9 @@ test('arrow keys follow the visual direction', () => {
   assert.equal(nextTabIndex(0, 3, 'End', 'rtl'), 2);
   assert.equal(nextTabIndex(1, 3, 'a', 'ltr'), 1);
   assert.equal(nextTabIndex(0, 0, 'ArrowRight', 'ltr'), -1);
+  // The side navigation is vertical: Down/Up move forward/back in both directions.
+  assert.equal(nextTabIndex(0, 3, 'ArrowDown', 'rtl'), 1);
+  assert.equal(nextTabIndex(0, 3, 'ArrowUp', 'ltr'), 2);
 });
 
 test('pageCount', () => {

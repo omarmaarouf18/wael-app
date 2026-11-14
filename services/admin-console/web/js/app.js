@@ -8,6 +8,7 @@ import { mountCatalog } from './catalog.js';
 import { mountFiles } from './files.js';
 import { mountIAP } from './iap.js';
 import { mountNotifications } from './notifications.js';
+import { mountOverview } from './overview.js';
 import { mountRequests } from './requests.js';
 import { mountSettings } from './settings.js';
 import { createIdleLock } from './idle.js';
@@ -22,8 +23,8 @@ import {
   setLang,
   t,
 } from './i18n.js';
-import { TABS, isTabEnabled, nextTabIndex, visibleTabs } from './tabs.js';
-import { createCooldown, hideBanner, showError } from './ui.js';
+import { DEFAULT_TAB, TABS, isTabEnabled, nextTabIndex, visibleTabs } from './tabs.js';
+import { createCooldown, hideBanner, initialOf, showError } from './ui.js';
 import { closeDiscardDialog, installUnloadGuard, leaveIfClean } from './unsaved.js';
 
 export function main(doc = document, win = window) {
@@ -34,7 +35,12 @@ export function main(doc = document, win = window) {
   const loginSubmit = doc.getElementById('login-submit');
   const loginBanner = doc.getElementById('login-banner');
   const adminName = doc.getElementById('admin-name');
+  const adminInitial = doc.getElementById('admin-initial');
   const tabList = doc.getElementById('tabs');
+  const sidenav = doc.getElementById('sidenav');
+  const navOpen = doc.getElementById('nav-open');
+  const navClose = doc.getElementById('nav-close');
+  const navScrim = doc.getElementById('nav-scrim');
 
   // The audit log links student and package names to their tabs.
   function openFromAudit(link) {
@@ -46,6 +52,7 @@ export function main(doc = document, win = window) {
   }
 
   const modules = {
+    overview: mountOverview({ doc }),
     accounts: mountAccounts({ api, doc }),
     audit: mountAudit({ api, doc, win, navigate: openFromAudit }),
     requests: mountRequests({ api, doc, win }),
@@ -57,7 +64,7 @@ export function main(doc = document, win = window) {
   };
   const idleLock = createIdleLock({ doc, win });
   let badgePollTimer = null;
-  let activeTab = 'accounts';
+  let activeTab = DEFAULT_TAB;
   let signingIn = false;
   // A 429 with Retry-After on sign-in keeps the button off until it ends.
   const loginCooldown = createCooldown();
@@ -109,8 +116,34 @@ export function main(doc = document, win = window) {
     }
   }
 
+  // --- navigation drawer (below 900px) ----------------------------------
+  // On a wide screen the side navigation is always shown and these controls
+  // are hidden by the stylesheet; the open state then changes nothing visible.
+  function setNav(open) {
+    appView.setAttribute('data-nav', open ? 'open' : 'closed');
+    navOpen.setAttribute('aria-expanded', String(open));
+    navScrim.hidden = !open;
+    if (open) doc.getElementById(`tab-${activeTab}`)?.focus();
+  }
+  const navIsOpen = () => appView.getAttribute('data-nav') === 'open';
+  function closeNav({ returnFocus = false } = {}) {
+    if (!navIsOpen()) return;
+    setNav(false);
+    if (returnFocus) navOpen.focus();
+  }
+  navOpen.addEventListener('click', () => setNav(!navIsOpen()));
+  navClose.addEventListener('click', () => closeNav({ returnFocus: true }));
+  navScrim.addEventListener('click', () => closeNav({ returnFocus: true }));
+  sidenav.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && navIsOpen()) {
+      event.preventDefault();
+      closeNav({ returnFocus: true });
+    }
+  });
+
   // A tab switch with unsaved edits asks first; Stay keeps the current tab.
   async function switchTab(id) {
+    closeNav();
     const moved = await leaveIfClean(doc, () => activate(id), () => {
       modules.catalog.discard();
       if (modules.settings?.discard) modules.settings.discard();
@@ -149,7 +182,9 @@ export function main(doc = document, win = window) {
     }
     appView.hidden = true;
     loginView.hidden = false;
+    setNav(false);
     adminName.textContent = '';
+    adminInitial.textContent = '';
     for (const m of Object.values(modules)) m.reset();
     if (message) {
       loginBanner.textContent = message;
@@ -164,6 +199,7 @@ export function main(doc = document, win = window) {
     loginView.hidden = true;
     appView.hidden = false;
     adminName.textContent = getAdminName();
+    adminInitial.textContent = initialOf(getAdminName());
     hideBanner(loginBanner);
     idleLock.start();
     if (modules.requests && typeof modules.requests.refreshBadge === 'function') {
@@ -179,7 +215,7 @@ export function main(doc = document, win = window) {
         badgePollTimer.unref();
       }
     }
-    activate('accounts');
+    activate(DEFAULT_TAB);
   }
 
   onSessionChange((event) => {
@@ -225,7 +261,7 @@ export function main(doc = document, win = window) {
   doc.getElementById('sign-out').addEventListener('click', () => clearSession('signed_out'));
 
   showLogin('');
-  return { activate, get activeTab() { return activeTab; } };
+  return { activate, switchTab, get activeTab() { return activeTab; } };
 }
 
 if (typeof document !== 'undefined') main();

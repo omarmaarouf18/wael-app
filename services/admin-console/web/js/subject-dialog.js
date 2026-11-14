@@ -3,7 +3,7 @@
 // Africa/Cairo converted to RFC3339 UTC; it is shown back in Cairo time.
 
 import { clear, h } from './dom.js';
-import { getLang, t } from './i18n.js';
+import { formatCairoDate as formatCairoDateI18n, t } from './i18n.js';
 import { createCooldown, hideBanner, showError } from './ui.js';
 import { guardDialog } from './unsaved.js';
 
@@ -56,11 +56,8 @@ export function cairoDateInputValue(iso) {
 
 /** Renders an RFC3339 instant as a Cairo date in the page language. */
 export function formatCairoDate(iso) {
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return '';
-  return new Intl.DateTimeFormat(getLang() === 'ar' ? 'ar-EG' : 'en-GB', {
-    timeZone: CAIRO_TZ, dateStyle: 'medium',
-  }).format(new Date(ms));
+  if (Number.isNaN(Date.parse(iso))) return '';
+  return formatCairoDateI18n(iso);
 }
 
 export function validTitle(raw) {

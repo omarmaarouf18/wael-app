@@ -27,7 +27,7 @@ export const MESSAGES = Object.freeze({
     'top.language': 'English',
 
     'tabs.label': 'أقسام اللوحة',
-    'tabs.accounts': 'الحسابات',
+    'tabs.accounts': 'الطلاب',
     'tabs.audit': 'سجل العمليات',
     'tabs.requests': 'الطلبات',
     'tabs.catalog': 'دوراتي',
@@ -35,6 +35,16 @@ export const MESSAGES = Object.freeze({
     'tabs.files': 'الملفات',
     'tabs.notifications': 'الإشعارات',
     'tabs.iap': 'باكدجات iOS',
+    'tabs.overview': 'نظرة عامة',
+    'nav.open': 'افتح القائمة',
+    'nav.close': 'اقفل القائمة',
+    'top.role': 'مشرف',
+    'overview.greeting': 'أهلًا يا {name}',
+    'overview.date': '{date} · ده ملخص اللي محتاج انتباهك',
+    'common.copy': 'نسخ',
+    'common.copied': 'تم النسخ.',
+    'common.copyIdFull': 'نسخ المعرّف {id}',
+    'common.close': 'إغلاق',
 
     'common.retry': 'إعادة المحاولة',
     'common.refresh': 'تحديث',
@@ -548,6 +558,9 @@ export const MESSAGES = Object.freeze({
     'files.kind.book': 'كتاب',
     'files.kind.note': 'مذكرة',
     'files.file': 'ملف PDF',
+    'files.dropTitle': 'اسحب ملف PDF هنا أو اضغط للاختيار',
+    'files.dropChosen': 'الملف المختار: {name}',
+    'files.dropNone': 'لم يتم اختيار ملف بعد',
     'files.titleAr': 'العنوان (بالعربية)',
     'files.titleEn': 'العنوان (بالإنجليزية، اختياري)',
     'files.uploadTitle': 'رفع ملف جديد',
@@ -693,7 +706,7 @@ export const MESSAGES = Object.freeze({
     'top.language': 'العربية',
 
     'tabs.label': 'Console sections',
-    'tabs.accounts': 'Accounts',
+    'tabs.accounts': 'Students',
     'tabs.audit': 'Audit log',
     'tabs.requests': 'Requests',
     'tabs.catalog': 'Courses',
@@ -701,6 +714,16 @@ export const MESSAGES = Object.freeze({
     'tabs.files': 'Files',
     'tabs.notifications': 'Notifications',
     'tabs.iap': 'iOS packages',
+    'tabs.overview': 'Overview',
+    'nav.open': 'Open menu',
+    'nav.close': 'Close menu',
+    'top.role': 'Admin',
+    'overview.greeting': 'Hello, {name}',
+    'overview.date': '{date} · what needs your attention',
+    'common.copy': 'Copy',
+    'common.copied': 'Copied.',
+    'common.copyIdFull': 'Copy id {id}',
+    'common.close': 'Close',
 
     'common.retry': 'Retry',
     'common.refresh': 'Refresh',
@@ -1214,6 +1237,9 @@ export const MESSAGES = Object.freeze({
     'files.kind.book': 'Book',
     'files.kind.note': 'Note',
     'files.file': 'PDF file',
+    'files.dropTitle': 'Drop a PDF here or click to choose',
+    'files.dropChosen': 'Chosen file: {name}',
+    'files.dropNone': 'No file chosen yet',
     'files.titleAr': 'Title (Arabic)',
     'files.titleEn': 'Title (English, optional)',
     'files.uploadTitle': 'Upload a new file',
@@ -1413,10 +1439,24 @@ export function applyTranslations(root) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Numerals (owner 2026-11-14): one rule for the whole console, and this is the
+// only place that applies it. Dates, times, counts and amounts follow the page
+// language: Arabic-Indic digits (ar-EG) in Arabic, Latin digits in English.
+// Phone numbers, emails, ids, product ids and transaction ids are never passed
+// through these helpers: they are shown as typed, Latin and left-to-right
+// (class "ltr"), in both languages.
+// ---------------------------------------------------------------------------
+
+/** The Intl locale for the page language. */
+export function locale(l = lang) {
+  return l === 'ar' ? 'ar-EG' : 'en-GB';
+}
+
 function formatWith(value, options) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '';
-  return new Intl.DateTimeFormat(lang === 'ar' ? 'ar-EG' : 'en-GB', { timeZone: 'Africa/Cairo', ...options }).format(d);
+  return new Intl.DateTimeFormat(locale(), { timeZone: 'Africa/Cairo', ...options }).format(d);
 }
 
 export function formatDate(value) {
@@ -1428,7 +1468,33 @@ export function formatTime(value) {
 }
 
 export function formatNumber(n) {
-  return new Intl.NumberFormat(lang === 'ar' ? 'ar-EG' : 'en-GB').format(n);
+  return new Intl.NumberFormat(locale()).format(n);
+}
+
+/** An amount in Egyptian pounds, e.g. "١٬٦٥٠ جنيه" / "1,650 EGP". */
+export function formatMoney(n) {
+  const value = Number(n);
+  return t('catalog.price', { n: formatNumber(Number.isFinite(value) ? value : 0) });
+}
+
+/** A Cairo calendar date in the page language (medium style), '' when invalid. */
+export function formatCairoDate(value) {
+  return formatWith(value, { dateStyle: 'medium' });
+}
+
+/**
+ * How long ago an instant was, e.g. "منذ يومين" / "2 days ago". Minutes under
+ * an hour, hours under a day, days after that. '' for an invalid value.
+ */
+export function formatAge(value, now = new Date()) {
+  const then = new Date(value).getTime();
+  if (Number.isNaN(then)) return '';
+  const minutes = Math.max(0, Math.round((now.getTime() - then) / 60000));
+  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' });
+  if (minutes < 60) return rtf.format(-minutes, 'minute');
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return rtf.format(-hours, 'hour');
+  return rtf.format(-Math.round(hours / 24), 'day');
 }
 
 /** Long date for day headers, e.g. "Friday, 13 November 2026". */
@@ -1444,9 +1510,5 @@ export function cairoDayKey(value) {
 }
 
 export function formatCairoDateTime(value) {
-  return formatWith(value, {
-    timeZone: 'Africa/Cairo',
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  return formatWith(value, { dateStyle: 'medium', timeStyle: 'short' });
 }
