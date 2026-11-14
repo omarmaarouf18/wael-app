@@ -1,6 +1,29 @@
 package models
 
-import "time"
+import (
+	"crypto/sha1" // #nosec G505 //nolint:gosec -- SHA-1 required by RFC 4122 Section 4.3 for UUID version 5 derivation
+	"fmt"
+	"time"
+)
+
+// AppAccountTokenNamespace is the RFC 4122 namespace constant for deriving deterministic
+// StoreKit 2 appAccountToken UUIDs for students (ADR-0015, contract Section 3).
+const AppAccountTokenNamespace = "8e77e759-b33e-4ba9-8283-ac53aca1f8c8"
+
+// DeterministicAppAccountToken computes a deterministic UUID v5 for the student's user ID
+// under the AppAccountTokenNamespace constant.
+func DeterministicAppAccountToken(userID string) string {
+	ns := []byte{0x8e, 0x77, 0xe7, 0x59, 0xb3, 0x3e, 0x4b, 0xa9, 0x82, 0x83, 0xac, 0x53, 0xac, 0xa1, 0xf8, 0xc8}
+	h := sha1.New() // #nosec G401 //nolint:gosec -- SHA-1 required by RFC 4122 Section 4.3 for UUID version 5 derivation
+	h.Write(ns)
+	h.Write([]byte(userID))
+	sum := h.Sum(nil)
+	var u [16]byte
+	copy(u[:], sum[:16])
+	u[6] = (u[6] & 0x0f) | 0x50 // version 5
+	u[8] = (u[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
+}
 
 // IAPEnvironment constants.
 const (

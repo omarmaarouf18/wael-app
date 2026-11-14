@@ -1073,6 +1073,7 @@ func (s *Server) PublicHandler() http.Handler {
 	mux.HandleFunc("/academy/orders", s.EnforceTier(limiter.TierWrite, s.CreateOrder))
 	mux.HandleFunc("/academy/me/orders", s.EnforceTier(limiter.TierRead, s.GetMyOrders))
 	mux.HandleFunc("/academy/me/orders/", s.EnforceTier(limiter.TierRead, s.GetMyOrderByID))
+	mux.HandleFunc("/academy/iap/packages", s.EnforceTier(limiter.TierRead, s.GetIAPPackages))
 
 	var h http.Handler = mux
 	h = s.StudentAuth(h)
