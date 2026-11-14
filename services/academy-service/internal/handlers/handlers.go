@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/iap"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/limiter"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/models"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
@@ -69,6 +70,12 @@ type Server struct {
 	// DownloadStallTimeout is the per-chunk write deadline of a download
 	// (DOWNLOAD_STALL_TIMEOUT); zero or less means 30s.
 	DownloadStallTimeout time.Duration
+
+	// iOS In-App Purchase configuration and verifier (ADR-0015, issue #55).
+	IAPBundleID              string
+	IAPSandboxAllowedUserIDs []string
+	IAPSandboxAllowAll       bool
+	IAPVerifier              *iap.Verifier
 
 	downloadSlotsOnce sync.Once
 	downloadSlots     chan struct{}
@@ -1074,6 +1081,7 @@ func (s *Server) PublicHandler() http.Handler {
 	mux.HandleFunc("/academy/me/orders", s.EnforceTier(limiter.TierRead, s.GetMyOrders))
 	mux.HandleFunc("/academy/me/orders/", s.EnforceTier(limiter.TierRead, s.GetMyOrderByID))
 	mux.HandleFunc("/academy/iap/packages", s.EnforceTier(limiter.TierRead, s.GetIAPPackages))
+	mux.HandleFunc("/academy/iap/transactions", s.EnforceTier(limiter.TierWrite, s.ProcessIAPTransaction))
 
 	var h http.Handler = mux
 	h = s.StudentAuth(h)

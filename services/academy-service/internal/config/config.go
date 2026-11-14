@@ -62,7 +62,14 @@ type Config struct {
 	// DownloadStallTimeout ends a download whose client stops reading for
 	// this long (DOWNLOAD_STALL_TIMEOUT, owner review 2026-10-09).
 	DownloadStallTimeout time.Duration
+	// iOS In-App Purchases (ADR-0015, contract Section 7).
+	IAPBundleID              string
+	IAPSandboxAllowedUserIDs []string
+	IAPSandboxAllowAll       bool
 }
+
+// DefaultIAPBundleID is the default Apple App Store bundle ID.
+const DefaultIAPBundleID = "com.wael.app"
 
 // DefaultMaxConcurrentDownloads is the MAX_CONCURRENT_DOWNLOADS default.
 const DefaultMaxConcurrentDownloads = 3
@@ -346,42 +353,72 @@ func Load() (*Config, error) {
 		downloadStallTimeout = d
 	}
 
+	iapBundleID := DefaultIAPBundleID
+	if v := os.Getenv("IAP_BUNDLE_ID"); v != "" {
+		iapBundleID = strings.TrimSpace(v)
+	}
+
+	var iapSandboxAllowedUserIDs []string
+	if v := os.Getenv("IAP_SANDBOX_ALLOWED_USER_IDS"); v != "" {
+		for _, part := range strings.Split(v, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				iapSandboxAllowedUserIDs = append(iapSandboxAllowedUserIDs, trimmed)
+			}
+		}
+	}
+
+	iapSandboxAllowAll := false
+	switch v := os.Getenv("IAP_SANDBOX_ALLOW_ALL"); v {
+	case "", "false":
+	case "true":
+		if appEnv != "local" && appEnv != "test" {
+			return nil, errors.New("config: IAP_SANDBOX_ALLOW_ALL=true is only permitted when APP_ENV is local or test")
+		}
+		iapSandboxAllowAll = true
+	default:
+		return nil, fmt.Errorf("config: invalid IAP_SANDBOX_ALLOW_ALL %q: must be true or false", v)
+	}
+
 	return &Config{
-		Port:                   port,
-		AppEnv:                 appEnv,
-		MongoURI:               mongoURI,
-		MongoDatabase:          dbName,
-		RedisURI:               redisURI,
-		JWTSecret:              jwtSecret,
-		GatewaySecret:          gatewaySecret,
-		InternalServiceToken:   internalToken,
-		AuthServiceURL:         authServiceURL,
-		AuthAdminURL:           authAdminURL,
-		NotificationServiceURL: notificationServiceURL,
-		TLSCertPath:            tlsCertPath,
-		TLSKeyPath:             tlsKeyPath,
-		TLSCAPath:              tlsCAPath,
-		AdminListenAddr:        adminListenAddr,
-		ExposePriceToStudents:  exposePrice,
-		SupportWhatsApp:        supportWhatsApp,
-		TermsURL:               termsURL,
-		PrivacyURL:             privacyURL,
-		MinVersion:             minVersion,
-		LatestVersion:          latestVersion,
-		UpdateURL:              updateURL,
-		UpdateURLAndroid:       updateURLAndroid,
-		UpdateURLIOS:           updateURLIOS,
-		MinVersionIOS:          minVersionIOS,
-		LatestVersionIOS:       latestVersionIOS,
-		RateLimitRead:          rateLimitRead,
-		RateLimitPlay:          rateLimitPlay,
-		RateLimitDownload:      rateLimitDownload,
-		RateLimitWrite:         rateLimitWrite,
-		StorageDir:             storageDir,
-		DocumentEncryptionKey:  docKey,
-		MaxPDFBytes:            maxPDFBytes,
-		FeaturesFiles:          featuresFiles,
-		MaxConcurrentDownloads: maxConcurrentDownloads,
-		DownloadStallTimeout:   downloadStallTimeout,
+		Port:                     port,
+		AppEnv:                   appEnv,
+		MongoURI:                 mongoURI,
+		MongoDatabase:            dbName,
+		RedisURI:                 redisURI,
+		JWTSecret:                jwtSecret,
+		GatewaySecret:            gatewaySecret,
+		InternalServiceToken:     internalToken,
+		AuthServiceURL:           authServiceURL,
+		AuthAdminURL:             authAdminURL,
+		NotificationServiceURL:   notificationServiceURL,
+		TLSCertPath:              tlsCertPath,
+		TLSKeyPath:               tlsKeyPath,
+		TLSCAPath:                tlsCAPath,
+		AdminListenAddr:          adminListenAddr,
+		ExposePriceToStudents:    exposePrice,
+		SupportWhatsApp:          supportWhatsApp,
+		TermsURL:                 termsURL,
+		PrivacyURL:               privacyURL,
+		MinVersion:               minVersion,
+		LatestVersion:            latestVersion,
+		UpdateURL:                updateURL,
+		UpdateURLAndroid:         updateURLAndroid,
+		UpdateURLIOS:             updateURLIOS,
+		MinVersionIOS:            minVersionIOS,
+		LatestVersionIOS:         latestVersionIOS,
+		RateLimitRead:            rateLimitRead,
+		RateLimitPlay:            rateLimitPlay,
+		RateLimitDownload:        rateLimitDownload,
+		RateLimitWrite:           rateLimitWrite,
+		StorageDir:               storageDir,
+		DocumentEncryptionKey:    docKey,
+		MaxPDFBytes:              maxPDFBytes,
+		FeaturesFiles:            featuresFiles,
+		MaxConcurrentDownloads:   maxConcurrentDownloads,
+		DownloadStallTimeout:     downloadStallTimeout,
+		IAPBundleID:              iapBundleID,
+		IAPSandboxAllowedUserIDs: iapSandboxAllowedUserIDs,
+		IAPSandboxAllowAll:       iapSandboxAllowAll,
 	}, nil
 }

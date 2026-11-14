@@ -16,6 +16,7 @@ import (
 
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/config"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/handlers"
+	"github.com/omarmaarouf18/wael-app/academy-service/internal/iap"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/limiter"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/notify"
 	"github.com/omarmaarouf18/wael-app/academy-service/internal/store"
@@ -165,6 +166,10 @@ func main() {
 	srv.FeaturesFiles = cfg.FeaturesFiles
 	srv.MaxConcurrentDownloads = cfg.MaxConcurrentDownloads
 	srv.DownloadStallTimeout = cfg.DownloadStallTimeout
+	srv.IAPBundleID = cfg.IAPBundleID
+	srv.IAPSandboxAllowedUserIDs = cfg.IAPSandboxAllowedUserIDs
+	srv.IAPSandboxAllowAll = cfg.IAPSandboxAllowAll
+	srv.IAPVerifier = iap.DefaultVerifier()
 	log.Printf("[ACADEMY] max concurrent downloads=%d, download stall timeout=%s", cfg.MaxConcurrentDownloads, cfg.DownloadStallTimeout)
 	log.Printf("[ACADEMY] app-config features.files=%t", cfg.FeaturesFiles)
 	log.Printf("[ACADEMY] file storage: %s (max PDF %d bytes)", cfg.StorageDir, cfg.MaxPDFBytes)

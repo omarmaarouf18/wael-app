@@ -705,3 +705,79 @@ func TestLoad_DownloadStallTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_IAPConfig(t *testing.T) {
+	t.Run("Defaults", func(t *testing.T) {
+		baseEnv(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected Load error: %v", err)
+		}
+		if cfg.IAPBundleID != "com.wael.app" {
+			t.Errorf("IAPBundleID = %q, want com.wael.app", cfg.IAPBundleID)
+		}
+		if len(cfg.IAPSandboxAllowedUserIDs) != 0 {
+			t.Errorf("IAPSandboxAllowedUserIDs = %v, want empty", cfg.IAPSandboxAllowedUserIDs)
+		}
+		if cfg.IAPSandboxAllowAll {
+			t.Errorf("IAPSandboxAllowAll should be false by default")
+		}
+	})
+
+	t.Run("CustomBundleID_And_AllowedUsers", func(t *testing.T) {
+		baseEnv(t)
+		setEnv(t, "IAP_BUNDLE_ID", "com.custom.bundle")
+		setEnv(t, "IAP_SANDBOX_ALLOWED_USER_IDS", " usr_1 , usr_2, ")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected Load error: %v", err)
+		}
+		if cfg.IAPBundleID != "com.custom.bundle" {
+			t.Errorf("IAPBundleID = %q, want com.custom.bundle", cfg.IAPBundleID)
+		}
+		if len(cfg.IAPSandboxAllowedUserIDs) != 2 || cfg.IAPSandboxAllowedUserIDs[0] != "usr_1" || cfg.IAPSandboxAllowedUserIDs[1] != "usr_2" {
+			t.Errorf("IAPSandboxAllowedUserIDs = %v, want [usr_1 usr_2]", cfg.IAPSandboxAllowedUserIDs)
+		}
+	})
+
+	t.Run("SandboxAllowAll_AllowedInLocalAndTest", func(t *testing.T) {
+		baseEnv(t)
+		setEnv(t, "APP_ENV", "local")
+		setEnv(t, "IAP_SANDBOX_ALLOW_ALL", "true")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("unexpected error in local: %v", err)
+		}
+		if !cfg.IAPSandboxAllowAll {
+			t.Error("expected IAPSandboxAllowAll true")
+		}
+
+		setEnv(t, "APP_ENV", "test")
+		cfg, err = Load()
+		if err != nil {
+			t.Fatalf("unexpected error in test: %v", err)
+		}
+		if !cfg.IAPSandboxAllowAll {
+			t.Error("expected IAPSandboxAllowAll true")
+		}
+	})
+
+	t.Run("SandboxAllowAll_RefusedInProduction", func(t *testing.T) {
+		fullProdEnv(t)
+		setEnv(t, "APP_ENV", "production")
+		setEnv(t, "IAP_SANDBOX_ALLOW_ALL", "true")
+		_, err := Load()
+		if err == nil || !strings.Contains(err.Error(), "IAP_SANDBOX_ALLOW_ALL=true is only permitted") {
+			t.Fatalf("expected refusal of IAP_SANDBOX_ALLOW_ALL in production, got err: %v", err)
+		}
+	})
+
+	t.Run("SandboxAllowAll_InvalidBoolean", func(t *testing.T) {
+		baseEnv(t)
+		setEnv(t, "IAP_SANDBOX_ALLOW_ALL", "yes")
+		_, err := Load()
+		if err == nil || !strings.Contains(err.Error(), "invalid IAP_SANDBOX_ALLOW_ALL") {
+			t.Fatalf("expected error for invalid IAP_SANDBOX_ALLOW_ALL, got err: %v", err)
+		}
+	})
+}
