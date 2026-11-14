@@ -44,7 +44,7 @@ Existing systems remain byte-for-byte unchanged:
   field returns HTTP `400` code `invalid_body`.
 - Maximum request body size for `POST /academy/iap/transactions` is 16 KiB.
 - Timestamps are RFC 3339 UTC strings (e.g., `2026-11-14T12:00:00Z`).
-- Error responses follow standard academy-service JSON `{ "code": "...", "message": "..." }`.
+- Error responses follow standard academy-service JSON via `handlerutil.WriteSafeError`: `{ "error": "<message>", "code": "<code>", "request_id": "<id>" }`.
 
 ## 3. Deterministic `app_account_token` Namespace
 
@@ -271,7 +271,7 @@ Verification is executed locally in Go using `crypto/x509` and `crypto/ecdsa` wi
      - `ErrNotFound` -> add to `skipped` with reason `unavailable`.
    - Note: If Apple accepted payment, the server grants current subjects even if package `published == false` or past `available_until`.
    - Write row to `iap_purchases`.
-   - `payment_records` are NOT written for IAP purchases (owner decision 144).
+   - `payment_records` are NOT written for IAP purchases (ADR-0015 / shared brief 3.4).
 
 ---
 
@@ -282,7 +282,7 @@ Every mutating call generates an entry in `admin_audit_log`.
 
 ### 5.1 `GET /internal/admin/iap/packages`
 
-List all packages (published and unpublished).
+List all packages (published and unpublished), ordered by `position` ascending, then `created_at` ascending.
 
 #### Response `200 OK`
 
@@ -473,6 +473,11 @@ Configured in `services/academy-service/internal/config/config.go` following all
 | `invalid_transaction` | 422 | JWS decoding failed, bad signature, certificate chain invalid, or missing marker OIDs |
 | `wrong_bundle` | 422 | Transaction `bundleId` does not match configured `IAP_BUNDLE_ID` |
 | `unsupported_product_type` | 422 | Transaction `type` is not `"Non-Renewing Subscription"` |
+| `invalid_product_id` | 400 | Product ID does not match regex `^com\.wael\.app\.pkg\.[a-z0-9_.]+$` |
+| `invalid_title` | 400 | Package `title_ar` or `title_en` is missing or exceeds 80 runes |
+| `invalid_description` | 400 | Package `description_ar` or `description_en` exceeds 1000 runes |
+| `invalid_subject_ids` | 400 | Package `subject_ids` exceeds 100 items or contains invalid/duplicate IDs |
+| `duplicate_product_id` | 409 | A package with this `product_id` already exists |
 | `revoked_transaction` | 422 | Transaction contains a `revocationDate` indicating a refund or cancellation |
 | `iap_unavailable` | 503 | Database or internal service failure during transaction processing |
 
@@ -480,4 +485,5 @@ Configured in `services/academy-service/internal/config/config.go` following all
 
 ## Change Log
 
+- 2026-11-14 (amendment): Corrected error response shape to handlerutil.WriteSafeError `{"error","code","request_id"}` (D1); replaced citation with "ADR-0015 / shared brief 3.4" (D2); documented that admin package list orders by `position` then `created_at`; added admin error codes returned by #53 (`duplicate_product_id`, `invalid_title`, `invalid_description`, `invalid_subject_ids`, `invalid_product_id`, `not_found`) to the error catalog.
 - 2026-11-14: Initial version frozen for the 2026-11-14 parallel batch (Lane S and Lane A).
