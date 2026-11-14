@@ -1,7 +1,7 @@
 # ADR-0003: Payment Per Subject (Materia)
 
 - **Status**: Accepted
-- **Amended**: 2026-09-29, 2026-09-30
+- **Amended**: 2026-09-29, 2026-09-30, 2026-10-09, 2026-11-04, 2026-11-12, 2026-11-14
 - **Date**: 2026-09-29
 - **Related Commit SHA**: none (decision only, no implementation yet)
 - **Related Audit Finding**: n/a
@@ -104,3 +104,11 @@ The earlier text above is unchanged. On iOS the app is a content (reader)
 app for the academy's enrolled students. It shows all subjects, locked ones
 too, never a price (already true) and never a way to get a subject activated
 or bought. Android and the website stay as they are.
+
+## Amendment (2026-11-14, owner decision, ADR-0015)
+
+The earlier text above is unchanged. On iOS only, packages of subjects are also
+sold via Apple In-App Purchase (StoreKit 2 Non-Renewing Subscriptions). Outside
+payment (manual transfers via the website and wallets/InstaPay) and admin
+activation remain unchanged and available in parallel across all platforms. See
+ADR-0015.

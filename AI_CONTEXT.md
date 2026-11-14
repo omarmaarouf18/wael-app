@@ -102,6 +102,24 @@ Landed since the 2026-10-06 order: F-UX3 player speed and next lesson (`b5561e8`
 - Part G execution confirmed: ran against the live docker compose stack (7 services: api-gateway :8080, admin-console :3005, auth, academy, notification, mongo, redis) with the Next.js site started on port 3000 via `next start`, not in-process handlers.)*
 *(Amended 2026-11-06, E2E admin env handling: Part G end-to-end check (`tests/e2e/part_g_test.go`) follows the pattern of TestBroadcastChain and TestGatewayChain: when admin env (`E2E_ADMIN_TOKEN`, `E2E_CONSOLE_URL`) is not set, admin-dependent steps (00, 04, 05, 06, 07, 08, 09) cleanly skip with `t.Skip` while student-side steps (01 web signup, 02 session persistence across reloads, 10 web token 403 on play/download, 11 account features) run and pass. Removed disk token fallback (`admin-token.txt`). Confirmed no token file was ever committed. Admin console port is not published in compose per ADR-0008, so compose E2E CI runs student-side steps and skips admin-dependent steps.)*
 
+*(Amended 2026-11-14, owner decision 2026-11-13 / 2026-11-14, tracking issue #50): iOS In-App Purchase packages batch plan. Following Apple App Review rejection of iOS 1.0.1 (10) under guideline 3.1.1 on 2026-11-13, El Metr Academy sells packages of subjects on iOS via StoreKit 2 Non-Renewing Subscriptions (ADR-0015). Existing Android app, website (`web/`), outside payment channels, and admin manual activations remain unchanged. Work is partitioned into two isolated lanes and worktrees (brief Section 4):
+- Lane S (server/docs/console): `~/projects/wael-app`, branch `develop`. Owns `services/`, `shared/`, `docs/`, `AI_CONTEXT.md`, `CHANGELOG.md`.
+- Lane A (app): `~/projects/wael-app-ios`, branch `iap-app` (branched from `develop`). Owns `frontend/` only. Never touches `AI_CONTEXT.md`, `docs/` or `services/`.
+Session start check from CLAUDE.md applies per worktree; agents never share a worktree directory.
+Issue sequence:
+- Wave 0: Issue #51 (Lane S) — ADR-0015 and frozen API contract (`docs/contracts/iap-packages-api.md`).
+- Wave 1: Issue #52 (Lane S) — backend data models, StoreKit 2 JWS verification, and student/admin endpoints.
+- Wave 2 (parallel):
+  - Lane S: Issue #53 (admin console package management) + Issue #54 (admin console coverage and warning audit).
+  - Lane A: Issue #57 (StoreKit 2 client service and package purchases).
+- Wave 3 (parallel):
+  - Lane S: Issue #55 (e2e integration and live compose stack verification).
+  - Lane A: Issue #58 (iOS package UI, locked-subject redirect to package, store-safety tests).
+- Wave 4: Issue #56 (Lane S) — admin audit logging and sandbox safety gate.
+- Wave 5: Integration — rebase `iap-app` onto `develop` locally, fast-forward merge `iap-app` into `develop` on local Lane S worktree.
+- Wave 6: Issues #59 & #60 — full regression test run, release QA verification, and submission prep.
+Gating rule: As an access-gating change under SPEC Section 12 rule 6, nothing in this batch is pushed to remote `origin/develop` or `main`; all commits remain local on `develop` pending final owner review and confirmation.)*
+
 ## Open
 Core academy service implementation (build contract: `docs/core-service/SPEC.md`; Phase 0 prerequisites first). Rebind providers to `AcademyRepository`. Deploy/mobile pipeline live on production with `PUBLISH_ENABLED=true` and `DEPLOY_ENABLED=true` (ADR-0011). *(Amended 2026-10-06: the academy service is built through SPEC Phase 4 and live since 2026-10-03, and the app providers are rebound to `AcademyRepository`; the remaining order is under "Next task".)* *(Amended 2026-10-11: SPEC Phase 5 (files) is also built and on `main` since the 2026-10-09 release; its production turn-on is pending on the host.)*
 RUNBOOK (at `infrastructure/deploy/RUNBOOK.md`, now the short day-2 checklist) and SERVER-MANUAL (same folder, full install/run/operate manual, 2026-10-02), DEPLOYMENT, changelog (ADRs now exist). Owner to fill provenance
