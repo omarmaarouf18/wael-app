@@ -116,6 +116,18 @@ the key means revoking the certificate and making a new one.
   dedicated account that owns at least one subject; the tour signs out at
   the end, so it does not hold one of the account's two device slots. The
   PNGs come back as the workflow artifact `ios-screenshots-6.9-<run>`.)*
+  *(Amended 2026-11-14, owner: the tour also opens the iOS packages screen
+  and captures `08_packages` (top of the list) and `09_packages_bottom`
+  (scrolled to Restore Purchases). Prices are StoreKit's answer on the
+  Simulator against the App Store sandbox, never set in Dart; the job log
+  and the artifact's `iap_review/storekit-<lang>.txt` list, per Product ID
+  `com.wael.app.pkg.year1`..`year4`, what StoreKit returned, ending in a
+  `WAEL_IAP_RESULT:` line (for example `storekit returned 4/4 (all)`). When
+  it returns fewer, the cards render without a price or Buy button and are
+  captured that way. `iap_review/iap_review_<lang>.png` is `08_packages`
+  scaled to fit 2000 px, for the In-App Purchase review screenshot in App
+  Store Connect. No StoreKit configuration file is used; that was not run on
+  a Mac when this was written.)*
 - Privacy Policy URL (`PRIVACY_URL`), Support URL, description, keywords,
   category Education, age rating questionnaire.
 - **App Privacy**: name, email, phone number and user ID are collected and
