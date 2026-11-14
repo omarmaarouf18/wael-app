@@ -68,6 +68,12 @@ Owner decisions (2026-11-13), locked:
    automatic access request; administrators can still manually activate students who
    paid through outside channels. On iOS, locked subject text directs the student to
    the corresponding package rather than showing the neutral reader copy from fdb83e3.
+   *(Amended 2026-11-14, owner decision: the previous sentence is superseded. On
+   iOS a locked subject never mentions or links to a package, whether or not one
+   lists it: it shows only the neutral "المادة دي مش متاحة ليك حاليًا" / "This
+   subject isn't available to you right now", with no button. The automatic access
+   request still sends; the packages entry tile and packages screen are unchanged;
+   Android is unchanged.)*
 9. **Subjects in no package**: The admin console displays an informative warning for
    published subjects that do not belong to any published package; nothing is hidden
    automatically.
