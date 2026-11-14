@@ -272,6 +272,7 @@ Verification is executed locally in Go using `crypto/x509` and `crypto/ecdsa` wi
    - Note: If Apple accepted payment, the server grants current subjects even if package `published == false` or past `available_until`.
    - Write row to `iap_purchases`.
    - `payment_records` are NOT written for IAP purchases (ADR-0015 / shared brief 3.4).
+   - *(Amended 2026-11-14, owner: a new grant (never `already_processed`) also writes one `admin_audit_log` entry: action `iap_purchase`, actor = the student (`actor_id` and `actor_name` = user id; the token carries no name), `target_type` `iap_package`, `target_id` = package id, detail `product=<id> env=<Sandbox|Production> tx=<transactionId> subjects=<granted count>`. No JWS or appAccountToken. An audit write failure is logged and never fails the purchase.)*
 
 ---
 

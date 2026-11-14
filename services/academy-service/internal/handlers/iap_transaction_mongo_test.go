@@ -326,4 +326,9 @@ func TestIAPTransaction_LiveMongo_Concurrency_Race(t *testing.T) {
 	if len(ents) != 1 {
 		t.Fatalf("expected exactly 1 entitlement in mongo, got %d", len(ents))
 	}
+
+	// Owner 2026-11-14: only the winning grant writes an iap_purchase audit entry.
+	if n := len(iapAuditEntries(t, s)); n != 1 {
+		t.Fatalf("expected exactly 1 iap_purchase audit entry in mongo, got %d", n)
+	}
 }

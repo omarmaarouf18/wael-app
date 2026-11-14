@@ -294,6 +294,10 @@ func (s *Server) ProcessIAPTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.logIAPOutcome(claims.UserID, payload.TransactionID, payload.ProductID, "granted")
+	// Owner 2026-11-14: a new grant (never already_processed) is written to
+	// the academy audit log. The JWS and appAccountToken are never recorded;
+	// an audit failure is logged and never fails the purchase.
+	s.writeIAPPurchaseAudit(r.Context(), claims.UserID, pkg.ID, purchase)
 	resp := IAPTransactionResponseDTO{
 		Status:            "granted",
 		TransactionID:     purchase.TransactionID,
@@ -316,4 +320,34 @@ func (s *Server) logIAPOutcome(userID, txID, productID, outcome string) {
 	cleanOutcome := strings.ReplaceAll(strings.ReplaceAll(outcome, "\n", ""), "\r", "")
 	// #nosec G706 -- fields sanitized of CR/LF; JWS and appAccountToken are never passed
 	log.Printf("[IAP] user_id=%s transaction_id=%s product_id=%s outcome=%s", cleanUID, cleanTxID, cleanProdID, cleanOutcome)
+}
+
+// writeIAPPurchaseAudit records one "iap_purchase" admin_audit_log entry for
+// a new grant. The actor is the student (claims carry no display name, so the
+// user id is used as the name); the target is the package. Detail carries
+// only product id, environment, transaction id and the granted subject count.
+func (s *Server) writeIAPPurchaseAudit(ctx context.Context, userID, packageID string, p *models.IAPPurchase) {
+	id, err := jwtutil.GenerateUUID()
+	if err == nil {
+		entry := &models.AuditLog{
+			ID:         id,
+			ActorID:    userID,
+			ActorName:  userID,
+			Action:     "iap_purchase",
+			TargetType: "iap_package",
+			TargetID:   packageID,
+			Detail: sanitizeDetail(fmt.Sprintf("product=%s env=%s tx=%s subjects=%d",
+				p.ProductID, p.Environment, p.TransactionID, len(p.GrantedSubjectIDs))),
+			CreatedAt: time.Now().UTC(),
+		}
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dbTimeout)
+		defer cancel()
+		err = s.Store.CreateAuditLog(dbCtx, entry)
+	}
+	if err != nil {
+		cleanUID := strings.ReplaceAll(strings.ReplaceAll(userID, "\r", ""), "\n", "")
+		cleanPkg := strings.ReplaceAll(strings.ReplaceAll(packageID, "\r", ""), "\n", "")
+		// #nosec G706 -- fields sanitized of CR/LF; no JWS or token is logged
+		log.Printf("[ERROR] audit log write failed for action iap_purchase actor_id=%s target_id=%s: %v", cleanUID, cleanPkg, err)
+	}
 }
