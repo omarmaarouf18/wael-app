@@ -21,7 +21,7 @@ export function requestsQuery({ status, subject_id, page, limit }) {
   return q;
 }
 
-export function mountRequests({ api, doc = document, win = window }) {
+export function mountRequests({ api, doc = document, win = window, onDecided = () => {} }) {
   const form = doc.getElementById('requests-filter');
   const viewModeSelect = doc.getElementById('requests-view-mode');
   const statusSelect = doc.getElementById('requests-status');
@@ -1057,6 +1057,7 @@ export function mountRequests({ api, doc = document, win = window }) {
           updateBulkBar();
           toast(doc, t('requests.bulk.toastAccepted', { count: formatNumber(accepted.length) }));
           load();
+          onDecided({ ok: true });
           return;
         }
 
@@ -1079,6 +1080,7 @@ export function mountRequests({ api, doc = document, win = window }) {
         const messageText = `${t('requests.bulk.partialFailure', { failed: formatNumber(failed.length), total: formatNumber(results.length) })} ${failDetails}`;
         state.partialError = messageText;
         load();
+        onDecided({ ok: false, partial: messageText });
         return;
       }
 
@@ -1182,6 +1184,7 @@ export function mountRequests({ api, doc = document, win = window }) {
           updateBulkBar();
           toast(doc, t('requests.bulk.toastRejected', { count: formatNumber(rejected.length) }));
           load();
+          onDecided({ ok: true });
           return;
         }
 
@@ -1204,6 +1207,7 @@ export function mountRequests({ api, doc = document, win = window }) {
         const messageText = `${t('requests.bulk.partialFailure', { failed: formatNumber(failed.length), total: formatNumber(results.length) })} ${failDetails}`;
         state.partialError = messageText;
         load();
+        onDecided({ ok: false, partial: messageText });
         return;
       }
 
@@ -1306,6 +1310,22 @@ export function mountRequests({ api, doc = document, win = window }) {
     load() {
       loadSubjectsFilter();
       return load();
+    },
+    /**
+     * Accepts or rejects the given requests ([{ id, price, user_id, title }])
+     * through the same bulk confirm dialogs the tab uses (the overview's
+     * inline buttons). It replaces the current selection with these requests.
+     */
+    decide(action, requests) {
+      const list = Array.isArray(requests) ? requests.filter((r) => r && r.id) : [];
+      if (list.length === 0) return;
+      state.selectedRequests.clear();
+      for (const r of list) {
+        state.selectedRequests.set(r.id, { id: r.id, price: r.price || 0, user_id: r.user_id, title: r.title });
+      }
+      updateBulkBar();
+      if (action === 'accept') openBulkAccept();
+      else if (action === 'reject') openBulkReject();
     },
     refreshBadge: async () => {
       const res = await api.get('/api/requests', { limit: 1 });

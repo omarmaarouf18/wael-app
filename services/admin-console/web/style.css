@@ -227,7 +227,7 @@ h2 {
   padding-inline: var(--space-2);
 }
 
-.nav-close {
+.sidenav .nav-close {
   display: none;
 }
 
@@ -384,7 +384,7 @@ h2 {
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
   }
 
-  .nav-close {
+  .sidenav .nav-close {
     display: inline-grid;
   }
 
@@ -1580,3 +1580,75 @@ td.detail {
   inline-size: min(12rem, 100%);
   accent-color: var(--crimson);
 }
+
+/* ==== Overview ========================================================= */
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ov-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.ov-pending {
+  flex: 3 1 26rem;
+}
+
+.ov-activity-panel {
+  flex: 2 1 18rem;
+}
+
+.ov-list,
+.ov-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ov-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: var(--space-3);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.ov-row:last-child,
+.ov-act:last-child {
+  border-block-end: 0;
+}
+
+.ov-row-main {
+  flex: 1 1 11rem;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.ov-row-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ov-act {
+  display: flex;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.ov-act .audit-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ov-act .audit-icon { flex: none; }

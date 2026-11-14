@@ -184,7 +184,7 @@ test('the iOS packages tab renders every package with its Product ID, subject co
   assert.ok(!$('panel-iap').textContent.includes(MESSAGES.ar['catalog.field.price']));
   assert.equal($('iap-coverage').hidden, false);
   assert.ok($('iap-coverage').textContent.includes(t('iap.coverage', { n: formatNumber(1) })));
-  assert.equal(calls('GET', '/api/subjects')[0].url.includes('limit=100'), true);
+  assert.ok(calls('GET', '/api/subjects').some((c) => c.url.includes('limit=100')), 'the tab reads every subject');
 });
 
 test('create: an invalid form is refused locally; a valid one posts the cleaned body', async () => {

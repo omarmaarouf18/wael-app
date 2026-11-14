@@ -174,7 +174,7 @@ test('signing in shows the app, the admin name and the accounts list; the field 
   await flush();
   assert.equal(app.activeTab, 'accounts');
 
-  const listCall = globalThis.fetch.calls.find((c) => c.path === '/api/accounts');
+  const listCall = globalThis.fetch.calls.find((c) => c.path === '/api/accounts' && c.url.includes('limit=15'));
   assert.ok(listCall, 'accounts list was requested');
   assert.equal(listCall.url, '/api/accounts?page=1&limit=15');
   assert.equal(listCall.init.headers['X-Admin-Token'], 'admin-token-xyz');

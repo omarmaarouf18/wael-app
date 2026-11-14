@@ -275,6 +275,54 @@ export function filtersOnServer(source) {
   return source === 'student';
 }
 
+/** A name in a sentence: a link button when it opens another tab, else text. */
+function nameEl(part, cls, navigate) {
+  const inner = h('bdi', { text: part.text, class: part.isId ? 'id' : '' });
+  if (part.link && navigate) {
+    return h('button', {
+      class: `name-link ${cls}`,
+      attrs: { type: 'button', title: part.title || undefined },
+      on: { click: () => navigate(part.link) },
+    }, inner);
+  }
+  return h('span', { class: cls, attrs: { title: part.title || undefined } }, inner);
+}
+
+/** The "<actor> <verb> <target> · extras" sentence of a described entry. Shared with the overview. */
+export function sentenceNode(m, navigate) {
+  const sentence = h('p', { class: 'audit-sentence' },
+    nameEl(m.actor, 'audit-actor strong', navigate),
+    ' ',
+    h('span', { class: m.unknown ? 'audit-verb ltr id' : 'audit-verb', text: m.verb }),
+  );
+  if (m.target) sentence.append(' ', nameEl(m.target, 'audit-target strong', navigate));
+  for (const x of m.extras) {
+    sentence.append(h('span', { class: 'audit-sep', text: ' · ', attrs: { 'aria-hidden': 'true' } }));
+    if (x.prefix) sentence.append(h('span', { class: 'muted', text: `${x.prefix} ` }));
+    if (x.link) sentence.append(nameEl(x, 'audit-extra', navigate));
+    else sentence.append(h('bdi', { class: `audit-extra${x.pill ? ' pill' : ''}${x.muted ? ' muted' : ''}${x.ltr ? ' ltr' : ''}`, text: x.text }));
+  }
+  return sentence;
+}
+
+/**
+ * Names for the academy log from data the console already serves (iOS
+ * packages, levels, subjects). Best effort: null when every call failed.
+ */
+export async function loadAuditLookups(api) {
+  const [packages, levels, subjects] = await Promise.all([
+    api.get('/api/iap/packages'),
+    api.get('/api/levels'),
+    fetchAllSubjects(api),
+  ]);
+  if (!packages.ok && !levels.ok && !subjects.ok) return null;
+  return buildLookups({
+    packages: packages.ok && Array.isArray(packages.data?.packages) ? packages.data.packages : [],
+    levels: levels.ok && Array.isArray(levels.data?.levels) ? levels.data.levels : [],
+    subjects: subjects.ok && Array.isArray(subjects.items) ? subjects.items : [],
+  });
+}
+
 export function mountAudit({ api, doc = document, win = globalThis.window, navigate = () => {}, now = () => new Date() }) {
   const banner = doc.getElementById('audit-banner');
   const list = doc.getElementById('audit-list');
@@ -323,18 +371,6 @@ export function mountAudit({ api, doc = document, win = globalThis.window, navig
     actionSelect.value = state.action;
   }
 
-  function nameEl(part, cls) {
-    const inner = h('bdi', { text: part.text, class: part.isId ? 'id' : '' });
-    if (part.link) {
-      return h('button', {
-        class: `name-link ${cls}`,
-        attrs: { type: 'button', title: part.title || undefined },
-        on: { click: () => navigate(part.link) },
-      }, inner);
-    }
-    return h('span', { class: cls, attrs: { title: part.title || undefined } }, inner);
-  }
-
   function copyText(text) {
     const clip = globalThis.navigator?.clipboard;
     if (!clip || typeof clip.writeText !== 'function') return;
@@ -347,18 +383,7 @@ export function mountAudit({ api, doc = document, win = globalThis.window, navig
     const detailsId = `audit-d-${state.page}-${index}`;
     const open = state.expanded.has(rowKey);
 
-    const sentence = h('p', { class: 'audit-sentence' },
-      nameEl(m.actor, 'audit-actor strong'),
-      ' ',
-      h('span', { class: m.unknown ? 'audit-verb ltr id' : 'audit-verb', text: m.verb }),
-    );
-    if (m.target) sentence.append(' ', nameEl(m.target, 'audit-target strong'));
-    for (const x of m.extras) {
-      sentence.append(h('span', { class: 'audit-sep', text: ' · ', attrs: { 'aria-hidden': 'true' } }));
-      if (x.prefix) sentence.append(h('span', { class: 'muted', text: `${x.prefix} ` }));
-      if (x.link) sentence.append(nameEl(x, 'audit-extra'));
-      else sentence.append(h('bdi', { class: `audit-extra${x.pill ? ' pill' : ''}${x.muted ? ' muted' : ''}${x.ltr ? ' ltr' : ''}`, text: x.text }));
-    }
+    const sentence = sentenceNode(m, navigate);
 
     const rawText = m.raw.map(([k, v]) => `${k}: ${v}`).join('\n');
     const details = h('div', { class: 'audit-details ltr-block', attrs: { id: detailsId, dir: 'ltr' } },
@@ -432,22 +457,6 @@ export function mountAudit({ api, doc = document, win = globalThis.window, navig
     pager.update({ page: state.page, total: state.total, limit: PAGE_SIZE });
   }
 
-  // Names for the academy log. Best effort: a failure keeps short ids and is
-  // retried on the next load; it never blocks the log itself.
-  async function loadLookups() {
-    const [packages, levels, subjects] = await Promise.all([
-      api.get('/api/iap/packages'),
-      api.get('/api/levels'),
-      fetchAllSubjects(api),
-    ]);
-    if (!packages.ok && !levels.ok && !subjects.ok) return null;
-    return buildLookups({
-      packages: packages.ok && Array.isArray(packages.data?.packages) ? packages.data.packages : [],
-      levels: levels.ok && Array.isArray(levels.data?.levels) ? levels.data.levels : [],
-      subjects: subjects.ok && Array.isArray(subjects.items) ? subjects.items : [],
-    });
-  }
-
   async function load({ refreshNames = false } = {}) {
     const mine = ++seq;
     state.error = null;
@@ -455,7 +464,7 @@ export function mountAudit({ api, doc = document, win = globalThis.window, navig
     const wantNames = state.source === 'academy' && (!lookupsLoaded || refreshNames);
     const [res, names] = await Promise.all([
       api.get('/api/audit', auditQuery({ ...state, limit: PAGE_SIZE })),
-      wantNames ? loadLookups() : Promise.resolve(null),
+      wantNames ? loadAuditLookups(api) : Promise.resolve(null),
     ]);
     if (mine !== seq || !isSignedIn()) return;
     if (names) {

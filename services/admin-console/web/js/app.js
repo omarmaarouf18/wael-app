@@ -52,16 +52,28 @@ export function main(doc = document, win = window) {
   }
 
   const modules = {
-    overview: mountOverview({ doc }),
+    overview: mountOverview({
+      api, doc,
+      decide: (action, requests) => modules.requests.decide(action, requests),
+      openTab: (id) => switchTab(id),
+      navigate: openFromAudit,
+    }),
     accounts: mountAccounts({ api, doc }),
     audit: mountAudit({ api, doc, win, navigate: openFromAudit }),
-    requests: mountRequests({ api, doc, win }),
+    requests: mountRequests({ api, doc, win, onDecided: afterDecision }),
     catalog: mountCatalog({ api, doc }),
     iap: mountIAP({ api, doc }),
     settings: mountSettings({ api, doc }),
     files: mountFiles({ api, doc }),
     notifications: mountNotifications({ api, doc }),
   };
+  // An accept/reject started from the overview reloads it; a partial failure
+  // is shown there too (the Requests tab keeps its own banner).
+  function afterDecision(result = {}) {
+    if (activeTab !== 'overview') return;
+    if (result.partial) modules.overview.showNotice(result.partial);
+    modules.overview.load({ keepNotice: Boolean(result.partial) });
+  }
   const idleLock = createIdleLock({ doc, win });
   let badgePollTimer = null;
   let activeTab = DEFAULT_TAB;

@@ -352,8 +352,9 @@ test('two quick publishes send one request (no double submit)', async () => {
 });
 
 test('a 401 while loading returns to sign-in', async () => {
-  await signInOk({ 'GET /api/levels': { status: 401, body: {} } });
-  globalThis.fetch.calls.length = 0;
+  await signInOk();
+  // The overview also reads levels at sign-in, so the 401 starts afterwards.
+  globalThis.fetch = makeFetch(routes({ 'GET /api/levels': { status: 401, body: {} } }));
   await openCatalog();
   assert.equal($('app-view').hidden, true);
   assert.equal($('login-view').hidden, false);
