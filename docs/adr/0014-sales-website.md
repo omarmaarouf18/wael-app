@@ -11,6 +11,7 @@ The app sells nothing. A student opens a locked subject, the app creates an
 access request, and the center activates the subject after the student pays
 outside the app (ADR-0003 and its amendments, SPEC Section 1 decision 8 and
 Section 2 D3). The app never shows a payment action.
+*(Amended 2026-11-14, pointer, ADR-0015: on iOS the app now sells packages of subjects with In-App Purchase (packages screen with Buy and Restore Purchases); Android and the website are unchanged and the Android app still shows no payment action.)*
 
 App Store review is the pressure behind this record. Apple guideline 3.1.1
 (unlocking digital content paid for outside the app without in-app purchase)

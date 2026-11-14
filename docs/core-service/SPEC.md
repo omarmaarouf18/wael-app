@@ -46,6 +46,7 @@ This is the build contract for the core of the application. It is written for im
 8. Payment happens outside the app. The payment flow itself is **out of scope** and the owner will specify it later. The only boundary: an admin-accepted request creates the entitlement. A rejected request may be resubmitted as a new request.
    *(Amended 2026-11-04, owner decision: the payment flow is specified in ADR-0014 — a manual transfer to the owner's wallets or InstaPay, a purchase request with the transfer details submitted on the sales website, and an admin who checks it and activates the subject in the console. The boundary above is unchanged: only an admin-accepted request (or a manual grant) creates the entitlement; nothing is activated in the browser. See Section 16.)*
 9. A student who opens a locked subject automatically creates an access request (no manual step). The app then shows a "contact support to activate" message with a WhatsApp link (ADR-0006).
+   *(Amended 2026-11-14, pointer, ADR-0015: the access request is still sent on every platform; on iOS the locked subject now names the package that includes it, with a button to the packages screen, or says it is not available right now, with no WhatsApp, contact or activation wording. Android is unchanged.)*
 10. Support is WhatsApp only (ADR-0006).
 
 **Accounts**
