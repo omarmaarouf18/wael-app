@@ -7,7 +7,7 @@ import { clear, h } from './dom.js';
 import { formatCairoDateTime, formatMoney, formatNumber, getLang, t } from './i18n.js';
 import { isSignedIn } from './auth.js';
 import { setBadge } from './tabs.js';
-import { createCooldown, createPager, hideBanner, keepOpenWhile, messageRow, showError, statusBadge, toast } from './ui.js';
+import { avatar, createCooldown, createPager, hideBanner, keepOpenWhile, messageRow, shortId, showError, statusBadge, toast } from './ui.js';
 import { validateReason } from './account-dialog.js';
 
 export const PAGE_SIZE = 15;
@@ -19,6 +19,23 @@ export function requestsQuery({ status, subject_id, page, limit }) {
   if (status) q.status = status;
   if (subject_id) q.subject_id = subject_id;
   return q;
+}
+
+/** Payment method label from i18n (wallet unless InstaPay). */
+function methodLabelOf(method) {
+  return t(method === 'instapay' ? 'requests.method.instapay' : 'requests.method.wallet');
+}
+
+/** "<label>: <value>" where the value (a reference or phone) stays Latin and LTR. */
+function labelledLtr(labelKey, value, extra = '') {
+  return h('span', { class: extra }, `${t(labelKey)}: `, h('bdi', { class: 'ltr', text: value || '—' }));
+}
+
+/** Tags each cell with its column name so narrow screens can show rows as labelled cards. */
+function labelCells(cells, keys) {
+  cells.forEach((cell, i) => {
+    if (keys[i]) cell.setAttribute('data-label', t(keys[i]));
+  });
 }
 
 export function mountRequests({ api, doc = document, win = window, onDecided = () => {} }) {
@@ -328,9 +345,10 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
       h('div', { class: 'order-meta' },
         selectAllBox,
         expandBtn,
+        avatar(student?.full_name || student?.email),
         h('div', {},
           h('div', { class: 'strong', text: student?.full_name || '—' }),
-          h('div', { class: 'id ltr', text: sg.user_id }),
+          student ? null : h('bdi', { class: 'id ltr', text: shortId(sg.user_id), attrs: { title: sg.user_id } }),
           student ? null : h('div', { class: 'small muted', text: t('requests.student_fetch_failed') }),
         ),
       ),
@@ -358,7 +376,7 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
       const req = pendingItems[0];
       actionsCell.append(
         h('button', {
-          class: 'btn small primary',
+          class: 'btn small success',
           text: t('requests.action.accept'),
           attrs: { type: 'button' },
           on: { click: () => openAccept({ ...req, id: req.request_id || req.id, user_id: sg.user_id }) },
@@ -371,7 +389,20 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
         }),
       );
     } else if (pendingItems.length > 1) {
+      const all = pendingItems.map((it) => ({ id: it.request_id || it.id, price: it.price || 0, user_id: sg.user_id, title: it.title_ar || it.subject_title_ar }));
       actionsCell.append(
+        h('button', {
+          class: 'btn small success',
+          text: t('requests.acceptAll', { n: formatNumber(all.length) }),
+          attrs: { type: 'button', 'data-role': 'accept-all' },
+          on: { click: () => decideRequests('accept', all) },
+        }),
+        h('button', {
+          class: 'btn small danger-outline',
+          text: t('requests.rejectAll'),
+          attrs: { type: 'button', 'data-role': 'reject-all' },
+          on: { click: () => decideRequests('reject', all) },
+        }),
         h('button', {
           class: 'btn small secondary',
           text: isExpanded ? t('requests.collapse') : t('requests.expand'),
@@ -381,7 +412,11 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
       );
     }
 
-    const studentRow = h('tr', { class: 'student-row' }, studentCell, phoneCell, emailCell, countCell, totalCell, dateCell, sourcesCell, actionsCell);
+    labelCells(
+      [studentCell, phoneCell, emailCell, countCell, totalCell, dateCell, sourcesCell, actionsCell],
+      ['requests.col.student', 'requests.col.phone', 'requests.col.email', 'requests.col.subjectCount', 'requests.col.totalAmount', 'requests.col.oldestRequest', 'requests.col.sources', ''],
+    );
+    const studentRow = h('tr', { class: 'student-row request-card' }, studentCell, phoneCell, emailCell, countCell, totalCell, dateCell, sourcesCell, actionsCell);
 
     if (!isExpanded) {
       return [studentRow];
@@ -453,11 +488,10 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
       );
 
       if (isWeb) {
-        const methodLabel = order.payment_method === 'instapay' ? 'InstaPay' : 'Wallet';
         const webDetails = h('div', { class: 'order-web-info' },
-          h('span', { text: `${methodLabel}: ${formatMoney(order.amount_paid || 0)}` }),
-          h('span', { class: 'ltr', text: `Ref: ${order.transfer_reference || '—'}` }),
-          h('span', { class: 'ltr muted', text: `From: ${order.sender_number || '—'}` }),
+          h('span', { text: `${methodLabelOf(order.payment_method)}: ${formatMoney(order.amount_paid || 0)}` }),
+          labelledLtr('requests.refLabel', order.transfer_reference),
+          labelledLtr('requests.fromLabel', order.sender_number, 'muted'),
         );
         if (order.amount_mismatch || (order.amount_paid !== undefined && order.amount_paid !== order.total)) {
           webDetails.append(h('span', {
@@ -579,11 +613,10 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
 
     const paymentCell = h('td', {});
     if (isWeb) {
-      const methodLabel = req.payment_method === 'instapay' ? 'InstaPay' : 'Wallet';
       paymentCell.append(
-        h('div', { class: 'strong', text: `${methodLabel}: ${formatMoney(req.amount || 0)}` }),
-        h('div', { class: 'small ltr', text: `Ref: ${req.transfer_reference || '—'}` }),
-        h('div', { class: 'small muted ltr', text: `From: ${req.sender_number || '—'}` }),
+        h('div', { class: 'strong', text: `${methodLabelOf(req.payment_method)}: ${formatMoney(req.amount || 0)}` }),
+        h('div', { class: 'small' }, labelledLtr('requests.refLabel', req.transfer_reference)),
+        h('div', { class: 'small' }, labelledLtr('requests.fromLabel', req.sender_number, 'muted')),
       );
       if (req.amount_warning) {
         paymentCell.append(
@@ -605,7 +638,7 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
     if (req.status === 'pending') {
       actionsCell.append(
         h('button', {
-          class: 'btn small primary',
+          class: 'btn small success',
           text: t('requests.action.accept'),
           attrs: { type: 'button' },
           on: { click: () => openAccept(req) },
@@ -623,7 +656,11 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
       actionsCell.append(h('span', { class: 'small muted', text: formatCairoDateTime(req.decided_at) }));
     }
 
-    return h('tr', {}, studentCell, phoneCell, emailCell, subjectCell, sourceCell, paymentCell, priceCell, requestedCell, statusCell, actionsCell);
+    labelCells(
+      [studentCell, phoneCell, emailCell, subjectCell, sourceCell, paymentCell, priceCell, requestedCell, statusCell, actionsCell],
+      ['requests.col.student', 'requests.col.phone', 'requests.col.email', 'requests.col.subject', 'requests.col.source', 'requests.col.paymentDetails', 'requests.col.price', 'requests.col.requested', 'requests.col.status', ''],
+    );
+    return h('tr', { class: 'request-card' }, studentCell, phoneCell, emailCell, subjectCell, sourceCell, paymentCell, priceCell, requestedCell, statusCell, actionsCell);
   }
 
   function renderRows() {
@@ -1306,6 +1343,19 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
     });
   }
 
+  /** Opens the bulk confirm dialog for exactly these requests (replaces the selection). */
+  function decideRequests(action, requests) {
+    const list = Array.isArray(requests) ? requests.filter((r) => r && r.id) : [];
+    if (list.length === 0) return;
+    state.selectedRequests.clear();
+    for (const r of list) {
+      state.selectedRequests.set(r.id, { id: r.id, price: r.price || 0, user_id: r.user_id, title: r.title });
+    }
+    updateBulkBar();
+    if (action === 'accept') openBulkAccept();
+    else if (action === 'reject') openBulkReject();
+  }
+
   return {
     load() {
       loadSubjectsFilter();
@@ -1316,17 +1366,7 @@ export function mountRequests({ api, doc = document, win = window, onDecided = (
      * through the same bulk confirm dialogs the tab uses (the overview's
      * inline buttons). It replaces the current selection with these requests.
      */
-    decide(action, requests) {
-      const list = Array.isArray(requests) ? requests.filter((r) => r && r.id) : [];
-      if (list.length === 0) return;
-      state.selectedRequests.clear();
-      for (const r of list) {
-        state.selectedRequests.set(r.id, { id: r.id, price: r.price || 0, user_id: r.user_id, title: r.title });
-      }
-      updateBulkBar();
-      if (action === 'accept') openBulkAccept();
-      else if (action === 'reject') openBulkReject();
-    },
+    decide: decideRequests,
     refreshBadge: async () => {
       const res = await api.get('/api/requests', { limit: 1 });
       if (res.ok && res.data && Number.isInteger(res.data.pending_count)) {

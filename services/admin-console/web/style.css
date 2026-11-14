@@ -1652,3 +1652,333 @@ td.detail {
   gap: 2px;
 }
 .ov-act .audit-icon { flex: none; }
+
+/* ==== Students: list + side panel ===================================== */
+
+.students-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.students-layout[data-panel="open"] {
+  grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr);
+}
+
+.students-main {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.student-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.student-item + .student-item {
+  border-block-start: 1px solid var(--hairline);
+}
+
+.student-row {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  inline-size: 100%;
+  min-block-size: 64px;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-inline-start: 3px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.student-row:hover {
+  background: var(--surface-2);
+}
+
+.student-row.is-selected {
+  background: var(--nav-active);
+  border-inline-start-color: var(--crimson);
+}
+
+.student-row-main {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.student-row-main {
+  align-items: flex-start;
+}
+
+.student-name,
+.student-contact {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-panel {
+  position: sticky;
+  inset-block-start: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  max-block-size: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.sp-close {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline-end: var(--space-3);
+}
+
+.sp-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  padding-inline-end: 4.5rem;
+  border-block-end: 1px solid var(--hairline);
+}
+
+.sp-title {
+  min-inline-size: 0;
+}
+
+.sp-title h3 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  overflow-wrap: anywhere;
+}
+
+.sp-title p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sp-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.sp-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sp-tabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4) 0;
+  border-block-end: 1px solid var(--hairline);
+  overflow-x: auto;
+}
+
+.sp-tab {
+  appearance: none;
+  min-block-size: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-block-end: 2px solid transparent;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sp-tab[aria-selected="true"] {
+  color: var(--text);
+  border-block-end-color: var(--crimson);
+}
+
+.sp-section {
+  padding: var(--space-3) var(--space-5);
+}
+
+.sp-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sp-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sp-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.sp-item-main {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-add {
+  align-self: flex-start;
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.sp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-block-start: auto;
+  padding: var(--space-4) var(--space-5);
+  border-block-start: 1px solid var(--hairline);
+}
+
+/* Below 900px the panel is a full-screen drawer over the list. */
+@media (max-width: 899.98px) {
+  .students-layout[data-panel="open"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .student-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    max-block-size: none;
+    border-radius: 0;
+    border: 0;
+  }
+}
+
+/* ==== Requests: rows become labelled cards when the panel is narrow ==== */
+/* A container query on the Requests panel only (not on .main, whose layout
+   containment would trap the fixed-position drawers). */
+
+#panel-requests {
+  container-type: inline-size;
+  container-name: requests;
+}
+
+.order-meta .avatar {
+  inline-size: 2rem;
+  block-size: 2rem;
+}
+
+@container requests (max-width: 56rem) {
+  #panel-requests .table-wrap {
+    overflow: visible;
+    border: 0;
+    background: none;
+  }
+
+  #requests-table,
+  #requests-table tbody {
+    display: block;
+    inline-size: 100%;
+    min-inline-size: 0;
+    border: 0;
+  }
+
+  #requests-table thead {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  #requests-table tr.request-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-block-end: var(--space-3);
+    padding: var(--space-3);
+    background: var(--surface-1);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-lg);
+  }
+
+  #requests-table tr.request-card td {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-3);
+    min-inline-size: 0;
+    padding: 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+
+  #requests-table tr.request-card td > * {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+
+  #requests-table tr.request-card td[data-label]::before {
+    content: attr(data-label);
+    color: var(--text-2);
+    font-size: var(--fs-sm);
+  }
+
+  #requests-table tr.request-card td:first-child {
+    justify-content: flex-start;
+  }
+
+  #requests-table tr.request-card td:first-child::before {
+    display: none;
+  }
+
+  #requests-table tr.request-card td.actions {
+    justify-content: flex-start;
+    padding-block-start: var(--space-2);
+    border-block-start: 1px solid var(--hairline);
+  }
+
+  #requests-table tr.expanded-detail-row,
+  #requests-table tr.expanded-detail-row td {
+    display: block;
+    padding: 0;
+  }
+}
+
+@media (max-width: 899.98px) {
+  #requests-bulk-bar {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 20;
+  }
+}

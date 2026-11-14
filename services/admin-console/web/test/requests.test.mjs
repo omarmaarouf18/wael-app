@@ -143,7 +143,7 @@ test('requests tab is visible and loads requests with student identity join in d
   // Row 0 has student identity joined
   const row0Text = rows[0].textContent;
   assert.ok(row0Text.includes('طالب واحد'), 'contains student name');
-  assert.ok(row0Text.includes('u-1'), 'contains user ID');
+  assert.ok(!row0Text.includes('u-1'), 'no raw user id once the student is known (owner redesign 2026-11-14)');
   assert.ok(row0Text.includes('+201000000001'), 'contains phone');
   assert.ok(row0Text.includes('s1@example.com'), 'contains email');
 
@@ -155,7 +155,7 @@ test('requests tab is visible and loads requests with student identity join in d
 
   // Row 1 (u-missing): auth lookup did not return this student -> fallback note shown
   const row1Text = rows[1].textContent;
-  assert.ok(row1Text.includes('u-missing'), 'contains user ID');
+  assert.ok(row1Text.includes('u-missing'), 'unknown student: the id is shown so the admin can find them');
   assert.ok(row1Text.includes(t('requests.student_fetch_failed')), 'shows fallback note');
 });
 
@@ -348,7 +348,9 @@ test('grouping: 1 student with 30 requests is 1 row in default view', async () =
 
   const rowText = rows[0].textContent;
   assert.ok(rowText.includes('طالب ثلاثين مادة'), 'contains student name');
-  assert.ok(rowText.includes('u-30'), 'contains student ID');
+  assert.ok(!rowText.includes('u-30'), 'no raw student id once the student is known');
+  const roles = buttonsIn(rows[0]).map((b) => b.getAttribute('data-role'));
+  assert.ok(roles.includes('accept-all') && roles.includes('reject-all'), 'accept all / reject all for a student with several requests');
   assert.ok(rowText.includes('+201099998888'), 'contains phone');
   assert.ok(rowText.includes('s30@example.com'), 'contains email');
   assert.ok(rowText.includes(formatNumber(30)), 'shows subject count 30');
@@ -657,15 +659,15 @@ test('requests tab renders web purchase request details and amount warning', asy
 
   // Order 1: InstaPay, 150 EGP, Ref, From, no warning
   assert.ok(detailText.includes(t('requests.source.web')), 'contains web source badge');
-  assert.ok(detailText.includes('InstaPay:'), 'contains instapay label');
+  assert.ok(detailText.includes(`${MESSAGES.ar['requests.method.instapay']}:`), 'contains instapay label');
   assert.ok(detailText.includes(formatNumber(150)), 'contains formatted amount');
-  assert.ok(detailText.includes('Ref: TX12345678'), 'contains transfer ref');
-  assert.ok(detailText.includes('From: 01012345678'), 'contains sender number');
+  assert.ok(detailText.includes(`${MESSAGES.ar['requests.refLabel']}: TX12345678`), 'contains transfer ref');
+  assert.ok(detailText.includes(`${MESSAGES.ar['requests.fromLabel']}: 01012345678`), 'contains sender number');
 
   // Order 2: Wallet, 100 EGP, amount warning
-  assert.ok(detailText.includes('Wallet:'), 'contains wallet label');
+  assert.ok(detailText.includes(`${MESSAGES.ar['requests.method.wallet']}:`), 'contains wallet label');
   assert.ok(detailText.includes(formatNumber(100)), 'contains formatted amount');
-  assert.ok(detailText.includes('Ref: W88990011'), 'contains transfer ref');
+  assert.ok(detailText.includes(`${MESSAGES.ar['requests.refLabel']}: W88990011`), 'contains transfer ref');
   assert.ok(detailText.includes('⚠️'), 'contains amount warning badge');
 
   // Also verify flat list toggle displays flat rows directly
@@ -675,9 +677,9 @@ test('requests tab renders web purchase request details and amount warning', asy
 
   const flatRows = tableRows();
   assert.equal(flatRows.length, 2);
-  assert.ok(flatRows[0].textContent.includes('Ref: TX12345678'));
+  assert.ok(flatRows[0].textContent.includes(`${MESSAGES.ar['requests.refLabel']}: TX12345678`));
   assert.ok(!flatRows[0].textContent.includes('⚠️'));
-  assert.ok(flatRows[1].textContent.includes('Ref: W88990011'));
+  assert.ok(flatRows[1].textContent.includes(`${MESSAGES.ar['requests.refLabel']}: W88990011`));
   assert.ok(flatRows[1].textContent.includes('⚠️'));
 });
 
@@ -720,4 +722,26 @@ test('filters keep working: status, source, and search by name/email/phone/refer
   assert.equal($('requests-source').value, '');
   assert.equal($('requests-search').value, '');
   assert.equal(tableRows().length, 1);
+});
+
+test('accept all for one student opens the bulk confirm with every pending request of that student', async () => {
+  const { student, items } = make30StudentData();
+  globalThis.fetch = makeFetch(routes({
+    'GET /api/accounts': { body: { items: [student], total: 1 } },
+    'GET /api/requests': { body: { items, total: 30, pending_count: 30 } },
+  }));
+  await resetRequestsFilters();
+  await openRequests();
+  const acceptAll = buttonsIn(tableRows()[0]).find((b) => b.getAttribute('data-role') === 'accept-all');
+  acceptAll.click();
+  assert.equal($('request-bulk-accept-dialog').open, true);
+  assert.ok($('bulk-accept-dialog-target').textContent.includes(formatNumber(30)));
+  $('bulk-accept-dialog-cancel').click();
+});
+
+test('every cell carries its column name for the narrow card layout', async () => {
+  const row = tableRows()[0];
+  const labels = row.children.map((td) => td.getAttribute('data-label')).filter(Boolean);
+  assert.ok(labels.includes(t('requests.col.student')));
+  assert.ok(labels.includes(t('requests.col.totalAmount')));
 });

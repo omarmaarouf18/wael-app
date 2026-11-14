@@ -50,6 +50,11 @@ const $ = (id) => doc.getElementById(id);
 const t = (key) => MESSAGES.ar[key];
 const buttonsIn = (el) => el.findAll((c) => c.tagName === 'BUTTON');
 const buttonByText = (root, text) => buttonsIn(root).find((b) => b.textContent === text);
+/** Opens the first student's side panel (owner redesign 2026-11-14: actions live there). */
+const studentPanel = () => {
+  $('accounts-list').children[0].children[0].click();
+  return $('student-panel-body');
+};
 const clickText = (root, text) => {
   const b = buttonByText(root, text);
   assert.ok(b, `button ${text}`);
@@ -76,7 +81,7 @@ test('suspend: a second submit and Esc during the request change nothing', async
   await signIn({ 'POST /api/accounts/suspend': handler });
   $('tab-accounts').click();
   await flush();
-  clickText($('query:#accounts-table tbody'), t('action.suspend'));
+  clickText(studentPanel(), t('action.suspend'));
   const dialog = $('action-dialog');
   assert.equal(dialog.open, true);
   $('dialog-reason').value = 'سبب';
@@ -163,7 +168,7 @@ test('opening the grant dialog twice quickly fetches once', async () => {
   await signIn();
   $('tab-accounts').click();
   await flush();
-  clickText($('query:#accounts-table tbody'), t('action.subjects'));
+  clickText(studentPanel(), t('students.manageSubjects'));
   await flush();
   globalThis.fetch.calls.length = 0;
   $('entitlements-grant-btn').click();

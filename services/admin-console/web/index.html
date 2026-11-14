@@ -91,48 +91,43 @@
     </section>
 
     <section id="panel-accounts" role="tabpanel" aria-labelledby="tab-accounts" hidden>
-      <h2 data-i18n="accounts.title"></h2>
-      <form id="accounts-filter" class="toolbar">
+      <div class="section-head">
+        <div>
+          <h2 data-i18n="accounts.title"></h2>
+          <p id="accounts-count" class="muted small" aria-live="polite"></p>
+        </div>
+      </div>
+      <form id="accounts-filter" class="toolbar" role="search">
         <div class="field grow">
           <label for="accounts-search" data-i18n="accounts.searchLabel"></label>
           <input id="accounts-search" type="search" maxlength="100" autocomplete="off" data-i18n-placeholder="accounts.search">
         </div>
         <div class="field">
-          <label for="accounts-status" data-i18n="accounts.statusLabel"></label>
-          <select id="accounts-status">
-            <option value="" data-i18n="accounts.statusAll"></option>
-            <option value="active" data-i18n="status.active"></option>
-            <option value="suspended" data-i18n="status.suspended"></option>
-            <option value="deleted" data-i18n="status.deleted"></option>
-            <option value="pending_deletion" data-i18n="status.pending_deletion"></option>
-          </select>
+          <span id="accounts-status-label" class="field-label" data-i18n="accounts.statusLabel"></span>
+          <div id="accounts-status" class="segment" role="group" aria-labelledby="accounts-status-label"></div>
         </div>
         <button class="btn primary" type="submit" data-i18n="accounts.filter"></button>
         <button id="accounts-reset" class="btn secondary" type="button" data-i18n="accounts.reset"></button>
       </form>
       <div id="accounts-banner" class="banner" role="alert" hidden></div>
-      <div class="table-wrap">
-        <table id="accounts-table">
-          <thead>
-            <tr>
-              <th scope="col" data-i18n="accounts.col.name"></th>
-              <th scope="col" data-i18n="accounts.col.email"></th>
-              <th scope="col" data-i18n="accounts.col.phone"></th>
-              <th scope="col" data-i18n="accounts.col.status"></th>
-              <th scope="col" data-i18n="accounts.col.created"></th>
-              <th scope="col" data-i18n="accounts.col.actions"></th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div id="accounts-pager" class="pager">
-        <span class="muted" data-role="total"></span>
-        <div class="pager-controls">
-          <button class="btn secondary small" type="button" data-role="prev" data-i18n="common.prev"></button>
-          <span data-role="info"></span>
-          <button class="btn secondary small" type="button" data-role="next" data-i18n="common.next"></button>
+      <div id="students-layout" class="students-layout" data-panel="closed">
+        <div class="students-main">
+          <ul id="accounts-list" class="student-list" aria-live="polite"></ul>
+          <div id="accounts-pager" class="pager">
+            <span class="muted" data-role="total"></span>
+            <div class="pager-controls">
+              <button class="btn secondary small" type="button" data-role="prev" data-i18n="common.prev"></button>
+              <span data-role="info"></span>
+              <button class="btn secondary small" type="button" data-role="next" data-i18n="common.next"></button>
+            </div>
+          </div>
         </div>
+        <!-- Student side panel: beside the list on wide screens, a full-screen
+             drawer below 900px. Filled by js/accounts.js. -->
+        <aside id="student-panel" class="student-panel" aria-labelledby="student-panel-name" hidden>
+          <button id="student-panel-close" class="icon-btn sp-close" type="button" data-i18n-aria-label="common.close"><svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <div id="student-panel-body"></div>
+        </aside>
       </div>
     </section>
 

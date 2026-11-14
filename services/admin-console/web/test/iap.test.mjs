@@ -336,8 +336,8 @@ test('the entitlements dialog labels an Apple purchase as "شراء من آبل 
   $('tab-accounts').click();
   await flush();
   await flush();
-  const accountsBody = doc.querySelector('#accounts-table tbody');
-  buttonByText(accountsBody.children[0], MESSAGES.ar['action.subjects']).click();
+  $('accounts-list').children[0].children[0].click();
+  buttonByText($('student-panel-body'), MESSAGES.ar['students.manageSubjects']).click();
   await flush();
   await flush();
   const rows = doc.querySelector('#entitlements-table tbody').children;

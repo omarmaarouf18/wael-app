@@ -101,7 +101,7 @@ function routes(overrides = {}) {
 const $ = (id) => doc.getElementById(id);
 const t = (key) => MESSAGES.ar[key];
 const buttonsIn = (el) => el.findAll((c) => c.tagName === 'BUTTON');
-const accountsBody$ = () => doc.querySelector('#accounts-table tbody');
+const accountsBody$ = () => $('accounts-list');
 const entitlementsBody$ = () => doc.querySelector('#entitlements-table tbody');
 
 async function signInOk() {
@@ -116,16 +116,16 @@ async function signInOk() {
 
 const app = main(doc, win);
 
-test('accounts tab row "المواد" opens entitlements dialog with active, expired, and revoked items', async () => {
+test('the student panel\'s "manage subjects" opens entitlements dialog with active, expired, and revoked items', async () => {
   await signInOk();
   assert.equal(accountsBody$().children.length, 1);
 
-  // Student row buttons: [suspend, delete, subjects]
-  const rowButtons = buttonsIn(accountsBody$().children[0]);
-  assert.equal(rowButtons.length, 3);
-  assert.equal(rowButtons[2].textContent, t('action.subjects'));
+  // The row opens the side panel; its Subjects section holds the manage button.
+  accountsBody$().children[0].children[0].click();
+  const manage = buttonsIn($('student-panel-body')).find((b) => b.textContent === t('students.manageSubjects'));
+  assert.ok(manage, 'manage subjects button in the panel');
 
-  rowButtons[2].click();
+  manage.click();
   await flush();
 
   const dialog = $('entitlements-dialog');

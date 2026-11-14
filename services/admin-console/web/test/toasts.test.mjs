@@ -39,6 +39,11 @@ const routes = () => ({
 const $ = (id) => doc.getElementById(id);
 const t = (key) => MESSAGES.ar[key];
 const buttonsIn = (el) => el.findAll((c) => c.tagName === 'BUTTON');
+/** Opens the first student's side panel (owner redesign 2026-11-14: actions live there). */
+const studentPanel = () => {
+  $('accounts-list').children[0].children[0].click();
+  return $('student-panel-body');
+};
 const clickText = (root, text) => {
   const b = buttonsIn(root).find((x) => x.textContent === text);
   assert.ok(b, `button ${text}`);
@@ -60,7 +65,7 @@ for (const action of ['suspend', 'delete']) {
     $('tab-accounts').click();
     await flush();
     $('toast').hidden = true;
-    clickText($('query:#accounts-table tbody'), t(`action.${action}`));
+    clickText(studentPanel(), t(`action.${action}`));
     $('dialog-reason').value = 'سبب';
     $('dialog-reason').fire('input');
     $('action-form').fire('submit');
@@ -75,7 +80,7 @@ test('account reactivate shows a success toast', async () => {
   $('tab-accounts').click();
   await flush();
   $('toast').hidden = true;
-  clickText($('query:#accounts-table tbody'), t('action.reactivate'));
+  clickText(studentPanel(), t('action.reactivate'));
   $('action-form').fire('submit');
   await flush();
   assert.ok($('toast').textContent.includes(t('accounts.toast.reactivate')), $('toast').textContent);
@@ -103,7 +108,7 @@ test('request accept and reject show a success toast', async () => {
 test('grant and revoke show their toast inside the open subjects dialog', async () => {
   $('tab-accounts').click();
   await flush();
-  clickText($('query:#accounts-table tbody'), t('action.subjects'));
+  clickText(studentPanel(), t('students.manageSubjects'));
   await flush();
   assert.equal($('entitlements-dialog').open, true);
 

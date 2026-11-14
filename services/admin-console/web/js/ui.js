@@ -351,8 +351,9 @@ export function createSidePanel({ root, closeButton, onClose = () => {} }) {
     isOpen = false;
     root.hidden = true;
     root.setAttribute('aria-hidden', 'true');
-    onClose();
-    if (returnTo && typeof returnTo.focus === 'function') returnTo.focus();
+    // onClose may move focus itself (returns true), e.g. to a re-rendered row.
+    const handled = onClose() === true;
+    if (!handled && returnTo && typeof returnTo.focus === 'function') returnTo.focus();
     returnTo = null;
   }
   closeButton?.addEventListener('click', close);

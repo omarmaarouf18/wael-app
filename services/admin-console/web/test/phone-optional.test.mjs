@@ -61,9 +61,16 @@ test('accounts list shows — for a student without a phone', async () => {
   assert.equal(isSignedIn(), true);
   $('tab-accounts').click();
   await flush();
-  assert.equal(phoneCell('accounts-table', 0, 2), '—');
-  assert.equal(phoneCell('accounts-table', 1, 2), '—');
-  assert.equal(phoneCell('accounts-table', 2, 2), '+201000000009');
+  // Students list rows show "email · phone"; without a phone only the email.
+  const contact = (row) => $('accounts-list').children[row].textContent;
+  assert.ok(!contact(0).includes(' · '));
+  assert.ok(!contact(1).includes(' · '));
+  assert.ok(contact(2).includes(' · +201000000009'));
+  // The side panel's phone detail shows — without a phone.
+  $('accounts-list').children[0].children[0].click();
+  const details = $('student-panel-body').findAll((c) => c.className === 'sp-detail');
+  assert.equal(details[1].children[1].textContent, '—');
+  $('student-panel-close').click();
 });
 
 test('search by phone still reaches the server', async () => {

@@ -39,10 +39,18 @@ const accountsBody = {
 };
 
 const $ = (id) => doc.getElementById(id);
-const accountsBody$ = () => doc.querySelector('#accounts-table tbody');
+const accountsBody$ = () => $('accounts-list');
 const auditBody$ = () => doc.getElementById('audit-list');
 const buttonsIn = (el) => el.findAll((c) => c.tagName === 'BUTTON');
-const rowButtons = (index) => buttonsIn(accountsBody$().children[index]).map((b) => b.textContent);
+const studentRow = (index) => accountsBody$().children[index].children[0];
+const byIdIn = (root, id) => root.findAll((c) => c.attrs?.get?.('id') === id)[0];
+/** Opens the student's side panel and returns its footer action buttons. */
+function panelActions(index) {
+  studentRow(index).click();
+  const bar = byIdIn($('student-panel-body'), 'student-panel-actions');
+  return bar ? buttonsIn(bar) : [];
+}
+const rowButtons = (index) => panelActions(index).map((b) => b.textContent);
 const t = (key) => MESSAGES[win.lang ?? 'ar'][key];
 
 function routes(overrides = {}) {
@@ -181,20 +189,30 @@ test('signing in shows the app, the admin name and the accounts list; the field 
   for (const call of globalThis.fetch.calls) assert.ok(!call.url.includes('admin-token-xyz'));
 
   assert.equal(accountsBody$().children.length, 3);
-  assert.deepEqual(rowButtons(0), [MESSAGES.ar['action.suspend'], MESSAGES.ar['action.delete'], MESSAGES.ar['action.subjects']]);
-  assert.deepEqual(rowButtons(1), [MESSAGES.ar['action.reactivate'], MESSAGES.ar['action.delete'], MESSAGES.ar['action.subjects']]);
-  assert.deepEqual(rowButtons(2), []);
+  // The row: name, email · phone, status chip; no raw id (owner redesign 2026-11-14).
   assert.equal(accountsBody$().children[0].textContent.includes('علي أحمد'), true);
-  assert.equal(accountsBody$().children[0].textContent.includes(IDS.active), true);
+  assert.equal(accountsBody$().children[0].textContent.includes('ali@example.com · +201001234567'), true);
+  assert.equal(accountsBody$().children[0].textContent.includes(IDS.active), false);
+  // The actions moved to the side panel's footer.
+  assert.deepEqual(rowButtons(0), [MESSAGES.ar['action.suspend'], MESSAGES.ar['action.delete']]);
+  assert.deepEqual(rowButtons(1), [MESSAGES.ar['action.reactivate'], MESSAGES.ar['action.delete']]);
+  assert.deepEqual(rowButtons(2), []);
+  $('student-panel-close').click();
 });
 
 test('search and status filter go to the server and reset to page 1', async () => {
   $('accounts-search').value = ' علي ';
-  $('accounts-status').value = 'suspended';
+  globalThis.fetch.calls.length = 0;
+  // The status filter is a segmented control: a choice loads at once.
+  const suspended = buttonsIn($('accounts-status')).find((b) => b.getAttribute('data-status') === 'suspended');
+  suspended.click();
+  await flush();
+  assert.equal(globalThis.fetch.calls[0].url, '/api/accounts?page=1&limit=15&search=%D8%B9%D9%84%D9%8A&status=suspended');
+  assert.equal(suspended.getAttribute('aria-pressed'), 'true');
   globalThis.fetch.calls.length = 0;
   $('accounts-filter').fire('submit');
   await flush();
-  assert.equal(globalThis.fetch.calls[0].url, '/api/accounts?page=1&limit=15&search=%D8%B9%D9%84%D9%8A&status=suspended');
+  assert.equal(globalThis.fetch.calls[0].url, '/api/accounts?page=1&limit=15&search=%D8%B9%D9%84%D9%8A&status=suspended', 'search keeps the status');
 
   globalThis.fetch.calls.length = 0;
   $('accounts-reset').click();
@@ -226,7 +244,7 @@ test('suspend asks for a reason: the confirm button stays disabled until one is 
   globalThis.fetch = makeFetch(routes());
   $('accounts-reset').click();
   await flush();
-  buttonsIn(accountsBody$().children[0])[0].click(); // suspend
+  panelActions(0)[0].click(); // suspend
   const dialog = $('action-dialog');
   assert.equal(dialog.open, true);
   assert.equal($('dialog-title').textContent, MESSAGES.ar['dialog.suspend.title']);
@@ -270,7 +288,7 @@ test('reactivate needs no reason and sends only the id', async () => {
   globalThis.fetch = makeFetch(routes());
   $('accounts-reset').click();
   await flush();
-  buttonsIn(accountsBody$().children[1])[0].click(); // reactivate
+  panelActions(1)[0].click(); // reactivate
   assert.equal($('dialog-title').textContent, MESSAGES.ar['dialog.reactivate.title']);
   assert.equal($('dialog-reason-group').hidden, true);
   assert.equal($('dialog-confirm').disabled, false);
@@ -285,7 +303,7 @@ test('delete warns, requires a reason and uses the delete route', async () => {
   globalThis.fetch = makeFetch(routes());
   $('accounts-reset').click();
   await flush();
-  buttonsIn(accountsBody$().children[0])[1].click(); // delete
+  panelActions(0)[1].click(); // delete
   assert.equal($('dialog-title').textContent, MESSAGES.ar['dialog.delete.title']);
   assert.equal($('dialog-note').textContent, MESSAGES.ar['dialog.delete.note']);
   assert.equal($('dialog-confirm').disabled, true);
@@ -305,7 +323,7 @@ test('a failed action keeps the dialog open with a banner and a working retry; n
   }));
   $('accounts-reset').click();
   await flush();
-  buttonsIn(accountsBody$().children[0])[0].click();
+  panelActions(0)[0].click();
   $('dialog-reason').value = 'spam';
   $('dialog-reason').fire('input');
   $('action-form').fire('submit');
@@ -341,7 +359,7 @@ test('a 401 during an action closes the dialog and returns to sign-in', async ()
   globalThis.fetch = makeFetch(routes({ 'POST /api/accounts/suspend': { status: 401, body: { code: 'unauthorized' } } }));
   $('accounts-reset').click();
   await flush();
-  buttonsIn(accountsBody$().children[0])[0].click();
+  panelActions(0)[0].click();
   $('dialog-reason').value = 'spam';
   $('dialog-reason').fire('input');
   $('action-form').fire('submit');
