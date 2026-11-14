@@ -272,7 +272,7 @@ test('text and control colours meet WCAG AA contrast on the dark surfaces', () =
   const c = tokens();
   const surfaces = ['void', 'surface-1', 'surface-2', 'surface-3'];
   for (const s of surfaces) {
-    for (const fg of ['text', 'text-2', 'text-3', 'danger-text', 'approved', 'pending']) {
+    for (const fg of ['text', 'text-2', 'text-3', 'danger-text', 'approved', 'pending', 'info', 'gold']) {
       assert.ok(contrast(c[fg], c[s]) >= 4.5, `${fg} on ${s}: ${contrast(c[fg], c[s]).toFixed(2)}`);
     }
   }

@@ -148,6 +148,12 @@ export function mountAccounts({ api, doc = document }) {
 
   return {
     load,
+    /** Filters the list to one account id (from the audit log); the next load shows it. */
+    showUser(id) {
+      searchInput.value = String(id ?? '');
+      statusSelect.value = '';
+      Object.assign(state, { search: searchInput.value, status: '', page: 1 });
+    },
     rerender() {
       render();
       dialog.rerender();

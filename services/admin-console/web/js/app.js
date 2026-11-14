@@ -36,9 +36,18 @@ export function main(doc = document, win = window) {
   const adminName = doc.getElementById('admin-name');
   const tabList = doc.getElementById('tabs');
 
+  // The audit log links student and package names to their tabs.
+  function openFromAudit(link) {
+    if (!link) return;
+    if (link.tab === 'accounts' && link.user) modules.accounts.showUser(link.user);
+    else if (link.tab === 'iap' && link.packageId) modules.iap.focusPackage(link.packageId);
+    else return;
+    switchTab(link.tab);
+  }
+
   const modules = {
     accounts: mountAccounts({ api, doc }),
-    audit: mountAudit({ api, doc }),
+    audit: mountAudit({ api, doc, win, navigate: openFromAudit }),
     requests: mountRequests({ api, doc, win }),
     catalog: mountCatalog({ api, doc }),
     iap: mountIAP({ api, doc }),

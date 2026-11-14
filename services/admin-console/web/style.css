@@ -28,6 +28,12 @@
   --pending-bg: rgba(245, 158, 11, 0.15);
   --approved: #10b981;
   --approved-bg: rgba(16, 185, 129, 0.15);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.14);
+  --gold: #e0b341;
+  --gold-bg: rgba(224, 179, 65, 0.16);
+  --danger-bg: rgba(255, 107, 116, 0.14);
+  --neutral-bg: rgba(184, 184, 184, 0.12);
   --focus: #f2f2f2;
 
   --font: "Noto Sans Arabic", "Segoe UI", Tahoma, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
@@ -530,6 +536,8 @@ td.detail {
 /* Two-way switch (audit source). The pressed button reads as selected. */
 .segment {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-inline-size: 100%;
   gap: 0.25rem;
   padding: 0.2rem;
   border: 1px solid var(--hairline);
@@ -866,4 +874,221 @@ td.detail {
 
 .iap-purchases {
   margin-block-start: 1.25rem;
+}
+
+/* Audit log (owner redesign 2026-11-14): day groups of sentence rows. Wide:
+   icon | sentence | time | details toggle on one line. Narrow (JS adds
+   .is-narrow below 720px): each row becomes a card. Colour is never the only
+   signal: every row also has an icon and a verb. */
+
+.audit-filter-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-block-end: 1rem;
+}
+
+.audit-empty {
+  padding: 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  text-align: center;
+}
+
+.audit-day-head {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  margin: 0 0 0.4rem;
+  padding: 0.35rem 0.25rem;
+  font-size: 0.9rem;
+  color: var(--text-2);
+  background: var(--void);
+  border-block-end: 1px solid var(--hairline);
+}
+
+.audit-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+
+.audit-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 0.25rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-block-end: 1px solid var(--hairline);
+}
+
+.audit-row:last-child {
+  border-block-end: 0;
+}
+
+.audit-icon {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border-radius: 999px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-2);
+  background: var(--neutral-bg);
+}
+
+.kind-create .audit-icon,
+.kind-accept .audit-icon {
+  color: var(--approved);
+  background: var(--approved-bg);
+}
+
+.kind-update .audit-icon {
+  color: var(--info);
+  background: var(--info-bg);
+}
+
+.kind-danger .audit-icon {
+  color: var(--danger-text);
+  background: var(--danger-bg);
+}
+
+.kind-purchase .audit-icon {
+  color: var(--gold);
+  background: var(--gold-bg);
+}
+
+.kind-purchase {
+  box-shadow: inset 3px 0 0 var(--gold);
+}
+
+[dir="rtl"] .kind-purchase {
+  box-shadow: inset -3px 0 0 var(--gold);
+}
+
+.audit-main {
+  min-inline-size: 0;
+}
+
+.audit-sentence {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.audit-time {
+  white-space: nowrap;
+  padding-block-start: 0.15rem;
+}
+
+.audit-extra.pill {
+  display: inline-block;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: var(--gold);
+  background: var(--gold-bg);
+}
+
+.name-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.name-link:hover {
+  color: var(--text-2);
+}
+
+.name-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.audit-toggle {
+  min-block-size: 0;
+  padding-block: 0.1rem;
+  white-space: nowrap;
+}
+
+.audit-details {
+  margin-block-start: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.audit-details dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.75rem;
+  margin: 0 0 0.5rem;
+}
+
+.audit-details dt {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text-2);
+}
+
+.audit-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.row-focus td {
+  background: var(--gold-bg);
+}
+
+/* Narrow: cards. The time moves under the sentence, the toggle to the end. */
+.audit-list.is-narrow .audit-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 0;
+  background: none;
+}
+
+.audit-list.is-narrow .audit-row {
+  grid-template-columns: 2rem minmax(0, 1fr);
+  grid-template-areas:
+    "icon main"
+    "icon time"
+    "icon toggle";
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+
+.audit-list.is-narrow .audit-icon {
+  grid-area: icon;
+}
+
+.audit-list.is-narrow .audit-main {
+  grid-area: main;
+}
+
+.audit-list.is-narrow .audit-time {
+  grid-area: time;
+}
+
+.audit-list.is-narrow .audit-toggle {
+  grid-area: toggle;
+  justify-self: start;
 }

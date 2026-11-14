@@ -65,7 +65,7 @@ export function mountIAP({ api, doc = document }) {
   });
 
   const empty = () => ({
-    packages: [], levels: [], subjects: [], uncovered: null, loaded: false, error: null,
+    packages: [], levels: [], subjects: [], uncovered: null, loaded: false, error: null, focusId: null, focusShown: false,
     purchasesFor: null, purchases: [], purchasesLoaded: false, purchasesError: null,
   });
   let state = empty();
@@ -95,7 +95,8 @@ export function mountIAP({ api, doc = document }) {
         on: { click: () => askDelete(pkg) },
       }),
     );
-    return h('tr', { dataset: { id: pkg.id } },
+    const focused = state.focusId === pkg.id;
+    return h('tr', { class: focused ? 'row-focus' : '', dataset: { id: pkg.id }, attrs: { tabindex: focused ? '-1' : undefined } },
       h('td', {},
         h('div', { class: 'strong', text: pkg.title_ar || '—' }),
         pkg.title_en ? h('div', { class: 'muted small ltr', text: pkg.title_en }) : null),
@@ -136,7 +137,15 @@ export function mountIAP({ api, doc = document }) {
     } else if (state.packages.length === 0) {
       body.append(messageRow(COLUMNS, t('common.empty')));
     } else {
-      for (const pkg of state.packages) body.append(row(pkg));
+      for (const pkg of state.packages) {
+        const tr = row(pkg);
+        body.append(tr);
+        if (state.focusId === pkg.id && !state.focusShown) {
+          state.focusShown = true;
+          if (typeof tr.scrollIntoView === 'function') tr.scrollIntoView({ block: 'center' });
+          tr.focus?.();
+        }
+      }
     }
     addButton.disabled = !state.loaded;
     renderCoverage();
@@ -234,6 +243,11 @@ export function mountIAP({ api, doc = document }) {
 
   return {
     load,
+    /** Highlights one package (from the audit log) once the list loads. */
+    focusPackage(id) {
+      state.focusId = String(id ?? '') || null;
+      state.focusShown = false;
+    },
     rerender() {
       render();
       dialog.rerender();
