@@ -86,3 +86,6 @@ firebase-*.json
 /.claude/
 /.delegate/
 skills-lock.json
+
+# Apple Root CA - G3: public certificate, pinned by fingerprint (ADR-0015, 2026-11-14)
+!services/academy-service/internal/iap/certs/AppleRootCA-G3.pem

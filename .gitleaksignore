@@ -37,3 +37,14 @@ ba07e5003915db2616b817edefb81450dfa4f83d:shared/infra/storage/storage_test.go:ge
 # it is not a credential. The fingerprint is tied to that commit: if the commit
 # is squashed or rewritten before it reaches main, replace the hash here.
 187066e1e5a376c7304afbf553ccb556b6fbe56d:services/admin-console/internal/proxy/proxy_test.go:generic-api-key:25
+
+# Added 2026-11-14 (owner-approved, IAP batch, ADR-0015): UUIDs, not secrets.
+# - models/iap.go:11 and the contract line 59: AppAccountTokenNamespace, a public
+#   UUID v5 namespace documented in docs/contracts/iap-packages-api.md (security
+#   comes from Apple's JWS signature, not from this value).
+# - contract line 91: example app_account_token in a JSON sample.
+# - frontend/test/iap_fakes.dart:7: fake token used only by tests.
+8611fc6be8ec3f8238fa677fb65acf3785f6361a:services/academy-service/internal/models/iap.go:generic-api-key:11
+afb278d0e3dbc728e9bb52d6703852b71338b1e4:docs/contracts/iap-packages-api.md:generic-api-key:59
+afb278d0e3dbc728e9bb52d6703852b71338b1e4:docs/contracts/iap-packages-api.md:generic-api-key:91
+a8c0e3cffaad3ae908b681d2c5b63573e6ef7950:frontend/test/iap_fakes.dart:generic-api-key:7
