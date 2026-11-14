@@ -330,6 +330,10 @@ func (s *Server) AdminHandler() http.Handler {
 	mux.HandleFunc("/internal/admin/entitlements", s.AdminEntitlements)
 	mux.HandleFunc("/internal/admin/entitlements/", s.AdminEntitlementSubroute)
 	mux.HandleFunc("/internal/admin/settings", s.AdminSettings)
+	mux.HandleFunc("/internal/admin/iap/packages", s.AdminIAPPackages)
+	mux.HandleFunc("/internal/admin/iap/packages/", s.AdminIAPPackageSubroute)
+	mux.HandleFunc("/internal/admin/iap/purchases", s.AdminIAPPurchases)
+	mux.HandleFunc("/internal/admin/iap/coverage", s.AdminIAPCoverage)
 
 	var h http.Handler = mux
 	h = s.requireAdmin(h)

@@ -17,7 +17,7 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 		until := time.Now().UTC().Add(365 * 24 * time.Hour).Truncate(time.Second)
 		pkg := &models.IAPPackage{
 			ID:             "iap-pkg-crud",
-			ProductID:      models.IAPProductYear1,
+			ProductID:      "com.wael.app.pkg.year1",
 			TitleAr:        "حزمة السنة الأولى",
 			TitleEn:        "First Year Package",
 			DescriptionAr:  "وصف الحزمة",
@@ -51,7 +51,7 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 			t.Errorf("HasSubject returned unexpected results")
 		}
 
-		gotByProd, err := s.GetIAPPackageByProductID(ctx, models.IAPProductYear1)
+		gotByProd, err := s.GetIAPPackageByProductID(ctx, "com.wael.app.pkg.year1")
 		if err != nil {
 			t.Fatalf("GetIAPPackageByProductID failed: %v", err)
 		}
@@ -103,8 +103,8 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 			t.Errorf("updated SubjectIDs mismatch: %v", updated.SubjectIDs)
 		}
 		// ProductID MUST remain immutable
-		if updated.ProductID != models.IAPProductYear1 {
-			t.Errorf("ProductID was mutated! got %s, want %s", updated.ProductID, models.IAPProductYear1)
+		if updated.ProductID != "com.wael.app.pkg.year1" {
+			t.Errorf("ProductID was mutated! got %s, want com.wael.app.pkg.year1", updated.ProductID)
 		}
 		tamperedLookup, err := s.GetIAPPackageByProductID(ctx, "com.tampered.product.id")
 		if err != nil || tamperedLookup != nil {
@@ -173,7 +173,7 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 			OriginalTransactionID: "apple-tx-10001",
 			UserID:                "user-test-1",
 			PackageID:             "iap-pkg-crud",
-			ProductID:             models.IAPProductYear1,
+			ProductID:             "com.wael.app.pkg.year1",
 			Environment:           models.IAPEnvironmentProduction,
 			PurchaseDate:          now,
 			GrantedSubjectIDs:     []string{"sub-crud-1"},
@@ -210,7 +210,7 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 			OriginalTransactionID: "apple-tx-10001",
 			UserID:                "user-test-2",
 			PackageID:             "iap-pkg-crud",
-			ProductID:             models.IAPProductYear1,
+			ProductID:             "com.wael.app.pkg.year1",
 			Environment:           models.IAPEnvironmentSandbox,
 			PurchaseDate:          now,
 		}
@@ -263,7 +263,7 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 	t.Run("ListIAPPurchases_Filters_And_Limit", func(t *testing.T) {
 		pkg2 := &models.IAPPackage{
 			ID:        "iap-pkg-filter-2",
-			ProductID: models.IAPProductYear2,
+			ProductID: "com.wael.app.pkg.year2",
 			TitleAr:   "حزمة ثانية",
 			TitleEn:   "Second Package",
 		}
@@ -279,7 +279,7 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 			TransactionID: "apple-tx-20002",
 			UserID:        "user-test-2",
 			PackageID:     "iap-pkg-crud",
-			ProductID:     models.IAPProductYear1,
+			ProductID:     "com.wael.app.pkg.year1",
 			Environment:   models.IAPEnvironmentProduction,
 			PurchaseDate:  t1,
 			CreatedAt:     t1,
@@ -289,7 +289,7 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 			TransactionID: "apple-tx-30003",
 			UserID:        "user-test-1",
 			PackageID:     "iap-pkg-filter-2",
-			ProductID:     models.IAPProductYear2,
+			ProductID:     "com.wael.app.pkg.year2",
 			Environment:   models.IAPEnvironmentProduction,
 			PurchaseDate:  t2,
 			CreatedAt:     t2,
@@ -555,7 +555,7 @@ func runIAPStoreSuite(t *testing.T, s Store) {
 					_, _ = s.ListIAPPackages(ctx, false)
 					_, _ = s.ListIAPPackages(ctx, true)
 					_, _ = s.GetIAPPackage(ctx, "iap-pkg-crud")
-					_, _ = s.GetIAPPackageByProductID(ctx, models.IAPProductYear1)
+					_, _ = s.GetIAPPackageByProductID(ctx, "com.wael.app.pkg.year1")
 					_, _ = s.CountIAPPurchasesByPackage(ctx, "iap-pkg-crud")
 					_, _ = s.GetIAPPurchaseByTransactionID(ctx, "apple-tx-10001")
 					_, _ = s.ListIAPPurchases(ctx, models.IAPPurchaseFilter{PackageID: "iap-pkg-crud"}, 5)

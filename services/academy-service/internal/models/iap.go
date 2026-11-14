@@ -2,14 +2,6 @@ package models
 
 import "time"
 
-// IAPProduct constants.
-const (
-	IAPProductYear1 = "com.wael.app.pkg.year1"
-	IAPProductYear2 = "com.wael.app.pkg.year2"
-	IAPProductYear3 = "com.wael.app.pkg.year3"
-	IAPProductYear4 = "com.wael.app.pkg.year4"
-)
-
 // IAPEnvironment constants.
 const (
 	IAPEnvironmentProduction = "Production"
