@@ -38,13 +38,13 @@ dependencies:
   cupertino_icons: ^1.0.8
   provider: ^6.1.5+1
   google_fonts: ^8.2.1
-  intl: 0.20.2
+  intl: 0.20.3
   http: ^1.6.0
   flutter_secure_storage: ^11.2.0
   nested: ^1.0.0
   # Pinned exact: opens the support WhatsApp chat for help and access requests.
   # BSD-3-Clause (Flutter Authors).
-  url_launcher: 6.3.2
+  url_launcher: 6.3.3
   youtube_player_iframe: ^6.0.2
   # Reads installed app version for update gating. BSD-3-Clause (Flutter Authors).
   package_info_plus: ^10.2.2
