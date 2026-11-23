@@ -450,6 +450,14 @@ text above is unchanged.
    is not live (in App Review): the website shows no App Store link, badge
    or "coming soon" anywhere until the owner says it is live
    (`web/test/store-links.test.ts` fails on any App Store link).
+   *(Amended 2026-11-23, owner decision: the iOS app is live at
+   `https://apps.apple.com/eg/app/el-metr-academy/id6820829162`. The website
+   shows the official "Download on the App Store" badge (ar/en) beside every
+   Google Play badge (landing "The app" section and the footer), linked from
+   `STORE_URLS.ios` in `web/src/lib/store-links.ts`; both badges show 40 px
+   tall, Apple's on-screen minimum. `web/test/store-links.test.ts` now checks
+   the two listing URLs, that no other file hard-codes an App Store URL, and
+   that both badges sit together.)*
 4. **Landing assets.** The teacher portrait is the app's director portrait
    (v3, 2026-10-12); the app section uses the existing Google Play store
    screenshots (`docs/asset-provenance.md`).

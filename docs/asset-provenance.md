@@ -90,6 +90,7 @@ Byte-identical copies of assets listed above, so the website matches the app
 | `web/public/brand/og-ar.jpg`, `og-en.jpg` | the hero copy above and `logo-512.png` | Open Graph cards (1200 x 630) rendered 2026-11-07 in headless Chrome from the brand art, the logo and the site's own fonts and wording | As their sources (owner-approved 2026-10-02; fonts OFL) |
 | `web/public/favicon.ico`, `web/public/brand/favicon-32.png`, `icon-192.png`, `apple-touch-icon.png`, `logo-72.png` | `web/public/brand/logo-512.png` | Resized copies (sharp, ImageMagick for the .ico), 2026-11-07: favicon set and the 36 px header logo at 2x | As `logo-512.png` (owner-approved 2026-10-02) |
 | `web/public/brand/play-badge-ar.png`, `play-badge-en.png` | none (official store badges) | Downloaded 2026-11-09 unmodified from Google Play Badge Generator (`https://play.google.com/intl/en_us/badges/static/images/badges/{ar,en}_badge_web_generic.png`) | Google brand permissions (Google Play badge guidelines) |
+| `web/public/brand/appstore-badge-ar.svg`, `appstore-badge-en.svg` | none (official store badges) | Owner-supplied 2026-11-23: Apple's "Download on the App Store" badge kit (`Download-on-the-App-Store.zip` from Apple Marketing Resources), black lockup SVGs copied unmodified (`AR/.../Download_on_the_App_Store_Badge_AR_RGB_blk_102417.svg`, `US/.../Download_on_the_App_Store_Badge_US-UK_RGB_blk_092917.svg`) | Apple App Store marketing guidelines (badge use for an app's own listing) |
 
 
 ## Removed assets

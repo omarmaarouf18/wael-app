@@ -161,6 +161,24 @@ export function SiteShell({ lang, path, children, fullBleed = false }: SiteShell
                   decoding="async"
                 />
               </a>
+              <a
+                href={STORE_URLS.ios}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.playBadgeLink}
+                aria-label={lang === "ar" ? "تنزيل من App Store" : "Download on the App Store"}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lang === "ar" ? "/brand/appstore-badge-ar.svg" : "/brand/appstore-badge-en.svg"}
+                  alt={lang === "ar" ? "تنزيل من App Store" : "Download on the App Store"}
+                  width={120}
+                  height={40}
+                  className={styles.appStoreBadgeImg}
+                  loading="lazy"
+                  decoding="async"
+                />
+              </a>
             </div>
             <h2 className={styles.footerTitle}>{t.footer.language}</h2>
             {langSwitch}

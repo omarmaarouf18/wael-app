@@ -409,11 +409,22 @@
   outline-offset: var(--focus-ring-offset);
 }
 
+/* The official Google Play PNG carries transparent clear space (41 of its
+   250 px above and below the badge), the App Store SVG none. Both badges show
+   40 px tall, Apple's minimum on screen: Play at 60 px with its clear space,
+   App Store at 40 px with the same 10 px above and below. */
 .playBadgeImg {
+  display: block;
+  height: 60px;
+  width: auto;
+  border-radius: var(--radius-sm);
+}
+
+.appStoreBadgeImg {
   display: block;
   height: 40px;
   width: auto;
-  border-radius: var(--radius-sm);
+  margin-block: 10px;
 }
 
 .storeLink {

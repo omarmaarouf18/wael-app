@@ -16,6 +16,11 @@ use the existing Google Play screenshots (done); item 7 — Google Play is
 `com.wael.app`; the iOS app is not live, so the site shows Google Play only,
 no App Store link or "coming soon" (done); item 14 — `noindex` stays until the
 owner says "launch". Still open: items 1, 2, 4, 5, 8-13.)*
+*(Amended 2026-11-23, owner: the iOS app is live; the site shows the
+official App Store badge beside Google Play, linked to
+`apps.apple.com/eg/app/el-metr-academy/id6820829162` (ADR-0014
+"Amendment 2026-11-07" item 3 amendment). The App Store URL in the item 7
+note below (`id6737155342`) was a draft and is not used.)*
 Design rules: `web/DESIGN.md`. Copy below is a **draft** (Arabic first,
 English second); nothing in it is a fact the owner has not given. Every
 `[OWNER: …]` is a gap that ships as a visible TODO block in non-production

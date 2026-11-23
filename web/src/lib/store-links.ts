@@ -3,10 +3,11 @@
 //
 // Owner decisions 2026-11-07: the Google Play listing is
 // https://play.google.com/store/apps/details?id=com.wael.app (the app's
-// applicationId, frontend/android/app/build.gradle.kts). The iOS app is not
-// live yet (in App Review): the site shows no App Store link, badge or
-// "coming soon" anywhere until the owner says it is live — so there is
-// deliberately no iOS URL here.
+// applicationId, frontend/android/app/build.gradle.kts).
+// Owner decision 2026-11-23: the iOS app is live on the App Store, so the
+// site links to its listing with the official App Store badge. Every App
+// Store link on the site comes from this constant (web/test/store-links.test.ts).
 export const STORE_URLS = {
   android: "https://play.google.com/store/apps/details?id=com.wael.app",
+  ios: "https://apps.apple.com/eg/app/el-metr-academy/id6820829162",
 } as const;

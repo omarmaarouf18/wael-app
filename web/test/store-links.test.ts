@@ -1,7 +1,7 @@
-// Store links (owner decisions 2026-11-07, src/lib/store-links.ts): the
-// Google Play listing is com.wael.app, and the iOS app is not live yet, so the
-// site must not link to the App Store anywhere. Remove the second test when the
-// owner says the iOS app is live.
+// Store links (src/lib/store-links.ts): the Google Play listing is
+// com.wael.app (owner decision 2026-11-07); the iOS app is live on the App
+// Store (owner decision 2026-11-23), and every App Store link on the site is
+// STORE_URLS.ios, never a hard-coded URL.
 // Run: npm test (node --test).
 
 import assert from "node:assert/strict";
@@ -24,14 +24,26 @@ test("Google Play link is the app's listing (com.wael.app)", () => {
   assert.equal(STORE_URLS.android, "https://play.google.com/store/apps/details?id=com.wael.app");
 });
 
-test("no App Store link anywhere until the iOS app is live", () => {
+test("App Store link is the app's listing (id6820829162)", () => {
+  assert.equal(STORE_URLS.ios, "https://apps.apple.com/eg/app/el-metr-academy/id6820829162");
+});
+
+test("App Store URLs appear only in store-links.ts", () => {
   const hits: string[] = [];
   for (const p of files(SRC)) {
+    if (p.endsWith(join("lib", "store-links.ts"))) continue;
     const text = readFileSync(p, "utf8");
-    // Comments may explain the rule; links and visible labels may not.
-    // "//" after a colon is a URL ("https://"), not a comment.
-    const code = text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-    if (/apps\.apple\.com|itunes\.apple\.com|App Store|آب ستور/.test(code)) hits.push(relative(SRC, p));
+    if (/apps\.apple\.com|itunes\.apple\.com/.test(text)) hits.push(relative(SRC, p));
   }
   assert.deepEqual(hits, []);
+});
+
+test("every Play badge has an App Store badge beside it", () => {
+  for (const name of ["home-page.tsx", "site-shell.tsx"]) {
+    const text = readFileSync(join(SRC, "components", name), "utf8");
+    assert.match(text, /href=\{STORE_URLS\.android\}/, name);
+    assert.match(text, /href=\{STORE_URLS\.ios\}/, name);
+    assert.match(text, /\/brand\/appstore-badge-ar\.svg/, name);
+    assert.match(text, /\/brand\/appstore-badge-en\.svg/, name);
+  }
 });

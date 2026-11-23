@@ -382,6 +382,24 @@ export async function HomePage({ lang }: { lang: Lang }) {
                   className={styles.playBadgeImg}
                 />
               </a>
+              <a
+                href={STORE_URLS.ios}
+                className={styles.playBadgeLink}
+                rel="noopener noreferrer"
+                target="_blank"
+                aria-label={lang === "ar" ? "تنزيل من App Store" : "Download on the App Store"}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={lang === "ar" ? "/brand/appstore-badge-ar.svg" : "/brand/appstore-badge-en.svg"}
+                  alt={lang === "ar" ? "تنزيل من App Store" : "Download on the App Store"}
+                  width={120}
+                  height={40}
+                  loading="lazy"
+                  decoding="async"
+                  className={styles.appStoreBadgeImg}
+                />
+              </a>
             </div>
           </div>
           <div className={styles.appVisual}>
